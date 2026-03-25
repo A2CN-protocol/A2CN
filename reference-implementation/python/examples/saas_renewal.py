@@ -22,11 +22,27 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 import asyncio
+import json
 import threading
 import time
 import uvicorn
 
 import httpx
+
+
+# ---------------------------------------------------------------------------
+# Verbose logging helper
+# ---------------------------------------------------------------------------
+
+def _log(label: str, obj: dict) -> None:
+    """Print a labelled, indented JSON block to stdout."""
+    width = 72
+    print()
+    print("─" * width)
+    print(f"  {label}")
+    print("─" * width)
+    print(json.dumps(obj, indent=2))
+    print("─" * width)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -171,6 +187,12 @@ async def main() -> None:
             session_params=session_params,
         )
         session_id = ack["session_id"]
+
+        _log("REQUEST  POST /sessions  →  SessionInit (TechCorp → Acme)",
+             client._sessions[session_id]["session_init"])
+        _log("RESPONSE 201  ←  SessionAck (Acme → TechCorp)",
+             ack)
+
         print(f"✓ Session initiated — session_id: {session_id}")
 
         # Tell client about responder party (for offer addressing)
@@ -200,6 +222,8 @@ async def main() -> None:
         }
 
         await client.send_offer(SELLER_ENDPOINT, ACME_DID, session_id, terms_r1)
+        _log("REQUEST  POST /sessions/{id}/messages  →  Offer round 1  seq 1  (TechCorp → Acme)  $95,000",
+             client._sessions[session_id]["latest_offer"])
 
         # -----------------------------------------------------------------------
         # Acme (responder) counters — Round 2: $115,000 net-60
@@ -277,6 +301,9 @@ async def main() -> None:
         co_r2 = acme_counteroffer(session_id, 2, 2, terms_r2, r1_offer["message_id"])
         manager.process_message(session_obj, co_r2)
 
+        _log("REQUEST  POST /sessions/{id}/messages  →  Counteroffer round 2  seq 2  (Acme → TechCorp)  $115,000",
+             co_r2)
+
         # Update client state to track Acme's counteroffer
         client._sessions[session_id]["sequence_number"] = 2
         client._sessions[session_id]["round_number"] = 2
@@ -309,6 +336,8 @@ async def main() -> None:
             },
         }
         await client.send_offer(SELLER_ENDPOINT, ACME_DID, session_id, terms_r3, in_reply_to=co_r2["message_id"])
+        _log("REQUEST  POST /sessions/{id}/messages  →  Counteroffer round 3  seq 3  (TechCorp → Acme)  $103,000",
+             client._sessions[session_id]["latest_offer"])
 
         # Round 4: Acme counters $105,000 net-45 (within tolerance — TechCorp will accept)
         r3_offer = client._sessions[session_id]["latest_offer"]
@@ -334,6 +363,9 @@ async def main() -> None:
         co_r4 = acme_counteroffer(session_id, 4, 4, terms_r4, r3_offer["message_id"])
         manager.process_message(session_obj, co_r4)
 
+        _log("REQUEST  POST /sessions/{id}/messages  →  Counteroffer round 4  seq 4  (Acme → TechCorp)  $105,000",
+             co_r4)
+
         # Update client state
         client._sessions[session_id]["sequence_number"] = 4
         client._sessions[session_id]["round_number"] = 4
@@ -347,6 +379,8 @@ async def main() -> None:
         # TechCorp accepts Acme's $105K offer
         # -----------------------------------------------------------------------
         await client.send_acceptance(SELLER_ENDPOINT, ACME_DID, session_id, co_r4)
+        _log("REQUEST  POST /sessions/{id}/messages  →  Acceptance  seq 5  (TechCorp → Acme)",
+             client._sessions[session_id]["message_log"][-1])
         print(f"✓ Round 4: TechCorp accepts $105,000")
 
         # -----------------------------------------------------------------------
@@ -358,6 +392,8 @@ async def main() -> None:
         # Client side
         client_record = client.build_client_side_record(session_id)
 
+        _log("TRANSACTION RECORD  (generated independently by Acme / seller side)",
+             server_record)
         print(f"✓ Transaction record generated — record_hash: {server_record['record_hash'][:32]}...")
 
         assert server_record["record_hash"] == client_record["record_hash"], (
