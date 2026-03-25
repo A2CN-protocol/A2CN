@@ -305,11 +305,7 @@ async def main() -> None:
              co_r2)
 
         # Update client state to track Acme's counteroffer
-        client._sessions[session_id]["sequence_number"] = 2
-        client._sessions[session_id]["round_number"] = 2
-        client._sessions[session_id]["current_turn"] = "initiator"
-        client._sessions[session_id]["message_log"].append(co_r2)
-        client._sessions[session_id]["offer_chain"].append(co_r2["protocol_act_hash"])
+        client.process_incoming(session_id, co_r2)
 
         print(f"✓ Round 1: TechCorp offers $95,000 — Acme counters $115,000")
 
@@ -367,11 +363,7 @@ async def main() -> None:
              co_r4)
 
         # Update client state
-        client._sessions[session_id]["sequence_number"] = 4
-        client._sessions[session_id]["round_number"] = 4
-        client._sessions[session_id]["current_turn"] = "initiator"
-        client._sessions[session_id]["message_log"].append(co_r4)
-        client._sessions[session_id]["offer_chain"].append(co_r4["protocol_act_hash"])
+        client.process_incoming(session_id, co_r4)
 
         print(f"✓ Round 2: TechCorp offers $103,000 — Acme counters $105,000 net-45")
 

@@ -4,6 +4,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
+from a2cn.crypto import hash_object
 from tests.conftest import make_session_init, INITIATOR_DID, RESPONDER_DID
 
 A2CN_CT = "application/a2cn+json"
@@ -107,8 +108,23 @@ async def _create_session(client) -> str:
 
 
 def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
-                    in_reply_to=None, msg_id=None, pah="sha256-testhash"):
+                    in_reply_to=None, msg_id=None):
     msg_id = msg_id or str(uuid.uuid4())
+    timestamp = "2026-03-24T10:01:00Z"
+    expires_at = "2030-01-01T00:00:00Z"
+    terms = {"total_value": 9_500_000, "currency": "USD"}
+    protocol_act = {
+        "protocol_version": "0.1",
+        "session_id": session_id,
+        "round_number": rnd,
+        "sequence_number": seq,
+        "message_type": msg_type,
+        "sender_did": sender_did,
+        "timestamp": timestamp,
+        "expires_at": expires_at,
+        "terms": terms,
+    }
+    pah = hash_object(protocol_act)
     msg = {
         "message_type": msg_type,
         "message_id": msg_id,
@@ -118,9 +134,9 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
         "sender_did": sender_did,
         "sender_agent_id": "test-agent",
         "sender_verification_method": f"{sender_did}#key-1",
-        "timestamp": "2026-03-24T10:01:00Z",
-        "expires_at": "2026-03-24T10:16:00Z",
-        "terms": {"total_value": 9_500_000, "currency": "USD"},
+        "timestamp": timestamp,
+        "expires_at": expires_at,
+        "terms": terms,
         "protocol_act_hash": pah,
         "protocol_act_signature": "eyJ...",
     }

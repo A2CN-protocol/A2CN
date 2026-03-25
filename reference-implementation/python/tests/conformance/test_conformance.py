@@ -37,9 +37,23 @@ async def _create_session(client) -> str:
 
 
 def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
-           pah=None, msg_id=None):
+           msg_id=None):
     msg_id = msg_id or str(uuid.uuid4())
-    pah = pah or f"sha256-hash-{seq}"
+    timestamp = "2026-03-24T10:00:00Z"
+    expires_at = "2030-01-01T00:00:00Z"
+    terms = {"total_value": 10_000_000, "currency": "USD"}
+    protocol_act = {
+        "protocol_version": "0.1",
+        "session_id": session_id,
+        "round_number": rnd,
+        "sequence_number": seq,
+        "message_type": msg_type,
+        "sender_did": sender_did,
+        "timestamp": timestamp,
+        "expires_at": expires_at,
+        "terms": terms,
+    }
+    pah = hash_object(protocol_act)
     msg = {
         "message_type": msg_type,
         "message_id": msg_id,
@@ -49,9 +63,9 @@ def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
         "sender_did": sender_did,
         "sender_agent_id": "conformance-agent",
         "sender_verification_method": f"{sender_did}#key-1",
-        "timestamp": "2026-03-24T10:00:00Z",
-        "expires_at": "2026-03-24T10:15:00Z",
-        "terms": {"total_value": 10_000_000, "currency": "USD"},
+        "timestamp": timestamp,
+        "expires_at": expires_at,
+        "terms": terms,
         "protocol_act_hash": pah,
         "protocol_act_signature": "eyJ...",
     }
@@ -167,6 +181,23 @@ def test_transaction_record_deterministic():
     }
 
     sess = mgr.create_session(session_id, init_msg, ack_msg, "2026-03-24T10:00:00Z")
+    # Prevent timeout on a session with a historical created_at timestamp
+    sess.session_timeout_seconds = 86400 * 365 * 100
+
+    _offer_timestamp = "2026-03-24T10:01:00Z"
+    _offer_expires = "2030-01-01T00:00:00Z"
+    _offer_terms = {"total_value": 10_500_000, "currency": "USD"}
+    _offer_pah = hash_object({
+        "protocol_version": "0.1",
+        "session_id": session_id,
+        "round_number": 1,
+        "sequence_number": 1,
+        "message_type": "offer",
+        "sender_did": INITIATOR_DID,
+        "timestamp": _offer_timestamp,
+        "expires_at": _offer_expires,
+        "terms": _offer_terms,
+    })
 
     offer_msg = {
         "message_type": "offer",
@@ -177,10 +208,10 @@ def test_transaction_record_deterministic():
         "sender_did": INITIATOR_DID,
         "sender_agent_id": "buyer-agent",
         "sender_verification_method": f"{INITIATOR_DID}#key-1",
-        "timestamp": "2026-03-24T10:01:00Z",
-        "expires_at": "2026-03-24T10:16:00Z",
-        "terms": {"total_value": 10_500_000, "currency": "USD"},
-        "protocol_act_hash": "sha256-conformance-hash",
+        "timestamp": _offer_timestamp,
+        "expires_at": _offer_expires,
+        "terms": _offer_terms,
+        "protocol_act_hash": _offer_pah,
         "protocol_act_signature": "eyJ...",
     }
 
@@ -192,7 +223,7 @@ def test_transaction_record_deterministic():
         "round_number": 1,
         "sequence_number": 2,
         "accepted_offer_id": "offer-1",
-        "accepted_protocol_act_hash": "sha256-conformance-hash",
+        "accepted_protocol_act_hash": _offer_pah,
         "sender_did": RESPONDER_DID,
         "sender_agent_id": "seller-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",

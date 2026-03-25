@@ -294,6 +294,31 @@ class A2CNClient:
         )
         return generate_transaction_record(mock_session)
 
+    def process_incoming(self, session_id: str, message: dict) -> None:
+        """
+        Record an incoming message from the counterparty into client-side session state.
+        Must be called for every received offer/counteroffer/acceptance so that
+        build_client_side_record() produces the correct offer_chain_hash.
+        Fix 5.8: replaces manual state patching in examples.
+        """
+        state = self._sessions[session_id]
+        msg_type = message.get("message_type", "")
+
+        state["message_log"].append(message)
+
+        if msg_type in ("offer", "counteroffer"):
+            pah = message.get("protocol_act_hash")
+            if pah:
+                state["offer_chain"].append(pah)
+            state["sequence_number"] = message.get("sequence_number", state["sequence_number"])
+            state["round_number"] = message.get("round_number", state["round_number"])
+            state["latest_offer"] = message
+            # Flip turn back to initiator after a responder counteroffer
+            state["current_turn"] = "initiator"
+        elif msg_type == "acceptance":
+            state["sequence_number"] = message.get("sequence_number", state["sequence_number"])
+            state["current_turn"] = "none"
+
     async def close(self) -> None:
         await self._http.aclose()
 

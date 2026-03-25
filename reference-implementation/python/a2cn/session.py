@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from a2cn.crypto import hash_object
+
 
 # ---------------------------------------------------------------------------
 # States (Section 8.2)
@@ -61,6 +63,7 @@ class Session:
     # Timing
     session_created_at: str = ""
     state_updated_at: str = ""
+    session_timeout_seconds: int = 3600
 
     # Session params (for GET /sessions/{id} response)
     session_params: dict = field(default_factory=dict)
@@ -143,15 +146,17 @@ class SessionManager:
         session_ack: dict,
         now: str,
     ) -> Session:
-        params = session_init.get("session_params", {})
+        # Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
+        accepted = session_ack.get("session_params_accepted", session_init.get("session_params", {}))
         session = Session(
             session_id=session_id,
             state=SessionState.ACTIVE,
             current_turn="initiator",
-            max_rounds=params.get("max_rounds", 10),
+            max_rounds=accepted.get("max_rounds", 10),
+            session_timeout_seconds=accepted.get("session_timeout_seconds", 3600),
             session_created_at=now,
             state_updated_at=now,
-            session_params=session_ack.get("session_params_accepted", params),
+            session_params=accepted,
             initiator_info=session_init.get("initiator", {}),
             responder_info=session_ack.get("responder", {}),
             initiator_mandate=session_init.get("initiator_mandate", {}),
@@ -169,6 +174,55 @@ class SessionManager:
     # Message processing — the state machine
     # ------------------------------------------------------------------
 
+    _VALID_MESSAGE_TYPES = frozenset(
+        {"offer", "counteroffer", "acceptance", "rejection", "withdrawal"}
+    )
+
+    def _validate_message(self, session: Session, message: dict) -> None:
+        """Basic type and field validation before any state-machine logic (finding 4.1)."""
+        message_id = message.get("message_id")
+        message_type = message.get("message_type", "")
+
+        if message_type not in self._VALID_MESSAGE_TYPES:
+            raise A2CNError(
+                "WRONG_MESSAGE_TYPE",
+                f"Invalid message_type: {message_type!r}",
+                422,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+
+        sender_did = message.get("sender_did", "")
+        if not isinstance(sender_did, str) or not sender_did.startswith("did:"):
+            raise A2CNError(
+                "INVALID_REQUEST",
+                f"sender_did must be a non-empty DID string, got {sender_did!r}",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+
+        # sequence_number and round_number are required on offer-type messages
+        if message_type in ("offer", "counteroffer", "acceptance", "rejection"):
+            seq = message.get("sequence_number")
+            if not isinstance(seq, int) or seq < 1:
+                raise A2CNError(
+                    "INVALID_REQUEST",
+                    f"sequence_number must be a positive integer, got {seq!r}",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
+            rnd = message.get("round_number")
+            if not isinstance(rnd, int) or rnd < 1:
+                raise A2CNError(
+                    "INVALID_REQUEST",
+                    f"round_number must be a positive integer, got {rnd!r}",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
+
     def process_message(self, session: Session, message: dict) -> dict:
         """
         Apply a message to the session state machine.
@@ -179,9 +233,34 @@ class SessionManager:
         message_id = message.get("message_id", "")
         message_type = message.get("message_type", "")
 
-        # Idempotency check
+        # Idempotency check (before validation — a retransmission should always succeed)
         if message_id in session._processed_messages:
             return session._processed_messages[message_id]
+
+        # Input validation (finding 4.1)
+        self._validate_message(session, message)
+
+        # Session timeout check (finding 2.9)
+        if session.session_created_at:
+            try:
+                created = datetime.fromisoformat(
+                    session.session_created_at.replace("Z", "+00:00")
+                )
+                elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+                if elapsed > session.session_timeout_seconds:
+                    session.state = SessionState.TIMED_OUT
+                    session.current_turn = "none"
+                    session.terminal_reason = "session_timeout"
+                    session.state_updated_at = _now()
+                    raise A2CNError(
+                        "SESSION_WRONG_STATE",
+                        "Session has timed out",
+                        409,
+                        session_id=session.session_id,
+                        message_id=message_id,
+                    )
+            except ValueError:
+                pass  # unparseable timestamp — skip timeout check
 
         # Terminal state check
         if session.is_terminal():
@@ -253,7 +332,7 @@ class SessionManager:
         if sender_did == session.responder_info.get("did"):
             return "responder"
         raise A2CNError(
-            "SESSION_WRONG_STATE",
+            "UNAUTHORIZED_SENDER",
             f"Sender DID {sender_did!r} is not a party to this session",
             403,
             session_id=session.session_id,
@@ -273,6 +352,33 @@ class SessionManager:
 
         # Sequence check
         self._check_sequence(session, message)
+
+        # Protocol act hash verification (finding 4.3)
+        claimed_hash = message.get("protocol_act_hash")
+        if claimed_hash:
+            terms = message.get("terms", {})
+            timestamp = message.get("timestamp", "")
+            expires_at = message.get("expires_at", "")
+            protocol_act = {
+                "protocol_version": message.get("protocol_version", "0.1"),
+                "session_id": message.get("session_id", ""),
+                "round_number": message.get("round_number"),
+                "sequence_number": message.get("sequence_number"),
+                "message_type": message_type,
+                "sender_did": sender_did,
+                "timestamp": timestamp,
+                "expires_at": expires_at,
+                "terms": terms,
+            }
+            expected_hash = hash_object(protocol_act)
+            if claimed_hash != expected_hash:
+                raise A2CNError(
+                    "INVALID_SIGNATURE",
+                    "Protocol act hash does not match message fields",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
 
         # Message type check: round 1 must be "offer", round 2+ must be "counteroffer"
         if round_number == 1:
@@ -339,8 +445,7 @@ class SessionManager:
         # Log the message
         session._message_log.append(message)
 
-        response = {"status": "received", "session_id": session.session_id, "sequence_number": sequence_number}
-        return response
+        return session.to_state_dict()
 
     def _handle_acceptance(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
@@ -348,6 +453,16 @@ class SessionManager:
         sequence_number = message.get("sequence_number")
         accepted_offer_id = message.get("accepted_offer_id")
         accepted_hash = message.get("accepted_protocol_act_hash")
+
+        # State guard: acceptance only valid in NEGOTIATING (finding 2.8)
+        if session.state != SessionState.NEGOTIATING:
+            raise A2CNError(
+                "SESSION_WRONG_STATE",
+                f"Acceptance not valid in state {session.state}",
+                409,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
 
         sender_role = self._sender_role(session, sender_did)
 
@@ -381,6 +496,23 @@ class SessionManager:
             None,
         )
 
+        # Offer expiry check (finding 4.2)
+        if final_offer:
+            expires_at_str = final_offer.get("expires_at")
+            if expires_at_str:
+                try:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                    if datetime.now(timezone.utc) > expires_at:
+                        raise A2CNError(
+                            "OFFER_EXPIRED",
+                            f"Offer {accepted_offer_id!r} has expired",
+                            422,
+                            session_id=session.session_id,
+                            message_id=message_id,
+                        )
+                except ValueError:
+                    pass  # unparseable expiry — skip check
+
         now = _now()
         session.sequence_number = sequence_number
         session.state = SessionState.COMPLETED
@@ -393,13 +525,23 @@ class SessionManager:
         session._final_acceptance = message
         session._message_log.append(message)
 
-        return {"status": "accepted", "session_id": session.session_id, "sequence_number": sequence_number}
+        return session.to_state_dict()
 
     def _handle_rejection(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
         sender_did = message.get("sender_did", "")
         round_number = message.get("round_number")
         sequence_number = message.get("sequence_number")
+
+        # State guard: rejection only valid in NEGOTIATING (finding 2.8)
+        if session.state != SessionState.NEGOTIATING:
+            raise A2CNError(
+                "SESSION_WRONG_STATE",
+                f"Rejection not valid in state {session.state}",
+                409,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
 
         sender_role = self._sender_role(session, sender_did)
 
@@ -427,7 +569,7 @@ class SessionManager:
         session.state_updated_at = now
         session._message_log.append(message)
 
-        return {"status": "rejected", "session_id": session.session_id, "sequence_number": sequence_number}
+        return session.to_state_dict()
 
     def _handle_withdrawal(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
@@ -446,7 +588,7 @@ class SessionManager:
         session.state_updated_at = now
         session._message_log.append(message)
 
-        return {"status": "withdrawn", "session_id": session.session_id}
+        return session.to_state_dict()
 
 
 # ---------------------------------------------------------------------------
