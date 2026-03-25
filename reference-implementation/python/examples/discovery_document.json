@@ -1,0 +1,19 @@
+{
+  "a2cn_version": "0.1",
+  "conformance_level": 2,
+  "organization": {
+    "name": "Acme Corp",
+    "did": "did:web:acme-corp.com",
+    "legal_jurisdiction": "US"
+  },
+  "endpoint": "http://localhost:8000",
+  "deal_types": ["saas_renewal", "services_contract"],
+  "mandate_methods": ["declared"],
+  "verification_method": "did:web:acme-corp.com#key-2026-01",
+  "max_rounds_by_deal_type": {
+    "saas_renewal": 5,
+    "services_contract": 10
+  },
+  "contact": "a2cn@acme-corp.com",
+  "updated_at": "2026-03-24T00:00:00Z"
+}
