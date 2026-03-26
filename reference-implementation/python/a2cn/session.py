@@ -360,7 +360,7 @@ class SessionManager:
             timestamp = message.get("timestamp", "")
             expires_at = message.get("expires_at", "")
             protocol_act = {
-                "protocol_version": message.get("protocol_version", "0.1"),
+                "protocol_version": "0.1",  # Section 7.3.1: always "0.1" for this spec version
                 "session_id": message.get("session_id", ""),
                 "round_number": message.get("round_number"),
                 "sequence_number": message.get("sequence_number"),
@@ -594,6 +594,25 @@ class SessionManager:
 # ---------------------------------------------------------------------------
 # Error type
 # ---------------------------------------------------------------------------
+
+# Error codes used in this implementation and their spec references:
+#   SESSION_NOT_FOUND       — 404  — spec Section 12.2
+#   SESSION_WRONG_STATE     — 409  — spec Section 12.2
+#   NOT_YOUR_TURN           — 409  — spec Section 12.2
+#   SEQUENCE_ERROR          — 422  — spec Section 12.2
+#   OFFER_HASH_MISMATCH     — 400  — spec Section 12.2
+#   OFFER_EXPIRED           — 422  — spec Section 12.2
+#   ROUND_LIMIT_EXCEEDED    — 422  — spec Section 12.2
+#   WRONG_MESSAGE_TYPE      — 422  — spec Section 12.2
+#   INVALID_SIGNATURE       — 400  — spec Section 12.2
+#   DEAL_TYPE_NOT_SUPPORTED — 403  — spec Section 12.2
+#   MANDATE_INVALID         — 403  — spec Section 12.2
+#   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.2
+#   UNAUTHORIZED_SENDER     — 403  — spec Section 12.2
+#   INVALID_REQUEST         — 400  — extension (not in spec Section 12.2 table);
+#                                     used for malformed input that fails basic
+#                                     validation before any protocol logic runs
+
 
 class A2CNError(Exception):
     """Protocol error with A2CN error code, HTTP status, and context."""

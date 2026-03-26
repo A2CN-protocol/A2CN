@@ -301,6 +301,11 @@ class A2CNClient:
         build_client_side_record() produces the correct offer_chain_hash.
         Fix 5.8: replaces manual state patching in examples.
         """
+        if message.get("session_id") and message["session_id"] != session_id:
+            raise ValueError(
+                f"Message session_id mismatch: expected {session_id!r}, "
+                f"got {message['session_id']!r}"
+            )
         state = self._sessions[session_id]
         msg_type = message.get("message_type", "")
 
