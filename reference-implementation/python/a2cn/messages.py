@@ -42,6 +42,7 @@ class SessionParams:
     round_timeout_seconds: int
     subject_reference: str | None = None
     estimated_value: int | None = None
+    impasse_threshold: int | None = None
 
     def to_dict(self) -> dict:
         return _drop_none({
@@ -53,6 +54,7 @@ class SessionParams:
             "max_rounds": self.max_rounds,
             "session_timeout_seconds": self.session_timeout_seconds,
             "round_timeout_seconds": self.round_timeout_seconds,
+            "impasse_threshold": self.impasse_threshold,
         })
 
 

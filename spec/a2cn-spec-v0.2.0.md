@@ -1,9 +1,9 @@
 # A2CN Protocol Specification
 
-**Version:** 0.1.3  
+**Version:** 0.2.0  
 **Status:** Draft — Not for production use  
-**Date:** 2026-03-24  
-**Previous version:** 0.1.2  
+**Date:** 2026-03-26  
+**Previous version:** 0.1.3  
 **License:** Apache 2.0  
 **Repository:** https://github.com/a2cn/a2cn  
 **Schemas:** https://github.com/a2cn/a2cn/tree/main/spec/schemas
@@ -58,13 +58,15 @@ per RFC 8615. Registration will be submitted concurrent with the v0.2 release.
 8. Component 5: Session State Machine
 9. Component 6: Transaction Record
 10. Component 7: Audit Log
-11. Transport Binding
-12. Error Handling
-13. Security Considerations
-14. Open Questions
-15. Relationship to Other Protocols
-16. Conformance
-17. Changelog
+11. Component 8: Session Invitation *(new in v0.2)*
+12. Transport Binding
+13. Error Handling
+14. Security Considerations
+15. Open Questions
+16. Relationship to Other Protocols
+17. Conformance
+18. Normative JSON Schemas
+19. Changelog
 
 ---
 
@@ -73,9 +75,22 @@ per RFC 8615. Registration will be submitted concurrent with the v0.2 release.
 ### 1.1 Background
 
 Autonomous AI agents are being deployed by enterprises to negotiate, procure, and
-commit to commercial terms. Platforms such as Pactum, Zip, Tropic, and Inventive AI
-are in production use. Every major enterprise software vendor — SAP, Salesforce,
-Oracle, Coupa — has shipped agents capable of autonomous commercial action.
+commit to commercial terms at scale. Buyer-side platforms — Pactum, Fairmarkit,
+Zip, Arkestro — are in production use across Global 2000 companies. Seller-side
+infrastructure is emerging rapidly: Salesforce Revenue Cloud's Agentforce for
+Revenue generates quotes from natural language; Microsoft Dynamics 365's ERP MCP
+Server (GA February 2026) exposes pricing and order logic to any MCP-compatible
+agent; Luminance's Autonomous Negotiation handles contract language bilaterally.
+Every major enterprise software vendor — SAP, Salesforce, Oracle, Coupa — has
+shipped APIs and agent capabilities that participate in commercial workflows.
+
+The buyer-side platforms have reached a specific architectural limit. Platforms such
+as Fairmarkit and Pactum conduct negotiations by sending email invitations to human
+supplier representatives. When a supplier deploys their own autonomous agent, this
+interface breaks: agents do not receive emails or navigate supplier web portals. The
+seller-side platforms, conversely, generate quotes and offers but have no mechanism
+to transmit those offers to buyer agents as machine-readable, signed, negotiable
+messages.
 
 These agents are built on different platforms, by different vendors, using different
 internal schemas. When a buyer agent deployed by one organization encounters a seller
@@ -88,18 +103,27 @@ governs their interaction. The result is one of:
 
 This is the cross-platform agent-to-agent commercial negotiation gap that A2CN fills.
 
+**The invitation problem:** A further gap exists in the current discovery model. The
+pull-based `/.well-known/a2cn-agent` mechanism requires both parties to have
+independently deployed A2CN endpoints before they can negotiate. This creates a
+cold-start problem for adoption. A2CN v0.2 introduces the Session Invitation
+component (Component 8) to address this: a buyer agent can send a structured,
+signed invitation to a supplier through any delivery channel, enabling the supplier
+to activate A2CN capability in response to a specific negotiation request.
+
 ### 1.2 The Problem in Detail
 
 Existing protocols do not address this gap:
 
 | Protocol | Layer | Covers B2B Negotiation? |
 |----------|-------|------------------------|
-| MCP | Agent-to-tool | No |
+| MCP | Agent-to-tool | No — tool access only |
 | A2A | Agent communication | No — capability negotiation only |
-| UCP | Consumer retail checkout | No — confirmed absent from roadmap |
-| ACP (OpenAI/Stripe) | Consumer checkout | No |
+| UCP | Consumer retail checkout | No — B2C only, confirmed absent from roadmap |
+| ACP (OpenAI/Stripe/PayPal) | Consumer checkout | No — B2C only |
 | AP2 | Payment execution | No — downstream of agreement |
-| ANP | Agent network discovery | No |
+| Dynamics 365 ERP MCP Server | Seller-side ERP access | No — internal tool access, no bilateral protocol |
+| Revenue Cloud Pricing API | Seller-side quote generation | No — generates quotes, no negotiation exchange |
 
 The specific problems A2CN solves:
 
@@ -118,6 +142,9 @@ The specific problems A2CN solves:
    the evidentiary record needed for resolution does not exist
 7. **No discovery mechanism** — agents cannot determine whether a counterparty has
    an agent-capable endpoint
+8. **No adoption pathway for undeployed counterparties** — the pull-based discovery
+   model requires both parties to independently deploy A2CN endpoints before they
+   meet, creating a cold-start barrier to network growth (addressed by Component 8)
 
 ### 1.3 Design Philosophy
 
@@ -142,7 +169,19 @@ of the negotiation, without additional instrumentation.
 
 ### 1.4 Scope
 
-**In scope for v0.1:**
+**In scope for v0.2 (new additions over v0.1):**
+- Session Invitation component (Component 8) — push-based invitation enabling
+  adoption by parties without pre-deployed A2CN endpoints
+- Deal-type-specific terms schemas for `goods_procurement` and `saas_renewal`
+  (OQ-004, now resolved)
+- Deal type registry (OQ-001, now resolved)
+- Configurable impasse threshold (OQ-005, now resolved)
+- Platform integration guidance: Salesforce Revenue Cloud, Microsoft Dynamics 365,
+  Fairmarkit, and A2A extension pattern (Section 15)
+- MESO (Multiple Equivalent Simultaneous Offers) terms extension
+- Webhook callbacks promoted from RECOMMENDED to REQUIRED at Level 2
+
+**In scope for v0.1 (carried forward):**
 - Discovery of A2CN-capable endpoints
 - Session initiation and lifecycle management
 - Offer and counteroffer exchange with explicit turn-taking
@@ -153,7 +192,7 @@ of the negotiation, without additional instrumentation.
 - Error handling and session termination
 - Idempotency rules for retried requests
 
-**Out of scope for v0.1:**
+**Out of scope (carried forward from v0.1):**
 - Negotiation strategy or pricing logic
 - Multi-party negotiations (more than two parties)
 - Partial acceptance of individual offer terms (all-or-nothing per round)
@@ -162,7 +201,6 @@ of the negotiation, without additional instrumentation.
 - Payment execution (handled by AP2 or ACP downstream)
 - Dispute resolution procedures
 - Evaluation phase (post-delivery quality assessment)
-- VC Data Model 2.0 / JOSE/COSE profile (planned for v0.2)
 
 ---
 
@@ -1733,7 +1771,251 @@ This minimizes data retention obligations while preserving auditability.
 
 ---
 
-## 11. Transport Binding
+## 11. Component 8: Session Invitation *(new in v0.2)*
+
+### 11.1 Overview
+
+The pull-based discovery model (Component 1) requires both parties to have
+independently deployed `/.well-known/a2cn-agent` endpoints before a session
+can be initiated. This creates a cold-start barrier: two organizations can
+only negotiate via A2CN if both have already adopted the protocol.
+
+Component 8 introduces a complementary push-based pattern. An inviting party
+(typically the buyer) sends a `SessionInvitation` message to a counterparty
+through any delivery channel — direct HTTP, email, the Meeting Place invitation
+service, or an existing procurement platform webhook. The receiving party
+evaluates the invitation, optionally activates or provisions an A2CN endpoint,
+and responds with their endpoint details. The inviting party then proceeds with
+a standard `SessionInit` (Component 3).
+
+**The invitation does not replace the session initiation flow.** It is a
+pre-session handshake that enables adoption by parties without pre-deployed
+endpoints. Once both endpoints are known, the standard A2CN session protocol
+applies unchanged.
+
+### 11.2 SessionInvitation Message
+
+A `SessionInvitation` is a signed JSON document transmitted to a counterparty
+before session initiation. It MUST be signed using the inviting party's DID key
+so the recipient can verify its authenticity.
+
+```json
+{
+  "message_type": "session_invitation",
+  "invitation_id": "uuid-v4",
+  "a2cn_version": "0.2",
+  "inviter_did": "did:web:buyer.example",
+  "inviter_endpoint": "https://buyer.example/api/a2cn",
+  "inviter_discovery_url": "https://buyer.example/.well-known/a2cn-agent",
+  "proposed_deal_type": "goods_procurement",
+  "proposed_session_params": {
+    "currency": "USD",
+    "max_rounds": 5,
+    "session_timeout_seconds": 86400,
+    "round_timeout_seconds": 3600
+  },
+  "proposed_terms_summary": {
+    "description": "Industrial hydraulic fluid — 200L drums, quantity 50",
+    "estimated_value": 18000,
+    "currency": "USD"
+  },
+  "inviter_mandate_summary": {
+    "mandate_type": "declared",
+    "max_commitment_value": 25000,
+    "authorized_deal_types": ["goods_procurement"]
+  },
+  "invitation_expires_at": "2026-04-03T17:00:00Z",
+  "accept_endpoint": "https://buyer.example/api/a2cn/invitations/{invitation_id}/accept",
+  "decline_endpoint": "https://buyer.example/api/a2cn/invitations/{invitation_id}/decline",
+  "inviter_verification_method": "did:web:buyer.example#key-2026-01",
+  "invitation_signature": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+#### 11.2.1 Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message_type` | string | MUST be `"session_invitation"` |
+| `invitation_id` | string | UUID v4 — unique identifier for this invitation |
+| `a2cn_version` | string | MUST be `"0.2"` or later |
+| `inviter_did` | string | DID of the inviting party |
+| `inviter_endpoint` | string | HTTPS URL where the inviter's A2CN responder can be reached |
+| `inviter_discovery_url` | string | URL of inviter's `/.well-known/a2cn-agent` document |
+| `proposed_deal_type` | string | Deal type string from inviter's discovery document |
+| `proposed_session_params` | object | Proposed session parameters (non-binding; may be negotiated in SessionInit) |
+| `proposed_terms_summary` | object | Human-readable summary of what is being negotiated |
+| `inviter_mandate_summary` | object | Summary of the inviter's mandate authority |
+| `invitation_expires_at` | string | ISO 8601 UTC timestamp after which invitation is void |
+| `accept_endpoint` | string | HTTPS URL to POST acceptance to |
+| `decline_endpoint` | string | HTTPS URL to POST decline to |
+| `inviter_verification_method` | string | Verification method ID used to sign the invitation |
+| `invitation_signature` | string | Base64url-encoded ES256 signature over the canonical invitation object |
+
+#### 11.2.2 Invitation Signature
+
+The invitation MUST be signed before transmission. Signing procedure:
+
+1. Construct the invitation object with all required fields EXCEPT `invitation_signature`
+2. Serialize to canonical JSON using RFC 8785 JCS
+3. Compute SHA-256 hash of the canonical bytes
+4. Sign the hash with ES256 using the key identified by `inviter_verification_method`
+5. Base64url-encode the signature and set as `invitation_signature`
+
+Recipients MUST:
+1. Resolve the inviter's DID document to obtain the public key at `inviter_verification_method`
+2. Verify the signature against the canonical invitation object (excluding `invitation_signature`)
+3. Reject invitations with invalid signatures with HTTP 400
+
+Recipients MUST NOT act on invitations that fail signature verification.
+
+#### 11.2.3 Invitation Lifecycle
+
+```
+                    ┌────────────┐
+                    │  PENDING   │ ← invitation delivered
+                    └──────┬─────┘
+             ┌─────────────┼─────────────┐
+             │             │             │
+        ┌────▼─────┐  ┌────▼─────┐  ┌───▼──────┐
+        │ ACCEPTED │  │ DECLINED │  │ EXPIRED  │
+        └──────────┘  └──────────┘  └──────────┘
+              │
+              ▼
+        Standard SessionInit
+        proceeds (Component 3)
+```
+
+Invitations MUST expire at `invitation_expires_at`. Expired invitations MUST
+NOT be processed. Implementations SHOULD delete invitation state 30 days after
+expiry.
+
+### 11.3 Invitation Acceptance
+
+The invited party responds to an invitation by POSTing an acceptance to the
+`accept_endpoint`. The acceptance tells the inviting party where to send the
+`SessionInit`.
+
+```json
+{
+  "message_type": "invitation_acceptance",
+  "invitation_id": "uuid-v4 (echoed from invitation)",
+  "acceptor_did": "did:web:seller.example",
+  "acceptor_a2cn_endpoint": "https://seller.example/api/a2cn",
+  "acceptor_discovery_url": "https://seller.example/.well-known/a2cn-agent",
+  "accepted_at": "2026-04-02T09:14:22Z",
+  "acceptor_verification_method": "did:web:seller.example#key-2026-01",
+  "acceptance_signature": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+The acceptance MUST be signed using the same procedure as the invitation
+signature (Section 11.2.2), using the acceptor's DID key.
+
+Upon receiving a valid acceptance, the inviting party MUST:
+1. Verify the `invitation_id` matches a pending invitation
+2. Verify the acceptance signature against the acceptor's DID document
+3. Verify `accepted_at` is before `invitation_expires_at`
+4. Proceed with a standard `SessionInit` (Section 6) directed at `acceptor_a2cn_endpoint`
+
+The inviting party's `SessionInit` MUST reference `invitation_id` in the optional
+`invitation_id` field so the acceptor can correlate the session with the invitation.
+
+### 11.4 Invitation Decline
+
+The invited party MAY decline an invitation by POSTing to the `decline_endpoint`:
+
+```json
+{
+  "message_type": "invitation_decline",
+  "invitation_id": "uuid-v4 (echoed from invitation)",
+  "reason_code": "DEAL_TYPE_NOT_SUPPORTED | MANDATE_INSUFFICIENT | CAPACITY | OTHER",
+  "reason_message": "Human-readable explanation (optional)",
+  "declined_at": "2026-04-02T09:14:22Z"
+}
+```
+
+Declines are informational. The inviting party SHOULD record the decline for
+audit purposes. The inviting party MAY fall back to alternative negotiation
+channels (email, supplier portal) after receiving a decline.
+
+### 11.5 Invitation Delivery Channels
+
+The A2CN protocol defines the `SessionInvitation` message format and lifecycle.
+It does not mandate a specific delivery mechanism. Implementations MUST support
+at least one of the following delivery channels:
+
+**Direct HTTP:** Inviting party POSTs the `SessionInvitation` to a known HTTPS
+endpoint at the counterparty's domain. Appropriate when the counterparty has a
+known web presence but no A2CN endpoint yet.
+
+**Meeting Place Delivery:** The inviting party submits the `SessionInvitation`
+to the Meeting Place's invitation service, which delivers via the counterparty's
+preferred channel (email, webhook, or directly if they have a registered endpoint).
+The Meeting Place records the invitation and acceptance/decline for audit purposes.
+This is the RECOMMENDED delivery channel for counterparties without known A2CN
+endpoints.
+
+**Platform Webhook Integration:** Buyer-side procurement platforms (e.g., Fairmarkit,
+Zip) MAY deliver `SessionInvitation` documents through existing supplier webhook
+infrastructure. When a sourcing event is initiated, the platform delivers both a
+traditional supplier invitation AND a machine-readable `SessionInvitation` to the
+same supplier endpoint. Suppliers that have an A2CN-capable webhook handler can
+accept via A2CN; others receive only the traditional invitation.
+
+**Example: Fairmarkit Integration Pattern**
+
+When Fairmarkit initiates a sourcing event, for each invited supplier it:
+
+1. Checks `/.well-known/a2cn-agent` at the supplier's domain
+2. If the endpoint exists: initiates standard A2CN `SessionInit` directly
+3. If the endpoint does not exist: delivers `SessionInvitation` via:
+   - The `BID_CREATED` webhook (if the supplier has configured a webhook URL in Fairmarkit)
+   - The Fairmarkit email invitation (with the `SessionInvitation` JSON as an attachment)
+   - The Meeting Place invitation service (if configured)
+
+The supplier's A2CN agent, upon receiving the `SessionInvitation`, responds to
+the `accept_endpoint`. Fairmarkit's buyer agent then sends a `SessionInit` to the
+supplier's newly-activated endpoint. The resulting A2CN transaction record is
+submitted back to Fairmarkit via `POST /self-service/api/v3/responses/...` as the
+award data.
+
+### 11.6 Hosted Endpoint Provisioning (Meeting Place Pattern)
+
+The Meeting Place MAY offer hosted A2CN endpoint provisioning to allow suppliers
+to participate in A2CN sessions without deploying their own server infrastructure.
+When a supplier accepts an invitation through the Meeting Place's interface:
+
+1. The Meeting Place provisions a session-scoped A2CN endpoint on the supplier's behalf
+2. The supplier configures negotiation parameters via a web interface: minimum acceptable
+   price, maximum discount percentage, acceptable payment terms, delivery flexibility
+3. The Meeting Place's hosted agent conducts the session within these constraints
+4. The resulting transaction record notes `"hosted_endpoint": true` and `"hosted_by": "meeting-place.a2cn.dev"`
+5. Both parties receive the standard dual-signed transaction record
+
+**Mandate for hosted endpoints:** The Meeting Place MUST generate a Tier 1
+(Declared) mandate scoped to the parameters the supplier has configured. The
+mandate's `max_commitment_value` MUST NOT exceed what the supplier explicitly
+authorized. The Meeting Place MUST NOT commit to terms outside the supplier's
+configured bounds.
+
+Hosted endpoint sessions are fully interoperable with self-hosted A2CN endpoints.
+The buyer agent cannot distinguish a hosted endpoint from a self-hosted one
+at the protocol level.
+
+### 11.7 Invitation Error Codes
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `INVITATION_EXPIRED` | 410 | Invitation `invitation_expires_at` has passed |
+| `INVITATION_NOT_FOUND` | 404 | `invitation_id` not recognized |
+| `INVITATION_SIGNATURE_INVALID` | 400 | Signature verification failed |
+| `INVITATION_ALREADY_ANSWERED` | 409 | Invitation already accepted or declined |
+| `INVITATION_VERSION_MISMATCH` | 400 | `a2cn_version` not supported |
+
+---
+
+## 12. Transport Binding
 
 ### 11.1 HTTP/REST Binding (Normative)
 
@@ -1991,49 +2273,169 @@ This is an implementation concern, not a protocol concern.
 
 ---
 
-## 14. Open Questions
+## 15. Open Questions
 
 Open questions carry stable IDs across versions. Resolved questions are marked
 with their resolution version rather than being renumbered.
 
 | ID | Question | Status | Resolution / Proposed |
 |----|----------|--------|-----------------------|
-| OQ-001 | Deal type registry vs convention | Open | Registry in v0.2 |
-| OQ-002 | Max value threshold protocol cap | Open | $10K USD equivalent cap |
+| OQ-001 | Deal type registry vs convention | **RESOLVED v0.2** | Registry published at `a2cn.dev/registry/deal-types`. Core types: `saas_renewal`, `goods_procurement`, `services_engagement`, `logistics_rate`. Community-submitted types via GitHub PR. |
+| OQ-002 | Max value threshold protocol cap | Open | $10K USD equivalent cap under consideration; v0.3 |
 | OQ-003 | DID resolver fallback when temporarily unavailable | Open | 24h cache allowed |
-| OQ-004 | Deal-type-specific terms schemas | Open | Extensions in v0.2 |
-| OQ-005 | Configurable impasse threshold | Open | Configurable in v0.2 |
-| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1; Meeting Place in v0.2 |
+| OQ-004 | Deal-type-specific terms schemas | **RESOLVED v0.2** | `goods_procurement` and `saas_renewal` schemas defined in Section 18 and `spec/schemas/terms/`. Additional types via extension pattern. |
+| OQ-005 | Configurable impasse threshold | **RESOLVED v0.2** | `impasse_threshold` field added to `session_params`. Default 3 consecutive rounds with no movement triggers IMPASSE state. Configurable 1–10. |
+| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; Meeting Place in v0.3 |
 | OQ-007 | Neutral transaction record storage (original) | **RESOLVED v0.1.1** | Bilateral storage correct for v0.1 |
-| OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED |
+| OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED; promoted to REQUIRED at Level 2 in v0.2 |
+| OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
+| OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
+| OQ-011 | A2CN as A2A extension | Open | A2A's extension system supports profile extensions (DataPart schemas) and method extensions (new RPC methods). A2CN's offer exchange and session state machine could be implemented as an A2A extension. Proposal to A2A governance pending. |
+| OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
+| OQ-013 | DID VC mandate for hosted endpoints | Open | When the Meeting Place hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the Meeting Place can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
 
 Submit feedback via GitHub issues tagged `open-question`.
 
 ---
 
-## 15. Relationship to Other Protocols
+## 16. Relationship to Other Protocols
 
-### 15.1 MCP
+### 16.1 MCP (Model Context Protocol)
 
-A2CN and MCP are complementary. During an A2CN negotiation, agents use MCP to
-access internal data (contract databases, pricing engines, inventory). MCP governs
-the agent's connection to its own tools. A2CN governs the exchange between agents.
+A2CN and MCP are complementary and operate at different layers. During an A2CN
+negotiation, each party's agent uses MCP to access its own internal systems —
+pricing engines, inventory databases, mandate repositories, ERP data. MCP governs
+the agent-to-tool connection. A2CN governs the agent-to-agent exchange.
 
-A2CN SHOULD be implemented as an MCP tool so MCP-compatible agents can invoke
-A2CN sessions via standard tool-calling.
+A2CN SHOULD be implemented as an MCP tool so MCP-compatible agents can initiate
+A2CN sessions via standard tool-calling. Any agent framework that supports MCP
+(LangChain, CrewAI, Salesforce Agentforce, Microsoft Copilot Studio) can then
+invoke A2CN sessions without requiring protocol-specific SDK integration.
 
-### 15.2 A2A
+**Microsoft Dynamics 365 ERP MCP Server integration pattern:**
+The Dynamics 365 ERP MCP server (GA February 2026) exposes pricing, inventory,
+and order creation logic through MCP Action tools. An A2CN-compatible seller agent
+built on Dynamics 365 uses the following integration pattern:
 
-The recommended integration pattern: use A2A for agent discovery and initial
-communication, then invoke A2CN as a specialized A2A task type for the commercial
-negotiation phase. A2CN SHOULD be proposed to the A2A governance process as a
-commercial semantics extension.
+```
+A2CN SessionInit received
+  → MCP Action tool: NegotiationResponseCalculator
+     input: {buyer_offer_price, quantity, payment_terms}
+     output: {seller_response_price, minimum_acceptable, discount_bounds}
+  → A2CN Offer generated from output
+  → A2CN session continues
+
+A2CN Acceptance received
+  → A2CN Transaction Record generated
+  → MCP Action tool: CreateOrderFromAgreement
+     input: {agreed_terms from transaction_record.agreed_terms}
+  → ERP order created
+```
+
+The MCP Action tools are custom classes implementing the `ICustomAPI` interface,
+registered through the Dynamics 365 ERP MCP server's `api_find_actions` /
+`api_invoke_action` mechanism. The A2CN adapter layer calls these tools rather
+than implementing pricing logic directly.
+
+### 16.2 A2A (Agent-to-Agent Protocol)
+
+A2A (Google/Linux Foundation, v0.3, 21,700+ GitHub stars) is the emerging
+standard for agent-to-agent communication and capability negotiation. A2A and
+A2CN are complementary: use A2A for agent discovery and initial communication,
+then invoke A2CN as a specialized task type for the commercial negotiation phase.
 
 A2CN should not be confused with A2A's internal "negotiation" — A2A's negotiation
 is capability negotiation (what features do you support), not commercial negotiation
 (what price will you accept).
 
-### 15.3 AP2
+**A2A Extension Pattern:** A2A's extension system supports three extension types:
+- **Profile extensions:** Require DataParts to follow specific schemas
+- **Method extensions:** Add new RPC methods and state machines
+- **Data-only extensions:** Add fields to AgentCards
+
+A2CN's offer/counteroffer schema is a profile extension. A2CN's session state
+machine is a method extension. A2CN's discovery document fields map to data-only
+AgentCard extensions. A formal A2A extension proposal implementing A2CN as an A2A
+extension is pending with A2A governance (see OQ-011).
+
+**Precedent:** UCP (Universal Commerce Protocol) and AP2 (payment authorization)
+are both implemented as A2A extensions. The pattern is documented and supported.
+
+### 16.3 Salesforce Revenue Cloud / Agentforce for Revenue
+
+Salesforce Revenue Cloud Advanced (API-first, headless architecture) exposes
+quote and pricing logic through documented REST endpoints:
+
+```
+POST /services/data/v65.0/connect/qoc/sales-transactions
+GET  /services/data/v65.0/connect/pricing/...
+POST /services/data/v65.0/connect/qoc/sales-transactions (transactionType: Order)
+```
+
+An A2CN adapter for Salesforce sellers uses the following integration pattern:
+
+```
+A2CN SessionInit received
+  → Revenue Cloud Pricing API: calculate initial offer
+     POST /connect/pricing/...
+     {product_ids, quantity, account_id, requested_discount}
+     → returns {calculated_price, approved_discount_range}
+  → A2CN Offer generated from calculated_price
+
+A2CN Counteroffer received
+  → Revenue Cloud Pricing API: validate proposed terms
+     (is counteroffered price within approved_discount_range?)
+  → A2CN Accept / CounterOffer / Reject based on result
+
+A2CN Agreement reached
+  → A2CN Transaction Record generated (dual-signed)
+  → Revenue Cloud Transaction API: create order from agreement
+     POST /connect/qoc/sales-transactions
+     {transactionType: "Order", agreed_terms from record}
+```
+
+Agentforce for Revenue (launched August 2025) generates quotes from natural
+language via the Agent Builder platform. These quotes can be wrapped in A2CN
+offer messages when the buyer is an agent rather than a human. The quote
+generation and A2CN session management are separate concerns — Revenue Cloud
+produces the offer terms; A2CN provides the bilateral exchange protocol.
+
+### 16.4 Fairmarkit
+
+Fairmarkit's developer API (developers.fairmarkit.com) exposes documented
+webhooks and REST endpoints that enable A2CN integration without requiring
+Fairmarkit platform changes.
+
+**Path A — A2CN as buyer outreach channel:**
+When Fairmarkit initiates a sourcing event, for each supplier it attempts
+discovery at `/.well-known/a2cn-agent`. For A2CN-capable suppliers, the
+buyer agent initiates an A2CN session instead of sending an email invitation.
+The A2CN transaction record's `agreed_terms` are submitted as the award
+via `POST /self-service/api/v3/responses/...`. The ERP writeBack flow is
+unchanged.
+
+**Path B — Supplier-side A2CN agent on Fairmarkit events:**
+Fairmarkit exposes a `BID_CREATED` webhook that fires when a supplier is
+invited to an event. A supplier with an A2CN-capable agent can configure this
+webhook to trigger the Session Invitation acceptance flow. The supplier agent
+processes the sourcing event data, responds to the inviting party's
+`accept_endpoint`, and negotiates via A2CN. The resulting terms are submitted
+to Fairmarkit via the existing response API.
+
+**Data model mapping — Fairmarkit → A2CN `goods_procurement` terms:**
+
+| Fairmarkit field | A2CN `goods_procurement` terms field |
+|-----------------|--------------------------------------|
+| Line item description | `line_items[].description` |
+| Quantity | `line_items[].quantity` |
+| Unit of measure (UOM) | `line_items[].unit_of_measure` |
+| Unit price | `line_items[].unit_price` |
+| Delivery days | `delivery_days` |
+| MFG part number | `line_items[].manufacturer_part_number` |
+| Internal part number | `line_items[].internal_part_number` |
+| Benchmark price | Not transmitted (internal buyer reference) |
+
+### 16.5 AP2
 
 AP2 operates downstream of A2CN. After A2CN generates a transaction record,
 that record provides the agreed terms for AP2's mandate structure:
@@ -2045,11 +2447,32 @@ A2CN session completes
   → AP2 handles payment authorization and execution
 ```
 
-### 15.4 UCP
+### 16.6 Luminance (Contract Formalization)
 
-UCP is a consumer retail checkout protocol. Its published roadmap (confirmed
-January 2026) covers multi-item carts, loyalty programs, and geographic expansion.
-B2B negotiation is not on the UCP roadmap. A2CN does not compete with UCP.
+Luminance's Autonomous Negotiation (spring 2026 full launch) handles bilateral
+contract language negotiation — redlines, clause alternatives, markup acceptance
+— operating within Microsoft Word. A2CN handles the commercial term negotiation
+phase that precedes contract formalization.
+
+The sequential relationship:
+
+```
+A2CN session: agree on price, payment terms, duration, scope
+  → A2CN Transaction Record: dual-signed record of agreed commercial terms
+    → Luminance session: formalize agreed terms into contract language
+      → Signed contract
+```
+
+A2CN transaction records SHOULD be passed to the contract formalization phase
+as the authoritative statement of agreed commercial terms. This eliminates
+re-negotiation of commercial terms during contract drafting — only legal language
+is negotiated, not the underlying economics.
+
+### 16.7 UCP
+
+UCP is a consumer retail checkout protocol. Its published roadmap covers B2C
+scenarios. B2B commercial negotiation is not on the UCP roadmap. A2CN does not
+compete with UCP.
 
 ---
 
@@ -2084,12 +2507,14 @@ compliance with all MUST requirements in Sections 3–13. Declared mandates only
 DID VC mandate verification is not required at Level 1.
 
 **Level 2 — Full:** All Level 1 requirements, plus DID VC mandate verification
-(Section 5.4–5.5), transaction record generation (Section 9), and audit log
-generation (Section 10).
+(Section 5.4–5.5), transaction record generation (Section 9), audit log
+generation (Section 10), and webhook callbacks (Section 12.1.6). Webhooks are
+promoted from RECOMMENDED to REQUIRED at Level 2 in v0.2.
 
-**Level 3 — Extended:** All Level 2 requirements, plus webhook callbacks
-(Section 11.1.6), impasse detection (Section 8.7), and all RECOMMENDED behaviors
-throughout the specification.
+**Level 3 — Extended:** All Level 2 requirements, plus Session Invitation support
+(Component 8, Section 11), impasse detection (Section 8.7), MESO terms support
+(Section 7.2.3), hosted endpoint provisioning (Section 11.6), and all RECOMMENDED
+behaviors throughout the specification.
 
 Implementations MUST declare their conformance level in their discovery document
 using the field `"conformance_level": 1 | 2 | 3`. This field is REQUIRED.
@@ -2133,9 +2558,100 @@ messages that validate against these schemas.
 
 ---
 
-## 18. Changelog
+## 19. Changelog
 
-### v0.1.3 (2026-03-24) — Current
+### v0.2.0 (2026-03-26) — Current
+
+**New: Component 8 — Session Invitation**
+
+Introduced push-based session invitation to address the cold-start adoption
+barrier in the pull-based discovery model. Key additions:
+
+- `SessionInvitation` message type with signed JSON schema, full field
+  specification, and lifecycle (PENDING → ACCEPTED/DECLINED/EXPIRED)
+- `InvitationAcceptance` and `InvitationDecline` message types
+- Invitation signature procedure using RFC 8785 JCS + ES256
+- Three delivery channels defined: Direct HTTP, Meeting Place, Platform Webhook
+- Meeting Place hosted endpoint provisioning pattern (supplier participates
+  in A2CN sessions without deploying their own server)
+- Fairmarkit integration pattern documented as normative example:
+  `BID_CREATED` webhook triggers Session Invitation acceptance; A2CN session
+  terms submitted as Fairmarkit response via `/self-service/api/v3/responses/...`
+- Seven new error codes: `INVITATION_EXPIRED`, `INVITATION_NOT_FOUND`,
+  `INVITATION_SIGNATURE_INVALID`, `INVITATION_ALREADY_ANSWERED`,
+  `INVITATION_VERSION_MISMATCH`
+- `invitation_id` optional field added to `SessionInit` for correlation
+- New conformance schema: `session-invitation.schema.json`,
+  `invitation-acceptance.schema.json`, `invitation-decline.schema.json`
+
+**Resolved open questions:**
+
+- **OQ-001 RESOLVED:** Deal type registry published at `a2cn.dev/registry/deal-types`.
+  Core types: `saas_renewal`, `goods_procurement`, `services_engagement`,
+  `logistics_rate`. Community-submitted types via GitHub PR against the registry file.
+
+- **OQ-004 RESOLVED:** Deal-type-specific terms schemas added:
+  - `goods_procurement` schema adds: `delivery_days`, `unit_of_measure`,
+    `manufacturer_part_number`, `internal_part_number`, `line_items[].quantity`,
+    `line_items[].unit_price` as defined fields with types
+  - `saas_renewal` schema adds: `subscription_tier`, `seat_count`,
+    `support_tier`, `auto_renew_terms`, `uptime_sla_percent` as defined fields
+  - Both schemas published at `spec/schemas/terms/`
+
+- **OQ-005 RESOLVED:** `impasse_threshold` field added to `session_params`.
+  Optional integer, range 1–10, default 3. When `max_rounds - rounds_remaining`
+  consecutive rounds pass with no movement in `total_value` greater than 0.5%,
+  the session transitions to IMPASSE. Both parties receive a `timeout_notification`
+  with `timeout_type: "impasse"`.
+
+**Promoted: Webhooks REQUIRED at Level 2**
+
+Webhook callbacks (Section 12.1.6) promoted from RECOMMENDED to REQUIRED for
+Level 2 conformance. Motivation: enterprise procurement platforms (Pactum,
+Fairmarkit, Zip, SAP) use event-driven architectures where polling is
+operationally inappropriate. Round responses in enterprise procurement can take
+hours; implementations that do not support webhooks cannot interoperate reliably
+with enterprise platforms.
+
+**Section 16 expanded: Relationship to Other Protocols**
+
+Sections substantially rewritten and expanded with concrete integration patterns:
+- Section 16.1 MCP: Added Microsoft Dynamics 365 ERP MCP Server integration
+  pattern with `NegotiationResponseCalculator` and `CreateOrderFromAgreement`
+  action tool pattern
+- Section 16.2 A2A: Added formal A2A extension mechanism description; filed
+  extension proposal with A2A governance (OQ-011)
+- Section 16.3 Salesforce Revenue Cloud: Added integration pattern with
+  `/connect/pricing/...` and `/connect/qoc/sales-transactions` endpoints
+- Section 16.4 Fairmarkit: Added two integration paths (buyer outreach channel;
+  supplier-side agent) with Fairmarkit webhook and API references; added
+  Fairmarkit → A2CN terms field mapping table
+- Section 16.6 Luminance: Documented sequential relationship: A2CN handles
+  commercial term negotiation, Luminance handles contract language formalization
+
+**New open questions:**
+
+- OQ-009: Platform DID proxy model — how buyer-side platforms (Pactum, Fairmarkit)
+  represent enterprise customer DIDs
+- OQ-010: MESO (Multiple Equivalent Simultaneous Offers) terms extension for
+  Pactum-style bundle negotiations
+- OQ-011: A2CN as A2A extension — formal proposal filed, outcome pending
+- OQ-012: Multi-party invitation for reverse auction contexts
+- OQ-013: DID VC mandate for Meeting Place hosted endpoints
+
+**Introduction updated:**
+
+Section 1.1 Background updated to reflect current ecosystem state: buyer-side
+platforms in production at scale; seller-side infrastructure emerging (Salesforce
+Revenue Cloud, Dynamics 365 MCP Server); Luminance as sole production bilateral
+contract negotiation system. Invitation problem explicitly described.
+
+Section 1.2 protocol comparison table updated with Dynamics 365 ERP MCP Server
+and Revenue Cloud Pricing API.
+
+Section 1.4 Scope updated to enumerate v0.2 additions over v0.1.
+
+### v0.1.3 (2026-03-24)
 
 **Bug fixes — copy-paste errors and internal contradictions:**
 
