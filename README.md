@@ -3,23 +3,23 @@
 **The missing protocol layer for machine-to-machine B2B commerce.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Spec Version](https://img.shields.io/badge/Spec-v0.1.3-green.svg)](spec/v0.1.3.md)
-[![Tests](https://img.shields.io/badge/Tests-77%20passing-brightgreen.svg)](reference-implementation/python/tests)
-[![Status](https://img.shields.io/badge/Status-Reference%20Implementation%20Complete-orange.svg)]()
+[![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
+[![Tests](https://img.shields.io/badge/Tests-124%20passing-brightgreen.svg)](reference-implementation/python/tests)
+[![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
 
 ## The gap in the agent protocol stack
 
 ```
-Layer 4 │ AP2 / x402    Payment execution        ✓ Exists
-        │
-Layer 3 │ A2CN          Commercial negotiation   ← YOU ARE HERE
-        │               THE EMPTY LAYER
-        │
-Layer 2 │ A2A           Agent communication       ✓ Exists
-        │
-Layer 1 │ MCP           Agent-to-tool             ✓ Exists
+Layer 4 → AP2 / ACP     Payment execution        ✓ Exists
+        ↑
+Layer 3 → A2CN          Commercial negotiation   ← YOU ARE HERE
+        ↑               THE EMPTY LAYER
+        ↑
+Layer 2 → A2A           Agent communication       ✓ Exists
+        ↑
+Layer 1 → MCP           Agent-to-tool             ✓ Exists
 ```
 
 **Agents can talk. Agents can pay. Agents cannot safely negotiate commercial terms across organizational boundaries.**
@@ -53,46 +53,41 @@ Two Python processes. Different organizations. Neither controls the authoritativ
 
 ---
 
-## What makes this different
+## What's new in v0.2.0
 
-### Every offer is cryptographically signed
+### Session Invitation — solving the cold-start problem
 
-```json
-{
-  "message_type": "offer",
-  "round_number": 1,
-  "sequence_number": 1,
-  "sender_did": "did:web:techcorp.example",
-  "terms": {
-    "total_value": 9500000,
-    "currency": "USD",
-    "payment_terms": { "net_days": 30 }
-  },
-  "protocol_act_hash": "CAJSH5sTyYzmlaF9ULieuH1aHSr8ABp14MUS8WF7_Jg",
-  "protocol_act_signature": "eyJhbGciOiJFUzI1NiIs..."
-}
+The original discovery model required both parties to have independently deployed A2CN endpoints before they could negotiate. v0.2 adds **Component 8: Session Invitation** — a push-based handshake that lets a buyer invite a supplier who has no A2CN endpoint yet.
+
+```
+Buyer agent creates a signed SessionInvitation
+    → delivers via BID_CREATED webhook / email / Meeting Place
+        → Supplier receives, validates signature, accepts
+            → Buyer sends standard SessionInit to acceptor's endpoint
+                → Normal A2CN session proceeds
 ```
 
-JCS canonicalization (RFC 8785) + ES256 signing. Cross-session and cross-round replay attacks are structurally prevented. Both parties verify every message against the sender's DID document.
+The invitation is ES256-signed using the inviter's DID key. The supplier can verify authenticity before activating any endpoint. This is the integration pattern for Fairmarkit and other procurement platforms that use supplier webhooks.
 
-### Both sides independently generate the same transaction record
+### Platform integration adapters
 
-```python
-# Buyer generates their record
-buyer_record = client.build_record()
+**Fairmarkit:** `FairmakitEventParser` translates `BID_CREATED` webhook payloads into A2CN `goods_procurement` terms and translates agreed terms back into Fairmarkit's response API format for `POST /self-service/api/v3/responses/...`. Path B integration — zero Fairmarkit platform changes required.
 
-# Seller generates their record  
-seller_record = server.generate_record()
+**Salesforce Revenue Cloud:** `RevenueCloudAdapter` translates Revenue Cloud Pricing API responses (`/connect/pricing/...`) into A2CN offer terms, and translates agreed terms from the transaction record into Revenue Cloud order payloads (`/connect/qoc/sales-transactions`).
 
-# Neither side communicated after acceptance
-assert buyer_record["record_hash"] == seller_record["record_hash"]  # ✓ passes
-```
+### Deal-type-specific terms schemas
 
-UUID v5 determinism. JCS-canonicalized offer chain hash. `generated_at` derived from the Acceptance message timestamp — not a local clock. Both parties derive the identical record independently.
+Two registered deal types now have normative JSON schemas:
+- `goods_procurement` — adds `delivery_days`, `unit_of_measure`, manufacturer and internal part numbers
+- `saas_renewal` — adds `seat_count`, `subscription_tier`, `support_tier`, `auto_renew_terms`, `uptime_sla_percent`
 
-### Agents can't go rogue
+### Impasse detection
 
-The session state machine enforces strict turn-taking. An agent that sends an out-of-turn message gets `NOT_YOUR_TURN`. An agent that tries to accept an expired offer gets `OFFER_EXPIRED`. Sessions that exceed their round limit terminate cleanly. The protocol governs the conversation — negotiation strategy stays inside each party's system.
+`impasse_threshold` field in `session_params`. When N consecutive rounds show less than 0.5% movement in `total_value`, the session transitions to `IMPASSE`. Default N = 3, configurable 1–10.
+
+### Webhooks required at Level 2
+
+Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery with exponential backoff retry.
 
 ---
 
@@ -102,7 +97,9 @@ The session state machine enforces strict turn-taking. An agent that sends an ou
 |-----------|----------------|
 | **Discovery** | `/.well-known/a2cn-agent` — how agents find each other and advertise capabilities |
 | **Mandate verification** | Cryptographic proof an agent has authority to commit (W3C DIDs, two-tier system) |
+| **Session Invitation** *(v0.2)* | Push-based pre-session handshake for parties without deployed endpoints |
 | **Offer exchange** | Canonical schema for offers, counteroffers, acceptances, rejections, withdrawals |
+| **Deal-type terms** *(v0.2)* | Normative schemas for `goods_procurement` and `saas_renewal` |
 | **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection |
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
@@ -121,11 +118,20 @@ The session state machine enforces strict turn-taking. An agent that sends an ou
 ```bash
 git clone https://github.com/A2CN-protocol/A2CN.git
 cd A2CN/reference-implementation/python
-python -m pip install -e .
-python examples/saas_renewal.py
-```
+pip install -e .
 
-Watch two agents complete a four-round SaaS renewal negotiation and verify the matching transaction record — in under 30 seconds.
+# SaaS renewal demo (4-round bilateral negotiation)
+python examples/saas_renewal.py
+
+# Goods procurement with goods_procurement terms schema
+python examples/saas_renewal.py --deal-type goods_procurement
+
+# Session Invitation flow (Fairmarkit integration pattern)
+# Terminal 1:
+uvicorn server:app --port 8002
+# Terminal 2:
+python examples/invitation_flow.py
+```
 
 **Requirements:** Python 3.11+
 
@@ -134,26 +140,70 @@ Watch two agents complete a four-round SaaS renewal negotiation and verify the m
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 77 passed, 1 skipped (JWT auth — Week 2)
+# 124 passed, 1 skipped
 ```
+
+---
+
+## The Fairmarkit integration in under 60 seconds
+
+Fairmarkit fires a `BID_CREATED` webhook when a buyer invites a supplier to a sourcing event. Here is what happens when the supplier has an A2CN agent:
+
+```python
+from adapters.fairmarkit_adapter import FairmakitEventParser
+
+# 1. Fairmarkit fires BID_CREATED to your webhook endpoint
+bid_created_payload = {
+    "request_id": "req-001",
+    "items": [
+        {"description": "Hydraulic fluid 200L", "quantity": 50,
+         "uom": "EA", "unit_price": 360.0}
+    ],
+    "deadline": "2026-04-10T17:00:00Z"
+}
+
+# 2. Parse into A2CN goods_procurement terms
+terms = FairmakitEventParser.bid_created_to_goods_procurement_terms(bid_created_payload)
+# → {total_value: 1800000, currency: "USD", line_items: [...], delivery_days: 14}
+
+# 3. Negotiate via A2CN session...
+
+# 4. Translate agreed terms back to Fairmarkit response format
+response = FairmakitEventParser.terms_to_fairmarkit_response(
+    agreed_terms, session_id="a2cn-sess-001", request_id="req-001"
+)
+# → POST /self-service/api/v3/responses/request/req-001/
+```
+
+No Fairmarkit platform changes required. Full end-to-end demo: `examples/invitation_flow.py`.
+
+---
+
+## Protocol stack integration
+
+```
+Fairmarkit / Pactum / Zip        Salesforce Revenue Cloud / Dynamics 365
+(buyer-side platforms)           (seller-side platforms)
+         ↓                                   ↓
+         └──────── A2CN session ─────────────┘
+                        ↓
+              Transaction Record
+              (dual-signed, content-addressed)
+                        ↓
+              ───────────┴───────────
+            AP2                 Luminance
+         (payment)           (contract formalization)
+```
+
+A2CN fits between the platforms that generate offers and the infrastructure that executes payment and formalizes contracts. Neither side needs to change their internal pricing logic or CRM workflow — A2CN is the exchange layer in between.
 
 ---
 
 ## The spec
 
-The full protocol specification is at [`spec/v0.1.3.md`](spec/v0.1.3.md) — 2,800+ lines covering all six components with normative JSON schemas, a complete four-round SaaS renewal walkthrough with concrete message envelopes, and a formal session state machine.
+Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns for Fairmarkit, Salesforce Revenue Cloud, Dynamics 365, Luminance, and A2A, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.1.3. Passed four independent critique cycles. Two reviewers independently confirmed that two engineering teams can implement against this spec and interoperate without out-of-band coordination.
-
-### Protocol stack position
-
-```
-A2A establishes the session
-       ↓
-A2CN governs the commercial exchange
-       ↓
-AP2 executes payment after agreement
-```
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (124 tests).
 
 ---
 
@@ -162,22 +212,33 @@ AP2 executes payment after agreement
 ```
 A2CN/
 ├── spec/
-│   └── v0.1.3.md              # The protocol specification
-├── reference-implementation/
-│   └── python/
-│       ├── a2cn/
-│       │   ├── crypto.py      # JCS, SHA-256, ES256 signing
-│       │   ├── did.py         # did:web resolution
-│       │   ├── messages.py    # Wire-format dataclasses
-│       │   ├── session.py     # State machine + turn enforcement
-│       │   ├── record.py      # Deterministic transaction records
-│       │   ├── server.py      # FastAPI responder (all §11.1.1 endpoints)
-│       │   └── client.py      # Initiator with JCS+JWS offer signing
-│       ├── tests/
-│       │   └── conformance/   # Conformance test suite
-│       └── examples/
-│           └── saas_renewal.py  # Appendix B walkthrough as running code
-└── sdk/                       # SDK (in progress)
+│   ├── a2cn-spec-v0.2.0.md         # Protocol specification (current)
+│   └── schemas/                     # Normative JSON schemas
+│       └── terms/
+│           ├── goods_procurement.schema.json
+│           └── saas_renewal.schema.json
+└── reference-implementation/
+    └── python/
+        ├── crypto.py                # JCS, SHA-256, ES256 signing
+        ├── did.py                   # did:web resolution
+        ├── messages.py              # Wire-format dataclasses
+        ├── session.py               # State machine + turn enforcement
+        ├── record.py                # Deterministic transaction records
+        ├── invitation.py            # Component 8: Session Invitation
+        ├── server.py                # FastAPI responder (all endpoints)
+        ├── client.py                # Initiator with JCS+JWS offer signing
+        ├── adapters/
+        │   ├── fairmarkit_adapter.py    # Fairmarkit → A2CN translation
+        │   └── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
+        ├── tests/
+        │   ├── test_invitations.py
+        │   ├── test_deal_type_terms.py
+        │   ├── test_adapters.py
+        │   └── conformance/
+        └── examples/
+            ├── saas_renewal.py          # Bilateral SaaS renewal demo
+            └── invitation_flow.py       # Session Invitation / Fairmarkit demo
+└── sdk/                                 # SDK (planned)
 ```
 
 ---
@@ -186,24 +247,28 @@ A2CN/
 
 | Milestone | Status |
 |-----------|--------|
-| Protocol spec v0.1.3 | ✅ Complete |
-| Reference implementation (Python) | ✅ Complete — 77 tests passing |
-| End-to-end bilateral demo | ✅ Working — matching record hashes |
-| Security review | ✅ Passed — 0 critical, 0 high findings |
-| JWT authentication (Week 2) | 🔄 In progress |
+| Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
+| Reference implementation (Python) | ✓ Complete — 124 tests passing |
+| Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
+| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud |
+| End-to-end bilateral demo | ✓ Working — matching record hashes |
+| Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
+| Security review | ✓ Passed — 0 critical, 0 high findings |
+| Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
+| A2A extension proposal | 🔄 In progress |
+| Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
 | TypeScript reference implementation | 📋 Planned |
 | SDK (pip + npm) | 📋 Planned |
-| Meeting Place (neutral transaction hosting) | 📋 Planned — v0.2 |
 
 ---
 
 ## Who we are looking for
 
-**Platform engineers** building procurement or sales agents who have hit the cross-platform interoperability problem. If your agent falls back to email when the other side also has an agent — this is for you.
+**Platform engineers** at procurement or sales automation companies who have hit the cross-platform agent interoperability problem. If your agent falls back to email when the supplier also has an agent — this is for you.
 
-**Protocol and distributed systems engineers** interested in open standards work. The spec design, cryptographic primitives, and state machine all have interesting problems. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) — open issues are tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?q=is%3Aissue+label%3A%22help+wanted%22) and [`good first issue`](https://github.com/A2CN-protocol/A2CN/issues?q=is%3Aissue+label%3A%22good+first+issue%22).
+**Developers building on LangChain, CrewAI, Salesforce Agentforce, or Microsoft Copilot Studio** with agents that need to interact with counterparty agents across organizational boundaries.
 
-**Developers building on LangChain, CrewAI, or Google ADK** with agents that need to interact with counterparty agents across organizational boundaries.
+**Protocol and distributed systems engineers** interested in open standards work. The cryptographic design, session state machine, and deterministic record generation all have interesting problems. Open issues tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22help+wanted%22) and [`good first issue`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22good+first+issue%22).
 
 ---
 
