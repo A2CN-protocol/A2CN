@@ -210,6 +210,62 @@ def verify_jwt(
 
 
 # ---------------------------------------------------------------------------
+# v0.2.0: Invitation signing / verification (Component 8)
+# ---------------------------------------------------------------------------
+
+def sign_invitation(invitation_dict: dict, private_key: EllipticCurvePrivateKey) -> str:
+    """
+    Signs a SessionInvitation or InvitationAcceptance dict using ES256 + RFC 8785 JCS.
+
+    Steps:
+    1. Copy dict WITHOUT 'invitation_signature' and 'acceptance_signature' keys
+    2. Serialize to canonical JSON (JCS)
+    3. Compute SHA-256 hash of canonical bytes
+    4. Sign hash bytes with ES256
+    5. Return base64url-encoded DER signature
+
+    The caller sets invitation_dict['invitation_signature'] = result.
+    """
+    canonical_obj = {k: v for k, v in invitation_dict.items()
+                     if k not in ("invitation_signature", "acceptance_signature")}
+    canonical_bytes = canonicalize(canonical_obj)
+
+    from cryptography.hazmat.primitives.asymmetric import ec as _ec
+    from cryptography.hazmat.primitives import hashes as _hashes
+    der_sig = private_key.sign(canonical_bytes, _ec.ECDSA(_hashes.SHA256()))
+    return _b64url_encode(der_sig)
+
+
+def verify_invitation_signature(invitation_dict: dict, public_key: EllipticCurvePublicKey) -> bool:
+    """
+    Verifies a SessionInvitation or InvitationAcceptance signature.
+
+    Steps:
+    1. Extract signature from 'invitation_signature' or 'acceptance_signature'
+    2. Copy dict WITHOUT both signature keys
+    3. Serialize to canonical JSON and SHA-256 hash
+    4. Verify ES256 DER signature against hash
+    5. Return True if valid, False otherwise
+    """
+    sig_b64 = invitation_dict.get("invitation_signature") or invitation_dict.get("acceptance_signature", "")
+    if not sig_b64:
+        return False
+
+    canonical_obj = {k: v for k, v in invitation_dict.items()
+                     if k not in ("invitation_signature", "acceptance_signature")}
+    canonical_bytes = canonicalize(canonical_obj)
+
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec as _ec
+        from cryptography.hazmat.primitives import hashes as _hashes
+        der_sig = _b64url_decode(sig_b64)
+        public_key.verify(der_sig, canonical_bytes, _ec.ECDSA(_hashes.SHA256()))
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

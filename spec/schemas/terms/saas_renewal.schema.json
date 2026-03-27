@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/terms/saas_renewal/0.2",
+  "title": "A2CN saas_renewal terms extension",
+  "description": "Additional required and optional fields for saas_renewal deal type",
+  "type": "object",
+  "required": ["seat_count"],
+  "properties": {
+    "subscription_tier": {
+      "type": "string",
+      "description": "Subscription tier (e.g. enterprise, professional, starter)"
+    },
+    "seat_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of licensed seats"
+    },
+    "support_tier": {
+      "type": "string",
+      "description": "Support tier (e.g. standard, premium, 24x7)"
+    },
+    "auto_renew_terms": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "notice_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days notice required to cancel auto-renewal"
+        }
+      }
+    },
+    "uptime_sla_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "description": "Uptime SLA in hundredths of a percent (e.g. 9999 = 99.99%)"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/session-invitation/0.2",
+  "title": "A2CN SessionInvitation",
+  "description": "Component 8 push-based pre-session handshake message (v0.2.0)",
+  "type": "object",
+  "required": [
+    "message_type", "invitation_id", "a2cn_version", "inviter_did",
+    "inviter_endpoint", "inviter_discovery_url", "proposed_deal_type",
+    "proposed_session_params", "proposed_terms_summary", "inviter_mandate_summary",
+    "invitation_expires_at", "accept_endpoint", "decline_endpoint",
+    "inviter_verification_method", "invitation_signature"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "session_invitation" },
+    "invitation_id": { "type": "string", "format": "uuid" },
+    "a2cn_version": { "type": "string", "const": "0.2" },
+    "inviter_did": { "type": "string", "pattern": "^did:" },
+    "inviter_endpoint": { "type": "string", "format": "uri" },
+    "inviter_discovery_url": { "type": "string", "format": "uri" },
+    "proposed_deal_type": { "type": "string" },
+    "proposed_session_params": {
+      "type": "object",
+      "required": ["currency", "max_rounds", "session_timeout_seconds", "round_timeout_seconds"],
+      "properties": {
+        "currency": { "type": "string" },
+        "max_rounds": { "type": "integer", "minimum": 1 },
+        "session_timeout_seconds": { "type": "integer", "minimum": 1 },
+        "round_timeout_seconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "proposed_terms_summary": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "estimated_value": { "type": "integer", "minimum": 0 },
+        "currency": { "type": "string" }
+      }
+    },
+    "inviter_mandate_summary": { "type": "object" },
+    "invitation_expires_at": { "type": "string", "format": "date-time" },
+    "accept_endpoint": { "type": "string", "format": "uri" },
+    "decline_endpoint": { "type": "string", "format": "uri" },
+    "inviter_verification_method": { "type": "string" },
+    "invitation_signature": { "type": "string", "description": "Base64url ES256 signature over JCS canonical form (excluding this field)" }
+  }
+}

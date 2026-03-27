@@ -30,9 +30,10 @@ class SessionState:
     REJECTED_FINAL = "REJECTED_FINAL"
     WITHDRAWN = "WITHDRAWN"
     TIMED_OUT = "TIMED_OUT"
+    IMPASSE = "IMPASSE"      # v0.2.0: consecutive non-moving rounds exceeded threshold
     ERROR = "ERROR"
 
-    TERMINAL = {COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, ERROR}
+    TERMINAL = {COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, IMPASSE, ERROR}
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,11 @@ class Session:
     # Offer tracking
     latest_offer_id: str | None = None
     latest_offer_hash: str | None = None
+    latest_offer_total_value: int | None = None  # for impasse detection
+
+    # v0.2.0: Impasse detection (OQ-005)
+    impasse_threshold: int = 3                   # from session_params
+    consecutive_non_moving_rounds: int = 0
 
     # Timing
     session_created_at: str = ""
@@ -154,6 +160,7 @@ class SessionManager:
             current_turn="initiator",
             max_rounds=accepted.get("max_rounds", 10),
             session_timeout_seconds=accepted.get("session_timeout_seconds", 3600),
+            impasse_threshold=accepted.get("impasse_threshold", 3),
             session_created_at=now,
             state_updated_at=now,
             session_params=accepted,
@@ -428,12 +435,33 @@ class SessionManager:
 
         # Update session state
         now = _now()
+        new_total_value = (message.get("terms") or {}).get("total_value")
         session.sequence_number = sequence_number
         session.round_number = round_number
         session.latest_offer_id = message_id
         session.latest_offer_hash = message.get("protocol_act_hash")
         session.state = SessionState.NEGOTIATING
         session.state_updated_at = now
+
+        # v0.2.0: Impasse detection — only on counteroffers (round > 1)
+        if round_number > 1 and new_total_value is not None:
+            if _is_moving_round(session.latest_offer_total_value, new_total_value):
+                session.consecutive_non_moving_rounds = 0
+            else:
+                session.consecutive_non_moving_rounds += 1
+                if session.consecutive_non_moving_rounds >= session.impasse_threshold:
+                    session.state = SessionState.IMPASSE
+                    session.current_turn = "none"
+                    session.terminal_reason = "impasse"
+                    session.terminal_message_id = message_id
+                    session.state_updated_at = now
+                    if message.get("protocol_act_hash"):
+                        session._offer_chain.append(message["protocol_act_hash"])
+                    session._message_log.append(message)
+                    session.latest_offer_total_value = new_total_value
+                    return session.to_state_dict()
+
+        session.latest_offer_total_value = new_total_value
 
         # Flip turn to the other party
         session.current_turn = "responder" if sender_role == "initiator" else "initiator"
@@ -649,3 +677,15 @@ class A2CNError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _is_moving_round(prev_total_value: int | None, new_total_value: int) -> bool:
+    """
+    A round is moving if the delta in total_value is >= 0.5% of prev_total_value.
+    Returns True (moving) when prev is None or zero.
+    """
+    if prev_total_value is None or prev_total_value == 0:
+        return True
+    delta = abs(new_total_value - prev_total_value)
+    threshold = prev_total_value * 0.005
+    return delta >= threshold

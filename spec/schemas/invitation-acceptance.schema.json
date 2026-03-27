@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/invitation-acceptance/0.2",
+  "title": "A2CN InvitationAcceptance",
+  "description": "Acceptor response to a SessionInvitation (v0.2.0)",
+  "type": "object",
+  "required": [
+    "message_type", "invitation_id", "acceptor_did",
+    "acceptor_a2cn_endpoint", "acceptor_discovery_url",
+    "accepted_at", "acceptor_verification_method", "acceptance_signature"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "invitation_acceptance" },
+    "invitation_id": { "type": "string", "format": "uuid" },
+    "acceptor_did": { "type": "string", "pattern": "^did:" },
+    "acceptor_a2cn_endpoint": { "type": "string", "format": "uri" },
+    "acceptor_discovery_url": { "type": "string", "format": "uri" },
+    "accepted_at": { "type": "string", "format": "date-time" },
+    "acceptor_verification_method": { "type": "string" },
+    "acceptance_signature": { "type": "string" }
+  }
+}

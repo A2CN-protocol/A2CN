@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-A2CN Week 1 Demo — Appendix B SaaS Renewal Walkthrough
+A2CN v0.1 / v0.2 Demo — Appendix B SaaS Renewal Walkthrough
 
 Scenario (from Appendix B):
   Buyer:  TechCorp Inc  (initiator)       starting position: $95,000
@@ -10,9 +10,14 @@ Scenario (from Appendix B):
   Round 4: TechCorp accepts $105K
   Outcome: $105,000 / year, net-45 payment terms
 
+CLI flags (v0.2.0):
+  --deal-type TYPE           Override deal_type in session_params (default: saas_renewal)
+  --impasse-threshold N      Set impasse detection threshold (default: 3)
+
 Run with:
   cd reference-implementation/python
   uv run python examples/saas_renewal.py
+  uv run python examples/saas_renewal.py --deal-type saas_renewal --impasse-threshold 2
   (or: .venv/Scripts/python examples/saas_renewal.py)
 """
 
@@ -21,6 +26,7 @@ import sys, io
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+import argparse
 import asyncio
 import json
 import threading
@@ -87,7 +93,7 @@ async def wait_for_server(url: str, timeout: float = 10.0) -> None:
 # Main demo
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
+async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> None:
     # -----------------------------------------------------------------------
     # 1. Configure and start the responder (Acme / seller side)
     # -----------------------------------------------------------------------
@@ -95,6 +101,11 @@ async def main() -> None:
     from a2cn.server import app, configure_responder, manager
     from a2cn.client import A2CNClient
     from a2cn.record import generate_transaction_record
+
+    if deal_type != "saas_renewal":
+        print(f"  [demo] Using deal_type={deal_type!r}, impasse_threshold={impasse_threshold}")
+    if impasse_threshold != 3:
+        print(f"  [demo] impasse_threshold={impasse_threshold}")
 
     # Generate keys for both parties (Week 2 will use real DID-resolved keys)
     acme_priv, acme_pub = generate_keypair()
@@ -123,8 +134,8 @@ async def main() -> None:
     configure_responder({
         "agent_info": acme_agent_info,
         "mandate": acme_mandate,
-        "deal_types": ["saas_renewal", "services_contract"],
-        "max_rounds_by_deal_type": {"saas_renewal": 5},
+        "deal_types": ["saas_renewal", "services_contract", deal_type],
+        "max_rounds_by_deal_type": {deal_type: 5},
     })
 
     # Start server in background thread
@@ -171,7 +182,7 @@ async def main() -> None:
         # 3. Session initiation
         # -----------------------------------------------------------------------
         session_params = {
-            "deal_type": "saas_renewal",
+            "deal_type": deal_type,
             "currency": "USD",
             "subject": "Acme Analytics Platform — annual renewal FY2027",
             "subject_reference": "CONTRACT-2024-ACME-001",
@@ -179,6 +190,7 @@ async def main() -> None:
             "max_rounds": 4,
             "session_timeout_seconds": 3600,
             "round_timeout_seconds": 900,
+            "impasse_threshold": impasse_threshold,
         }
 
         ack = await client.initiate_session(
@@ -396,4 +408,19 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="A2CN SaaS Renewal demo")
+    parser.add_argument(
+        "--deal-type",
+        default="saas_renewal",
+        metavar="TYPE",
+        help="Deal type for the session (default: saas_renewal)",
+    )
+    parser.add_argument(
+        "--impasse-threshold",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Consecutive non-moving rounds before IMPASSE (default: 3)",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(deal_type=args.deal_type, impasse_threshold=args.impasse_threshold))

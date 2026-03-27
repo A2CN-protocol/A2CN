@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/invitation-decline/0.2",
+  "title": "A2CN InvitationDecline",
+  "description": "Decliner response to a SessionInvitation (v0.2.0)",
+  "type": "object",
+  "required": ["message_type", "invitation_id", "reason_code", "declined_at"],
+  "properties": {
+    "message_type": { "type": "string", "const": "invitation_decline" },
+    "invitation_id": { "type": "string", "format": "uuid" },
+    "reason_code": {
+      "type": "string",
+      "enum": ["DEAL_TYPE_NOT_SUPPORTED", "MANDATE_INSUFFICIENT", "CAPACITY", "OTHER"]
+    },
+    "declined_at": { "type": "string", "format": "date-time" },
+    "reason_message": { "type": "string" }
+  }
+}

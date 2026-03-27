@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/terms/goods_procurement/0.2",
+  "title": "A2CN goods_procurement terms extension",
+  "description": "Additional required and optional fields for goods_procurement deal type",
+  "type": "object",
+  "required": ["delivery_days"],
+  "properties": {
+    "delivery_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum delivery days from order confirmation"
+    },
+    "unit_of_measure": {
+      "type": "string",
+      "description": "Header-level UOM code (e.g. EA, MT, L, KG). May be overridden at line item level."
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "manufacturer_part_number": {
+            "type": "string",
+            "description": "Manufacturer's part number (MFG PN)"
+          },
+          "internal_part_number": {
+            "type": "string",
+            "description": "Buyer's internal part number"
+          },
+          "unit_of_measure": {
+            "type": "string",
+            "description": "Line-item UOM override"
+          }
+        }
+      }
+    }
+  }
+}

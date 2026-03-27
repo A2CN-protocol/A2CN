@@ -9,6 +9,7 @@ omitting None fields (optional fields that were not set).
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
+from enum import Enum
 from typing import Any
 
 
@@ -376,3 +377,169 @@ class Withdrawal:
             "reason_code": self.reason_code,
             "reason_description": self.reason_description,
         })
+
+
+# ---------------------------------------------------------------------------
+# v0.2.0: Session Invitation (Component 8)
+# ---------------------------------------------------------------------------
+
+class InvitationStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    EXPIRED = "expired"
+
+
+@dataclass
+class SessionInvitation:
+    message_type: str                  # always "session_invitation"
+    invitation_id: str                 # UUID v4
+    a2cn_version: str                  # "0.2"
+    inviter_did: str
+    inviter_endpoint: str              # HTTPS URL of inviter's A2CN endpoint
+    inviter_discovery_url: str
+    proposed_deal_type: str
+    proposed_session_params: dict      # currency, max_rounds, timeouts
+    proposed_terms_summary: dict       # description, estimated_value, currency
+    inviter_mandate_summary: dict      # mandate_type, max_commitment_value, authorized_deal_types
+    invitation_expires_at: str         # ISO 8601 UTC
+    accept_endpoint: str               # HTTPS URL to POST acceptance to
+    decline_endpoint: str              # HTTPS URL to POST decline to
+    inviter_verification_method: str
+    invitation_signature: str = ""     # set after signing; excluded from canonical form
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "invitation_id": self.invitation_id,
+            "a2cn_version": self.a2cn_version,
+            "inviter_did": self.inviter_did,
+            "inviter_endpoint": self.inviter_endpoint,
+            "inviter_discovery_url": self.inviter_discovery_url,
+            "proposed_deal_type": self.proposed_deal_type,
+            "proposed_session_params": self.proposed_session_params,
+            "proposed_terms_summary": self.proposed_terms_summary,
+            "inviter_mandate_summary": self.inviter_mandate_summary,
+            "invitation_expires_at": self.invitation_expires_at,
+            "accept_endpoint": self.accept_endpoint,
+            "decline_endpoint": self.decline_endpoint,
+            "inviter_verification_method": self.inviter_verification_method,
+            "invitation_signature": self.invitation_signature or None,
+        })
+
+
+@dataclass
+class InvitationAcceptance:
+    message_type: str               # "invitation_acceptance"
+    invitation_id: str
+    acceptor_did: str
+    acceptor_a2cn_endpoint: str
+    acceptor_discovery_url: str
+    accepted_at: str                # ISO 8601 UTC
+    acceptor_verification_method: str
+    acceptance_signature: str = ""
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "invitation_id": self.invitation_id,
+            "acceptor_did": self.acceptor_did,
+            "acceptor_a2cn_endpoint": self.acceptor_a2cn_endpoint,
+            "acceptor_discovery_url": self.acceptor_discovery_url,
+            "accepted_at": self.accepted_at,
+            "acceptor_verification_method": self.acceptor_verification_method,
+            "acceptance_signature": self.acceptance_signature or None,
+        })
+
+
+@dataclass
+class InvitationDecline:
+    message_type: str           # "invitation_decline"
+    invitation_id: str
+    reason_code: str            # DEAL_TYPE_NOT_SUPPORTED | MANDATE_INSUFFICIENT | CAPACITY | OTHER
+    declined_at: str
+    reason_message: str = ""
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "invitation_id": self.invitation_id,
+            "reason_code": self.reason_code,
+            "declined_at": self.declined_at,
+            "reason_message": self.reason_message or None,
+        })
+
+
+# ---------------------------------------------------------------------------
+# v0.2.0: Webhook Payload (Level 2 conformance — REQUIRED)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WebhookPayload:
+    event_type: str     # "session.completed" | "session.rejected" | "session.withdrawn"
+                        # | "session.impasse" | "session.timed_out" | "session.error"
+    session_id: str
+    occurred_at: str    # ISO 8601 UTC
+    session_state: str
+    terminal: bool      # always True for these events
+    a2cn_version: str = "0.2"
+    record_hash: str = ""   # populated only for session.completed
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "event_type": self.event_type,
+            "session_id": self.session_id,
+            "occurred_at": self.occurred_at,
+            "session_state": self.session_state,
+            "terminal": self.terminal,
+            "a2cn_version": self.a2cn_version,
+            "record_hash": self.record_hash or None,
+        })
+
+
+# ---------------------------------------------------------------------------
+# v0.2.0: Invitation error codes (Section 12.2 extension)
+# ---------------------------------------------------------------------------
+
+INVITATION_EXPIRED = "INVITATION_EXPIRED"
+INVITATION_NOT_FOUND = "INVITATION_NOT_FOUND"
+INVITATION_SIGNATURE_INVALID = "INVITATION_SIGNATURE_INVALID"
+INVITATION_ALREADY_ANSWERED = "INVITATION_ALREADY_ANSWERED"
+INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
+
+
+# ---------------------------------------------------------------------------
+# v0.2.0: Deal-type terms validation (OQ-004)
+# ---------------------------------------------------------------------------
+
+def validate_deal_type_terms(deal_type: str, terms: dict) -> list[str]:
+    """
+    Validates terms dict against deal-type-specific schema.
+    Returns list of validation error strings. Empty list = valid.
+
+    goods_procurement required fields: delivery_days (int >= 1)
+    saas_renewal required fields: seat_count (int >= 1)
+    Unknown deal types: always valid (extensible).
+    """
+    errors: list[str] = []
+
+    if deal_type == "goods_procurement":
+        delivery_days = terms.get("delivery_days")
+        if delivery_days is None:
+            errors.append("goods_procurement terms require 'delivery_days'")
+        elif not isinstance(delivery_days, int) or isinstance(delivery_days, bool):
+            errors.append(f"delivery_days must be an integer >= 1, got {delivery_days!r}")
+        elif delivery_days < 1:
+            errors.append(f"delivery_days must be >= 1, got {delivery_days}")
+
+    elif deal_type == "saas_renewal":
+        seat_count = terms.get("seat_count")
+        if seat_count is None:
+            errors.append("saas_renewal terms require 'seat_count'")
+        elif not isinstance(seat_count, int) or isinstance(seat_count, bool):
+            errors.append(f"seat_count must be an integer >= 1, got {seat_count!r}")
+        elif seat_count < 1:
+            errors.append(f"seat_count must be >= 1, got {seat_count}")
+
+    # Unknown deal types pass through without validation (extensibility)
+    return errors
