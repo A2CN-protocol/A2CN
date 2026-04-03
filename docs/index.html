@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A2CN — Agent-to-Agent Commercial Negotiation Protocol</title>
+  <meta name="description" content="The open protocol for agent-to-agent B2B commercial negotiation. Offer exchange, mandate verification, and dual-signed transaction records for autonomous agents across organizational boundaries.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --codebg:    #1c2128;
+      --radius:    8px;
+      --max:       900px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+    }
+    .nav-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+    .nav-logo {
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+    }
+    .nav-links {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.375rem 0.875rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-outline {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: transparent;
+    }
+    .btn-outline:hover { background: var(--surface); text-decoration: none; }
+    .btn-accent {
+      background: var(--accent);
+      color: #0d1117;
+      border: 1px solid var(--accent);
+      font-weight: 600;
+    }
+    .btn-accent:hover { opacity: 0.88; text-decoration: none; }
+
+    /* ── LAYOUT ── */
+    .container {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    section { padding: 4rem 0; border-bottom: 1px solid var(--border); }
+    section:last-of-type { border-bottom: none; }
+
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    /* ── HERO ── */
+    .hero { padding: 5rem 0 4rem; text-align: center; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 0.875rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1.75rem;
+      background: var(--surface);
+    }
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      color: var(--text);
+    }
+
+    .hero-sub {
+      font-size: 1.1rem;
+      color: var(--muted);
+      max-width: 640px;
+      margin: 0 auto 2.25rem;
+      line-height: 1.7;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 0.875rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .hero-cta .btn { padding: 0.6rem 1.25rem; font-size: 0.9375rem; }
+
+    /* ── STACK DIAGRAM ── */
+    .diagram-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.75rem;
+    }
+    .stack-svg-wrap {
+      width: 100%;
+      max-width: 680px;
+    }
+    .stack-svg-wrap svg { width: 100%; height: auto; display: block; }
+    .diagram-caption {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      max-width: 600px;
+      text-align: center;
+      line-height: 1.65;
+    }
+
+    /* ── TERMINAL ── */
+    .terminal-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .terminal {
+      background: var(--codebg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+    .terminal-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.625rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .tl-dots { display: flex; gap: 6px; }
+    .tl-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+    .tl-dot-r { background: #ff5f57; }
+    .tl-dot-y { background: #febc2e; }
+    .tl-dot-g { background: #28c840; }
+    .terminal-title {
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .terminal-body {
+      padding: 1.25rem 1.5rem;
+      font-size: 0.875rem;
+      line-height: 1.75;
+      color: var(--text);
+    }
+    .terminal-body .ok { color: var(--green); }
+    .terminal-body .dim { color: var(--muted); }
+    .terminal-body .indent { padding-left: 1.75rem; }
+    .terminal-body .spacer { display: block; height: 0.5rem; }
+
+    .terminal-caption {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .terminal-link { margin-top: 0.6rem; display: block; }
+
+    /* ── COMPONENTS GRID ── */
+    .components-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .comp-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.375rem;
+      transition: border-color 0.15s;
+    }
+    .comp-card:hover { border-color: #484f58; }
+    .comp-name {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.375rem;
+    }
+    .comp-desc {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    /* ── CODE BLOCK ── */
+    .code-section-intro {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.65;
+    }
+    .code-block {
+      background: var(--codebg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.375rem 1.5rem;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.8;
+      overflow-x: auto;
+      color: var(--text);
+      margin-bottom: 1.25rem;
+    }
+    /* Python syntax coloring */
+    .kw  { color: #ff7b72; }       /* keywords: from, import, def */
+    .fn  { color: #d2a8ff; }       /* function/method names */
+    .cm  { color: var(--muted); font-style: italic; }  /* comments */
+    .st  { color: #a5d6ff; }       /* strings */
+    .op  { color: #ff7b72; }       /* operators */
+    .nb  { color: #ffa657; }       /* builtins / identifiers */
+    .mo  { color: #79c0ff; }       /* module paths */
+
+    .code-note {
+      font-size: 0.875rem;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .code-note a { color: var(--accent); }
+
+    /* ── STATUS TABLE ── */
+    .status-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.875rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      transition: background 0.12s;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-row:hover { background: var(--codebg); }
+    .status-badge {
+      font-size: 1rem;
+      flex-shrink: 0;
+      width: 1.5rem;
+      text-align: center;
+    }
+    .status-item-text {
+      font-size: 0.9rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .status-item-text span {
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .tag {
+      margin-left: auto;
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .tag-done   { background: rgba(63,185,80,0.15);  color: var(--green); border: 1px solid rgba(63,185,80,0.35); }
+    .tag-wip    { background: rgba(210,153,34,0.15); color: #e3b341;      border: 1px solid rgba(210,153,34,0.35); }
+    .tag-plan   { background: rgba(139,148,158,0.12);color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── GET INVOLVED ── */
+    .involve-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+    .involve-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 1.375rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: border-color 0.15s;
+    }
+    .involve-card:hover { border-color: #484f58; }
+    .involve-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .involve-body {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.6;
+      flex: 1;
+    }
+    .involve-link {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--accent);
+    }
+    .involve-link:hover { text-decoration: underline; }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1.75rem 1.5rem;
+    }
+    .footer-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .footer-inner span, .footer-inner a {
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .footer-inner a:hover { color: var(--text); text-decoration: none; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      section { padding: 3rem 0; }
+      .hero { padding: 3.5rem 0 2.5rem; }
+      h1 { font-size: 1.85rem; }
+      .hero-sub { font-size: 1rem; }
+      .components-grid { grid-template-columns: 1fr; }
+      .involve-grid { grid-template-columns: 1fr; }
+      .footer-inner { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+      .nav-links .btn { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+    }
+    @media (max-width: 420px) {
+      .hero-cta { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo">A2CN</span>
+    <div class="nav-links">
+      <a class="btn btn-outline" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub →</a>
+      <a class="btn btn-outline" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">Read the Spec →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="container">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      Apache 2.0 &middot; v0.2.0 &middot; 161 tests passing
+    </div>
+    <h1>The open protocol for agent-to-agent<br>B2B negotiation</h1>
+    <p class="hero-sub">
+      No widely accepted neutral standard governs commercial negotiation between
+      AI agents from different organizations. A2CN is that standard — offer exchange,
+      mandate verification, and a dual-signed transaction record neither party controls.
+    </p>
+    <div class="hero-cta">
+      <a class="btn btn-accent" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">View on GitHub →</a>
+      <a class="btn btn-outline" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">Read the Spec →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── PROTOCOL STACK ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Where A2CN Fits</div>
+    <div class="diagram-wrap">
+      <div class="stack-svg-wrap">
+        <svg viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Protocol stack showing MCP, A2A, A2CN, and AP2/ACP layers">
+          <defs>
+            <style>
+              .layer-bg-muted  { fill: #161b22; }
+              .layer-bg-accent { fill: #1c2b3a; }
+              .layer-border-muted  { stroke: #30363d; stroke-width: 1.5; fill: none; }
+              .layer-border-accent { stroke: #58a6ff; stroke-width: 2;   fill: none; }
+              .label-name-muted  { font-family: Inter, system-ui, sans-serif; font-size: 15px; font-weight: 600; fill: #8b949e; }
+              .label-name-accent { font-family: Inter, system-ui, sans-serif; font-size: 15px; font-weight: 700; fill: #e6edf3; }
+              .label-sub         { font-family: Inter, system-ui, sans-serif; font-size: 12.5px; fill: #8b949e; }
+              .label-sub-accent  { font-family: Inter, system-ui, sans-serif; font-size: 12.5px; fill: #8b949e; }
+              .label-tag-muted   { font-family: Inter, system-ui, sans-serif; font-size: 11.5px; fill: #484f58; }
+              .label-tag-accent  { font-family: Inter, system-ui, sans-serif; font-size: 12px; font-weight: 600; fill: #58a6ff; }
+            </style>
+          </defs>
+
+          <!-- Layer 1: MCP -->
+          <rect x="1" y="1" width="678" height="50" rx="7" class="layer-bg-muted"/>
+          <rect x="1" y="1" width="678" height="50" rx="7" class="layer-border-muted"/>
+          <text x="24" y="22" class="label-name-muted">MCP</text>
+          <text x="90" y="22" class="label-sub">·  Agent-to-tool</text>
+          <text x="636" y="22" class="label-tag-muted" text-anchor="end">✓ Exists</text>
+          <text x="24" y="42" class="label-sub">Model Context Protocol — tools, resources, prompts</text>
+
+          <!-- Layer 2: A2A -->
+          <rect x="1" y="59" width="678" height="50" rx="7" class="layer-bg-muted"/>
+          <rect x="1" y="59" width="678" height="50" rx="7" class="layer-border-muted"/>
+          <text x="24" y="80" class="label-name-muted">A2A</text>
+          <text x="90" y="80" class="label-sub">·  Agent communication</text>
+          <text x="636" y="80" class="label-tag-muted" text-anchor="end">✓ Exists</text>
+          <text x="24" y="100" class="label-sub">Google Agent-to-Agent — task delegation, capability discovery</text>
+
+          <!-- Layer 3: A2CN (highlighted) -->
+          <rect x="1" y="117" width="678" height="50" rx="7" class="layer-bg-accent"/>
+          <rect x="1" y="117" width="678" height="50" rx="7" class="layer-border-accent"/>
+          <text x="24" y="138" class="label-name-accent">A2CN</text>
+          <text x="93" y="138" class="label-sub-accent">·  Commercial negotiation</text>
+          <text x="636" y="138" class="label-tag-accent" text-anchor="end">← This layer</text>
+          <text x="24" y="158" class="label-sub">Offer exchange · Mandate verification · Dual-signed transaction record</text>
+
+          <!-- Layer 4: AP2 / ACP -->
+          <rect x="1" y="175" width="678" height="50" rx="7" class="layer-bg-muted"/>
+          <rect x="1" y="175" width="678" height="50" rx="7" class="layer-border-muted"/>
+          <text x="24" y="196" class="label-name-muted">AP2 / ACP</text>
+          <text x="130" y="196" class="label-sub">·  Payment execution</text>
+          <text x="636" y="196" class="label-tag-muted" text-anchor="end">✓ Exists</text>
+          <text x="24" y="216" class="label-sub">Agentic Payment Protocol / Agent Commerce Protocol — settlement</text>
+
+          <!-- Connector lines between layers -->
+          <line x1="340" y1="51"  x2="340" y2="59"  stroke="#30363d" stroke-width="1.5"/>
+          <line x1="340" y1="109" x2="340" y2="117" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3,3"/>
+          <line x1="340" y1="167" x2="340" y2="175" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3,3"/>
+          <line x1="340" y1="225" x2="340" y2="233" stroke="#30363d" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <p class="diagram-caption">
+        Agents can talk. Agents can pay. Agents cannot safely negotiate commercial
+        terms across organizational boundaries — no open standard exists for this layer.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── TERMINAL ── -->
+<section>
+  <div class="container">
+    <div class="section-label">What a Session Looks Like</div>
+    <div class="terminal-wrap">
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="tl-dots">
+            <span class="tl-dot tl-dot-r"></span>
+            <span class="tl-dot tl-dot-y"></span>
+            <span class="tl-dot tl-dot-g"></span>
+          </div>
+          <span class="terminal-title">saas_renewal.py</span>
+        </div>
+        <div class="terminal-body">
+          <span class="ok">✓</span> Discovery document fetched from seller<br>
+          <span class="ok">✓</span> Session initiated <span class="dim">— session_id: 222118e7-7f18-4a20-9fa6-dd35a945e67d</span>
+          <span class="spacer"></span>
+          <span class="ok">✓</span> Round 1: TechCorp offers $95,000 <span class="dim">—</span> Acme counters $115,000<br>
+          <span class="ok">✓</span> Round 2: TechCorp offers $103,000 <span class="dim">—</span> Acme counters $105,000 net-45<br>
+          <span class="ok">✓</span> Round 4: TechCorp accepts $105,000
+          <span class="spacer"></span>
+          <span class="ok">✓</span> Transaction record generated<br>
+          <span class="indent dim">record_hash: _H3cQxZuwkMculi1CXxPNVWQEBMYbasK...</span><br>
+          <span class="ok">✓</span> Buyer record_hash == Seller record_hash<br>
+          <span class="ok">✓</span> A2CN bilateral session complete
+        </div>
+      </div>
+      <div>
+        <p class="terminal-caption">
+          Two Python processes. Different organizations. Neither controls the authoritative
+          record. The cryptography proves the agreement — not the platform.
+        </p>
+        <a class="terminal-link involve-link" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">Run this yourself →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── COMPONENTS ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Eight Protocol Components</div>
+    <div class="components-grid">
+
+      <div class="comp-card">
+        <div class="comp-name">Discovery</div>
+        <div class="comp-desc">
+          <code style="font-size:0.8em;color:var(--accent);background:var(--codebg);padding:0.1em 0.4em;border-radius:4px;">/.well-known/a2cn-agent</code> —
+          agents advertise capabilities and find each other
+        </div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Mandate Verification</div>
+        <div class="comp-desc">Cryptographic proof an agent has authority to commit its organization (W3C DIDs, two-tier: Declared + VC)</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Session Invitation</div>
+        <div class="comp-desc">Push-based handshake enabling adoption by parties without pre-deployed endpoints — cold-start solved</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Offer Exchange</div>
+        <div class="comp-desc">Signed offers and counteroffers with strict turn-taking — ES256 + RFC 8785 JCS canonicalization</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Deal-Type Terms</div>
+        <div class="comp-desc">Normative schemas for <code style="font-size:0.82em;color:var(--accent);background:var(--codebg);padding:0.1em 0.35em;border-radius:4px;">goods_procurement</code> and <code style="font-size:0.82em;color:var(--accent);background:var(--codebg);padding:0.1em 0.35em;border-radius:4px;">saas_renewal</code> with extensible custom_terms</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Session State Machine</div>
+        <div class="comp-desc">Turn enforcement, sequence ordering, round limits, impasse detection — formally specified transitions</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Transaction Record</div>
+        <div class="comp-desc">Dual-signed, content-addressed record independently generated by both parties — neither controls the authoritative copy</div>
+      </div>
+
+      <div class="comp-card">
+        <div class="comp-name">Audit Log</div>
+        <div class="comp-desc">Structured EU AI Act compliance output for every terminal session state — COMPLETED, REJECTED, WITHDRAWN, IMPASSE</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── FAIRMARKIT INTEGRATION ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Integration Example — Fairmarkit</div>
+    <p class="code-section-intro">
+      Fairmarkit fires a <code style="font-size:0.875em;color:var(--accent);background:var(--codebg);padding:0.1em 0.4em;border-radius:4px;">BID_CREATED</code> webhook when a buyer invites a supplier.
+      When the supplier has an A2CN agent, zero Fairmarkit platform changes are required.
+    </p>
+
+    <div class="code-block"><span class="kw">from</span> <span class="mo">adapters.fairmarkit_adapter</span> <span class="kw">import</span> <span class="nb">FairmakitEventParser</span>
+
+<span class="cm"># 1. Fairmarkit fires BID_CREATED to supplier's webhook endpoint</span>
+terms = <span class="nb">FairmakitEventParser</span>.<span class="fn">bid_created_to_goods_procurement_terms</span>(payload)
+<span class="cm"># → {total_value: 1800000, currency: "USD", line_items: [...], delivery_days: 14}</span>
+
+<span class="cm"># 2. Negotiate via A2CN session (offer / counteroffer / acceptance)</span>
+<span class="cm"># ...</span>
+
+<span class="cm"># 3. Translate agreed terms back to Fairmarkit response API</span>
+response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_to_fairmarkit_response</span>(
+    agreed_terms, session_id=<span class="st">"a2cn-sess-001"</span>, request_id=payload[<span class="st">"request_id"</span>]
+)
+<span class="cm"># → POST /self-service/api/v3/responses/request/{request_id}/</span></div>
+
+    <p class="code-note">
+      Full end-to-end demo:
+      <a href="https://github.com/A2CN-protocol/A2CN/tree/main/reference-implementation/python/examples" target="_blank" rel="noopener">examples/invitation_flow.py →</a>
+    </p>
+  </div>
+</section>
+
+<!-- ── STATUS ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Status</div>
+    <div class="status-list">
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">Protocol spec v0.2.0 <span>— 3,700+ lines, 8 components, Apache 2.0</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">Reference implementation <span>— 161 tests passing, 0 skipped</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">Session Invitation <span>— cold-start adoption solved</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">Platform adapters <span>— Fairmarkit, Salesforce Revenue Cloud</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">JWT request authentication <span>— ES256, anti-replay, DID verification</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">LLM integration pattern <span>— Section 13.9, separation of concerns</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">🔄</span>
+        <span class="status-item-text">A2A extension proposal <span>— OQ-011, submitted</span></span>
+        <span class="tag tag-wip">In Progress</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">📋</span>
+        <span class="status-item-text">Meeting Place <span>— neutral transaction hosting, planned v0.3</span></span>
+        <span class="tag tag-plan">Planned</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">📋</span>
+        <span class="status-item-text">TypeScript reference implementation</span>
+        <span class="tag tag-plan">Planned</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">📋</span>
+        <span class="status-item-text">SDK <span>— pip + npm</span></span>
+        <span class="tag tag-plan">Planned</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── GET INVOLVED ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Get Involved</div>
+    <div class="involve-grid">
+
+      <div class="involve-card">
+        <div class="involve-title">Read the spec</div>
+        <div class="involve-body">
+          3,700+ lines covering eight protocol components, normative JSON schemas,
+          platform integration patterns, and a complete bilateral walkthrough.
+        </div>
+        <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">spec/a2cn-spec-v0.2.0.md →</a>
+      </div>
+
+      <div class="involve-card">
+        <div class="involve-title">Build on it</div>
+        <div class="involve-body">
+          Python reference implementation with 161 passing tests. LangChain, CrewAI,
+          and Agentforce compatible. MIT-friendly Apache 2.0 license.
+        </div>
+        <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN →</a>
+      </div>
+
+      <div class="involve-card">
+        <div class="involve-title">Give feedback</div>
+        <div class="involve-body">
+          Design partner conversations welcome. If your platform encounters the
+          cross-organizational agent negotiation problem, we want to hear from you.
+        </div>
+        <a class="involve-link" href="mailto:contact@a2cn.io">contact@a2cn.io</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-inner">
+    <span>A2CN — Agent-to-Agent Commercial Negotiation Protocol</span>
+    <span>Apache 2.0 &middot; spec v0.2.0 &middot; 161 tests passing</span>
+    <a href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN ↗</a>
+  </div>
+</footer>
+
+</body>
+</html>
