@@ -2,9 +2,28 @@
 
 import pytest
 import pytest_asyncio
+import httpx
 from httpx import AsyncClient, ASGITransport
 
-from a2cn.crypto import generate_keypair, public_key_to_jwk
+from a2cn.crypto import generate_keypair, public_key_to_jwk, create_jwt
+
+
+class _BearerAuth(httpx.Auth):
+    """httpx.Auth that generates a fresh ES256 JWT for each request (anti-replay safe)."""
+
+    def __init__(self, issuer_did: str, audience_did: str, private_key, kid: str) -> None:
+        self._issuer = issuer_did
+        self._audience = audience_did
+        self._private_key = private_key
+        self._kid = kid
+
+    def auth_flow(self, request):
+        token = create_jwt(
+            self._issuer, self._audience, self._private_key,
+            kid=self._kid, exp_seconds=3600,
+        )
+        request.headers["Authorization"] = f"Bearer {token}"
+        yield request
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +52,7 @@ def responder_keypair():
 
 INITIATOR_DID = "did:web:techcorp.example"
 RESPONDER_DID = "did:web:acme-corp.com"
+SERVER_DID = "did:web:localhost"
 
 
 def make_did_document(did: str, key_id: str, public_key_jwk: dict) -> dict:
@@ -104,14 +124,39 @@ def responder_config(responder_keypair):
 
 
 @pytest_asyncio.fixture
-async def test_client(responder_config):
-    """Fresh FastAPI test client with a clean server state for each test."""
-    # Import fresh copies to avoid state leakage between tests
+async def test_client(responder_config, initiator_keypair, initiator_did_doc):
+    """
+    Fresh FastAPI test client with JWT auth auto-injected on every request.
+
+    Each request gets a fresh JWT (unique jti) so anti-replay never fires within a test.
+    """
+    import importlib
+    import a2cn.server as server_module
+    importlib.reload(server_module)
+
+    priv, pub = initiator_keypair
+    server_module.configure_responder(responder_config)
+    server_module.SERVER_DID = SERVER_DID
+    server_module.register_did_document(INITIATOR_DID, initiator_did_doc)
+
+    auth = _BearerAuth(INITIATOR_DID, SERVER_DID, priv, kid=f"{INITIATOR_DID}#key-1")
+    transport = ASGITransport(app=server_module.app)
+    async with AsyncClient(transport=transport, base_url="http://test", auth=auth) as client:
+        yield client
+
+
+@pytest_asyncio.fixture
+async def raw_test_client(responder_config):
+    """
+    Fresh FastAPI test client with no Authorization header — for negative auth tests.
+    """
     import importlib
     import a2cn.server as server_module
     importlib.reload(server_module)
 
     server_module.configure_responder(responder_config)
+    server_module.SERVER_DID = SERVER_DID
+
     transport = ASGITransport(app=server_module.app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

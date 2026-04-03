@@ -9,11 +9,11 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from a2cn.crypto import generate_keypair, hash_object, sign_jws
+from a2cn.crypto import generate_keypair, hash_object, sign_jws, create_jwt
 from a2cn.record import generate_transaction_record
 from a2cn.session import SessionManager, SessionState, A2CNError
 from tests.conftest import (
-    make_session_init, INITIATOR_DID, RESPONDER_DID,
+    make_session_init, INITIATOR_DID, RESPONDER_DID, SERVER_DID,
     make_did_document
 )
 from a2cn.crypto import public_key_to_jwk
@@ -111,17 +111,95 @@ async def test_turn_taking_enforced(test_client):
 
 
 # ---------------------------------------------------------------------------
-# CONF-003: test_offer_signature_verified (Week 2 — marked for wiring)
+# CONF-003: JWT authentication enforcement (Section 11.1.4)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_offer_signature_verified_placeholder(test_client):
-    """
-    Invalid signature MUST be rejected with INVALID_SIGNATURE.
-    TODO Week 2: wire up DID resolution + signature verification in server.py.
-    This test will be enabled when JWT auth and protocol act verification are live.
-    """
-    pytest.skip("Signature verification wired in Week 2")
+async def test_jwt_missing_header_rejected(raw_test_client):
+    """Missing Authorization header → 401 INVALID_JWT."""
+    body = make_session_init()
+    r = await raw_test_client.post(
+        "/sessions", json=body, headers={"Content-Type": "application/a2cn+json"}
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "INVALID_JWT"
+
+
+@pytest.mark.asyncio
+async def test_jwt_expired_token_rejected(raw_test_client, initiator_keypair, initiator_did_doc):
+    """Expired JWT → 401 INVALID_JWT."""
+    import a2cn.server as server_module
+    priv, _ = initiator_keypair
+    server_module.register_did_document(INITIATOR_DID, initiator_did_doc)
+
+    token = create_jwt(INITIATOR_DID, SERVER_DID, priv, kid=f"{INITIATOR_DID}#key-1",
+                       exp_seconds=-1)
+    body = make_session_init()
+    r = await raw_test_client.post(
+        "/sessions", json=body,
+        headers={"Content-Type": "application/a2cn+json", "Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "INVALID_JWT"
+
+
+@pytest.mark.asyncio
+async def test_jwt_wrong_audience_rejected(raw_test_client, initiator_keypair, initiator_did_doc):
+    """JWT with wrong aud → 401 INVALID_JWT."""
+    import a2cn.server as server_module
+    priv, _ = initiator_keypair
+    server_module.register_did_document(INITIATOR_DID, initiator_did_doc)
+
+    token = create_jwt(INITIATOR_DID, "did:web:wrong-server.example", priv,
+                       kid=f"{INITIATOR_DID}#key-1", exp_seconds=60)
+    body = make_session_init()
+    r = await raw_test_client.post(
+        "/sessions", json=body,
+        headers={"Content-Type": "application/a2cn+json", "Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "INVALID_JWT"
+
+
+@pytest.mark.asyncio
+async def test_jwt_replayed_jti_rejected(raw_test_client, initiator_keypair, initiator_did_doc):
+    """Replayed JWT jti → 401 INVALID_JWT on second use."""
+    import a2cn.server as server_module
+    priv, _ = initiator_keypair
+    server_module.register_did_document(INITIATOR_DID, initiator_did_doc)
+
+    token = create_jwt(INITIATOR_DID, SERVER_DID, priv, kid=f"{INITIATOR_DID}#key-1",
+                       exp_seconds=3600)
+    headers = {"Content-Type": "application/a2cn+json", "Authorization": f"Bearer {token}"}
+
+    # First request — consumes jti
+    body = make_session_init()
+    r1 = await raw_test_client.post("/sessions", json=body, headers=headers)
+    assert r1.status_code == 201
+
+    # Second request with same token — replay detected
+    body2 = make_session_init()
+    r2 = await raw_test_client.post("/sessions", json=body2, headers=headers)
+    assert r2.status_code == 401
+    assert r2.json()["error"]["code"] == "INVALID_JWT"
+
+
+@pytest.mark.asyncio
+async def test_jwt_valid_token_accepted(raw_test_client, initiator_keypair, initiator_did_doc):
+    """Valid JWT → request accepted (session created)."""
+    import a2cn.server as server_module
+    priv, _ = initiator_keypair
+    server_module.register_did_document(INITIATOR_DID, initiator_did_doc)
+
+    token = create_jwt(INITIATOR_DID, SERVER_DID, priv, kid=f"{INITIATOR_DID}#key-1",
+                       exp_seconds=3600)
+    body = make_session_init()
+    r = await raw_test_client.post(
+        "/sessions", json=body,
+        headers={"Content-Type": "application/a2cn+json", "Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201
+    assert "session_id" in r.json()
 
 
 # ---------------------------------------------------------------------------

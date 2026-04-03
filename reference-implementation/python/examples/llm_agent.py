@@ -569,11 +569,12 @@ async def run_bilateral_negotiation(
     importlib.reload(server_module)  # fresh state for this negotiation
 
     import httpx
-    from a2cn.crypto import generate_keypair
+    from a2cn.crypto import generate_keypair, public_key_to_jwk, create_jwt as _create_jwt
     from a2cn.client import A2CNClient
 
     BUYER_DID = "did:web:techcorp.example"
     SELLER_DID = "did:web:acme.example"
+    DEMO_SERVER_DID = "did:web:localhost"
     ENDPOINT = "http://a2cn-llm-demo"
 
     buyer_priv, _buyer_pub = generate_keypair()
@@ -606,6 +607,37 @@ async def run_bilateral_negotiation(
         "private_key": seller_priv,
     })
 
+    # Register buyer's DID document so the server can verify buyer JWT signatures.
+    _buyer_pub_jwk = public_key_to_jwk(_buyer_pub)
+    _buyer_did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": BUYER_DID,
+        "verificationMethod": [
+            {
+                "id": f"{BUYER_DID}#key-1",
+                "type": "JsonWebKey2020",
+                "controller": BUYER_DID,
+                "publicKeyJwk": _buyer_pub_jwk,
+            }
+        ],
+        "authentication": [f"{BUYER_DID}#key-1"],
+    }
+    server_module.SERVER_DID = DEMO_SERVER_DID
+    server_module.register_did_document(BUYER_DID, _buyer_did_doc)
+
+    # Auth injector: generates a fresh JWT per request (unique jti → anti-replay safe).
+    class _DemoBearerAuth(httpx.Auth):
+        def auth_flow(self, req):
+            token = _create_jwt(
+                BUYER_DID, DEMO_SERVER_DID, buyer_priv,
+                kid=f"{BUYER_DID}#key-1", exp_seconds=3600,
+            )
+            req.headers["Authorization"] = f"Bearer {token}"
+            yield req
+
     # Buyer (initiator) config
     buyer_agent_info = {
         "organization_name": "TechCorp Buyer LLC",
@@ -629,7 +661,7 @@ async def run_bilateral_negotiation(
     # In-process transport — no port binding required
     transport = httpx.ASGITransport(app=server_module.app)
     async with httpx.AsyncClient(
-        transport=transport, base_url=ENDPOINT
+        transport=transport, base_url=ENDPOINT, auth=_DemoBearerAuth()
     ) as http:
         client = A2CNClient(
             agent_info=buyer_agent_info,
