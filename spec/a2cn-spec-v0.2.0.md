@@ -2312,6 +2312,10 @@ A2CN sessions via standard tool-calling. Any agent framework that supports MCP
 (LangChain, CrewAI, Salesforce Agentforce, Microsoft Copilot Studio) can then
 invoke A2CN sessions without requiring protocol-specific SDK integration.
 
+The reference implementation includes an MCP server exposing six A2CN tools via
+stdio and HTTP/SSE transports. See Section 16.12 for the full tool inventory and
+configuration reference.
+
 **Microsoft Dynamics 365 ERP MCP Server integration pattern:**
 The Dynamics 365 ERP MCP server (GA February 2026) exposes pricing, inventory,
 and order creation logic through MCP Action tools. An A2CN-compatible seller agent
@@ -2474,6 +2478,99 @@ UCP is a consumer retail checkout protocol. Its published roadmap covers B2C
 scenarios. B2B commercial negotiation is not on the UCP roadmap. A2CN does not
 compete with UCP.
 
+### 16.11 Keelvar
+
+Keelvar is an AI-powered strategic sourcing platform. Keelvar fires a
+`SOURCING_EVENTS_FEED_UPDATED` webhook when a new sourcing event becomes
+available to a supplier.
+
+**Path B — Supplier-side A2CN agent on Keelvar events (zero platform changes):**
+When Keelvar posts a `SOURCING_EVENTS_FEED_UPDATED` webhook, a supplier's A2CN
+agent translates the event into A2CN `goods_procurement` terms and initiates or
+accepts an A2CN session. On completion, the agreed terms are translated back into
+a Keelvar bid response payload and submitted via the Keelvar API. No Keelvar
+platform changes are required.
+
+Webhook signature verification (HMAC_SHA256, `X-Signature` header) MUST be
+performed before processing any payload to prevent replay and forgery attacks.
+
+**Data model mapping — Keelvar → A2CN `goods_procurement` terms:**
+
+| Keelvar field | A2CN `goods_procurement` terms field |
+|--------------|--------------------------------------|
+| `line_items[].description` | `line_items[].description` |
+| `line_items[].quantity` | `line_items[].quantity` |
+| `line_items[].unit_of_measure` | `line_items[].unit_of_measure` |
+| `line_items[].unit_price` (USD) | `line_items[].unit_price` (cents) |
+| `line_items[].lot_id` | `line_items[].internal_part_number` |
+| `event.currency` | `currency` |
+| Computed from line items | `total_value` (cents) |
+| Integration parameter | `delivery_days` |
+| Hardcoded default (30) | `payment_terms.net_days` |
+
+The round-trip mapping preserves `lot_id` through the A2CN session
+(`lot_id` → `internal_part_number` → `lot_id`) so the Keelvar bid response
+correctly references the original sourcing event lots.
+
+Reference implementation: `adapters/keelvar_adapter.py`, `KeelvarEventParser`
+class. End-to-end demo: `examples/keelvar_demo.py`.
+
+### 16.12 A2CN MCP Server
+
+The reference implementation ships an MCP server (`mcp_server.py`) that exposes
+A2CN protocol operations as MCP tools. This allows any MCP-compatible agent
+framework to conduct A2CN negotiations via standard tool-calling without
+requiring protocol-specific SDK integration.
+
+**Exposed tools:**
+
+| Tool | Description |
+|------|-------------|
+| `a2cn_discover_agent` | Resolve a counterparty DID to their A2CN discovery document |
+| `a2cn_initiate_session` | Send a `SessionInit` to a counterparty and receive their first offer |
+| `a2cn_make_offer` | Submit a counteroffer in an active session |
+| `a2cn_accept_session` | Accept the current standing offer and generate transaction record |
+| `a2cn_get_session` | Retrieve the current state of an active or completed session |
+| `a2cn_list_sessions` | List all sessions with their current status |
+
+**Transport:** The MCP server supports both stdio transport (Claude Desktop,
+Cursor) and HTTP/SSE transport (LangGraph, remote agent frameworks).
+
+**Configuration:** Agent identity (DID, org name, max commitment) is set via
+environment variables. The server generates and publishes a DID document on
+startup. Authentication uses ES256 JWT Bearer tokens with anti-replay protection.
+
+MCP configuration template: `mcp_server_config.json`.
+Reference: Section 16.1 (MCP protocol relationship), `mcp_server.py`.
+
+### 16.13 Additional Ecosystem Players
+
+The following platforms are expected to interact with A2CN agents as the
+ecosystem matures:
+
+**SAP Ariba / SAP Business Network:** Dominant enterprise procurement platform.
+A2CN agents operating as suppliers on Ariba events follow the same Path B pattern
+as Fairmarkit and Keelvar — webhook triggers A2CN session, agreed terms submitted
+via Ariba response API. No Ariba platform changes required for supplier-side agents.
+
+**Coupa:** Coupa's supplier portal exposes event webhooks. Path B integration
+follows identical pattern to Fairmarkit and Keelvar.
+
+**Ivalua:** Ivalua's API-first architecture supports webhook-triggered A2CN
+integration using the same Path B pattern.
+
+**LangGraph / LangChain:** LangGraph multi-agent workflows can host A2CN agents
+using the MCP HTTP transport (Section 16.12). LangGraph state machines map
+naturally to A2CN session state (PENDING → ACTIVE → TERMINAL).
+
+**CrewAI:** CrewAI agent crews can integrate A2CN via MCP tool-calling. A
+procurement crew member uses `a2cn_initiate_session` and `a2cn_make_offer`
+tools; a separate analyst crew member retrieves session state via `a2cn_get_session`.
+
+**Microsoft Copilot Studio / Azure AI Foundry:** MCP tool integration is
+supported natively. A2CN MCP server (Section 16.12) connects directly to
+Copilot Studio agents without additional adapter code.
+
 ---
 
 ## 16. Conformance
@@ -2559,6 +2656,36 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### v0.2.0 (2026-04-05) — Keelvar adapter, A2CN MCP Server, ecosystem sections
+
+**New: Keelvar integration adapter (Section 16.11)**
+
+- `KeelvarEventParser` class implementing Path B supplier-side integration
+- `SOURCING_EVENTS_FEED_UPDATED` webhook → A2CN `goods_procurement` terms
+- HMAC_SHA256 webhook signature verification (`X-Signature` header)
+- Round-trip `lot_id` ↔ `internal_part_number` field mapping (USD ↔ cents)
+- `terms_to_keelvar_bid_response` translates agreed A2CN terms to Keelvar bid
+  response payload for submission to the Keelvar sourcing event API
+- 17 tests added (`TestKeelvarAdapter`); total test count: 202
+
+**New: A2CN MCP Server (Section 16.12)**
+
+- `mcp_server.py` exposes 6 A2CN tools via MCP protocol
+- Tools: `a2cn_discover_agent`, `a2cn_initiate_session`, `a2cn_make_offer`,
+  `a2cn_accept_session`, `a2cn_get_session`, `a2cn_list_sessions`
+- stdio transport (Claude Desktop, Cursor) and HTTP/SSE transport (LangGraph)
+- ES256 JWT Bearer authentication with anti-replay protection
+- Configuration template: `mcp_server_config.json`
+
+**New: Additional ecosystem players (Section 16.13)**
+
+- SAP Ariba, Coupa, Ivalua Path B integration patterns documented
+- LangGraph, CrewAI, Microsoft Copilot Studio MCP integration notes
+
+**Updated: Section 16.1 (MCP)**
+
+- Added cross-reference to A2CN MCP Server (Section 16.12)
 
 ### v0.2.0 (2026-03-26) — Current
 

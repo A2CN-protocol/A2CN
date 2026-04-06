@@ -428,7 +428,7 @@
   <div class="container">
     <div class="badge">
       <span class="badge-dot"></span>
-      Apache 2.0 &middot; v0.2.0 &middot; 161 tests passing
+      Apache 2.0 &middot; v0.2.0 &middot; 202 tests passing
     </div>
     <h1>The open protocol for agent-to-agent<br>B2B negotiation</h1>
     <p class="hero-sub">
@@ -604,16 +604,31 @@
   </div>
 </section>
 
-<!-- ── FAIRMARKIT INTEGRATION ── -->
+<!-- ── INTEGRATION EXAMPLES ── -->
 <section>
   <div class="container">
-    <div class="section-label">Integration Example — Fairmarkit</div>
+    <div class="section-label">Integration Examples</div>
     <p class="code-section-intro">
-      Fairmarkit fires a <code style="font-size:0.875em;color:var(--accent);background:var(--codebg);padding:0.1em 0.4em;border-radius:4px;">BID_CREATED</code> webhook when a buyer invites a supplier.
-      When the supplier has an A2CN agent, zero Fairmarkit platform changes are required.
+      Platform adapters translate procurement platform webhooks into A2CN sessions — zero platform changes required.
     </p>
 
-    <div class="code-block"><span class="kw">from</span> <span class="mo">adapters.fairmarkit_adapter</span> <span class="kw">import</span> <span class="nb">FairmakitEventParser</span>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+      <button id="tab-fairmarkit" onclick="showTab('fairmarkit')"
+        style="padding:0.35rem 0.9rem;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;font-size:0.85rem;font-family:inherit;">
+        Fairmarkit
+      </button>
+      <button id="tab-keelvar" onclick="showTab('keelvar')"
+        style="padding:0.35rem 0.9rem;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;font-size:0.85rem;font-family:inherit;">
+        Keelvar
+      </button>
+    </div>
+
+    <div id="panel-fairmarkit">
+      <p class="code-section-intro" style="margin-top:0;">
+        Fairmarkit fires a <code style="font-size:0.875em;color:var(--accent);background:var(--codebg);padding:0.1em 0.4em;border-radius:4px;">BID_CREATED</code> webhook when a buyer invites a supplier.
+        When the supplier has an A2CN agent, zero Fairmarkit platform changes are required.
+      </p>
+      <div class="code-block"><span class="kw">from</span> <span class="mo">adapters.fairmarkit_adapter</span> <span class="kw">import</span> <span class="nb">FairmakitEventParser</span>
 
 <span class="cm"># 1. Fairmarkit fires BID_CREATED to supplier's webhook endpoint</span>
 terms = <span class="nb">FairmakitEventParser</span>.<span class="fn">bid_created_to_goods_procurement_terms</span>(payload)
@@ -627,13 +642,53 @@ response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_t
     agreed_terms, session_id=<span class="st">"a2cn-sess-001"</span>, request_id=payload[<span class="st">"request_id"</span>]
 )
 <span class="cm"># → POST /self-service/api/v3/responses/request/{request_id}/</span></div>
+      <p class="code-note">
+        Full end-to-end demo:
+        <a href="https://github.com/A2CN-protocol/A2CN/tree/main/reference-implementation/python/examples" target="_blank" rel="noopener">examples/invitation_flow.py →</a>
+      </p>
+    </div>
 
-    <p class="code-note">
-      Full end-to-end demo:
-      <a href="https://github.com/A2CN-protocol/A2CN/tree/main/reference-implementation/python/examples" target="_blank" rel="noopener">examples/invitation_flow.py →</a>
-    </p>
+    <div id="panel-keelvar" style="display:none;">
+      <p class="code-section-intro" style="margin-top:0;">
+        Keelvar fires a <code style="font-size:0.875em;color:var(--accent);background:var(--codebg);padding:0.1em 0.4em;border-radius:4px;">SOURCING_EVENTS_FEED_UPDATED</code> webhook when a new sourcing event is available.
+        Path B supplier-side integration — zero Keelvar platform changes required.
+      </p>
+      <div class="code-block"><span class="kw">from</span> <span class="mo">adapters.keelvar_adapter</span> <span class="kw">import</span> <span class="nb">KeelvarEventParser</span>
+
+<span class="cm"># 1. Verify webhook signature before processing</span>
+<span class="nb">KeelvarEventParser</span>.<span class="fn">verify_webhook_signature</span>(body, sig_header, signing_key)
+
+<span class="cm"># 2. Keelvar fires SOURCING_EVENTS_FEED_UPDATED to supplier's endpoint</span>
+terms = <span class="nb">KeelvarEventParser</span>.<span class="fn">sourcing_event_to_goods_procurement_terms</span>(payload)
+<span class="cm"># → {total_value: 2015000, currency: "EUR", line_items: [...], delivery_days: 14}</span>
+
+<span class="cm"># 3. Negotiate via A2CN session (offer / counteroffer / acceptance)</span>
+<span class="cm"># ...</span>
+
+<span class="cm"># 4. Translate agreed terms back to Keelvar bid response API</span>
+response = <span class="nb">KeelvarEventParser</span>.<span class="fn">terms_to_keelvar_bid_response</span>(
+    agreed_terms, event_id=payload[<span class="st">"event_id"</span>], supplier_id=<span class="st">"supplier-42"</span>
+)
+<span class="cm"># → POST https://my.keelvar.app/api/sourcing-events/bid-responses</span></div>
+      <p class="code-note">
+        Full end-to-end demo:
+        <a href="https://github.com/A2CN-protocol/A2CN/tree/main/reference-implementation/python/examples" target="_blank" rel="noopener">examples/keelvar_demo.py →</a>
+      </p>
+    </div>
+
   </div>
 </section>
+
+<script>
+function showTab(name) {
+  ['fairmarkit','keelvar'].forEach(function(t) {
+    document.getElementById('panel-' + t).style.display = t === name ? '' : 'none';
+    var btn = document.getElementById('tab-' + t);
+    btn.style.background = t === name ? 'var(--accent)' : 'transparent';
+    btn.style.color = t === name ? '#fff' : 'var(--accent)';
+  });
+}
+</script>
 
 <!-- ── STATUS ── -->
 <section>
@@ -649,7 +704,7 @@ response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_t
 
       <div class="status-row">
         <span class="status-badge">✅</span>
-        <span class="status-item-text">Reference implementation <span>— 161 tests passing, 0 skipped</span></span>
+        <span class="status-item-text">Reference implementation <span>— 202 tests passing, 0 skipped</span></span>
         <span class="tag tag-done">Complete</span>
       </div>
 
@@ -661,7 +716,13 @@ response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_t
 
       <div class="status-row">
         <span class="status-badge">✅</span>
-        <span class="status-item-text">Platform adapters <span>— Fairmarkit, Salesforce Revenue Cloud</span></span>
+        <span class="status-item-text">Platform adapters <span>— Fairmarkit, Salesforce Revenue Cloud, Keelvar</span></span>
+        <span class="tag tag-done">Complete</span>
+      </div>
+
+      <div class="status-row">
+        <span class="status-badge">✅</span>
+        <span class="status-item-text">MCP server <span>— 6 tools, stdio + HTTP transport, Claude Desktop / LangGraph</span></span>
         <span class="tag tag-done">Complete</span>
       </div>
 
@@ -723,7 +784,7 @@ response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_t
       <div class="involve-card">
         <div class="involve-title">Build on it</div>
         <div class="involve-body">
-          Python reference implementation with 161 passing tests. LangChain, CrewAI,
+          Python reference implementation with 202 passing tests. LangChain, CrewAI,
           and Agentforce compatible. MIT-friendly Apache 2.0 license.
         </div>
         <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN →</a>
@@ -746,7 +807,7 @@ response = <span class="nb">FairmakitEventParser</span>.<span class="fn">terms_t
 <footer>
   <div class="footer-inner">
     <span>A2CN — Agent-to-Agent Commercial Negotiation Protocol</span>
-    <span>Apache 2.0 &middot; spec v0.2.0 &middot; 161 tests passing</span>
+    <span>Apache 2.0 &middot; spec v0.2.0 &middot; 202 tests passing</span>
     <a href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN ↗</a>
   </div>
 </footer>

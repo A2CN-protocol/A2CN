@@ -1,0 +1,43 @@
+{
+  "_comment": "Claude Desktop / Cursor MCP server configuration for A2CN negotiation tools.",
+  "_docs": "https://modelcontextprotocol.io/quickstart/user",
+  "mcpServers": {
+    "a2cn": {
+      "command": "python",
+      "args": ["PATH_TO/reference-implementation/python/mcp_server.py"],
+      "env": {
+        "A2CN_AGENT_DID": "did:web:your-agent.example.com",
+        "A2CN_AGENT_ID": "procurement-agent-001",
+        "A2CN_AGENT_ORG": "Your Organization Name",
+        "A2CN_MAX_COMMITMENT": "50000000",
+        "_comment_optional": "Set A2CN_COUNTERPARTY_SERVER_DID to skip discovery and hardcode the JWT audience"
+      }
+    },
+    "a2cn-http": {
+      "_comment": "Alternative: HTTP transport for LangGraph / remote frameworks.",
+      "_comment2": "First start: python mcp_server.py --http --port 8080",
+      "command": "python",
+      "args": ["PATH_TO/reference-implementation/python/mcp_server.py", "--http", "--port", "8080"],
+      "env": {
+        "A2CN_AGENT_DID": "did:web:your-agent.example.com",
+        "A2CN_AGENT_ID": "procurement-agent-001",
+        "A2CN_AGENT_ORG": "Your Organization Name",
+        "A2CN_MAX_COMMITMENT": "50000000"
+      }
+    }
+  },
+  "_setup": [
+    "1. Replace PATH_TO with the absolute path to this repository.",
+    "2. Set A2CN_AGENT_DID to a DID you control (e.g. did:web:yourdomain.com).",
+    "3. Host your DID document at https://yourdomain.com/.well-known/did.json",
+    "   — run: python mcp_server.py to print the generated DID document.",
+    "4. Copy this file content into your Claude Desktop config:",
+    "   macOS: ~/Library/Application Support/Claude/claude_desktop_config.json",
+    "   Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
+    "5. Restart Claude Desktop.",
+    "",
+    "Example prompt once configured:",
+    "  'Negotiate a SaaS renewal with did:web:acme-corp.com for $95,000/year.",
+    "   My ceiling is $110,000. Offer net-30 terms. Accept if they come below $105K.'"
+  ]
+}

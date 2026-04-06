@@ -16,6 +16,21 @@ def init_headers(message_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# GET /.well-known/a2cn-agent — discovery
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_discovery_document(test_client):
+    r = await test_client.get("/.well-known/a2cn-agent")
+    assert r.status_code == 200
+    doc = r.json()
+    assert doc["a2cn_version"] == "0.2"
+    assert "saas_renewal" in doc["deal_types"]
+    assert doc["conformance_level"] == 2
+    assert doc["agent_did"] == RESPONDER_DID
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions
 # ---------------------------------------------------------------------------
 

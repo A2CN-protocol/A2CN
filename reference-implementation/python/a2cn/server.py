@@ -218,6 +218,27 @@ async def a2cn_error_handler(request: Request, exc: A2CNError) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# GET /.well-known/a2cn-agent — Discovery document (Component 1, Section 4.3)
+# ---------------------------------------------------------------------------
+
+@app.get("/.well-known/a2cn-agent")
+async def get_discovery() -> Response:
+    """Return the A2CN discovery document. No authentication required."""
+    cfg = _responder_config
+    agent_info = cfg.get("agent_info", {})
+    return a2cn_response({
+        "a2cn_version": "0.2",
+        "agent_did": agent_info.get("did", ""),
+        "conformance_level": 2,
+        "deal_types": cfg.get("deal_types", ["saas_renewal"]),
+        "mandate_methods": ["declared"],
+        "endpoint": agent_info.get("endpoint", ""),
+        "agent_id": agent_info.get("agent_id", ""),
+        "verification_method": agent_info.get("verification_method", ""),
+    })
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions — SessionInit
 # ---------------------------------------------------------------------------
 

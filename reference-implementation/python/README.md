@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-124%20passing%2C%201%20skipped-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -213,7 +213,7 @@ order = RevenueCloudAdapter.a2cn_terms_to_order_payload(agreed_terms, account_id
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 124 passed, 1 skipped
+pytest tests/ -v   # 202 passed
 ```
 
 | Test file | What it covers |
