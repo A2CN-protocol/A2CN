@@ -402,6 +402,7 @@
       .hero-sub { font-size: 1rem; }
       .components-grid { grid-template-columns: 1fr; }
       .involve-grid { grid-template-columns: 1fr; }
+      .meeting-place-grid { grid-template-columns: 1fr; }
       .footer-inner { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
       .nav-links .btn { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
     }
@@ -430,11 +431,12 @@
       <span class="badge-dot"></span>
       Apache 2.0 &middot; v0.2.0 &middot; 202 tests passing
     </div>
-    <h1>The open protocol for agent-to-agent<br>B2B negotiation</h1>
+    <h1>AI agents can discover, communicate,<br>and pay. They cannot negotiate.</h1>
     <p class="hero-sub">
-      No widely accepted neutral standard governs commercial negotiation between
-      AI agents from different organizations. A2CN is that standard — offer exchange,
-      mandate verification, and a dual-signed transaction record neither party controls.
+      Teams are already building agent-driven procurement and revenue workflows.
+      Those workflows break at the point of negotiation and commitment —
+      there is no shared protocol for what happens when a buyer agent
+      meets a seller agent. A2CN is that missing layer.
     </p>
     <div class="hero-cta">
       <a class="btn btn-accent" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">View on GitHub →</a>
@@ -442,6 +444,13 @@
     </div>
   </div>
 </section>
+
+<!-- ── FOR ── -->
+<div style="text-align:center;padding:0.75rem 1.5rem;border-bottom:1px solid var(--border);background:var(--surface);">
+  <span style="font-size:0.825rem;color:var(--muted);font-weight:500;letter-spacing:0.02em;">
+    For procurement and revenue platforms building agent-driven workflows
+  </span>
+</div>
 
 <!-- ── PROTOCOL STACK ── -->
 <section>
@@ -760,6 +769,91 @@ function showTab(name) {
         <span class="status-badge">📋</span>
         <span class="status-item-text">SDK <span>— pip + npm</span></span>
         <span class="tag tag-plan">Planned</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── FOUNDER ── -->
+<section>
+  <div class="container">
+    <div class="section-label">Built By</div>
+    <div style="max-width:620px;">
+      <p style="font-size:1rem;font-weight:600;color:var(--text);margin-bottom:0.5rem;">
+        Christian Magorrian
+      </p>
+      <p style="font-size:0.9375rem;color:var(--muted);line-height:1.7;margin-bottom:1rem;">
+        Former early GTM and technical hire at Samsung Next and Comet ML, working
+        directly with enterprise teams adopting AI infrastructure. Cross-organizational
+        workflows consistently broke at the point of negotiation and agreement.
+        A2CN started as an attempt to define that missing layer.
+      </p>
+      <p style="font-size:0.9375rem;color:var(--muted);line-height:1.7;">
+        Design partner conversations welcome —
+        <a href="mailto:contact@a2cn.io" style="color:var(--accent);">contact@a2cn.io</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── MEETING PLACE ── -->
+<section>
+  <div class="container">
+    <div class="section-label">The Business Layer</div>
+    <div class="meeting-place-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start;">
+
+      <div>
+        <h2 style="font-size:1.375rem;font-weight:700;color:var(--text);
+                   letter-spacing:-0.02em;margin-bottom:0.75rem;line-height:1.3;">
+          Meeting Place
+        </h2>
+        <p style="font-size:0.9375rem;color:var(--muted);line-height:1.7;margin-bottom:1rem;">
+          A2CN defines the protocol for negotiation. Meeting Place is the neutral
+          infrastructure that makes those agreements operational at enterprise scale.
+        </p>
+        <p style="font-size:0.875rem;color:var(--muted);line-height:1.65;">
+          When two agents from different organizations reach agreement, neither
+          side's system can be the authoritative record keeper. Meeting Place
+          holds the record that neither party controls — independently verified,
+          immutably stored, accessible to both.
+        </p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem;">
+        <div style="background:var(--surface);border:1px solid var(--border);
+                    border-radius:var(--radius);padding:1rem 1.25rem;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--accent);
+                      text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.25rem;">
+            Neutral Transaction Records
+          </div>
+          <div style="font-size:0.875rem;color:var(--muted);line-height:1.55;">
+            Both parties submit the record. Meeting Place verifies the dual
+            signatures independently. Neither side can modify or delete it.
+          </div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);
+                    border-radius:var(--radius);padding:1rem 1.25rem;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--accent);
+                      text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.25rem;">
+            Mandate Management
+          </div>
+          <div style="font-size:0.875rem;color:var(--muted);line-height:1.55;">
+            Issue, store, rotate, and revoke agent mandates from a single
+            control plane. Audit trail of every mandate at every session.
+          </div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);
+                    border-radius:var(--radius);padding:1rem 1.25rem;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--accent);
+                      text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.25rem;">
+            Compliance Export
+          </div>
+          <div style="font-size:0.875rem;color:var(--muted);line-height:1.55;">
+            EU AI Act and SOX-ready audit packages generated on demand.
+            Structured output for GRC systems. Full chain of custody.
+          </div>
+        </div>
       </div>
 
     </div>
