@@ -210,6 +210,54 @@ order = RevenueCloudAdapter.a2cn_terms_to_order_payload(agreed_terms, account_id
 
 ---
 
+## LLM Agent Skills File
+
+A2CN ships a reference negotiation skills file for LLM agents at:
+
+```
+reference-implementation/skills/a2cn-negotiation.md
+```
+
+The skills file is a deployable prompt template for any LLM-based A2CN
+agent. It encodes the behavioral guidance from spec Section 13.9,
+grounded in Vaccaro et al. (2026) — 182,812 AI-to-AI negotiations
+(MIT/Hopkins).
+
+**What it provides:**
+
+- **Reasoning architecture** — chain-of-thought preparation in XML
+  tags (internal, never transmitted) before generating JSON output
+- **Warmth-dominance calibration** — independent controls for
+  communication style (warmth) and mandate firmness (dominance)
+- **Output schema** — strict JSON structure the LLM must produce,
+  matching Section 13.9.3
+- **Mandate enforcement** — template variables for floor/ceiling
+  values, walk-away conditions, and escalation triggers
+- **Prompt injection defense** — documented Inject+Voss pattern
+  and defense instructions (Section 13.9.8)
+- **Deal-type guidance** — goods_procurement and saas_renewal
+  specific notes
+
+**Usage:**
+
+Populate the `{mandate.*}` and `{session.*}` template variables for
+your deployment, then include the file as your agent's system prompt
+or skill directive. Compatible with Claude Code (CLAUDE.md), LangChain
+system prompts, CrewAI task definitions, and any framework that
+accepts instruction files.
+
+```bash
+# Example: use as Claude Code skill
+cp reference-implementation/skills/a2cn-negotiation.md CLAUDE.md
+# Then populate mandate variables for your specific deployment
+```
+
+The skills file is a starting point, not a requirement. The A2CN
+protocol does not mandate any particular agent prompt structure.
+Fork it, modify it, or build your own from scratch.
+
+---
+
 ## Running the tests
 
 ```bash
@@ -247,6 +295,7 @@ python/
 ├── client.py            # Initiator
 ├── adapters/
 │   ├── fairmarkit_adapter.py
+│   ├── keelvar_adapter.py
 │   └── revenue_cloud_adapter.py
 ├── tests/
 │   ├── test_crypto.py
@@ -257,12 +306,17 @@ python/
 │   ├── test_adapters.py
 │   └── conformance/test_conformance.py
 ├── examples/
-│   ├── saas_renewal.py
-│   └── invitation_flow.py
+│   ├── saas_renewal.py       # Bilateral SaaS renewal + goods procurement demo
+│   ├── invitation_flow.py    # Session Invitation / Fairmarkit integration demo
+│   ├── keelvar_demo.py       # Keelvar sourcing event end-to-end demo
+│   └── llm_agent.py          # LLM-driven agent using Section 13.9 patterns
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```
+
+The `skills/` directory lives one level up at
+`reference-implementation/skills/a2cn-negotiation.md`.
 
 ---
 

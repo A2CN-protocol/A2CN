@@ -229,6 +229,7 @@ A2CN/
         ├── client.py                # Initiator with JCS+JWS offer signing
         ├── adapters/
         │   ├── fairmarkit_adapter.py    # Fairmarkit → A2CN translation
+        │   ├── keelvar_adapter.py       # Keelvar → A2CN translation
         │   └── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
         ├── tests/
         │   ├── test_invitations.py
@@ -237,7 +238,10 @@ A2CN/
         │   └── conformance/
         └── examples/
             ├── saas_renewal.py          # Bilateral SaaS renewal demo
-            └── invitation_flow.py       # Session Invitation / Fairmarkit demo
+            ├── invitation_flow.py       # Session Invitation / Fairmarkit demo
+            └── keelvar_demo.py          # Keelvar sourcing event end-to-end demo
+├── skills/
+│   └── a2cn-negotiation.md             # Reference LLM negotiation skills file (Section 13.9)
 └── sdk/                                 # SDK (planned)
 ```
 
@@ -250,7 +254,8 @@ A2CN/
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
 | Reference implementation (Python) | ✓ Complete — 202 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
-| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud |
+| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar |
+| LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
 | Security review | ✓ Passed — 0 critical, 0 high findings |
