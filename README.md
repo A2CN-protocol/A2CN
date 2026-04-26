@@ -113,6 +113,19 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 
 ---
 
+## Ecosystem
+
+A2CN coordinates with [Concordia Protocol](https://github.com/eriknewton/concordia-protocol) on a joint Agent Mandate Specification and joint A2A extension proposal. A2CN is the procurement-vertical layer; Concordia covers cross-domain negotiation semantics. Both compose cleanly on A2A transport.
+
+The joint work includes:
+- A shared Agent Mandate Specification covering delegation chains, DID-VC verification, and revocation semantics
+- A joint procurement patterns library (`concordia-a2cn/procurement-patterns`) with canonical RFQ, BAFO, and reverse auction patterns expressed in both protocol shapes
+- Coordinated A2A extension proposals filed simultaneously
+
+Neither protocol requires the other. Both remain independently usable.
+
+---
+
 ## Quickstart
 
 ```bash
@@ -260,7 +273,7 @@ A2CN/
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
 | Security review | ✓ Passed — 0 critical, 0 high findings |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
-| A2A extension proposal | 🔄 In progress |
+| A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
 | TypeScript reference implementation | 📋 Planned |
 | SDK (pip + npm) | 📋 Planned |
@@ -274,6 +287,8 @@ A2CN/
 **Developers building on LangChain, CrewAI, Salesforce Agentforce, or Microsoft Copilot Studio** with agents that need to interact with counterparty agents across organizational boundaries.
 
 **Protocol and distributed systems engineers** interested in open standards work. The cryptographic design, session state machine, and deterministic record generation all have interesting problems. Open issues tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22help+wanted%22) and [`good first issue`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22good+first+issue%22).
+
+**Protocol co-founders with enterprise GTM or BD background** — if you want to help build the standard and the business around it alongside the technical work, reach out at contact@a2cn.io.
 
 ---
 
