@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/dispute-notice/0.2",
+  "title": "A2CN DisputeNoticeMessage",
+  "description": "Formal dispute notice referencing a committed or delivered session. Anchors dispute to the agreed transaction record. Route to Meeting Place or designated neutral resolver (v0.3 planned, OQ-017)",
+  "type": "object",
+  "required": [
+    "message_id",
+    "session_id",
+    "transaction_record_hash",
+    "raised_by",
+    "dispute_type",
+    "description",
+    "dispute_timestamp",
+    "message_type"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "DISPUTE_NOTICE" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string" },
+    "transaction_record_hash": {
+      "type": "string",
+      "minLength": 64,
+      "description": "SHA-256 hex digest of the agreed transaction record"
+    },
+    "raised_by": {
+      "type": "string",
+      "enum": ["buyer", "seller"],
+      "description": "Which party raised the dispute"
+    },
+    "dispute_type": {
+      "type": "string",
+      "enum": ["non_delivery", "wrong_quantity", "quality", "payment_failure", "terms_violation", "other"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable dispute description"
+    },
+    "dispute_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when dispute was raised"
+    },
+    "evidence_references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Document references, content hashes, or URLs supporting the dispute"
+    },
+    "resolution_requested": {
+      "type": ["string", "null"],
+      "enum": ["renegotiate", "cancel", "neutral_review", null],
+      "description": "Requested resolution method"
+    },
+    "notes": { "type": "string" },
+    "protocol_version": { "type": "string" }
+  },
+  "additionalProperties": false
+}
