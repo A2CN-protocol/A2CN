@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import logging
 import os
 import time
@@ -676,25 +678,37 @@ async def _fire_terminal_webhook(session: Session, webhook_url: str) -> None:
         terminal=True,
         record_hash=record_hash,
     )
-    await deliver_webhook_with_retry(webhook_url, payload.to_dict())
+    await deliver_webhook(webhook_url, event_type, session.session_id, payload.to_dict())
 
 
-async def deliver_webhook_with_retry(url: str, payload: dict, max_retries: int = 3) -> None:
+# Webhook signing: v0.2 uses HMAC-SHA256 with session_id as key material.
+# v0.3 will upgrade to ES256 signed JWS envelope using sender DID verification method.
+# Receivers MUST verify X-A2CN-Signature before processing webhook payloads.
+async def deliver_webhook(url: str, event_type: str, session_id: str, payload: dict,
+                          retry_config: dict = None) -> None:
     """
-    Attempt webhook delivery up to max_retries times.
+    Attempt webhook delivery with signed headers.
     Backoff: 1s, 4s, 16s between attempts.
     Non-fatal — logs failures but does not raise.
     """
     import json
+    body_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    sig_bytes = hmac.new(session_id.encode(), body_bytes, hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig_bytes).rstrip(b"=").decode()
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    headers = {
+        "Content-Type": A2CN_CONTENT_TYPE,
+        "X-A2CN-Timestamp": timestamp,
+        "X-A2CN-Session-ID": session_id,
+        "X-A2CN-Event-Type": event_type,
+        "X-A2CN-Signature": sig_b64,
+    }
+    max_retries = (retry_config or {}).get("max_retries", 3)
     backoff_seconds = [1, 4, 16]
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.post(
-                    url,
-                    content=json.dumps(payload),
-                    headers={"Content-Type": "application/json"},
-                )
+                resp = await http.post(url, content=body_bytes, headers=headers)
                 if resp.status_code < 300:
                     return
                 logger.warning("Webhook delivery attempt %d returned %d", attempt + 1, resp.status_code)
