@@ -82,7 +82,7 @@ async def test_session_init_expired_mandate(test_client):
 @pytest.mark.asyncio
 async def test_session_init_wrong_protocol_version(test_client):
     body = make_session_init()
-    body["protocol_version"] = "0.2"
+    body["protocol_version"] = "0.1"
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "PROTOCOL_VERSION_MISMATCH"
@@ -129,7 +129,7 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,

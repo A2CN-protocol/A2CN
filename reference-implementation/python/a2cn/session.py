@@ -44,7 +44,7 @@ class SessionState:
 class Session:
     # Identity
     session_id: str
-    protocol_version: str = "0.1"
+    protocol_version: str = "0.2"
 
     # State machine
     state: str = SessionState.PENDING
@@ -367,7 +367,7 @@ class SessionManager:
             timestamp = message.get("timestamp", "")
             expires_at = message.get("expires_at", "")
             protocol_act = {
-                "protocol_version": "0.1",  # Section 7.3.1: always "0.1" for this spec version
+                "protocol_version": "0.2",  # Section 7.3.1
                 "session_id": message.get("session_id", ""),
                 "round_number": message.get("round_number"),
                 "sequence_number": message.get("sequence_number"),

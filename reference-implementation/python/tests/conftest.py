@@ -171,7 +171,7 @@ def make_session_init(message_id: str | None = None) -> dict:
     return {
         "message_type": "session_init",
         "message_id": message_id or str(uuid.uuid4()),
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",

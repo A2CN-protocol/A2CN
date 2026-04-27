@@ -13,7 +13,7 @@ RESPONDER_DID = "did:web:acme-corp.com"
 SESSION_INIT = {
     "message_type": "session_init",
     "message_id": "init-msg-id",
-    "protocol_version": "0.1",
+    "protocol_version": "0.2",
     "session_params": {
         "deal_type": "saas_renewal",
         "currency": "USD",
@@ -37,7 +37,7 @@ SESSION_ACK = {
     "message_id": "ack-msg-id",
     "session_id": "sess-001",
     "in_reply_to": "init-msg-id",
-    "protocol_version": "0.1",
+    "protocol_version": "0.2",
     "session_params_accepted": {
         "deal_type": "saas_renewal",
         "currency": "USD",
@@ -63,7 +63,7 @@ def _make_offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,
@@ -382,7 +382,7 @@ def test_offer_expiry_check():
     # Recompute hash with the new expires_at (otherwise hash mismatch fires first)
     from a2cn.crypto import hash_object as _ho
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": o1["session_id"],
         "round_number": o1["round_number"],
         "sequence_number": o1["sequence_number"],

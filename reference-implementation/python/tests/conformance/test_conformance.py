@@ -43,7 +43,7 @@ def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 10_000_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,
@@ -214,7 +214,7 @@ def test_transaction_record_deterministic():
     init_msg = {
         "message_type": "session_init",
         "message_id": "init-1",
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -238,7 +238,7 @@ def test_transaction_record_deterministic():
         "message_id": "ack-1",
         "session_id": session_id,
         "in_reply_to": "init-1",
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_params_accepted": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -266,7 +266,7 @@ def test_transaction_record_deterministic():
     _offer_expires = "2030-01-01T00:00:00Z"
     _offer_terms = {"total_value": 10_500_000, "currency": "USD"}
     _offer_pah = hash_object({
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,

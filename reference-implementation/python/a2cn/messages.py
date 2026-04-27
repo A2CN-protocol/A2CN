@@ -136,7 +136,7 @@ class TermsObject:
 class SessionInit:
     message_type: str  # "session_init"
     message_id: str
-    protocol_version: str  # "0.1"
+    protocol_version: str  # "0.2"
     session_params: SessionParams
     initiator: AgentInfo
     initiator_mandate: DeclaredMandate | dict
@@ -165,7 +165,7 @@ class SessionAck:
     message_id: str
     session_id: str
     in_reply_to: str
-    protocol_version: str  # "0.1"
+    protocol_version: str  # "0.2"
     session_params_accepted: dict
     responder: AgentInfo
     responder_mandate: DeclaredMandate | dict
@@ -265,7 +265,7 @@ class Offer:
             else self.terms
         )
         return {
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "session_id": self.session_id,
             "round_number": self.round_number,
             "sequence_number": self.sequence_number,
