@@ -290,7 +290,7 @@ def _build_seller_counteroffer(
     exp = _expires_at()
     msg_id = str(uuid.uuid4())
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": round_number,
         "sequence_number": sequence_number,
@@ -333,7 +333,7 @@ def _build_seller_acceptance(
     exp = _expires_at()
     msg_id = str(uuid.uuid4())
     protocol_act = {
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_id": session_id,
         "round_number": round_number,
         "sequence_number": sequence_number,
