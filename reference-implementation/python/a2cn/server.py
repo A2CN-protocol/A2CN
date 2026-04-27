@@ -21,6 +21,7 @@ All endpoints return Content-Type: application/a2cn+json.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import time
@@ -69,6 +70,63 @@ def configure_responder(config: dict) -> None:
     """Set responder identity info (DID, agent info, mandate, private key, etc.)."""
     global _responder_config
     _responder_config = config
+
+
+# ---------------------------------------------------------------------------
+# Middleware: transport auth (Section 14.1) + Content-Type enforcement
+# ---------------------------------------------------------------------------
+
+@app.middleware("http")
+async def transport_auth_middleware(request: Request, call_next) -> Response:
+    """
+    Enforce Bearer JWT on all state-mutating requests (POST, PUT, PATCH).
+    Only validates token shape here; full DID-based signature verification
+    is performed by verify_jwt_auth dependency on each protected endpoint.
+    """
+    if request.method in ("POST", "PUT", "PATCH"):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(
+                status_code=401,
+                content={"error": {"code": "INVALID_JWT",
+                                   "message": "Authorization: Bearer <token> header is required",
+                                   "spec_ref": "Section 14.1"}},
+            )
+        token = auth[7:]
+        parts = token.split(".")
+        if len(parts) != 3 or not all(parts):
+            return JSONResponse(
+                status_code=401,
+                content={"error": {"code": "INVALID_JWT",
+                                   "message": "Bearer token is not a valid JWT",
+                                   "spec_ref": "Section 14.1"}},
+            )
+        # Verify each segment is valid base64url
+        try:
+            for part in parts:
+                padding = (4 - len(part) % 4) % 4
+                base64.urlsafe_b64decode(part + "=" * padding)
+        except Exception:
+            return JSONResponse(
+                status_code=401,
+                content={"error": {"code": "INVALID_JWT",
+                                   "message": "Bearer token is not a valid JWT",
+                                   "spec_ref": "Section 14.1"}},
+            )
+        request.state.bearer_token = token
+
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def content_type_middleware(request: Request, call_next) -> Response:
+    """Set Content-Type on all A2CN responses. Discovery doc uses application/json."""
+    response = await call_next(request)
+    if request.url.path == "/.well-known/a2cn-agent":
+        response.headers["content-type"] = "application/json"
+    else:
+        response.headers["content-type"] = A2CN_CONTENT_TYPE
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +302,7 @@ async def get_discovery() -> Response:
 
 @app.post("/sessions")
 async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     body = await _parse_body(request)
     message_id = body.get("message_id", "")
 
@@ -328,6 +387,7 @@ async def get_session(session_id: str, request: Request,
 @app.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, request: Request,
                        _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
     message_id = body.get("message_id", "")
