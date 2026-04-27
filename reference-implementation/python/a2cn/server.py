@@ -51,6 +51,7 @@ from a2cn.messages import (
 )
 from a2cn.crypto import verify_jwt, verify_invitation_signature, public_key_from_jwk
 from a2cn.did import resolve_did_web, get_verification_method, get_public_key
+from session_store import InMemorySessionStore, SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +65,23 @@ app = FastAPI(title="A2CN Responder", version="0.2")
 manager = SessionManager()
 invitation_store = InvitationStore()
 
+# Post-commitment data store (delivery notices, dispute notices, lifecycle status).
+# Keyed by session_id → {delivery_notice, delivery_notice_message_id,
+#                         acknowledgment_message_id, dispute_notice,
+#                         dispute_notice_message_id, post_commitment_status}.
+# Replace with a durable InMemorySessionStore subclass for production.
+_session_store: InMemorySessionStore = InMemorySessionStore()
+
 # Responder identity — injected at startup by the example script
 _responder_config: dict = {}
 
 
-def configure_responder(config: dict) -> None:
+def configure_responder(config: dict, session_store: "SessionStore | None" = None) -> None:
     """Set responder identity info (DID, agent info, mandate, private key, etc.)."""
-    global _responder_config
+    global _responder_config, _session_store
     _responder_config = config
+    if session_store is not None:
+        _session_store = session_store
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +476,151 @@ async def get_audit(session_id: str, request: Request,
         )
     log = generate_audit_log(session)
     return a2cn_response(log)
+
+
+# ---------------------------------------------------------------------------
+# v0.3 planned: Post-commitment lifecycle endpoints (OQ-017)
+# ---------------------------------------------------------------------------
+
+@app.post("/sessions/{session_id}/delivery-notice")
+async def post_delivery_notice(session_id: str, request: Request,
+                               _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    if session.state != SessionState.COMPLETED:
+        return error_response(
+            "SESSION_WRONG_STATE",
+            "Delivery notice requires a COMPLETED session",
+            409,
+            session_id=session_id,
+        )
+
+    try:
+        record = generate_transaction_record(session)
+    except Exception as exc:
+        return error_response("INTERNAL_ERROR", f"Could not generate transaction record: {exc}", 500, session_id=session_id)
+
+    if body.get("transaction_record_hash") != record["record_hash"]:
+        return error_response(
+            "INVALID_RECORD_HASH",
+            "transaction_record_hash does not match the agreed transaction record",
+            409,
+            session_id=session_id,
+        )
+
+    message_id = body.get("message_id", str(uuid.uuid4()))
+    pc_data = _session_store.get(session_id) or {}
+    pc_data["delivery_notice"] = body
+    pc_data["delivery_notice_message_id"] = message_id
+    _session_store.save(session_id, pc_data)
+
+    return a2cn_response({
+        "delivery_notice_message_id": message_id,
+        "session_id": session_id,
+        "status": "DELIVERY_NOTICE_RECORDED",
+    })
+
+
+@app.post("/sessions/{session_id}/delivery-acknowledged")
+async def post_delivery_acknowledged(session_id: str, request: Request,
+                                     _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    pc_data = _session_store.get(session_id) or {}
+
+    if "delivery_notice" not in pc_data:
+        return error_response(
+            "NO_DELIVERY_NOTICE",
+            "No delivery notice found for this session",
+            409,
+            session_id=session_id,
+        )
+
+    stored_notice_id = pc_data.get("delivery_notice_message_id")
+    if body.get("delivery_notice_message_id") != stored_notice_id:
+        return error_response(
+            "INVALID_REFERENCE",
+            "delivery_notice_message_id does not match the stored delivery notice",
+            409,
+            session_id=session_id,
+        )
+
+    try:
+        record = generate_transaction_record(session)
+    except Exception as exc:
+        return error_response("INTERNAL_ERROR", f"Could not generate transaction record: {exc}", 500, session_id=session_id)
+
+    if body.get("transaction_record_hash") != record["record_hash"]:
+        return error_response(
+            "INVALID_RECORD_HASH",
+            "transaction_record_hash does not match the agreed transaction record",
+            409,
+            session_id=session_id,
+        )
+
+    accepted = body.get("accepted", False)
+    post_commitment_status = "CLOSED" if accepted else "DISPUTED"
+    message_id = body.get("message_id", str(uuid.uuid4()))
+
+    pc_data["post_commitment_status"] = post_commitment_status
+    if not accepted:
+        pc_data["dispute_reason"] = body.get("notes", "")
+    pc_data["acknowledgment_message_id"] = message_id
+    _session_store.save(session_id, pc_data)
+
+    return a2cn_response({
+        "acknowledgment_message_id": message_id,
+        "session_id": session_id,
+        "post_commitment_status": post_commitment_status,
+    })
+
+
+@app.post("/sessions/{session_id}/dispute-notice")
+async def post_dispute_notice(session_id: str, request: Request,
+                              _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    pc_data = _session_store.get(session_id) or {}
+
+    if session.state != SessionState.COMPLETED and "delivery_notice" not in pc_data:
+        return error_response(
+            "SESSION_WRONG_STATE",
+            "Dispute notice requires a COMPLETED session or a recorded delivery notice",
+            409,
+            session_id=session_id,
+        )
+
+    try:
+        record = generate_transaction_record(session)
+    except Exception as exc:
+        return error_response("INTERNAL_ERROR", f"Could not generate transaction record: {exc}", 500, session_id=session_id)
+
+    if body.get("transaction_record_hash") != record["record_hash"]:
+        return error_response(
+            "INVALID_RECORD_HASH",
+            "transaction_record_hash does not match the agreed transaction record",
+            409,
+            session_id=session_id,
+        )
+
+    message_id = body.get("message_id", str(uuid.uuid4()))
+    pc_data["dispute_notice"] = body
+    pc_data["post_commitment_status"] = "DISPUTED"
+    pc_data["dispute_notice_message_id"] = message_id
+    _session_store.save(session_id, pc_data)
+
+    return a2cn_response({
+        "dispute_notice_message_id": message_id,
+        "session_id": session_id,
+        "post_commitment_status": "DISPUTED",
+        "note": "Dispute recorded. Route to neutral resolver via Meeting Place or designated dispute resolution service.",
+    })
 
 
 # ---------------------------------------------------------------------------
