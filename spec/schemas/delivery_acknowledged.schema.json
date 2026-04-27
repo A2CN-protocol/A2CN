@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/delivery-acknowledged/0.2",
+  "title": "A2CN DeliveryAcknowledgedMessage",
+  "description": "Buyer acknowledgment of a DELIVERY_NOTICE. accepted=true closes the lifecycle; accepted=false triggers DISPUTED status (v0.3 planned, OQ-017)",
+  "type": "object",
+  "required": [
+    "message_id",
+    "session_id",
+    "transaction_record_hash",
+    "delivery_notice_message_id",
+    "acknowledgment_timestamp",
+    "accepted",
+    "message_type"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "DELIVERY_ACKNOWLEDGED" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string" },
+    "transaction_record_hash": {
+      "type": "string",
+      "minLength": 64,
+      "description": "SHA-256 hex digest of the agreed transaction record"
+    },
+    "delivery_notice_message_id": {
+      "type": "string",
+      "description": "message_id of the corresponding DELIVERY_NOTICE"
+    },
+    "acknowledgment_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of acknowledgment"
+    },
+    "accepted": {
+      "type": "boolean",
+      "description": "True = delivery accepted and lifecycle closed. False = delivery disputed."
+    },
+    "notes": { "type": "string" },
+    "protocol_version": { "type": "string" }
+  },
+  "additionalProperties": false
+}

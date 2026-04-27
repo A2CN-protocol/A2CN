@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/delivery-notice/0.2",
+  "title": "A2CN DeliveryNoticeMessage",
+  "description": "Seller confirmation of delivery against a completed A2CN session (v0.3 planned, OQ-017)",
+  "type": "object",
+  "required": [
+    "message_id",
+    "session_id",
+    "transaction_record_hash",
+    "delivery_timestamp",
+    "message_type"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "DELIVERY_NOTICE" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string" },
+    "transaction_record_hash": {
+      "type": "string",
+      "minLength": 64,
+      "description": "SHA-256 hex digest of the agreed transaction record"
+    },
+    "delivery_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when delivery occurred"
+    },
+    "delivery_reference": {
+      "type": "string",
+      "description": "Tracking number, PO reference, or other delivery identifier"
+    },
+    "notes": { "type": "string" },
+    "protocol_version": { "type": "string" }
+  },
+  "additionalProperties": false
+}

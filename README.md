@@ -103,6 +103,7 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 | **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection |
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
+| **Post-commitment lifecycle** | DELIVERY_NOTICE (seller confirms delivery), DELIVERY_ACKNOWLEDGED (buyer closes or disputes), DISPUTE_NOTICE (neutral evidence anchoring) — v0.3 |
 
 ### What A2CN is not
 
@@ -203,9 +204,9 @@ Fairmarkit / Pactum / Zip        Salesforce Revenue Cloud / Dynamics 365
               Transaction Record
               (dual-signed, content-addressed)
                         ↓
-              ───────────┴───────────
-            AP2                 Luminance
-         (payment)           (contract formalization)
+        ────────────────┴────────────────────────
+      AP2              Luminance        Meeting Place
+   (payment)        (contract)       (dispute resolution)
 ```
 
 A2CN fits between the platforms that generate offers and the infrastructure that executes payment and formalizes contracts. Neither side needs to change their internal pricing logic or CRM workflow — A2CN is the exchange layer in between.
@@ -275,6 +276,9 @@ A2CN/
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
+| Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE) | 📋 Planned — v0.3 |
+| SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
+| UBL 2.1 invoice export from transaction records | 📋 Planned — v0.3 |
 | TypeScript reference implementation | 📋 Planned |
 | SDK (pip + npm) | 📋 Planned |
 

@@ -514,6 +514,124 @@ INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
 # v0.2.0: Deal-type terms validation (OQ-004)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# v0.3 planned: Post-commitment lifecycle (OQ-017)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DeliveryNoticeMessage:
+    """
+    Sent by the seller to confirm delivery against a completed session.
+    References the transaction record by hash. Optional in v0.3 —
+    required for Level 3 conformance.
+
+    DELIVERY_NOTICE closes the seller's obligation under the agreed terms
+    and triggers the buyer's acknowledgment window.
+    """
+    message_id: str
+    session_id: str
+    transaction_record_hash: str  # Must match the agreed transaction record
+    delivery_timestamp: str       # ISO 8601 — when delivery occurred
+    delivery_reference: str | None = None  # Tracking number, PO ref, etc.
+    notes: str | None = None
+    protocol_version: str = "0.2"
+    message_type: str = "DELIVERY_NOTICE"
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "message_id": self.message_id,
+            "session_id": self.session_id,
+            "transaction_record_hash": self.transaction_record_hash,
+            "delivery_timestamp": self.delivery_timestamp,
+            "delivery_reference": self.delivery_reference,
+            "notes": self.notes,
+            "protocol_version": self.protocol_version,
+        })
+
+
+@dataclass
+class DeliveryAcknowledgedMessage:
+    """
+    Sent by the buyer to acknowledge receipt of a DELIVERY_NOTICE.
+    Closes the post-commitment lifecycle when accepted=True.
+    When accepted=False, triggers DISPUTED status on the session.
+
+    References both the DELIVERY_NOTICE and the transaction record.
+    """
+    message_id: str
+    session_id: str
+    transaction_record_hash: str      # Must match agreed transaction record
+    delivery_notice_message_id: str   # References the DELIVERY_NOTICE
+    acknowledgment_timestamp: str     # ISO 8601
+    accepted: bool                    # True = delivery accepted, False = disputed
+    notes: str | None = None
+    protocol_version: str = "0.2"
+    message_type: str = "DELIVERY_ACKNOWLEDGED"
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "message_id": self.message_id,
+            "session_id": self.session_id,
+            "transaction_record_hash": self.transaction_record_hash,
+            "delivery_notice_message_id": self.delivery_notice_message_id,
+            "acknowledgment_timestamp": self.acknowledgment_timestamp,
+            "accepted": self.accepted,
+            "notes": self.notes,
+            "protocol_version": self.protocol_version,
+        })
+
+
+@dataclass
+class DisputeNoticeMessage:
+    """
+    Sent by either party to formally open a dispute referencing a
+    committed or delivered session. Freezes further automated processing
+    and anchors the dispute to the agreed transaction record.
+
+    Disputes should be routed to a neutral resolver. Meeting Place
+    provides neutral evidence custody and dispute resolution as an
+    optional hosted service.
+    """
+    message_id: str
+    session_id: str
+    transaction_record_hash: str  # Must match agreed transaction record
+    raised_by: str                # "buyer" or "seller"
+    dispute_type: str             # "non_delivery" | "wrong_quantity" | "quality"
+                                  # | "payment_failure" | "terms_violation" | "other"
+    description: str
+    evidence_references: list[str] = None  # Document refs, hashes, URLs
+    resolution_requested: str | None = None  # "renegotiate" | "cancel" | "neutral_review"
+    dispute_timestamp: str = None  # ISO 8601, auto-set on creation
+    protocol_version: str = "0.2"
+    message_type: str = "DISPUTE_NOTICE"
+
+    def __post_init__(self):
+        if self.evidence_references is None:
+            self.evidence_references = []
+        if self.dispute_timestamp is None:
+            from datetime import datetime, timezone
+            self.dispute_timestamp = datetime.now(
+                timezone.utc
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "message_id": self.message_id,
+            "session_id": self.session_id,
+            "transaction_record_hash": self.transaction_record_hash,
+            "raised_by": self.raised_by,
+            "dispute_type": self.dispute_type,
+            "description": self.description,
+            "evidence_references": self.evidence_references,
+            "resolution_requested": self.resolution_requested,
+            "dispute_timestamp": self.dispute_timestamp,
+            "protocol_version": self.protocol_version,
+        })
+
+
 def validate_deal_type_terms(deal_type: str, terms: dict) -> list[str]:
     """
     Validates terms dict against deal-type-specific schema.
