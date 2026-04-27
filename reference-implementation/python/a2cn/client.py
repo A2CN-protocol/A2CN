@@ -82,7 +82,7 @@ class A2CNClient:
         session_init = {
             "message_type": "session_init",
             "message_id": message_id,
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "session_params": session_params,
             "initiator": self.agent_info,
             "initiator_mandate": self.mandate,
@@ -147,7 +147,7 @@ class A2CNClient:
 
         # Build protocol act object (Section 7.3.1)
         protocol_act = {
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "session_id": session_id,
             "round_number": round_number,
             "sequence_number": sequence_number,

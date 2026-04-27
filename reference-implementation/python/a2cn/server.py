@@ -257,8 +257,8 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
     if body.get("message_type") != "session_init":
         return error_response("WRONG_MESSAGE_TYPE", "Expected message_type 'session_init'", 400, message_id=message_id)
 
-    if body.get("protocol_version") != "0.1":
-        return error_response("PROTOCOL_VERSION_MISMATCH", "Only protocol_version '0.1' is supported", 400, message_id=message_id)
+    if body.get("protocol_version") != "0.2":
+        return error_response("PROTOCOL_VERSION_MISMATCH", "Only protocol_version '0.2' is supported", 400, message_id=message_id)
 
     session_params = body.get("session_params", {})
     cfg = _responder_config
@@ -286,7 +286,7 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
         "in_reply_to": message_id,
-        "protocol_version": "0.1",
+        "protocol_version": "0.2",
         "session_params_accepted": {
             "deal_type": session_params["deal_type"],
             "currency": session_params["currency"],

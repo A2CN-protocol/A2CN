@@ -50,7 +50,7 @@ SESSION_ACK = {
     "message_id": str(uuid.uuid4()),
     "session_id": SESSION_ID,
     "in_reply_to": "init-001",
-    "protocol_version": "0.1",
+    "protocol_version": "0.2",
     "session_params_accepted": {
         "deal_type": "saas_renewal",
         "currency": "USD",
