@@ -48,14 +48,21 @@ class A2CNClient:
         private_key: EllipticCurvePrivateKey,
         mandate: dict,
         http_client: httpx.AsyncClient | None = None,
+        auth_token: str | None = None,  # TODO v0.3: generate DID-based JWT locally
     ) -> None:
         self.agent_info = agent_info
         self.private_key = private_key
         self.mandate = mandate
         self._http = http_client or httpx.AsyncClient()
+        self.auth_token = auth_token
 
         # Session state maintained by the client
         self._sessions: dict[str, dict] = {}
+
+    def _auth_headers(self) -> dict:
+        if self.auth_token:
+            return {"Authorization": f"Bearer {self.auth_token}"}
+        return {}
 
     async def fetch_discovery(self, base_url: str) -> dict:
         """
@@ -88,15 +95,10 @@ class A2CNClient:
             "initiator_mandate": self.mandate,
         }
 
-        # TODO Week 2: create_jwt with real exp=300
-        # jwt_token = create_jwt(self.agent_info["did"], responder_did, self.private_key,
-        #                        kid=self.agent_info["verification_method"],
-        #                        purpose="a2cn_session_init", exp_seconds=300)
-        # headers = {"Authorization": f"Bearer {jwt_token}", ...}
-
         headers = {
             "Content-Type": A2CN_CONTENT_TYPE,
             "Idempotency-Key": message_id,
+            **self._auth_headers(),
         }
 
         resp = await self._http.post(
@@ -186,6 +188,7 @@ class A2CNClient:
         headers = {
             "Content-Type": A2CN_CONTENT_TYPE,
             "Idempotency-Key": message_id,
+            **self._auth_headers(),
         }
 
         resp = await self._http.post(
@@ -256,6 +259,7 @@ class A2CNClient:
         headers = {
             "Content-Type": A2CN_CONTENT_TYPE,
             "Idempotency-Key": message_id,
+            **self._auth_headers(),
         }
 
         resp = await self._http.post(
