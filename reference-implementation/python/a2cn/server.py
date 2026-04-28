@@ -723,34 +723,40 @@ async def receive_invitation(request: Request) -> Response:
             400,
         )
 
-    # Signature verification: resolve inviter DID to get public key.
-    # Skipped only if inviter_did or inviter_verification_method is absent.
+    # Signature verification is REQUIRED (Section 9.3)
     inviter_did = body.get("inviter_did", "")
+    if not inviter_did:
+        return error_response("MISSING_INVITER_DID", "inviter_did is required", 400)
     vm_id = body.get("inviter_verification_method", "")
-    if inviter_did and vm_id:
-        # Resolve DID document (_did_doc_override first, then HTTP)
-        if inviter_did in _did_doc_override:
-            did_doc = _did_doc_override[inviter_did]
-        else:
-            try:
-                async with httpx.AsyncClient() as http:
-                    did_doc = await resolve_did_web(inviter_did, http)
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
-                return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
-            except Exception:
-                return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
+    if not vm_id:
+        return error_response("MISSING_VERIFICATION_METHOD", "inviter_verification_method is required", 400)
+    if not body.get("invitation_signature"):
+        return error_response("MISSING_INVITATION_SIGNATURE", "invitation_signature is required", 400)
 
+    # TODO v0.3: Verify invitation signature against inviter DID document
+    # Resolve DID document (_did_doc_override first, then HTTP)
+    if inviter_did in _did_doc_override:
+        did_doc = _did_doc_override[inviter_did]
+    else:
         try:
-            vm = get_verification_method(did_doc, vm_id)
-            pub_key = get_public_key(vm)
-        except (KeyError, ValueError) as exc:
-            return error_response(INVITATION_SIGNATURE_INVALID,
-                                  f"Verification method not found: {exc}", 400)
+            async with httpx.AsyncClient() as http:
+                did_doc = await resolve_did_web(inviter_did, http)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
+            return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
+        except Exception:
+            return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
 
-        if not verify_invitation_signature(body, pub_key):
-            return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
+    try:
+        vm = get_verification_method(did_doc, vm_id)
+        pub_key = get_public_key(vm)
+    except (KeyError, ValueError) as exc:
+        return error_response(INVITATION_SIGNATURE_INVALID,
+                              f"Verification method not found: {exc}", 400)
+
+    if not verify_invitation_signature(body, pub_key):
+        return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
 
     invitation_store.store_inbound(body)
     return a2cn_response({"invitation_id": body.get("invitation_id"), "status": "pending"}, 201)
