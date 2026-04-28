@@ -374,6 +374,9 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
         "current_turn": "initiator",
     }
 
+    if "impasse_threshold" in session_params:
+        session_ack["session_params_accepted"]["impasse_threshold"] = session_params["impasse_threshold"]
+
     # Create session
     session = manager.create_session(session_id, body, session_ack, now)
 
