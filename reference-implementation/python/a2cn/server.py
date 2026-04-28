@@ -437,8 +437,14 @@ async def send_message(session_id: str, request: Request,
 
 @app.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, request: Request,
+                       _jwt: dict = Depends(verify_jwt_auth),
                        after_sequence: int = 0, limit: int = 50) -> Response:
     session = _get_session_or_404(session_id)
+    jwt_iss = _jwt.get("iss", "")
+    if jwt_iss not in (session.initiator_info.get("did"), session.responder_info.get("did")):
+        return error_response("NOT_SESSION_PARTY",
+                               "JWT issuer is not a party to this session",
+                               403, session_id=session_id)
     params = dict(request.query_params)
 
     all_messages = session._message_log
