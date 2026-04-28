@@ -13,6 +13,7 @@ dependencies = [
     "PyJWT==2.9.0",
     "cryptography==43.0.0",
     "jcs==0.2.1",
+    "mcp",
 ]
 
 [project.optional-dependencies]

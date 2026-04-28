@@ -374,6 +374,9 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
         "current_turn": "initiator",
     }
 
+    if "impasse_threshold" in session_params:
+        session_ack["session_params_accepted"]["impasse_threshold"] = session_params["impasse_threshold"]
+
     # Create session
     session = manager.create_session(session_id, body, session_ack, now)
 
@@ -402,6 +405,19 @@ async def send_message(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    # Bind JWT issuer to session and sender identity (Section 14.1)
+    body_session_id = body.get("session_id")
+    if body_session_id is not None and body_session_id != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+    body_sender_did = body.get("sender_did", "")
+    if body_sender_did and body_sender_did != _jwt.get("iss", ""):
+        return error_response("SENDER_DID_MISMATCH",
+                               "JWT issuer does not match sender_did in request body",
+                               401, detail="Section 14.1", session_id=session_id)
+
     message_id = body.get("message_id", "")
 
     try:
@@ -424,8 +440,14 @@ async def send_message(session_id: str, request: Request,
 
 @app.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, request: Request,
+                       _jwt: dict = Depends(verify_jwt_auth),
                        after_sequence: int = 0, limit: int = 50) -> Response:
     session = _get_session_or_404(session_id)
+    jwt_iss = _jwt.get("iss", "")
+    if jwt_iss not in (session.initiator_info.get("did"), session.responder_info.get("did")):
+        return error_response("NOT_SESSION_PARTY",
+                               "JWT issuer is not a party to this session",
+                               403, session_id=session_id)
     params = dict(request.query_params)
 
     all_messages = session._message_log
@@ -489,6 +511,11 @@ async def post_delivery_notice(session_id: str, request: Request,
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
 
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+
     if session.state != SessionState.COMPLETED:
         return error_response(
             "SESSION_WRONG_STATE",
@@ -529,6 +556,11 @@ async def post_delivery_acknowledged(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
 
     pc_data = _session_store.get(session_id) or {}
 
@@ -585,6 +617,11 @@ async def post_dispute_notice(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
 
     pc_data = _session_store.get(session_id) or {}
 
@@ -689,34 +726,40 @@ async def receive_invitation(request: Request) -> Response:
             400,
         )
 
-    # Signature verification: resolve inviter DID to get public key.
-    # Skipped only if inviter_did or inviter_verification_method is absent.
+    # Signature verification is REQUIRED (Section 9.3)
     inviter_did = body.get("inviter_did", "")
+    if not inviter_did:
+        return error_response("MISSING_INVITER_DID", "inviter_did is required", 400)
     vm_id = body.get("inviter_verification_method", "")
-    if inviter_did and vm_id:
-        # Resolve DID document (_did_doc_override first, then HTTP)
-        if inviter_did in _did_doc_override:
-            did_doc = _did_doc_override[inviter_did]
-        else:
-            try:
-                async with httpx.AsyncClient() as http:
-                    did_doc = await resolve_did_web(inviter_did, http)
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
-                return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
-            except Exception:
-                return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
+    if not vm_id:
+        return error_response("MISSING_VERIFICATION_METHOD", "inviter_verification_method is required", 400)
+    if not body.get("invitation_signature"):
+        return error_response("MISSING_INVITATION_SIGNATURE", "invitation_signature is required", 400)
 
+    # TODO v0.3: Verify invitation signature against inviter DID document
+    # Resolve DID document (_did_doc_override first, then HTTP)
+    if inviter_did in _did_doc_override:
+        did_doc = _did_doc_override[inviter_did]
+    else:
         try:
-            vm = get_verification_method(did_doc, vm_id)
-            pub_key = get_public_key(vm)
-        except (KeyError, ValueError) as exc:
-            return error_response(INVITATION_SIGNATURE_INVALID,
-                                  f"Verification method not found: {exc}", 400)
+            async with httpx.AsyncClient() as http:
+                did_doc = await resolve_did_web(inviter_did, http)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
+            return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
+        except Exception:
+            return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
 
-        if not verify_invitation_signature(body, pub_key):
-            return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
+    try:
+        vm = get_verification_method(did_doc, vm_id)
+        pub_key = get_public_key(vm)
+    except (KeyError, ValueError) as exc:
+        return error_response(INVITATION_SIGNATURE_INVALID,
+                              f"Verification method not found: {exc}", 400)
+
+    if not verify_invitation_signature(body, pub_key):
+        return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
 
     invitation_store.store_inbound(body)
     return a2cn_response({"invitation_id": body.get("invitation_id"), "status": "pending"}, 201)
