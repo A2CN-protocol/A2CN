@@ -402,6 +402,19 @@ async def send_message(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    # Bind JWT issuer to session and sender identity (Section 14.1)
+    body_session_id = body.get("session_id")
+    if body_session_id is not None and body_session_id != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+    body_sender_did = body.get("sender_did", "")
+    if body_sender_did and body_sender_did != _jwt.get("iss", ""):
+        return error_response("SENDER_DID_MISMATCH",
+                               "JWT issuer does not match sender_did in request body",
+                               401, detail="Section 14.1", session_id=session_id)
+
     message_id = body.get("message_id", "")
 
     try:
@@ -489,6 +502,11 @@ async def post_delivery_notice(session_id: str, request: Request,
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
 
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+
     if session.state != SessionState.COMPLETED:
         return error_response(
             "SESSION_WRONG_STATE",
@@ -529,6 +547,11 @@ async def post_delivery_acknowledged(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
 
     pc_data = _session_store.get(session_id) or {}
 
@@ -585,6 +608,11 @@ async def post_dispute_notice(session_id: str, request: Request,
     # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
 
     pc_data = _session_store.get(session_id) or {}
 
