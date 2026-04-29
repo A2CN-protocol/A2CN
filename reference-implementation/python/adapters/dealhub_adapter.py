@@ -58,12 +58,13 @@ class DealHubEventParser:
     # FIELD NOTE: All field names should be verified against a live DealHub
     # instance. Contact DealHub support or inspect sandbox responses for exact names.
     DEFAULT_FIELD_MAP: dict[str, str] = {
-        "total_value_field":  "total_price",    # FIELD NOTE: Verify against live DealHub instance.
-        "currency_field":     "currency",        # FIELD NOTE: Verify against live DealHub instance.
-        "line_items_field":   "line_items",      # FIELD NOTE: Verify against live DealHub instance.
-        "product_name_field": "product_name",    # FIELD NOTE: Verify against live DealHub instance.
-        "quantity_field":     "quantity",        # FIELD NOTE: Verify against live DealHub instance.
-        "unit_price_field":   "unit_price",      # FIELD NOTE: Verify against live DealHub instance.
+        "total_value_field":    "total_price",    # FIELD NOTE: Verify against live DealHub instance.
+        "currency_field":       "currency",        # FIELD NOTE: Verify against live DealHub instance.
+        "line_items_field":     "line_items",      # FIELD NOTE: Verify against live DealHub instance.
+        "product_name_field":   "product_name",    # FIELD NOTE: Verify against live DealHub instance.
+        "quantity_field":       "quantity",        # FIELD NOTE: Verify against live DealHub instance.
+        "unit_price_field":     "unit_price",      # FIELD NOTE: Verify against live DealHub instance.
+        "unit_of_measure_field": "unit_of_measure", # FIELD NOTE: Verify against live DealHub instance.
     }
 
     @staticmethod
@@ -116,7 +117,7 @@ class DealHubEventParser:
         }
 
     @staticmethod
-    def fetch_quote_details(quote_id: str) -> dict:
+    async def fetch_quote_details(quote_id: str) -> dict:
         """
         Calls the DealHub Get Quote API and returns the full quote response.
 
@@ -140,7 +141,8 @@ class DealHubEventParser:
                 "DEALHUB_AUTH_TOKEN and DEALHUB_BASE_URL environment variables are required."
             )
         url = f"{base_url.rstrip('/')}/api/v1/quotes/{quote_id}"
-        response = httpx.get(url, headers={"Authorization": f"Bearer {auth_token}"})
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {auth_token}"})
         if response.status_code == 403:
             raise ValueError(
                 "DealHub API returned 403 Forbidden — check DEALHUB_AUTH_TOKEN."
@@ -190,12 +192,16 @@ class DealHubEventParser:
             line_total = qty * unit_price_cents
             total_cents += line_total
 
-            line_items.append({
+            entry: dict = {
                 "description": product_name,
                 "quantity": qty,
                 "unit_price": unit_price_cents,
                 "total": line_total,
-            })
+            }
+            uom = item.get(fm["unit_of_measure_field"])
+            if uom:
+                entry["unit_of_measure"] = str(uom)
+            line_items.append(entry)
 
         # Fall back to top-level total_price when line items carry no prices
         total_from_header = int(float(quote_response.get(fm["total_value_field"], 0)) * 100)
@@ -228,7 +234,7 @@ class DealHubEventParser:
         return terms
 
     @staticmethod
-    def simulate_quote_for_mandate_bounds(
+    async def simulate_quote_for_mandate_bounds(
         playbook_id: str,
         answers: dict,
         floor_discount_pct: float = 0.15,
@@ -271,14 +277,15 @@ class DealHubEventParser:
             )
         url = f"{base_url.rstrip('/')}/api/v1/headless/simulate"
         payload = {"playbook_id": playbook_id, "answers": answers}
-        response = httpx.post(
-            url,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {auth_token}",
-                "Content-Type": "application/json",
-            },
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {auth_token}",
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         data = response.json()
 
@@ -295,7 +302,7 @@ class DealHubEventParser:
         }
 
     @staticmethod
-    def agreed_terms_to_dealhub_action(
+    async def agreed_terms_to_dealhub_action(
         quote_id: str,
         a2cn_session_id: str,
         record_hash: str,
@@ -336,14 +343,15 @@ class DealHubEventParser:
             ),
         }
         url = f"{base_url.rstrip('/')}/api/v1/quotes/{quote_id}/actions"
-        response = httpx.post(
-            url,
-            json=action_payload,
-            headers={
-                "Authorization": f"Bearer {auth_token}",
-                "Content-Type": "application/json",
-            },
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json=action_payload,
+                headers={
+                    "Authorization": f"Bearer {auth_token}",
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         return {
             "api_response": response.json(),

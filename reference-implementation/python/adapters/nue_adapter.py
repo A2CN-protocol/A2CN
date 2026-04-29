@@ -51,8 +51,31 @@ class NueEventParser:
         NUE_BASE_URL: Base URL (production or sandbox)
     """
 
+    # Default field map for Nue pricing API responses.
+    # Override via the field_map parameter on pricing_to_mandate_bounds() if
+    # your Nue instance uses different field names.
+    # FIELD NOTE: All names should be verified against a live Nue sandbox instance.
+    PRICING_FIELD_MAP: dict[str, str] = {
+        "list_price_field": "listPrice",    # FIELD NOTE: Verify against live Nue sandbox.
+        "quantity_field":   "quantity",      # FIELD NOTE: Verify against live Nue sandbox.
+        "currency_field":   "currency",      # FIELD NOTE: Verify against live Nue sandbox.
+    }
+
+    # Default field map for Nue subscription API responses.
+    # Override via the field_map parameter on subscription_to_renewal_terms() if
+    # your Nue instance uses different field names.
+    # FIELD NOTE: All names should be verified against a live Nue sandbox instance.
+    SUBSCRIPTION_FIELD_MAP: dict[str, str] = {
+        "total_value_field":  "totalValue",   # FIELD NOTE: Verify against live Nue sandbox.
+        "quantity_field":     "quantity",      # FIELD NOTE: Verify against live Nue sandbox.
+        "tier_field":         "productTier",   # FIELD NOTE: Verify against live Nue sandbox.
+        "auto_renew_field":   "autoRenew",     # FIELD NOTE: Verify against live Nue sandbox.
+        "term_months_field":  "termMonths",    # FIELD NOTE: Verify against live Nue sandbox.
+        "currency_field":     "currency",      # FIELD NOTE: Verify against live Nue sandbox.
+    }
+
     @staticmethod
-    def fetch_pricing(price_book_id: str, product_id: str) -> dict:
+    async def fetch_pricing(price_book_id: str, product_id: str) -> dict:
         """
         Calls the Nue Commerce API to get pricing for a specific product and
         price book.
@@ -78,11 +101,12 @@ class NueEventParser:
                 "NUE_API_KEY and NUE_BASE_URL environment variables are required."
             )
         url = f"{base_url.rstrip('/')}/commerce/pricing"
-        response = httpx.get(
-            url,
-            params={"priceBookId": price_book_id, "productId": product_id},
-            headers={"Nue-Api-Key": api_key},
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                params={"priceBookId": price_book_id, "productId": product_id},
+                headers={"Nue-Api-Key": api_key},
+            )
         if response.status_code == 401:
             raise ValueError("Nue API returned 401 Unauthorized — check NUE_API_KEY.")
         if response.status_code == 404:
@@ -98,6 +122,7 @@ class NueEventParser:
         pricing_response: dict,
         floor_discount_pct: float = 0.10,
         ceiling_markup_pct: float = 0.0,
+        field_map: dict | None = None,
     ) -> dict:
         """
         Translates a Nue pricing response into A2CN mandate bounds.
@@ -117,25 +142,20 @@ class NueEventParser:
             pricing_response:   Raw pricing response from fetch_pricing().
             floor_discount_pct: Max authorised discount (default 0.10 = 10%).
             ceiling_markup_pct: Markup above list price for ceiling (default 0).
+            field_map:          Optional field name overrides merged with PRICING_FIELD_MAP.
 
         Returns:
             Dict with ceiling_value_cents, floor_value_cents, and currency.
         """
-        # FIELD NOTE: Verify listPrice field name against live Nue sandbox instance.
-        # Contact Nue support or check sandbox response for exact name.
-        list_price = float(
-            pricing_response.get("listPrice",
-                pricing_response.get("list_price",
-                    pricing_response.get("unitPrice",
-                        pricing_response.get("price", 0))))
-        )
-        # FIELD NOTE: Verify quantity field name against live Nue sandbox instance.
-        quantity = int(pricing_response.get("quantity", 1))
+        fm = {**NueEventParser.PRICING_FIELD_MAP, **(field_map or {})}
+
+        list_price = float(pricing_response.get(fm["list_price_field"], 0))
+        quantity = int(pricing_response.get(fm["quantity_field"], 1))
         total_list_price = list_price * quantity
 
         ceiling_cents = int(total_list_price * 100 * (1.0 + ceiling_markup_pct))
         floor_cents = int(ceiling_cents * (1.0 - floor_discount_pct))
-        currency = str(pricing_response.get("currency", "USD"))
+        currency = str(pricing_response.get(fm["currency_field"], "USD"))
 
         return {
             "ceiling_value_cents": ceiling_cents,
@@ -147,6 +167,7 @@ class NueEventParser:
     def subscription_to_renewal_terms(
         subscription_response: dict,
         renewal_markup_pct: float = 0.05,
+        field_map: dict | None = None,
     ) -> dict:
         """
         Translates an existing Nue subscription into A2CN saas_renewal offer
@@ -162,34 +183,21 @@ class NueEventParser:
         Args:
             subscription_response: Nue subscription dict (from fetch_customer_subscriptions).
             renewal_markup_pct:    Annual price increase to apply (default 0.05 = 5%).
+            field_map:             Optional field name overrides merged with SUBSCRIPTION_FIELD_MAP.
 
         Returns:
             A2CN saas_renewal offer terms dict with total_value in cents.
         """
-        # FIELD NOTE: Verify all field names below against live Nue sandbox instance.
-        current_value = float(
-            subscription_response.get("totalValue",
-                subscription_response.get("total_value", 0))
-        )
+        fm = {**NueEventParser.SUBSCRIPTION_FIELD_MAP, **(field_map or {})}
+
+        current_value = float(subscription_response.get(fm["total_value_field"], 0))
         renewal_value_cents = int(current_value * 100 * (1.0 + renewal_markup_pct))
 
-        seat_count = int(
-            subscription_response.get("quantity",
-                subscription_response.get("seats", 1))
-        )
-        tier = str(
-            subscription_response.get("productTier",
-                subscription_response.get("product_tier", "standard"))
-        )
-        auto_renew = bool(
-            subscription_response.get("autoRenew",
-                subscription_response.get("auto_renew", False))
-        )
-        term_months = int(
-            subscription_response.get("termMonths",
-                subscription_response.get("term_months", 12))
-        )
-        currency = str(subscription_response.get("currency", "USD"))
+        seat_count = int(subscription_response.get(fm["quantity_field"], 1))
+        tier = str(subscription_response.get(fm["tier_field"], "standard"))
+        auto_renew = bool(subscription_response.get(fm["auto_renew_field"], False))
+        term_months = int(subscription_response.get(fm["term_months_field"], 12))
+        currency = str(subscription_response.get(fm["currency_field"], "USD"))
 
         return {
             "deal_type": "saas_renewal",
@@ -202,7 +210,7 @@ class NueEventParser:
         }
 
     @staticmethod
-    def a2cn_terms_to_nue_order(
+    async def a2cn_terms_to_nue_order(
         agreed_terms: dict,
         customer_id: str,
         price_book_id: str,
@@ -262,12 +270,14 @@ class NueEventParser:
                 for item in line_items
             ]
         else:
-            # No line items — build a single line from the total
+            # No line items — build a single line from the total.
+            # unitPrice = per-seat price: divide total by seat count before converting cents→dollars.
+            seat_count = max(int(agreed_terms.get("seat_count", 1)), 1)
             lines = [
                 {
                     "productId": product_id,
-                    "quantity": agreed_terms.get("seat_count", 1),
-                    "unitPrice": agreed_terms.get("total_value", 0) / 100.0,
+                    "quantity": seat_count,
+                    "unitPrice": agreed_terms.get("total_value", 0) / seat_count / 100.0,
                     "term": term_months,
                 }
             ]
@@ -282,14 +292,15 @@ class NueEventParser:
         }
 
         url = f"{base_url.rstrip('/')}/orders"
-        response = httpx.post(
-            url,
-            json=order_payload,
-            headers={
-                "Nue-Api-Key": api_key,
-                "Content-Type": "application/json",
-            },
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json=order_payload,
+                headers={
+                    "Nue-Api-Key": api_key,
+                    "Content-Type": "application/json",
+                },
+            )
         response.raise_for_status()
         return {
             "api_response": response.json(),
@@ -297,7 +308,7 @@ class NueEventParser:
         }
 
     @staticmethod
-    def fetch_customer_subscriptions(customer_id: str) -> list[dict]:
+    async def fetch_customer_subscriptions(customer_id: str) -> list[dict]:
         """
         Fetches all active subscriptions for a customer from Nue.
 
@@ -322,11 +333,12 @@ class NueEventParser:
                 "NUE_API_KEY and NUE_BASE_URL environment variables are required."
             )
         url = f"{base_url.rstrip('/')}/subscriptions"
-        response = httpx.get(
-            url,
-            params={"customerId": customer_id},
-            headers={"Nue-Api-Key": api_key},
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                params={"customerId": customer_id},
+                headers={"Nue-Api-Key": api_key},
+            )
         response.raise_for_status()
         data = response.json()
         if isinstance(data, list):

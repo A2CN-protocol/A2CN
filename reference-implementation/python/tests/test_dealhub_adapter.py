@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -56,6 +56,27 @@ SAMPLE_QUOTE_RESPONSE_GOODS = {
         {"product_name": "Hydraulic fluid 200L drums", "quantity": 50, "unit_price": 360.0},
     ],
 }
+
+
+# ---------------------------------------------------------------------------
+# Async HTTP mock helper
+# ---------------------------------------------------------------------------
+
+def _make_async_client_mock(json_data: dict, status_code: int = 200):
+    """Returns a context-manager mock for httpx.AsyncClient."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.json.return_value = json_data
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_response
+    mock_client.post.return_value = mock_response
+
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+    return mock_cm
 
 
 # ---------------------------------------------------------------------------
@@ -167,27 +188,56 @@ class TestDealHubQuoteToOfferTerms:
         terms = DealHubEventParser.quote_to_a2cn_offer_terms(quote)
         assert terms["total_value"] == 750_000  # $7500 in cents
 
+    def test_unit_of_measure_included_when_present(self):
+        quote = {
+            "total_price": 5000.0,
+            "currency": "USD",
+            "line_items": [
+                {
+                    "product_name": "Industrial Hydraulic Pump",
+                    "quantity": 10,
+                    "unit_price": 500.0,
+                    "unit_of_measure": "EA",
+                },
+            ],
+        }
+        terms = DealHubEventParser.quote_to_a2cn_offer_terms(quote)
+        assert terms["line_items"][0]["unit_of_measure"] == "EA"
+
+    def test_unit_of_measure_omitted_when_absent(self):
+        terms = DealHubEventParser.quote_to_a2cn_offer_terms(SAMPLE_QUOTE_RESPONSE_GOODS)
+        assert "unit_of_measure" not in terms["line_items"][0]
+
+    def test_custom_unit_of_measure_field_name(self):
+        quote = {
+            "total_price": 1000.0,
+            "currency": "USD",
+            "line_items": [
+                {"product_name": "Widget", "quantity": 5, "unit_price": 200.0, "uom": "KG"},
+            ],
+        }
+        terms = DealHubEventParser.quote_to_a2cn_offer_terms(
+            quote, field_map={"unit_of_measure_field": "uom"}
+        )
+        assert terms["line_items"][0]["unit_of_measure"] == "KG"
+
 
 # ---------------------------------------------------------------------------
 # TestDealHubMandateBounds
 # ---------------------------------------------------------------------------
 
 class TestDealHubMandateBounds:
-    def test_floor_is_ceiling_minus_discount(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "total_price": 100000.0,
-            "currency": "USD",
-            "line_items": [],
-        }
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.post", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_floor_is_ceiling_minus_discount(self):
+        mock_cm = _make_async_client_mock(
+            {"total_price": 100000.0, "currency": "USD", "line_items": []}
+        )
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "test-token",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.simulate_quote_for_mandate_bounds(
+                result = await DealHubEventParser.simulate_quote_for_mandate_bounds(
                     playbook_id="pb-001",
                     answers={"product_id": "prod-001", "quantity": 1},
                     floor_discount_pct=0.15,
@@ -197,17 +247,17 @@ class TestDealHubMandateBounds:
         floor = result["floor_value_cents"]
         assert floor == int(ceiling * 0.85)
 
-    def test_floor_discount_pct_applied_correctly(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"total_price": 10000.0, "currency": "USD", "line_items": []}
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.post", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_floor_discount_pct_applied_correctly(self):
+        mock_cm = _make_async_client_mock(
+            {"total_price": 10000.0, "currency": "USD", "line_items": []}
+        )
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "tok",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.simulate_quote_for_mandate_bounds(
+                result = await DealHubEventParser.simulate_quote_for_mandate_bounds(
                     playbook_id="pb-001",
                     answers={},
                     floor_discount_pct=0.20,
@@ -219,9 +269,12 @@ class TestDealHubMandateBounds:
 
     def test_simulate_raises_on_empty_playbook_id(self):
         with pytest.raises(ValueError, match="playbook_id is required"):
-            DealHubEventParser.simulate_quote_for_mandate_bounds(
-                playbook_id="",
-                answers={},
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                DealHubEventParser.simulate_quote_for_mandate_bounds(
+                    playbook_id="",
+                    answers={},
+                )
             )
 
     def test_simulate_raises_on_missing_env_vars(self):
@@ -229,9 +282,12 @@ class TestDealHubMandateBounds:
                if k not in ("DEALHUB_AUTH_TOKEN", "DEALHUB_BASE_URL")}
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="DEALHUB_AUTH_TOKEN"):
-                DealHubEventParser.simulate_quote_for_mandate_bounds(
-                    playbook_id="pb-001",
-                    answers={},
+                import asyncio
+                asyncio.get_event_loop().run_until_complete(
+                    DealHubEventParser.simulate_quote_for_mandate_bounds(
+                        playbook_id="pb-001",
+                        answers={},
+                    )
                 )
 
 
@@ -240,17 +296,15 @@ class TestDealHubMandateBounds:
 # ---------------------------------------------------------------------------
 
 class TestDealHubActionsApi:
-    def test_action_payload_includes_session_id(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"status": "success"}
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.post", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_action_payload_includes_session_id(self):
+        mock_cm = _make_async_client_mock({"status": "success"})
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "test-token",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.agreed_terms_to_dealhub_action(
+                result = await DealHubEventParser.agreed_terms_to_dealhub_action(
                     quote_id="dh-q-001",
                     a2cn_session_id="sess-abc-123",
                     record_hash="deadbeef" * 8,
@@ -258,17 +312,15 @@ class TestDealHubActionsApi:
 
         assert "sess-abc-123" in result["action_payload_sent"]["note"]
 
-    def test_action_payload_includes_record_hash(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"status": "success"}
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.post", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_action_payload_includes_record_hash(self):
+        mock_cm = _make_async_client_mock({"status": "success"})
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "test-token",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.agreed_terms_to_dealhub_action(
+                result = await DealHubEventParser.agreed_terms_to_dealhub_action(
                     quote_id="dh-q-001",
                     a2cn_session_id="sess-abc-123",
                     record_hash="cafebabe" * 8,
@@ -276,17 +328,15 @@ class TestDealHubActionsApi:
 
         assert "cafebabe" * 8 in result["action_payload_sent"]["note"]
 
-    def test_action_uses_sign_externally_action(self):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {}
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.post", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_action_uses_sign_externally_action(self):
+        mock_cm = _make_async_client_mock({})
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "tok",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.agreed_terms_to_dealhub_action(
+                result = await DealHubEventParser.agreed_terms_to_dealhub_action(
                     "dh-q-001", "sess-001", "hash-001"
                 )
 
@@ -303,19 +353,19 @@ class TestDealHubFetchQuoteDetails:
                if k not in ("DEALHUB_AUTH_TOKEN", "DEALHUB_BASE_URL")}
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="DEALHUB_AUTH_TOKEN"):
-                DealHubEventParser.fetch_quote_details("dh-q-001")
+                import asyncio
+                asyncio.get_event_loop().run_until_complete(
+                    DealHubEventParser.fetch_quote_details("dh-q-001")
+                )
 
-    def test_returns_json_on_success(self):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"dealhub_quote_id": "dh-q-001"}
-        mock_response.raise_for_status.return_value = None
-
-        with patch("adapters.dealhub_adapter.httpx.get", return_value=mock_response):
+    @pytest.mark.asyncio
+    async def test_returns_json_on_success(self):
+        mock_cm = _make_async_client_mock({"dealhub_quote_id": "dh-q-001"}, status_code=200)
+        with patch("adapters.dealhub_adapter.httpx.AsyncClient", return_value=mock_cm):
             with patch.dict(os.environ, {
                 "DEALHUB_AUTH_TOKEN": "tok",
                 "DEALHUB_BASE_URL": "https://test.dealhub.io",
             }):
-                result = DealHubEventParser.fetch_quote_details("dh-q-001")
+                result = await DealHubEventParser.fetch_quote_details("dh-q-001")
 
         assert result["dealhub_quote_id"] == "dh-q-001"
