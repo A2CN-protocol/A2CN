@@ -660,6 +660,67 @@ async def post_dispute_notice(session_id: str, request: Request,
     })
 
 
+@app.post("/sessions/{session_id}/dispute-resolved")
+async def post_dispute_resolved(session_id: str, request: Request,
+                                _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+
+    pc_data = _session_store.get(session_id) or {}
+
+    if pc_data.get("post_commitment_status") != "DISPUTED":
+        return error_response(
+            "NOT_IN_DISPUTED_STATUS",
+            "DISPUTE_RESOLVED requires an open DISPUTE_NOTICE",
+            400,
+            session_id=session_id,
+            detail="Section 11",
+        )
+
+    stored_dispute_id = pc_data.get("dispute_notice_message_id")
+    if body.get("dispute_notice_message_id") != stored_dispute_id:
+        return error_response(
+            "INVALID_REFERENCE",
+            "dispute_notice_message_id does not match the stored dispute notice",
+            409,
+            session_id=session_id,
+        )
+
+    try:
+        record = generate_transaction_record(session)
+    except Exception as exc:
+        return error_response("INTERNAL_ERROR", f"Could not generate transaction record: {exc}", 500, session_id=session_id)
+
+    if body.get("transaction_record_hash") != record["record_hash"]:
+        return error_response(
+            "INVALID_RECORD_HASH",
+            "transaction_record_hash does not match the agreed transaction record",
+            409,
+            session_id=session_id,
+        )
+
+    message_id = body.get("message_id", str(uuid.uuid4()))
+    resolution_outcome = body.get("resolution_outcome", "")
+
+    pc_data["dispute_resolution"] = body
+    pc_data["post_commitment_status"] = "RESOLVED"
+    pc_data["dispute_resolved_message_id"] = message_id
+    _session_store.save(session_id, pc_data)
+
+    return a2cn_response({
+        "dispute_resolved_message_id": message_id,
+        "session_id": session_id,
+        "resolution_outcome": resolution_outcome,
+        "post_commitment_status": "RESOLVED",
+    })
+
+
 # ---------------------------------------------------------------------------
 # v0.2.0: Invitation endpoints (Component 8)
 # ---------------------------------------------------------------------------

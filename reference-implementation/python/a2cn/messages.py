@@ -632,6 +632,63 @@ class DisputeNoticeMessage:
         })
 
 
+@dataclass
+class DisputeResolvedMessage:
+    """
+    Sent by the neutral resolver (or agreed party) to record the outcome
+    of a dispute opened by DISPUTE_NOTICE. Closes the post-commitment
+    dispute lifecycle.
+
+    Anchored to both the original transaction record hash and the
+    DISPUTE_NOTICE message_id. The resolution_outcome field records
+    who prevailed; resolver_did identifies the neutral party that
+    issued the resolution.
+
+    Concordia Protocol composition note: this message provides the
+    stable input shape for Concordia fulfillment attestations with
+    fulfillment.status = "fulfilled_with_mediation" and
+    meta.mediator_invoked = True. Both the transaction_record_hash
+    and dispute_notice_message_id are required fields for that
+    composition seam.
+    """
+    message_id: str
+    session_id: str
+    transaction_record_hash: str  # Must match the agreed transaction record
+    dispute_notice_message_id: str  # References the DISPUTE_NOTICE being resolved
+    resolution_outcome: str  # "buyer_prevails" | "seller_prevails" |
+                              # "mutual_settlement"
+    resolver_did: str  # DID of the neutral resolver
+    resolution_timestamp: str = None  # ISO 8601, auto-set on creation
+    resolution_notes: str | None = None
+    evidence_references: list[str] = None  # Supporting evidence for the ruling
+    protocol_version: str = "0.2"
+    message_type: str = "DISPUTE_RESOLVED"
+
+    def __post_init__(self):
+        if self.evidence_references is None:
+            self.evidence_references = []
+        if self.resolution_timestamp is None:
+            from datetime import datetime, timezone
+            self.resolution_timestamp = datetime.now(
+                timezone.utc
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "message_type": self.message_type,
+            "message_id": self.message_id,
+            "session_id": self.session_id,
+            "transaction_record_hash": self.transaction_record_hash,
+            "dispute_notice_message_id": self.dispute_notice_message_id,
+            "resolution_outcome": self.resolution_outcome,
+            "resolver_did": self.resolver_did,
+            "resolution_timestamp": self.resolution_timestamp,
+            "resolution_notes": self.resolution_notes,
+            "evidence_references": self.evidence_references,
+            "protocol_version": self.protocol_version,
+        })
+
+
 def validate_deal_type_terms(deal_type: str, terms: dict) -> list[str]:
     """
     Validates terms dict against deal-type-specific schema.

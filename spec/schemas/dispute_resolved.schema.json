@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/dispute-resolved/0.2",
+  "title": "A2CN DisputeResolvedMessage",
+  "description": "Resolution of a dispute opened by DISPUTE_NOTICE. Closes the post-commitment dispute lifecycle. Normative at Level 3 conformance as of v0.2.1 (OQ-017 resolved).",
+  "type": "object",
+  "required": [
+    "message_id",
+    "session_id",
+    "transaction_record_hash",
+    "dispute_notice_message_id",
+    "resolution_outcome",
+    "resolver_did",
+    "resolution_timestamp",
+    "message_type"
+  ],
+  "properties": {
+    "message_type": { "type": "string", "const": "DISPUTE_RESOLVED" },
+    "message_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string" },
+    "transaction_record_hash": {
+      "type": "string",
+      "minLength": 64,
+      "description": "SHA-256 hex digest of the agreed transaction record"
+    },
+    "dispute_notice_message_id": {
+      "type": "string",
+      "description": "message_id of the DISPUTE_NOTICE being resolved"
+    },
+    "resolution_outcome": {
+      "type": "string",
+      "enum": ["buyer_prevails", "seller_prevails", "mutual_settlement"],
+      "description": "Who prevailed in the dispute resolution"
+    },
+    "resolver_did": {
+      "type": "string",
+      "minLength": 1,
+      "description": "DID of the neutral resolver that issued the resolution"
+    },
+    "resolution_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when resolution was issued"
+    },
+    "resolution_notes": {
+      "type": ["string", "null"],
+      "description": "Optional explanatory notes from the resolver"
+    },
+    "evidence_references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Supporting evidence references for the ruling"
+    },
+    "protocol_version": { "type": "string" }
+  },
+  "additionalProperties": false
+}

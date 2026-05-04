@@ -162,6 +162,24 @@ async def raw_test_client(responder_config):
         yield client
 
 
+@pytest_asyncio.fixture
+async def responder_test_client(test_client, responder_keypair, responder_did_doc):
+    """
+    Test client authenticating as RESPONDER_DID on the same server instance as test_client.
+    Use alongside test_client to simulate two-party protocol exchanges (e.g. acceptance).
+    """
+    import a2cn.server as server_module
+
+    priv, pub = responder_keypair
+    # Register the responder's DID document so the server can verify RESPONDER JWT signatures.
+    server_module.register_did_document(RESPONDER_DID, responder_did_doc)
+
+    auth = _BearerAuth(RESPONDER_DID, SERVER_DID, priv, kid=f"{RESPONDER_DID}#key-2026-01")
+    transport = ASGITransport(app=server_module.app)
+    async with AsyncClient(transport=transport, base_url="http://test", auth=auth) as client:
+        yield client
+
+
 # ---------------------------------------------------------------------------
 # Session init helper
 # ---------------------------------------------------------------------------
