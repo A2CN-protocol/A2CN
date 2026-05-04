@@ -674,6 +674,14 @@ async def post_dispute_resolved(session_id: str, request: Request,
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
+    if body.get("message_type") != "DISPUTE_RESOLVED":
+        return error_response(
+            "WRONG_MESSAGE_TYPE",
+            "message_type must be 'DISPUTE_RESOLVED'",
+            400,
+            session_id=session_id,
+        )
+
     pc_data = _session_store.get(session_id) or {}
 
     if pc_data.get("post_commitment_status") != "DISPUTED":
@@ -708,29 +716,29 @@ async def post_dispute_resolved(session_id: str, request: Request,
         )
 
     _VALID_OUTCOMES = frozenset({"buyer_prevails", "seller_prevails", "mutual_settlement"})
-    resolution_outcome = body.get("resolution_outcome", "")
-    if resolution_outcome not in _VALID_OUTCOMES:
+    resolution_outcome = body.get("resolution_outcome")
+    if not isinstance(resolution_outcome, str) or resolution_outcome not in _VALID_OUTCOMES:
         return error_response(
             "INVALID_RESOLUTION_OUTCOME",
-            f"resolution_outcome must be one of: buyer_prevails, seller_prevails, mutual_settlement",
+            "resolution_outcome must be one of: buyer_prevails, seller_prevails, mutual_settlement",
             400,
             session_id=session_id,
         )
 
-    resolver_did = body.get("resolver_did", "")
-    if not resolver_did:
+    resolver_did = body.get("resolver_did")
+    if not isinstance(resolver_did, str) or not resolver_did:
         return error_response(
             "MISSING_REQUIRED_FIELD",
-            "resolver_did is required",
+            "resolver_did is required and must be a non-empty string",
             400,
             session_id=session_id,
         )
 
-    resolution_timestamp = body.get("resolution_timestamp", "")
-    if not resolution_timestamp:
+    resolution_timestamp = body.get("resolution_timestamp")
+    if not isinstance(resolution_timestamp, str) or not resolution_timestamp:
         return error_response(
             "MISSING_REQUIRED_FIELD",
-            "resolution_timestamp is required",
+            "resolution_timestamp is required and must be a non-empty string",
             400,
             session_id=session_id,
         )

@@ -860,3 +860,63 @@ class TestDisputeResolvedEndpoint:
         )
         assert r.status_code == 400
         assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"
+
+    async def test_wrong_message_type_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        body["message_type"] = "DISPUTE_NOTICE"
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
+
+    async def test_missing_message_type_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        del body["message_type"]
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
+
+    async def test_non_string_resolution_outcome_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        body["resolution_outcome"] = ["buyer_prevails"]  # array instead of string
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "INVALID_RESOLUTION_OUTCOME"
+
+    async def test_non_string_resolver_did_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        body["resolver_did"] = 12345  # integer instead of string
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"
+
+    async def test_non_string_resolution_timestamp_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        body["resolution_timestamp"] = {"ts": "2026-04-10"}  # object instead of string
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"
