@@ -254,18 +254,20 @@ def a2cn_response(data: dict, status_code: int = 200) -> Response:
 
 
 def error_response(code: str, message: str, http_status: int, detail: str = "",
-                   session_id: str | None = None, message_id: str | None = None) -> Response:
+                   session_id: str | None = None, message_id: str | None = None,
+                   spec_ref: str | None = None) -> Response:
     import json
-    body = {
-        "error": {
-            "code": code,
-            "message": message,
-            "detail": detail,
-            "timestamp": _now(),
-            "session_id": session_id,
-            "message_id": message_id,
-        }
+    error_body: dict = {
+        "code": code,
+        "message": message,
+        "detail": detail,
+        "timestamp": _now(),
+        "session_id": session_id,
+        "message_id": message_id,
     }
+    if spec_ref is not None:
+        error_body["spec_ref"] = spec_ref
+    body = {"error": error_body}
     return Response(
         content=json.dumps(body),
         status_code=http_status,
@@ -657,6 +659,102 @@ async def post_dispute_notice(session_id: str, request: Request,
         "session_id": session_id,
         "post_commitment_status": "DISPUTED",
         "note": "Dispute recorded. Route to neutral resolver via Meeting Place or designated dispute resolution service.",
+    })
+
+
+@app.post("/sessions/{session_id}/dispute-resolved")
+async def post_dispute_resolved(session_id: str, request: Request,
+                                _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    # Transport auth enforced by middleware. DID-based key verification: TODO v0.3
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+
+    if body.get("message_type") != "DISPUTE_RESOLVED":
+        return error_response(
+            "WRONG_MESSAGE_TYPE",
+            "message_type must be 'DISPUTE_RESOLVED'",
+            400,
+            session_id=session_id,
+        )
+
+    pc_data = _session_store.get(session_id) or {}
+
+    if pc_data.get("post_commitment_status") != "DISPUTED":
+        return error_response(
+            "NOT_IN_DISPUTED_STATUS",
+            "DISPUTE_RESOLVED requires an open DISPUTE_NOTICE",
+            400,
+            session_id=session_id,
+            spec_ref="Section 11",
+        )
+
+    stored_dispute_id = pc_data.get("dispute_notice_message_id")
+    if body.get("dispute_notice_message_id") != stored_dispute_id:
+        return error_response(
+            "INVALID_REFERENCE",
+            "dispute_notice_message_id does not match the stored dispute notice",
+            409,
+            session_id=session_id,
+        )
+
+    try:
+        record = generate_transaction_record(session)
+    except Exception as exc:
+        return error_response("INTERNAL_ERROR", f"Could not generate transaction record: {exc}", 500, session_id=session_id)
+
+    if body.get("transaction_record_hash") != record["record_hash"]:
+        return error_response(
+            "INVALID_RECORD_HASH",
+            "transaction_record_hash does not match the agreed transaction record",
+            409,
+            session_id=session_id,
+        )
+
+    _VALID_OUTCOMES = frozenset({"buyer_prevails", "seller_prevails", "mutual_settlement"})
+    resolution_outcome = body.get("resolution_outcome")
+    if not isinstance(resolution_outcome, str) or resolution_outcome not in _VALID_OUTCOMES:
+        return error_response(
+            "INVALID_RESOLUTION_OUTCOME",
+            "resolution_outcome must be one of: buyer_prevails, seller_prevails, mutual_settlement",
+            400,
+            session_id=session_id,
+        )
+
+    resolver_did = body.get("resolver_did")
+    if not isinstance(resolver_did, str) or not resolver_did:
+        return error_response(
+            "MISSING_REQUIRED_FIELD",
+            "resolver_did is required and must be a non-empty string",
+            400,
+            session_id=session_id,
+        )
+
+    resolution_timestamp = body.get("resolution_timestamp")
+    if not isinstance(resolution_timestamp, str) or not resolution_timestamp:
+        return error_response(
+            "MISSING_REQUIRED_FIELD",
+            "resolution_timestamp is required and must be a non-empty string",
+            400,
+            session_id=session_id,
+        )
+
+    message_id = body.get("message_id", str(uuid.uuid4()))
+
+    pc_data["dispute_resolution"] = body
+    pc_data["post_commitment_status"] = "RESOLVED"
+    pc_data["dispute_resolved_message_id"] = message_id
+    _session_store.save(session_id, pc_data)
+
+    return a2cn_response({
+        "dispute_resolved_message_id": message_id,
+        "session_id": session_id,
+        "resolution_outcome": resolution_outcome,
+        "post_commitment_status": "RESOLVED",
     })
 
 

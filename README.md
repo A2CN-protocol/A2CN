@@ -276,7 +276,7 @@ A2CN/
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
-| Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE) | 📋 Planned — v0.3 |
+| Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE / DISPUTE_RESOLVED) | ✓ Complete — v0.2.1 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | 📋 Planned — v0.3 |
 | TypeScript reference implementation | 📋 Planned |
