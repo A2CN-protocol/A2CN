@@ -800,3 +800,63 @@ class TestDisputeResolvedEndpoint:
             f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
         )
         assert r.json()["post_commitment_status"] == "RESOLVED"
+
+    async def test_not_in_disputed_status_error_includes_spec_ref(
+        self, test_client, responder_test_client
+    ):
+        session_id, record_hash = await _complete_session_properly(test_client, responder_test_client)
+        body = _dispute_resolved_body(session_id, record_hash, "irrelevant-notice-id")
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        error = r.json()["error"]
+        assert error["code"] == "NOT_IN_DISPUTED_STATUS"
+        assert error["spec_ref"] == "Section 11"
+
+    async def test_invalid_resolution_outcome_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id, outcome="everyone_wins")
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "INVALID_RESOLUTION_OUTCOME"
+
+    async def test_missing_resolution_outcome_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        del body["resolution_outcome"]
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "INVALID_RESOLUTION_OUTCOME"
+
+    async def test_missing_resolver_did_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        del body["resolver_did"]
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"
+
+    async def test_missing_resolution_timestamp_rejected(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        del body["resolution_timestamp"]
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"

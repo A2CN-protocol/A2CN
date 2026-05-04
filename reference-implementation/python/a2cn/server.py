@@ -254,18 +254,20 @@ def a2cn_response(data: dict, status_code: int = 200) -> Response:
 
 
 def error_response(code: str, message: str, http_status: int, detail: str = "",
-                   session_id: str | None = None, message_id: str | None = None) -> Response:
+                   session_id: str | None = None, message_id: str | None = None,
+                   spec_ref: str | None = None) -> Response:
     import json
-    body = {
-        "error": {
-            "code": code,
-            "message": message,
-            "detail": detail,
-            "timestamp": _now(),
-            "session_id": session_id,
-            "message_id": message_id,
-        }
+    error_body: dict = {
+        "code": code,
+        "message": message,
+        "detail": detail,
+        "timestamp": _now(),
+        "session_id": session_id,
+        "message_id": message_id,
     }
+    if spec_ref is not None:
+        error_body["spec_ref"] = spec_ref
+    body = {"error": error_body}
     return Response(
         content=json.dumps(body),
         status_code=http_status,
@@ -680,7 +682,7 @@ async def post_dispute_resolved(session_id: str, request: Request,
             "DISPUTE_RESOLVED requires an open DISPUTE_NOTICE",
             400,
             session_id=session_id,
-            detail="Section 11",
+            spec_ref="Section 11",
         )
 
     stored_dispute_id = pc_data.get("dispute_notice_message_id")
@@ -705,8 +707,35 @@ async def post_dispute_resolved(session_id: str, request: Request,
             session_id=session_id,
         )
 
-    message_id = body.get("message_id", str(uuid.uuid4()))
+    _VALID_OUTCOMES = frozenset({"buyer_prevails", "seller_prevails", "mutual_settlement"})
     resolution_outcome = body.get("resolution_outcome", "")
+    if resolution_outcome not in _VALID_OUTCOMES:
+        return error_response(
+            "INVALID_RESOLUTION_OUTCOME",
+            f"resolution_outcome must be one of: buyer_prevails, seller_prevails, mutual_settlement",
+            400,
+            session_id=session_id,
+        )
+
+    resolver_did = body.get("resolver_did", "")
+    if not resolver_did:
+        return error_response(
+            "MISSING_REQUIRED_FIELD",
+            "resolver_did is required",
+            400,
+            session_id=session_id,
+        )
+
+    resolution_timestamp = body.get("resolution_timestamp", "")
+    if not resolution_timestamp:
+        return error_response(
+            "MISSING_REQUIRED_FIELD",
+            "resolution_timestamp is required",
+            400,
+            session_id=session_id,
+        )
+
+    message_id = body.get("message_id", str(uuid.uuid4()))
 
     pc_data["dispute_resolution"] = body
     pc_data["post_commitment_status"] = "RESOLVED"
