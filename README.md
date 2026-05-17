@@ -2,6 +2,9 @@
 
 **The missing protocol layer for machine-to-machine B2B commerce.**
 
+A2CN is maintained by **Mandate Labs**, the company building neutral
+infrastructure for agent-to-agent commercial negotiation.
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
 [![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](reference-implementation/python/tests)
@@ -89,6 +92,13 @@ Two registered deal types now have normative JSON schemas:
 
 Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery with exponential backoff retry.
 
+### Human approval state for high-value commitments
+
+`AWAITING_HUMAN_APPROVAL` is the protocol-level pause state for offers that cross
+the mandate's `requires_human_approval_above` threshold. The session resumes when
+a signed approval receipt references the paused offer hash, preserving the
+negotiation trail while keeping human oversight explicit and auditable.
+
 ---
 
 ## What A2CN covers
@@ -100,7 +110,7 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 | **Session Invitation** *(v0.2)* | Push-based pre-session handshake for parties without deployed endpoints |
 | **Offer exchange** | Canonical schema for offers, counteroffers, acceptances, rejections, withdrawals |
 | **Deal-type terms** *(v0.2)* | Normative schemas for `goods_procurement` and `saas_renewal` |
-| **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection |
+| **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection, human approval pauses |
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
 | **Post-commitment lifecycle** | DELIVERY_NOTICE (seller confirms delivery), DELIVERY_ACKNOWLEDGED (buyer closes or disputes), DISPUTE_NOTICE (neutral evidence anchoring) — v0.3 |
@@ -116,7 +126,24 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 
 ## Ecosystem
 
-A2CN coordinates with [Concordia Protocol](https://github.com/eriknewton/concordia-protocol) on a joint Agent Mandate Specification and joint A2A extension proposal. A2CN is the procurement-vertical layer; Concordia covers cross-domain negotiation semantics. Both compose cleanly on A2A transport.
+A2CN is designed as one layer in a three-protocol substrate for autonomous
+commerce:
+
+| Protocol | Boundary |
+|----------|----------|
+| **A2CN** | Session establishment, mandate verification, commercial terms, transaction records |
+| **Concordia** | Negotiation envelope, shared mandate semantics, cross-domain negotiation artifacts |
+| **Verascore** | Reputation, scoring, and post-commitment performance signals |
+
+A2CN coordinates with [Concordia Protocol](https://github.com/eriknewton/concordia-protocol) on a joint Agent Mandate Specification and A2A extension path. A2CN is the procurement-vertical layer; Concordia covers cross-domain negotiation semantics. Both compose cleanly on A2A transport.
+
+The A2A extension URI is:
+
+```text
+https://a2cn.io/extensions/commercial-negotiation/v1
+```
+
+Discussion is tracked in [A2A Discussion #1737](https://github.com/a2aproject/A2A/discussions/1737), including the relationship between A2CN, Concordia, and adjacent negotiation/reputation work.
 
 The joint work includes:
 - A shared Agent Mandate Specification covering delegation chains, DID-VC verification, and revocation semantics
@@ -213,6 +240,19 @@ A2CN fits between the platforms that generate offers and the infrastructure that
 
 ---
 
+## Compliance context
+
+The EU AI Act's human oversight requirements become operationally urgent for
+high-risk AI systems in August 2026. A2CN gives commercial agents a
+machine-readable way to show when human oversight was required, which offer
+triggered it, who approved it, and which signed transaction record resulted.
+
+This is why the protocol treats mandate thresholds, approval receipts, audit
+logs, and deterministic transaction records as first-class protocol artifacts
+rather than platform-local implementation details.
+
+---
+
 ## The spec
 
 Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns for Fairmarkit, Salesforce Revenue Cloud, Dynamics 365, Luminance, and A2A, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
@@ -272,6 +312,7 @@ A2CN/
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
+| AWAITING_HUMAN_APPROVAL state | ✓ Complete — high-value offers pause until signed approval receipt |
 | Security review | ✓ Passed — 0 critical, 0 high findings |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
