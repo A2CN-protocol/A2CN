@@ -69,7 +69,7 @@ Protocol act signing is required at **all levels**.
 | **Salesforce Revenue Cloud** | `/connect/pricing/...` → offer terms; agreed terms → `/connect/qoc/sales-transactions` |
 | **Microsoft Dynamics 365** | `api_invoke_action: NegotiationResponseCalculator` via ERP MCP Server |
 | **Luminance** | A2CN transaction record → contract formalization input |
-| **A2A** | A2CN as A2A profile/method extension (OQ-011, proposal filed) |
+| **A2A** | A2CN extension URI `https://a2cn.io/extensions/commercial-negotiation/v1`; A2CN / Concordia / BidAngel substrate split |
 | **AP2** | A2CN transaction record → AP2 Intent Mandate |
 
 ---
@@ -83,7 +83,7 @@ Protocol act signing is required at **all levels**.
 | OQ-005 | Impasse threshold | **RESOLVED v0.2** |
 | OQ-009 | Platform DID proxy model | Open |
 | OQ-010 | MESO offers | Open |
-| OQ-011 | A2CN as A2A extension | Open — proposal filed |
+| OQ-011 | A2CN as A2A extension | Open — profile scoped |
 | OQ-012 | Multi-party invitation | Open |
 
 [→ GitHub issues tagged `open-question`](https://github.com/A2CN-protocol/A2CN/issues)

@@ -2791,7 +2791,7 @@ with their resolution version rather than being renumbered.
 | OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED; promoted to REQUIRED at Level 2 in v0.2 |
 | OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
 | OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
-| OQ-011 | A2CN as A2A extension | Open | A2A's extension system supports profile extensions (DataPart schemas) and method extensions (new RPC methods). A2CN's offer exchange and session state machine could be implemented as an A2A extension. Proposal to A2A governance pending. |
+| OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
 | OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
 | OQ-013 | DID VC mandate for hosted endpoints | Open | When the Meeting Place hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the Meeting Place can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
 | OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.1** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.1. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
@@ -2867,6 +2867,73 @@ A2CN's offer/counteroffer schema is a profile extension. A2CN's session state
 machine is a method extension. A2CN's discovery document fields map to data-only
 AgentCard extensions. A formal A2A extension proposal implementing A2CN as an A2A
 extension is pending with A2A governance (see OQ-011).
+
+The A2CN A2A extension URI is:
+
+```text
+https://a2cn.io/extensions/commercial-negotiation/v1
+```
+
+Agents declare support for this extension in their AgentCard extension metadata.
+Agents that do not recognize the URI MUST ignore it gracefully and MAY continue
+ordinary A2A communication without invoking A2CN-specific methods or DataParts.
+
+Example AgentCard fragment:
+
+```json
+{
+  "extensions": [
+    {
+      "uri": "https://a2cn.io/extensions/commercial-negotiation/v1",
+      "required": false,
+      "params": {
+        "a2cn_discovery_url": "https://seller.example/.well-known/a2cn-agent",
+        "supported_deal_types": ["goods_procurement", "saas_renewal"],
+        "conformance_level": 2
+      }
+    }
+  ]
+}
+```
+
+**Three-protocol substrate split:** A2CN is scoped as one layer in a broader A2A
+commercial-negotiation substrate:
+
+| Protocol | Boundary |
+|----------|----------|
+| **A2CN** | Session establishment, mandate verification, commercial state machine, offer exchange, transaction records |
+| **Concordia** | Negotiation envelope, receipt format, fulfillment attestations, and cross-protocol `references[]` semantics |
+| **BidAngel** | Procurement payload semantics: opportunity, requirement, lot, evaluation criteria, and sourcing-event context |
+
+This split keeps A2CN from absorbing every procurement concept. A2CN decides
+whether a party is authorized to negotiate and records what the parties agreed
+to. BidAngel describes the procurement opportunity being negotiated. Concordia
+provides portable receipts and reference relationships that can bind A2CN,
+BidAngel, and adjacent protocols into one auditable negotiation graph.
+
+The starter relationship vocabulary for cross-protocol `references[]` entries is:
+
+| Relationship | Meaning |
+|--------------|---------|
+| `fulfills` | Artifact satisfies a mandate, requirement, or obligation |
+| `approves` | Artifact authorizes a paused or pending act |
+| `enforces` | Artifact applies a constraint, policy, or mandate boundary |
+| `rejects` | Artifact records refusal of a proposed act or requirement |
+| `satisfies` | Artifact meets a stated requirement without necessarily fulfilling a legal obligation |
+
+This vocabulary is being scoped for the A2A profile with Concordia and BidAngel.
+Implementations MUST preserve unknown `relationship` values as opaque strings
+when reading or forwarding `references[]`. Unknown relationship values MUST NOT
+be dropped, rewritten, or treated as authorization grants unless the
+implementation explicitly recognizes their semantics.
+
+**Concordia adapter composition:** A2CN's `DISPUTE_RESOLVED` message can compose
+with a Concordia fulfillment attestation. The A2CN message records the dispute
+resolution outcome and binds it to the transaction record; the Concordia artifact
+can then reference the A2CN session, transaction record, and dispute resolution
+as evidence that an obligation was fulfilled, rejected, or settled. Erik Newton's
+adapter path `concordia/adapters/a2cn/dispute_resolved.py` is the reference shape
+for this composition.
 
 **Precedent:** UCP (Universal Commerce Protocol) and AP2 (payment authorization)
 are both implemented as A2A extensions. The pattern is documented and supported.
@@ -3164,6 +3231,19 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-18 — A2A extension URI and substrate split
+
+- Section 16.2 now defines the A2CN A2A extension URI:
+  `https://a2cn.io/extensions/commercial-negotiation/v1`.
+- Added AgentCard extension declaration example.
+- Documented the A2CN / Concordia / BidAngel substrate split.
+- Added starter cross-protocol `references[]` relationship vocabulary and
+  forward-compatibility rule for unknown relationship values.
+- Documented `DISPUTE_RESOLVED` composition with Concordia fulfillment
+  attestations.
+- Updated OQ-011 status to reflect the scoped URI/profile while governance
+  outcome remains pending.
 
 ### Patch 2026-05-17 — Human approval pause state
 
