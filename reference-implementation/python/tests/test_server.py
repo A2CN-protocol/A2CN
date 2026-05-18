@@ -209,6 +209,53 @@ async def test_message_idempotency(test_client):
     assert r1.json() == r2.json()
 
 
+@pytest.mark.asyncio
+async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client):
+    body = make_session_init()
+    body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000
+    r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
+    session_id = r.json()["session_id"]
+
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID)
+    offer_r = await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=offer,
+        headers=init_headers(offer["message_id"]),
+    )
+    assert offer_r.status_code == 200
+    assert offer_r.json()["state"] == "AWAITING_HUMAN_APPROVAL"
+
+    receipt = {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:test",
+        "scope": {
+            "decision": "approve",
+            "offer_hash": offer["protocol_act_hash"],
+            "amount": "95000.00 USD",
+            "threshold_crossed": "90000.00 USD",
+        },
+        "references": [
+            {
+                "type": "negotiation_session",
+                "id": f"a2cn:session:{session_id}",
+                "relationship": "approves",
+            }
+        ],
+        "approver_did": INITIATOR_DID,
+        "expires_at": "2030-01-01T00:00:00Z",
+    }
+    receipt_r = await test_client.post(
+        f"/sessions/{session_id}/approval-receipt",
+        json=receipt,
+        headers=init_headers("approval-receipt-test"),
+    )
+
+    assert receipt_r.status_code == 200
+    assert receipt_r.json()["state"] == "NEGOTIATING"
+    assert receipt_r.json()["current_turn"] == "responder"
+    assert receipt_r.json()["approval_receipt_id"] == "urn:concordia:receipt:test"
+
+
 # ---------------------------------------------------------------------------
 # GET /sessions/{session_id}/record — COMPLETED only
 # ---------------------------------------------------------------------------

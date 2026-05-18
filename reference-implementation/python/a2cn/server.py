@@ -5,6 +5,7 @@ Endpoints:
   POST   /sessions                              — SessionInit
   GET    /sessions/{session_id}                — Session state
   POST   /sessions/{session_id}/messages       — Send any session message
+  POST   /sessions/{session_id}/approval-receipt — Release human approval pause
   GET    /sessions/{session_id}/messages       — Message history (paginated)
   GET    /sessions/{session_id}/record         — Transaction record (COMPLETED only)
   GET    /sessions/{session_id}/audit          — Audit log (any terminal state)
@@ -432,6 +433,29 @@ async def send_message(session_id: str, request: Request,
         webhook_url = _responder_config.get("webhook_url")
         if webhook_url:
             asyncio.create_task(_fire_terminal_webhook(session, webhook_url))
+
+    return a2cn_response(response)
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{session_id}/approval-receipt
+# ---------------------------------------------------------------------------
+
+@app.post("/sessions/{session_id}/approval-receipt")
+async def post_approval_receipt(session_id: str, request: Request,
+                                _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    session = _get_session_or_404(session_id)
+    body = await _parse_body(request)
+
+    if body.get("session_id") is not None and body.get("session_id") != session_id:
+        return error_response("SESSION_ID_MISMATCH",
+                               "session_id in request body does not match URL path",
+                               400, session_id=session_id)
+
+    try:
+        response = manager.apply_approval_receipt(session, body)
+    except A2CNError as exc:
+        return error_response(exc.code, exc.message, exc.http_status, exc.detail, exc.session_id, exc.message_id)
 
     return a2cn_response(response)
 
