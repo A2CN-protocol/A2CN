@@ -101,6 +101,7 @@ class Session:
     # The accepted offer and acceptance messages (set on COMPLETED)
     _final_offer: dict | None = None
     _final_acceptance: dict | None = None
+    _pending_acceptance: dict | None = None
 
     # The SessionInit message (for audit log / transaction record)
     _session_init: dict | None = None
@@ -494,12 +495,14 @@ class SessionManager:
         session._message_log.append(message)
 
         if self._requires_human_approval(session, sender_role, new_total_value):
-            session.state = SessionState.AWAITING_HUMAN_APPROVAL
-            session.current_turn = sender_role
-            session.approval_pending_offer_id = message_id
-            session.approval_pending_offer_hash = message.get("protocol_act_hash")
-            session.approval_pending_sender_role = sender_role
-            session.approval_pending_mandate = self._mandate_for_role(session, sender_role)
+            # The offer has been received and logged, but the sender's turn remains
+            # blocked until the approval receipt is bound to this offer hash.
+            self._enter_human_approval_pause(
+                session,
+                sender_role,
+                offer_id=message_id,
+                offer_hash=message.get("protocol_act_hash"),
+            )
 
         return session.to_state_dict()
 
@@ -575,16 +578,55 @@ class SessionManager:
 
         session.approval_receipt_id = receipt_id
         session.approval_receipts.append(receipt)
+        if session._pending_acceptance is not None:
+            pending = session._pending_acceptance
+            final_offer = next(
+                (
+                    m for m in reversed(session._message_log)
+                    if m.get("message_id") == pending.get("accepted_offer_id")
+                ),
+                None,
+            )
+            session.state = SessionState.COMPLETED
+            session.current_turn = "none"
+            session.terminal_reason = "acceptance"
+            session.terminal_message_id = pending.get("message_id")
+            session._final_offer = final_offer
+            session._final_acceptance = pending
+            session._message_log.append(pending)
+            session._pending_acceptance = None
+            self._clear_human_approval_pause(session)
+            session.state_updated_at = _now()
+            return session.to_state_dict()
+
         session.state = SessionState.NEGOTIATING
         session.current_turn = (
             "responder" if session.approval_pending_sender_role == "initiator" else "initiator"
         )
+        self._clear_human_approval_pause(session)
+        session.state_updated_at = _now()
+        return session.to_state_dict()
+
+    def _enter_human_approval_pause(
+        self,
+        session: Session,
+        sender_role: str,
+        *,
+        offer_id: str | None,
+        offer_hash: str | None,
+    ) -> None:
+        session.state = SessionState.AWAITING_HUMAN_APPROVAL
+        session.current_turn = sender_role
+        session.approval_pending_offer_id = offer_id
+        session.approval_pending_offer_hash = offer_hash
+        session.approval_pending_sender_role = sender_role
+        session.approval_pending_mandate = self._mandate_for_role(session, sender_role)
+
+    def _clear_human_approval_pause(self, session: Session) -> None:
         session.approval_pending_offer_id = None
         session.approval_pending_offer_hash = None
         session.approval_pending_sender_role = None
         session.approval_pending_mandate = None
-        session.state_updated_at = _now()
-        return session.to_state_dict()
 
     def _mandate_for_role(self, session: Session, role: str) -> dict:
         return session.initiator_mandate if role == "initiator" else session.responder_mandate
@@ -673,6 +715,22 @@ class SessionManager:
                     pass  # unparseable expiry — skip check
 
         now = _now()
+        final_offer_total_value = None
+        if final_offer:
+            final_offer_total_value = (final_offer.get("terms") or {}).get("total_value")
+
+        if self._requires_human_approval(session, sender_role, final_offer_total_value):
+            session.sequence_number = sequence_number
+            session._pending_acceptance = message
+            session.state_updated_at = now
+            self._enter_human_approval_pause(
+                session,
+                sender_role,
+                offer_id=accepted_offer_id,
+                offer_hash=accepted_hash,
+            )
+            return session.to_state_dict()
+
         session.sequence_number = sequence_number
         session.state = SessionState.COMPLETED
         session.current_turn = "none"
@@ -766,10 +824,10 @@ class SessionManager:
 #   INVALID_SIGNATURE       — 400  — spec Section 12.2
 #   DEAL_TYPE_NOT_SUPPORTED — 403  — spec Section 12.2
 #   MANDATE_INVALID         — 403  — spec Section 12.2
-#   NOT_IN_AWAITING_HUMAN_APPROVAL — 409 — v0.3 human approval extension
-#   APPROVAL_RECEIPT_INVALID — 400 — v0.3 human approval extension
-#   APPROVAL_RECEIPT_EXPIRED — 422 — v0.3 human approval extension
-#   UNAUTHORIZED_APPROVER   — 403  — v0.3 human approval extension
+#   NOT_IN_AWAITING_HUMAN_APPROVAL — 409 — human approval extension
+#   APPROVAL_RECEIPT_INVALID — 400 — human approval extension
+#   APPROVAL_RECEIPT_EXPIRED — 422 — human approval extension
+#   UNAUTHORIZED_APPROVER   — 403  — human approval extension
 #   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.2
 #   UNAUTHORIZED_SENDER     — 403  — spec Section 12.2
 #   INVALID_REQUEST         — 400  — extension (not in spec Section 12.2 table);

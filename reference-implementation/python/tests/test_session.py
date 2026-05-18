@@ -523,6 +523,24 @@ def test_approval_receipt_wrong_offer_hash_rejected():
     assert exc_info.value.code == "OFFER_HASH_MISMATCH"
 
 
+def test_approval_receipt_wrong_session_reference_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+    receipt = _approval_receipt(sess)
+    receipt["references"][0]["id"] = "a2cn:session:different-session"
+
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.apply_approval_receipt(sess, receipt)
+
+    assert exc_info.value.code == "APPROVAL_RECEIPT_INVALID"
+
+
 def test_expired_approval_receipt_rejected():
     mgr, sess = _new_session()
     sess.initiator_mandate = {
@@ -562,3 +580,45 @@ def test_approval_receipt_requires_approval_state():
         mgr.apply_approval_receipt(sess, _approval_receipt(sess))
 
     assert exc_info.value.code == "NOT_IN_AWAITING_HUMAN_APPROVAL"
+
+
+def test_threshold_crossing_acceptance_enters_awaiting_human_approval_then_completes():
+    mgr, sess = _new_session()
+    sess.responder_mandate = {
+        "mandate_type": "declared",
+        "principal_did": RESPONDER_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": "acc-requires-approval",
+        "session_id": sess.session_id,
+        "in_reply_to": offer["message_id"],
+        "round_number": 1,
+        "sequence_number": 2,
+        "accepted_offer_id": offer["message_id"],
+        "accepted_protocol_act_hash": offer["protocol_act_hash"],
+        "sender_did": RESPONDER_DID,
+        "sender_agent_id": "acme-agent",
+        "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
+        "timestamp": "2026-03-24T10:05:00Z",
+        "acceptance_signature": "eyJ...",
+    }
+
+    result = mgr.process_message(sess, acceptance)
+    assert result["state"] == SessionState.AWAITING_HUMAN_APPROVAL
+    assert result["current_turn"] == "responder"
+    assert result["approval_pending_offer_id"] == offer["message_id"]
+    assert result["approval_pending_offer_hash"] == offer["protocol_act_hash"]
+    assert sess._final_acceptance is None
+
+    receipt = _approval_receipt(sess, approver_did=RESPONDER_DID)
+    approved = mgr.apply_approval_receipt(sess, receipt)
+
+    assert approved["state"] == SessionState.COMPLETED
+    assert approved["current_turn"] == "none"
+    assert approved["approval_receipt_id"] == "urn:concordia:receipt:test"
+    assert sess._final_acceptance == acceptance
