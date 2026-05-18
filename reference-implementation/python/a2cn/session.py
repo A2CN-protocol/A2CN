@@ -26,6 +26,7 @@ class SessionState:
     PENDING = "PENDING"
     ACTIVE = "ACTIVE"
     NEGOTIATING = "NEGOTIATING"
+    AWAITING_HUMAN_APPROVAL = "AWAITING_HUMAN_APPROVAL"
     COMPLETED = "COMPLETED"
     REJECTED_FINAL = "REJECTED_FINAL"
     WITHDRAWN = "WITHDRAWN"
@@ -61,6 +62,14 @@ class Session:
     latest_offer_id: str | None = None
     latest_offer_hash: str | None = None
     latest_offer_total_value: int | None = None  # for impasse detection
+
+    # Human approval pause state
+    approval_pending_offer_id: str | None = None
+    approval_pending_offer_hash: str | None = None
+    approval_pending_sender_role: str | None = None
+    approval_pending_mandate: dict | None = None
+    approval_receipt_id: str | None = None
+    approval_receipts: list[dict] = field(default_factory=list)
 
     # v0.2.0: Impasse detection (OQ-005)
     impasse_threshold: int = 3                   # from session_params
@@ -112,6 +121,9 @@ class Session:
             "sequence_number": self.sequence_number,
             "latest_offer_id": self.latest_offer_id,
             "latest_offer_hash": self.latest_offer_hash,
+            "approval_pending_offer_id": self.approval_pending_offer_id,
+            "approval_pending_offer_hash": self.approval_pending_offer_hash,
+            "approval_receipt_id": self.approval_receipt_id,
             "terminal_reason": self.terminal_reason,
             "terminal_message_id": self.terminal_message_id,
             "session_created_at": self.session_created_at,
@@ -282,6 +294,14 @@ class SessionManager:
         # Withdrawal is always allowed regardless of turn (Section 3.2)
         if message_type == "withdrawal":
             response = self._handle_withdrawal(session, message)
+        elif session.state == SessionState.AWAITING_HUMAN_APPROVAL:
+            raise A2CNError(
+                "SESSION_WRONG_STATE",
+                "Session is awaiting human approval",
+                409,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
         elif message_type in ("offer", "counteroffer"):
             response = self._handle_offer(session, message)
         elif message_type == "acceptance":
@@ -473,7 +493,118 @@ class SessionManager:
         # Log the message
         session._message_log.append(message)
 
+        if self._requires_human_approval(session, sender_role, new_total_value):
+            session.state = SessionState.AWAITING_HUMAN_APPROVAL
+            session.current_turn = sender_role
+            session.approval_pending_offer_id = message_id
+            session.approval_pending_offer_hash = message.get("protocol_act_hash")
+            session.approval_pending_sender_role = sender_role
+            session.approval_pending_mandate = self._mandate_for_role(session, sender_role)
+
         return session.to_state_dict()
+
+    def apply_approval_receipt(self, session: Session, receipt: dict) -> dict:
+        """Validate an ApprovalReceipt and release an approval pause."""
+        if session.state != SessionState.AWAITING_HUMAN_APPROVAL:
+            raise A2CNError(
+                "NOT_IN_AWAITING_HUMAN_APPROVAL",
+                "Session is not awaiting human approval",
+                409,
+                session_id=session.session_id,
+            )
+
+        receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
+        scope = receipt.get("scope", {})
+        decision = scope.get("decision", receipt.get("decision"))
+        if decision != "approve":
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt decision must be 'approve'",
+                400,
+                session_id=session.session_id,
+            )
+
+        offer_hash = scope.get("offer_hash", receipt.get("offer_hash"))
+        if offer_hash != session.approval_pending_offer_hash:
+            raise A2CNError(
+                "OFFER_HASH_MISMATCH",
+                "ApprovalReceipt offer_hash does not match the paused offer",
+                400,
+                session_id=session.session_id,
+            )
+
+        if not _receipt_references_session(receipt, session.session_id):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt must reference this A2CN session",
+                400,
+                session_id=session.session_id,
+            )
+
+        expires_at = receipt.get("expires_at")
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > expiry:
+                    raise A2CNError(
+                        "APPROVAL_RECEIPT_EXPIRED",
+                        "ApprovalReceipt has expired",
+                        422,
+                        session_id=session.session_id,
+                    )
+            except ValueError:
+                raise A2CNError(
+                    "APPROVAL_RECEIPT_INVALID",
+                    "ApprovalReceipt expires_at is not a valid ISO timestamp",
+                    400,
+                    session_id=session.session_id,
+                )
+
+        approver_did = (
+            receipt.get("approver_did")
+            or receipt.get("operator_did")
+            or receipt.get("signed_by")
+        )
+        if not _is_authorized_approver(session.approval_pending_mandate or {}, approver_did):
+            raise A2CNError(
+                "UNAUTHORIZED_APPROVER",
+                "ApprovalReceipt signer is not authorized by the mandate",
+                403,
+                session_id=session.session_id,
+            )
+
+        session.approval_receipt_id = receipt_id
+        session.approval_receipts.append(receipt)
+        session.state = SessionState.NEGOTIATING
+        session.current_turn = (
+            "responder" if session.approval_pending_sender_role == "initiator" else "initiator"
+        )
+        session.approval_pending_offer_id = None
+        session.approval_pending_offer_hash = None
+        session.approval_pending_sender_role = None
+        session.approval_pending_mandate = None
+        session.state_updated_at = _now()
+        return session.to_state_dict()
+
+    def _mandate_for_role(self, session: Session, role: str) -> dict:
+        return session.initiator_mandate if role == "initiator" else session.responder_mandate
+
+    def _requires_human_approval(
+        self,
+        session: Session,
+        sender_role: str,
+        total_value: int | None,
+    ) -> bool:
+        if total_value is None:
+            return False
+        mandate = self._mandate_for_role(session, sender_role)
+        threshold = mandate.get("requires_human_approval_above")
+        if threshold is None:
+            return False
+        try:
+            return int(total_value) > int(threshold)
+        except (TypeError, ValueError):
+            return False
 
     def _handle_acceptance(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
@@ -635,6 +766,10 @@ class SessionManager:
 #   INVALID_SIGNATURE       — 400  — spec Section 12.2
 #   DEAL_TYPE_NOT_SUPPORTED — 403  — spec Section 12.2
 #   MANDATE_INVALID         — 403  — spec Section 12.2
+#   NOT_IN_AWAITING_HUMAN_APPROVAL — 409 — v0.3 human approval extension
+#   APPROVAL_RECEIPT_INVALID — 400 — v0.3 human approval extension
+#   APPROVAL_RECEIPT_EXPIRED — 422 — v0.3 human approval extension
+#   UNAUTHORIZED_APPROVER   — 403  — v0.3 human approval extension
 #   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.2
 #   UNAUTHORIZED_SENDER     — 403  — spec Section 12.2
 #   INVALID_REQUEST         — 400  — extension (not in spec Section 12.2 table);
@@ -689,3 +824,30 @@ def _is_moving_round(prev_total_value: int | None, new_total_value: int) -> bool
     delta = abs(new_total_value - prev_total_value)
     threshold = prev_total_value * 0.005
     return delta >= threshold
+
+
+def _receipt_references_session(receipt: dict, session_id: str) -> bool:
+    references = receipt.get("references", [])
+    if not isinstance(references, list):
+        return False
+    accepted_ids = {session_id, f"a2cn:session:{session_id}"}
+    for ref in references:
+        if not isinstance(ref, dict):
+            continue
+        if ref.get("type") == "negotiation_session" and ref.get("id") in accepted_ids:
+            return True
+    return False
+
+
+def _is_authorized_approver(mandate: dict, approver_did: str | None) -> bool:
+    if not approver_did:
+        return False
+    configured = (
+        mandate.get("approval_operator_dids")
+        or mandate.get("trusted_approver_dids")
+        or mandate.get("human_approver_dids")
+        or []
+    )
+    if approver_did in configured:
+        return True
+    return approver_did == mandate.get("principal_did")

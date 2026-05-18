@@ -442,3 +442,123 @@ def test_process_message_returns_state_dict():
     assert "state" in result
     assert result["state"] == SessionState.NEGOTIATING
     assert result["round_number"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Human approval pause
+# ---------------------------------------------------------------------------
+
+def _approval_receipt(sess: Session, *, offer_hash=None, approver_did=INITIATOR_DID,
+                      expires_at="2030-01-01T00:00:00Z"):
+    return {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:test",
+        "scope": {
+            "decision": "approve",
+            "offer_hash": offer_hash or sess.approval_pending_offer_hash,
+            "amount": "95000.00 USD",
+            "threshold_crossed": "90000.00 USD",
+        },
+        "references": [
+            {
+                "type": "negotiation_session",
+                "id": f"a2cn:session:{sess.session_id}",
+                "relationship": "approves",
+            }
+        ],
+        "approver_did": approver_did,
+        "expires_at": expires_at,
+    }
+
+
+def test_threshold_crossing_offer_enters_awaiting_human_approval():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    result = mgr.process_message(sess, offer)
+
+    assert result["state"] == SessionState.AWAITING_HUMAN_APPROVAL
+    assert sess.current_turn == "initiator"
+    assert sess.approval_pending_offer_id == offer["message_id"]
+    assert sess.approval_pending_offer_hash == offer["protocol_act_hash"]
+
+
+def test_approval_receipt_releases_pause_and_restores_counterparty_turn():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    result = mgr.apply_approval_receipt(sess, _approval_receipt(sess))
+
+    assert result["state"] == SessionState.NEGOTIATING
+    assert result["current_turn"] == "responder"
+    assert result["approval_receipt_id"] == "urn:concordia:receipt:test"
+    assert result["approval_pending_offer_hash"] is None
+    assert sess.approval_receipts[-1]["id"] == "urn:concordia:receipt:test"
+
+
+def test_approval_receipt_wrong_offer_hash_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.apply_approval_receipt(sess, _approval_receipt(sess, offer_hash="sha256:wrong"))
+
+    assert exc_info.value.code == "OFFER_HASH_MISMATCH"
+
+
+def test_expired_approval_receipt_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.apply_approval_receipt(sess, _approval_receipt(sess, expires_at="2020-01-01T00:00:00Z"))
+
+    assert exc_info.value.code == "APPROVAL_RECEIPT_EXPIRED"
+
+
+def test_unauthorized_approval_receipt_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.apply_approval_receipt(sess, _approval_receipt(sess, approver_did="did:web:unauthorized.example"))
+
+    assert exc_info.value.code == "UNAUTHORIZED_APPROVER"
+
+
+def test_approval_receipt_requires_approval_state():
+    mgr, sess = _new_session()
+
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.apply_approval_receipt(sess, _approval_receipt(sess))
+
+    assert exc_info.value.code == "NOT_IN_AWAITING_HUMAN_APPROVAL"
