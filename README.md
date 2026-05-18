@@ -7,7 +7,7 @@ infrastructure for agent-to-agent commercial negotiation.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
-[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](reference-implementation/python/tests)
+[![Tests](https://img.shields.io/badge/Tests-307%20passing-brightgreen.svg)](reference-implementation/python/tests)
 [![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
@@ -181,7 +181,7 @@ python examples/invitation_flow.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 202 passed
+# 307 passed
 ```
 
 ---
@@ -257,7 +257,7 @@ rather than platform-local implementation details.
 
 Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns for Fairmarkit, Salesforce Revenue Cloud, Dynamics 365, Luminance, and A2A, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (202 tests).
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (307 tests).
 
 ---
 
@@ -306,7 +306,7 @@ A2CN/
 | Milestone | Status |
 |-----------|--------|
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
-| Reference implementation (Python) | ✓ Complete — 202 tests passing |
+| Reference implementation (Python) | ✓ Complete — 307 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
 | Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
