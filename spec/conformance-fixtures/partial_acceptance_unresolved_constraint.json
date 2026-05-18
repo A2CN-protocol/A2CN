@@ -1,0 +1,22 @@
+{
+  "id": "partial_acceptance_unresolved_constraint",
+  "status": "known_gap",
+  "summary": "A party attempts to accept only part of an offer while leaving a required constraint unresolved.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "message": {
+      "message_type": "partial_acceptance",
+      "accepted_terms": [
+        "price"
+      ],
+      "unresolved_terms": [
+        "delivery_days"
+      ]
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "WRONG_MESSAGE_TYPE",
+    "reason": "Partial acceptance is not a v0.2 A2CN message type; define explicitly before allowing this behavior."
+  }
+}

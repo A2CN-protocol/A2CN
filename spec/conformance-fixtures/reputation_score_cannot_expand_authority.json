@@ -1,0 +1,29 @@
+{
+  "id": "reputation_score_cannot_expand_authority",
+  "status": "active",
+  "summary": "A reputation score update during negotiation cannot expand the agent's mandate authority.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "mandate": {
+      "mandate_type": "declared",
+      "max_commitment_value": 10000000,
+      "max_commitment_currency": "USD"
+    },
+    "reputation_update": {
+      "counterparty_reputation_score": 98,
+      "observed_at": "2026-05-17T20:00:00Z"
+    },
+    "counteroffer": {
+      "message_type": "counteroffer",
+      "terms": {
+        "total_value": 15000000,
+        "currency": "USD"
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "MANDATE_INVALID",
+    "reason": "Authority comes from mandate scope only; reputation cannot raise commitment limits."
+  }
+}
