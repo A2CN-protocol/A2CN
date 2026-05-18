@@ -59,9 +59,9 @@ per RFC 8615. Registration will be submitted concurrent with the v0.2 release.
 9. Component 6: Transaction Record
 10. Component 7: Audit Log
 11. Component 8: Session Invitation *(new in v0.2)*
-12. Transport Binding
-13. Error Handling
-14. Security Considerations
+12. Transport Binding and Error Handling
+13. Security Considerations
+14. Human Approval and ApprovalReceipt Binding
 15. Open Questions
 16. Relationship to Other Protocols
 17. Conformance
@@ -1332,6 +1332,9 @@ for `GET /sessions/{session_id}`.
   "sequence_number": "integer",
   "latest_offer_id": "string",
   "latest_offer_hash": "string",
+  "approval_pending_offer_id": "string | null",
+  "approval_pending_offer_hash": "string | null",
+  "approval_receipt_id": "string | null",
   "terminal_reason": "string",
   "terminal_message_id": "string",
   "session_created_at": "string",
@@ -1340,10 +1343,13 @@ for `GET /sessions/{session_id}`.
 }
 ```
 
-`current_turn` — `"initiator"` | `"responder"` | `"none"` (in terminal states)  
-`state_updated_at` — updated on every state transition  
-`terminal_reason` — set when entering a terminal state, null otherwise  
-`terminal_message_id` — the message_id that caused the terminal transition
+- `current_turn` — `"initiator"` | `"responder"` | `"none"` (in terminal states)
+- `state_updated_at` — updated on every state transition
+- `approval_pending_offer_id` — the offer, counteroffer, or acceptance paused for human approval, null otherwise
+- `approval_pending_offer_hash` — the `protocol_act_hash` of the paused act, null otherwise
+- `approval_receipt_id` — the approval artifact that released the pause, null until approved
+- `terminal_reason` — set when entering a terminal state, null otherwise
+- `terminal_message_id` — the message_id that caused the terminal transition
 
 Two parties may temporarily disagree on session state due to network delays.
 Each party MUST treat their locally maintained state as authoritative for
@@ -1373,6 +1379,7 @@ scenarios.
 | `PENDING` | No | SessionInit sent, awaiting ack |
 | `ACTIVE` | No | Session established, awaiting first offer from initiator |
 | `NEGOTIATING` | No | Offer sent; awaiting response from turn holder |
+| `AWAITING_HUMAN_APPROVAL` | No | A threshold-crossing offer, counteroffer, or acceptance is paused until a valid approval receipt is available |
 | `COMPLETED` | Yes | Agreement reached, transaction record generated |
 | `REJECTED_FINAL` | Yes | Max rounds reached with no agreement |
 | `WITHDRAWN` | Yes | One party withdrew |
@@ -1415,6 +1422,15 @@ ambiguity where it previously meant both "ready for first offer" and
 ┌──────────┐                    [NEGOTIATING, turn flips,
 │COMPLETED │                     round_number increments]
 └──────────┘                             │
+                                         │ threshold-crossing act
+                                         ▼
+                              ┌──────────────────────────┐
+                              │ AWAITING_HUMAN_APPROVAL  │
+                              └────────────┬─────────────┘
+                                           │ valid ApprovalReceipt
+                                           ▼
+                                  [NEGOTIATING resumes]
+                                         │
                                          │ rejection received
                                          ▼
                            [NEGOTIATING, turn = rejecting party,
@@ -1448,10 +1464,18 @@ From NEGOTIATING or ACTIVE:
 - → COMPLETED: valid Acceptance received
 - → NEGOTIATING: valid Counteroffer received; `current_turn` flips; `round_number` increments
 - → NEGOTIATING: valid Rejection received when round_number < max_rounds; `current_turn` = rejecting party; round_number does NOT increment
+- → AWAITING_HUMAN_APPROVAL: the next Offer, Counteroffer, or Acceptance would exceed the acting party's `requires_human_approval_above` threshold
 - → REJECTED_FINAL: Rejection received when round_number = max_rounds
 - → WITHDRAWN: Withdrawal sent or received
 - → TIMED_OUT: round_timeout_seconds elapsed, or session_timeout_seconds elapsed
 - → ERROR: protocol violation received (wrong turn, wrong sequence, invalid signature)
+
+**From AWAITING_HUMAN_APPROVAL:**
+- → NEGOTIATING: valid ApprovalReceipt received for the paused offer hash; the approving party may send the paused Offer, Counteroffer, or Acceptance
+- → AWAITING_HUMAN_APPROVAL: ApprovalReceipt expires before the paused act is sent or accepted; the session remains paused and requires a fresh ApprovalReceipt
+- → WITHDRAWN: Withdrawal sent or received
+- → TIMED_OUT: session_timeout_seconds elapsed
+- → ERROR: invalid ApprovalReceipt received (wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`)
 
 **Terminal states** (COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, ERROR):
 - No further state transitions are valid
@@ -1466,6 +1490,9 @@ From NEGOTIATING or ACTIVE:
 - `round_number` does NOT increment on Rejection, Acceptance, or Withdrawal
 - `sequence_number` starts at 1 and increments for every message (offers,
   counteroffers, acceptances, rejections, withdrawals)
+- Entering or exiting `AWAITING_HUMAN_APPROVAL` does not increment
+  `round_number` or `sequence_number`; only the paused protocol act increments
+  `sequence_number` when it is actually transmitted
 - Retransmissions of the same message (same `message_id`) MUST NOT increment
   `sequence_number`
 
@@ -1743,7 +1770,15 @@ Schema: `spec/schemas/audit-log.schema.json`
   "audit_metadata": {
     "ai_system_involved": "boolean",
     "human_oversight_present": "boolean",
-    "autonomous_decision": "boolean"
+    "autonomous_decision": "boolean",
+    "human_approval_receipts": [
+      {
+        "approval_receipt_id": "string",
+        "offer_hash": "string",
+        "threshold_crossed": "string",
+        "approved_at": "string"
+      }
+    ]
   }
 }
 ```
@@ -1760,10 +1795,17 @@ able to intervene during the negotiation.
 **`audit_metadata.autonomous_decision`** (boolean, REQUIRED)  
 `true` if the agent made offers or accepted terms without per-round human approval.
 
-**Important:** All `audit_metadata` fields are self-declared by the implementing
-agent and are not cryptographically verifiable by the protocol. Recipients of audit
-logs MUST treat these fields as attestations by the declaring party, not as
-protocol-verified facts.
+**`audit_metadata.human_approval_receipts`** (array, OPTIONAL)
+Contains one entry for each approval receipt used to leave
+`AWAITING_HUMAN_APPROVAL`. Each entry records the approval artifact id, the
+paused offer hash, the threshold crossed, and the approval timestamp. The full
+ApprovalReceipt artifact MAY be stored outside the audit log and referenced by
+id.
+
+**Important:** `audit_metadata` fields are self-declared by the implementing
+agent unless they reference signed artifacts such as ApprovalReceipts. Recipients
+of audit logs MUST treat unsigned fields as attestations by the declaring party,
+not as protocol-verified facts.
 
 Note: The negotiation log records message types, hashes, and values — not full
 terms content. Full terms are only in the transaction record for completed sessions.
@@ -2632,6 +2674,106 @@ of these requirements.
 
 ---
 
+## 14. Human Approval and ApprovalReceipt Binding
+
+`AWAITING_HUMAN_APPROVAL` is the non-terminal pause state used when an
+Offer, Counteroffer, or Acceptance would exceed the acting party's mandate
+threshold for autonomous commitment.
+
+The threshold field is `requires_human_approval_above` on the acting party's
+mandate. When the proposed act crosses that threshold, the implementation MUST
+pause before transmitting the act and MUST enter `AWAITING_HUMAN_APPROVAL`.
+The party remains the turn holder while paused. A2CN does not define an outbound
+call to a human approval system; it defines the state name, the transition pair,
+and the receipt binding required to resume the session.
+
+### 14.1 ApprovalReceipt Artifact
+
+An ApprovalReceipt is an operator-side artifact that records a human approval
+decision. Concordia defines the receipt artifact shape; A2CN binds that receipt
+to an A2CN session and offer hash.
+
+An A2CN implementation MAY accept ApprovalReceipt artifacts from Concordia or
+from another approval system if the artifact is signed and contains equivalent
+fields. To leave `AWAITING_HUMAN_APPROVAL`, the receipt MUST:
+
+1. State an approval decision for the paused act
+2. Reference the A2CN session id
+3. Reference the paused offer's `protocol_act_hash`
+4. Reference the mandate that required approval
+5. Be signed by an operator-side key trusted by the mandate issuer
+6. Be unexpired at the time the paused act is transmitted
+
+Example:
+
+```json
+{
+  "artifact_type": "ApprovalReceipt",
+  "id": "urn:concordia:receipt:7f2e1a93",
+  "scope": {
+    "decision": "approve",
+    "offer_hash": "sha256:b4c1...e09f",
+    "amount": "150000.00 USD",
+    "threshold_crossed": "100000.00 USD"
+  },
+  "references": [
+    {
+      "type": "negotiation_session",
+      "id": "a2cn:session:9e4d2c11",
+      "relationship": "approves"
+    },
+    {
+      "type": "mandate",
+      "id": "a2cn:mandate:m-2026-04-19-0007",
+      "relationship": "fulfills"
+    }
+  ]
+}
+```
+
+### 14.2 Transition Semantics
+
+Entering `AWAITING_HUMAN_APPROVAL` is local to the party whose mandate requires
+approval. The counterparty may only observe the pause by polling session state,
+receiving an implementation-specific pending response, or timing out.
+
+While paused:
+
+- `current_turn` remains with the approving party
+- `round_number` does not change
+- `sequence_number` does not change
+- `latest_offer_id` and `latest_offer_hash` continue to reference the last
+  transmitted offer
+- `approval_pending_offer_id` and `approval_pending_offer_hash` identify the
+  paused act
+
+When a valid ApprovalReceipt is available, the implementation records
+`approval_receipt_id`, exits to `NEGOTIATING`, and transmits the paused act using
+the next valid `sequence_number`. If the paused act is an Acceptance, the normal
+Acceptance transition then moves the session to `COMPLETED`.
+
+If the ApprovalReceipt expires before the paused act is sent or accepted, the
+session MUST NOT terminate solely because of the receipt expiry. The session
+remains in or re-enters `AWAITING_HUMAN_APPROVAL` and requires a fresh receipt
+for the same offer hash or a new sub-threshold act.
+
+### 14.3 Audit Requirements
+
+Implementations that use `AWAITING_HUMAN_APPROVAL` MUST include the approval
+receipt id and paused offer hash in the audit log. The audit log SHOULD preserve
+enough information to answer:
+
+- Which offer crossed the threshold
+- Which threshold was crossed
+- Who approved the act, as represented by the receipt signature
+- When approval was granted
+- Which transmitted act consumed the approval
+
+This makes human oversight visible at the protocol layer without requiring A2CN
+to standardize the enterprise workflow behind the approval decision.
+
+---
+
 ## 15. Open Questions
 
 Open questions carry stable IDs across versions. Resolved questions are marked
@@ -2653,7 +2795,10 @@ with their resolution version rather than being renumbered.
 | OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
 | OQ-013 | DID VC mandate for hosted endpoints | Open | When the Meeting Place hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the Meeting Place can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
 | OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.1** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.1. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
-| OQ-018 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending design partner validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
+| OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
+| OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
+| OQ-020 | Mandate revocation signal | Open | Decide whether revocation is represented by a dedicated `MANDATE_REVOKED` message type or by absence of a fresh approval/mandate receipt. |
+| OQ-021 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending design partner validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
 
 Submit feedback via GitHub issues tagged `open-question`.
 
@@ -2948,9 +3093,10 @@ A software system is a **conformant A2CN implementation** if it:
 6. Generates protocol act signatures per Section 7.3 using RFC 8785 JCS
 7. Generates transaction records per Section 9
 8. Generates audit logs per Section 10
-9. Implements all error codes from Section 12
-10. Passes the A2CN conformance test suite at `spec/conformance-tests/`
-11. Produces messages that validate against the normative JSON Schemas at
+9. Implements `AWAITING_HUMAN_APPROVAL` when mandate thresholds require human approval (Section 14)
+10. Implements all error codes from Section 12
+11. Passes the A2CN conformance test suite at `spec/conformance-tests/`
+12. Produces messages that validate against the normative JSON Schemas at
     `spec/schemas/`
 
 ### 16.2 Conformance Levels
@@ -2961,7 +3107,7 @@ for any conformant implementation.
 
 **Level 1 — Core:** Discovery, session initiation, offer exchange with full
 protocol act signing, session state machine, turn-taking, idempotency, and
-compliance with all MUST requirements in Sections 3–13. Declared mandates only.
+compliance with all MUST requirements in Sections 3–14. Declared mandates only.
 DID VC mandate verification is not required at Level 1.
 
 **Level 2 — Full:** All Level 1 requirements, plus DID VC mandate verification
@@ -2971,8 +3117,9 @@ promoted from RECOMMENDED to REQUIRED at Level 2 in v0.2.
 
 **Level 3 — Extended:** All Level 2 requirements, plus Session Invitation support
 (Component 8, Section 11), impasse detection (Section 8.7), MESO terms support
-(Section 7.2.3), hosted endpoint provisioning (Section 11.6), and all RECOMMENDED
-behaviors throughout the specification.
+(Section 7.2.3), ApprovalReceipt binding for human approval pauses (Section 14),
+hosted endpoint provisioning (Section 11.6), and all RECOMMENDED behaviors
+throughout the specification.
 
 Implementations MUST declare their conformance level in their discovery document
 using the field `"conformance_level": 1 | 2 | 3`. This field is REQUIRED.
@@ -3017,6 +3164,16 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-17 — Human approval pause state
+
+- Section 8 state machine updated with non-terminal
+  `AWAITING_HUMAN_APPROVAL`.
+- Section 14 added to bind ApprovalReceipt artifacts to A2CN sessions and
+  paused offer hashes.
+- Audit log metadata extended with optional approval receipt references.
+- Open questions OQ-018/OQ-019/OQ-020 added for approval expiry, threshold
+  shape, and mandate revocation signaling.
 
 ### v0.2.0 (2026-04-08) — Section 13.9 LLM integration patterns
 
