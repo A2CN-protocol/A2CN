@@ -1,0 +1,26 @@
+{
+  "id": "hitl_threshold_crossing",
+  "status": "active",
+  "summary": "A mandate allows negotiation but requires human approval before committing above a threshold.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "mandate": {
+      "mandate_type": "declared",
+      "max_commitment_value": 20000000,
+      "max_commitment_currency": "USD",
+      "requires_human_approval_above": 10000000
+    },
+    "offer": {
+      "message_type": "counteroffer",
+      "terms": {
+        "total_value": 15000000,
+        "currency": "USD"
+      }
+    }
+  },
+  "expect": {
+    "accepted": true,
+    "state": "AWAITING_HUMAN_APPROVAL",
+    "approval_pending_offer_hash": "matches_offer_protocol_act_hash"
+  }
+}

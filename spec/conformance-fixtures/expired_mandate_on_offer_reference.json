@@ -1,0 +1,26 @@
+{
+  "id": "expired_mandate_on_offer_reference",
+  "status": "active",
+  "summary": "An offer references a mandate hash whose mandate is validly signed but expired.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "mandate": {
+      "mandate_type": "declared",
+      "mandate_hash": "sha256:expired-mandate",
+      "valid_until": "2020-01-01T00:00:00Z"
+    },
+    "offer": {
+      "message_type": "offer",
+      "mandate_hash": "sha256:expired-mandate",
+      "terms": {
+        "total_value": 9500000,
+        "currency": "USD"
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "MANDATE_INVALID",
+    "reason": "Referenced mandate is expired at the offer timestamp."
+  }
+}

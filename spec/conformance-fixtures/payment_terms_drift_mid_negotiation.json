@@ -1,0 +1,29 @@
+{
+  "id": "payment_terms_drift_mid_negotiation",
+  "status": "active",
+  "summary": "A mid-negotiation counteroffer drifts outside mandate payment-term bounds.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "mandate": {
+      "mandate_type": "declared",
+      "max_net_days": 45,
+      "max_commitment_value": 20000000,
+      "max_commitment_currency": "USD"
+    },
+    "counteroffer": {
+      "message_type": "counteroffer",
+      "terms": {
+        "total_value": 15000000,
+        "currency": "USD",
+        "payment_terms": {
+          "net_days": 90
+        }
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "MANDATE_INVALID",
+    "reason": "Payment terms drift outside mandate bounds before acceptance."
+  }
+}
