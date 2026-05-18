@@ -3165,7 +3165,7 @@ messages that validate against these schemas.
 
 ## 19. Changelog
 
-### v0.2.0 (2026-05-17) — Human approval pause state
+### Patch 2026-05-17 — Human approval pause state
 
 - Section 8 state machine updated with non-terminal
   `AWAITING_HUMAN_APPROVAL`.
