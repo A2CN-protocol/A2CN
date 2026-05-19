@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-300%2B%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -20,6 +20,9 @@ pip install -e .
 
 # Run the bilateral SaaS renewal demo
 python examples/saas_renewal.py
+
+# Run the two-process HTTP demo (buyer on 8001, supplier on 8002)
+../../demos/two_process/run_demo.sh
 
 # Run the Session Invitation / Fairmarkit integration demo
 # Terminal 1 (supplier, port 8002):
@@ -43,7 +46,8 @@ Expected output from `saas_renewal.py`:
 ✓ A2CN bilateral session complete
 ```
 
-Two processes. Different organizations. Neither controls the authoritative record. Both independently derived the same hash.
+For a real two-process HTTP run with separate buyer and supplier agents, use
+`../../demos/two_process/run_demo.sh`.
 
 ---
 
@@ -59,6 +63,14 @@ python examples/saas_renewal.py --deal-type goods_procurement  # goods_procureme
 python examples/saas_renewal.py --impasse-threshold 2    # impasse after 2 non-moving rounds
 python examples/saas_renewal.py --verbose                # print every message envelope
 ```
+
+### `../../demos/two_process/run_demo.sh` — Two-process HTTP demo
+
+Starts a buyer process on port 8001 and a supplier process on port 8002. The
+buyer initiates a SaaS renewal negotiation over HTTP, the supplier returns two
+counteroffers, and the buyer accepts. The demo prints both independently
+generated transaction record hashes side by side and exits non-zero if they do
+not match.
 
 ### `examples/invitation_flow.py` — Session Invitation demo (Fairmarkit pattern)
 
@@ -261,7 +273,7 @@ Fork it, modify it, or build your own from scratch.
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 202 passed
+pytest tests/ -v   # 300+ passed
 ```
 
 | Test file | What it covers |
