@@ -1685,8 +1685,9 @@ Any party verifying a transaction record MUST:
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
-> bilateral storage is correct for v0.1. The Meeting Place concept will provide
-> optional neutral hosting in v0.2.
+> bilateral storage is correct for v0.1. Implementations MAY optionally route
+> committed transaction records to a neutral third-party record custodian for
+> independent custody.
 
 ---
 
@@ -2021,7 +2022,7 @@ Normative fields:
 | `transaction_record_hash` | Hash of the agreed transaction record |
 | `dispute_notice_message_id` | `message_id` of the `DISPUTE_NOTICE` being closed |
 | `resolution_outcome` | MUST be one of `buyer_prevails`, `seller_prevails`, or `mutual_settlement` |
-| `resolver_did` | DID of the neutral resolver, for example a Meeting Place resolver DID |
+| `resolver_did` | DID of the neutral resolver |
 | `resolution_timestamp` | ISO 8601 timestamp when the resolution was issued |
 | `resolution_notes` | Optional human-readable explanation from the resolver |
 | `evidence_references` | Optional list of supporting evidence references for the ruling |
@@ -2053,8 +2054,8 @@ only negotiate via A2CN if both have already adopted the protocol.
 
 Component 8 introduces a complementary push-based pattern. An inviting party
 (typically the buyer) sends a `SessionInvitation` message to a counterparty
-through any delivery channel — direct HTTP, email, the Meeting Place invitation
-service, or an existing procurement platform webhook. The receiving party
+through any delivery channel — direct HTTP, email, a neutral invitation relay,
+or an existing procurement platform webhook. The receiving party
 evaluates the invitation, optionally activates or provisions an A2CN endpoint,
 and responds with their endpoint details. The inviting party then proceeds with
 a standard `SessionInit` (Component 3).
@@ -2220,10 +2221,10 @@ at least one of the following delivery channels:
 endpoint at the counterparty's domain. Appropriate when the counterparty has a
 known web presence but no A2CN endpoint yet.
 
-**Meeting Place Delivery:** The inviting party submits the `SessionInvitation`
-to the Meeting Place's invitation service, which delivers via the counterparty's
-preferred channel (email, webhook, or directly if they have a registered endpoint).
-The Meeting Place records the invitation and acceptance/decline for audit purposes.
+**Neutral Relay Delivery:** The inviting party submits the `SessionInvitation`
+to a neutral invitation relay, which delivers via the counterparty's preferred
+channel (email, webhook, or directly if they have a registered endpoint). The
+relay records the invitation and acceptance/decline for audit purposes.
 This is the RECOMMENDED delivery channel for counterparties without known A2CN
 endpoints.
 
@@ -2243,7 +2244,7 @@ When Fairmarkit initiates a sourcing event, for each invited supplier it:
 3. If the endpoint does not exist: delivers `SessionInvitation` via:
    - The `BID_CREATED` webhook (if the supplier has configured a webhook URL in Fairmarkit)
    - The Fairmarkit email invitation (with the `SessionInvitation` JSON as an attachment)
-   - The Meeting Place invitation service (if configured)
+   - A neutral invitation relay (if configured)
 
 The supplier's A2CN agent, upon receiving the `SessionInvitation`, responds to
 the `accept_endpoint`. Fairmarkit's buyer agent then sends a `SessionInit` to the
@@ -2251,24 +2252,31 @@ supplier's newly-activated endpoint. The resulting A2CN transaction record is
 submitted back to Fairmarkit via `POST /self-service/api/v3/responses/...` as the
 award data.
 
-### 11.6 Hosted Endpoint Provisioning (Meeting Place Pattern)
+### 11.6 Hosted Endpoint Provisioning (Neutral Provider Pattern)
 
-The Meeting Place MAY offer hosted A2CN endpoint provisioning to allow suppliers
-to participate in A2CN sessions without deploying their own server infrastructure.
-When a supplier accepts an invitation through the Meeting Place's interface:
+A neutral hosted endpoint provider MAY offer A2CN endpoint provisioning to allow
+suppliers to participate in A2CN sessions without deploying their own server
+infrastructure. When a supplier accepts an invitation through the provider's
+interface:
 
-1. The Meeting Place provisions a session-scoped A2CN endpoint on the supplier's behalf
+1. The provider provisions a session-scoped A2CN endpoint on the supplier's behalf
 2. The supplier configures negotiation parameters via a web interface: minimum acceptable
    price, maximum discount percentage, acceptable payment terms, delivery flexibility
-3. The Meeting Place's hosted agent conducts the session within these constraints
-4. The resulting transaction record notes `"hosted_endpoint": true` and `"hosted_by": "meeting-place.a2cn.dev"`
+3. The provider's hosted agent conducts the session within these constraints
+4. The resulting transaction record notes `"hosted_endpoint": true` and a
+   provider-controlled `"hosted_by"` identifier
 5. Both parties receive the standard dual-signed transaction record
 
-**Mandate for hosted endpoints:** The Meeting Place MUST generate a Tier 1
+**Mandate for hosted endpoints:** The hosted endpoint provider MUST generate a Tier 1
 (Declared) mandate scoped to the parameters the supplier has configured. The
 mandate's `max_commitment_value` MUST NOT exceed what the supplier explicitly
-authorized. The Meeting Place MUST NOT commit to terms outside the supplier's
-configured bounds.
+authorized. The provider MUST NOT commit to terms outside the supplier's configured
+bounds.
+
+Implementations MAY optionally route committed transaction records to a neutral
+third-party record custodian for independent custody. The custodian MUST NOT be
+controlled by either negotiating party. The custodian endpoint is declared in the
+session configuration as `neutral_custodian_uri`.
 
 Hosted endpoint sessions are fully interoperable with self-hosted A2CN endpoints.
 The buyer agent cannot distinguish a hosted endpoint from a self-hosted one
@@ -3018,14 +3026,14 @@ with their resolution version rather than being renumbered.
 | OQ-003 | DID resolver fallback when temporarily unavailable | Open | 24h cache allowed |
 | OQ-004 | Deal-type-specific terms schemas | **RESOLVED v0.2** | `goods_procurement` and `saas_renewal` schemas defined in Section 18 and `spec/schemas/terms/`. Additional types via extension pattern. |
 | OQ-005 | Configurable impasse threshold | **RESOLVED v0.2** | `impasse_threshold` field added to `session_params`. Default 3 consecutive rounds with no movement triggers IMPASSE state. Configurable 1–10. |
-| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; Meeting Place in v0.3 |
+| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; optional neutral third-party record custodian in v0.3 |
 | OQ-007 | Neutral transaction record storage (original) | **RESOLVED v0.1.1** | Bilateral storage correct for v0.1 |
 | OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED; promoted to REQUIRED at Level 2 in v0.2 |
 | OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
 | OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
 | OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
 | OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
-| OQ-013 | DID VC mandate for hosted endpoints | Open | When the Meeting Place hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the Meeting Place can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
+| OQ-013 | DID VC mandate for hosted endpoints | Open | When a neutral hosted endpoint provider hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the provider can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
 | OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.1** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.1; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
 | OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
 | OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
@@ -3587,8 +3595,8 @@ barrier in the pull-based discovery model. Key additions:
   specification, and lifecycle (PENDING → ACCEPTED/DECLINED/EXPIRED)
 - `InvitationAcceptance` and `InvitationDecline` message types
 - Invitation signature procedure using RFC 8785 JCS + ES256
-- Three delivery channels defined: Direct HTTP, Meeting Place, Platform Webhook
-- Meeting Place hosted endpoint provisioning pattern (supplier participates
+- Three delivery channels defined: Direct HTTP, Neutral Relay, Platform Webhook
+- Neutral hosted endpoint provisioning pattern (supplier participates
   in A2CN sessions without deploying their own server)
 - Fairmarkit integration pattern documented as normative example:
   `BID_CREATED` webhook triggers Session Invitation acceptance; A2CN session
@@ -3653,7 +3661,7 @@ Sections substantially rewritten and expanded with concrete integration patterns
   Pactum-style bundle negotiations
 - OQ-011: A2CN as A2A extension — formal proposal filed, outcome pending
 - OQ-012: Multi-party invitation for reverse auction contexts
-- OQ-013: DID VC mandate for Meeting Place hosted endpoints
+- OQ-013: DID VC mandate for neutral hosted endpoints
 
 **Introduction updated:**
 

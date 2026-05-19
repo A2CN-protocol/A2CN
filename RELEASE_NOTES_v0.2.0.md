@@ -8,7 +8,7 @@
 ## What's new in v0.2.0
 
 ### Session Invitation (Component 8)
-Solves the cold-start problem. A buyer agent can now invite a supplier who has no A2CN endpoint yet via a signed SessionInvitation delivered through existing webhook infrastructure (Fairmarkit BID_CREATED, email, or Meeting Place). The invitation is ES256-signed using the inviter's DID key. The supplier verifies authenticity before activating any endpoint.
+Solves the cold-start problem. A buyer agent can now invite a supplier who has no A2CN endpoint yet via a signed SessionInvitation delivered through existing webhook infrastructure (Fairmarkit BID_CREATED, email, or a neutral invitation relay). The invitation is ES256-signed using the inviter's DID key. The supplier verifies authenticity before activating any endpoint.
 
 ### Platform adapters
 - **Fairmarkit** — FairmakitEventParser translates BID_CREATED webhook payloads into A2CN goods_procurement terms and translates agreed terms back into Fairmarkit's response API format. Path B integration — zero Fairmarkit platform changes required.
@@ -60,7 +60,7 @@ pytest tests/ -v
 
 ## What's next (v0.3)
 
-- Meeting Place — neutral transaction hosting, mandate management, EU AI Act compliance export
+- Neutral third-party record custody — optional transaction record custody and compliance export
 - Ed25519 as alternate signing suite (coordinated with Concordia Protocol)
 - Delegation chain support in mandate verification
 - Joint A2A extension proposal with Concordia Protocol
