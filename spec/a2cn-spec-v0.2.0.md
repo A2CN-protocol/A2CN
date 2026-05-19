@@ -1811,6 +1811,98 @@ Note: The negotiation log records message types, hashes, and values — not full
 terms content. Full terms are only in the transaction record for completed sessions.
 This minimizes data retention obligations while preserving auditability.
 
+### 10.4 EU AI Act Article 14 Human Oversight Mapping
+
+Where an A2CN deployment is part of a system that the deployer or provider
+classifies as a high-risk AI system under Regulation (EU) 2024/1689, Article 14
+requires effective human oversight measures that are proportionate to the risks,
+level of autonomy, and context of use of the system.
+
+A2CN does not determine whether a particular procurement or commercial agent is
+a high-risk AI system, and an A2CN audit log is not a substitute for a legal
+compliance assessment. Instead, A2CN provides protocol-level evidence that can
+support an Article 14 oversight program:
+
+| Article 14 oversight concern | A2CN protocol evidence |
+| --- | --- |
+| Human oversight can be assigned and exercised during use | `AWAITING_HUMAN_APPROVAL` is a non-terminal pause state that prevents the threshold-crossing act from completing autonomously |
+| Oversight measures are tied to autonomy and context | `requires_human_approval_above` expresses a mandate-level threshold for autonomous Offers, Counteroffers, and Acceptances |
+| Human operators can monitor the system's conduct | `/sessions/{id}`, `/sessions/{id}/messages`, `/sessions/{id}/record`, and `/sessions/{id}/audit` expose session state, message history, transaction record hashes, and terminal audit logs |
+| Human intervention is recorded | ApprovalReceipt references bind the approving operator, the session id, the paused offer hash, the threshold crossed, and approval timestamp |
+| The system can produce logs suitable for interpretation | `negotiation_log` entries retain sequence number, message type, sender DID, timestamp, offered value, and `protocol_act_hash` without duplicating full commercial terms |
+
+The `requires_human_approval_above` field is the machine-readable oversight
+trigger. Implementations that support this field MUST evaluate it before an
+Offer, Counteroffer, or Acceptance whose value can bind the acting principal is
+transmitted or accepted. If the value exceeds the threshold, the implementation
+MUST enter `AWAITING_HUMAN_APPROVAL` and MUST NOT complete the act until a valid
+ApprovalReceipt is bound as described in Section 14.
+
+For high-risk deployments, implementers SHOULD expose the threshold source
+(mandate id or mandate hash), the applicable threshold currency, the paused
+message id, the paused `protocol_act_hash`, and the ApprovalReceipt id in
+operator dashboards and compliance exports.
+
+EU AI Act application dates and guidance are still subject to official
+implementation and amendment activity. As of v0.2.0, the European Commission
+describes the AI Act as generally applicable from 2 August 2026 with exceptions,
+and notes separate timelines for some high-risk systems. Implementers MUST
+track the applicable legal date and obligations for their deployment context.
+
+### 10.5 Compliance Export Package
+
+For regulator, auditor, or enterprise governance review, an A2CN implementation
+SHOULD be able to export a compliance package containing:
+
+1. The A2CN audit log from `/sessions/{id}/audit`
+2. The transaction record from `/sessions/{id}/record`, if the session reached
+   `COMPLETED`
+3. The session message history from `/sessions/{id}/messages`
+4. The mandate or mandate hash for each party
+5. Any ApprovalReceipt artifacts referenced by `audit_metadata.human_approval_receipts`
+6. A deployment-local statement identifying the legal basis for classifying, or
+   not classifying, the system as high-risk
+
+The export package SHOULD use the following top-level shape:
+
+```json
+{
+  "export_type": "a2cn_compliance_export",
+  "export_version": "0.1",
+  "generated_at": "2026-05-19T00:00:00Z",
+  "regulatory_context": {
+    "framework": "EU AI Act",
+    "mapping": "Article 14 human oversight",
+    "high_risk_classification": "deployers-assessment-required",
+    "legal_assessment_reference": "string | null"
+  },
+  "session_id": "string",
+  "audit_log": {},
+  "transaction_record": "object | null",
+  "message_history": [],
+  "mandate_references": [
+    {
+      "party": "initiator | responder",
+      "mandate_id": "string | null",
+      "mandate_hash": "string | null",
+      "requires_human_approval_above": "number | null",
+      "currency": "string | null"
+    }
+  ],
+  "approval_receipts": [
+    {
+      "approval_receipt_id": "string",
+      "artifact": {}
+    }
+  ]
+}
+```
+
+The compliance export SHOULD preserve signed artifacts verbatim where available.
+If an ApprovalReceipt is stored outside A2CN, the export MAY include only the
+receipt id, hash, issuer, verification method, and retrieval URI, provided the
+retrieval system preserves the receipt for the required retention period.
+
 ---
 
 ## 11. Component 8: Session Invitation *(new in v0.2)*
@@ -2772,6 +2864,9 @@ enough information to answer:
 This makes human oversight visible at the protocol layer without requiring A2CN
 to standardize the enterprise workflow behind the approval decision.
 
+For Article 14 (EU AI Act) evidence mapping and compliance export format, see
+Section 10.4 and 10.5.
+
 ---
 
 ## 15. Open Questions
@@ -3232,6 +3327,17 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-19 — EU AI Act Article 14 oversight mapping
+
+- Section 10.4 added: maps Article 14 human oversight requirements to A2CN
+  protocol artifacts (`AWAITING_HUMAN_APPROVAL`, `requires_human_approval_above`,
+  `human_approval_receipts`, `negotiation_log`, session endpoints).
+- Section 10.5 added: defines a compliance export package shape for regulator,
+  auditor, and enterprise governance review.
+- Section 14.3 updated: cross-reference to Sections 10.4 and 10.5.
+- Does not classify any deployment as high-risk; legal determination is
+  explicitly left to deploying organizations.
 
 ### Patch 2026-05-18 — A2A extension URI and substrate split
 
