@@ -515,7 +515,7 @@ INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# v0.3 planned: Post-commitment lifecycle (OQ-017)
+# v0.2.1: Post-commitment lifecycle (OQ-017 resolved; Level 3 conformance)
 # ---------------------------------------------------------------------------
 
 @dataclass

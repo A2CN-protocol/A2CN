@@ -527,7 +527,7 @@ async def get_audit(session_id: str, request: Request,
 
 
 # ---------------------------------------------------------------------------
-# v0.3 planned: Post-commitment lifecycle endpoints (OQ-017)
+# v0.2.1: Post-commitment lifecycle endpoints (OQ-017 resolved; Level 3 conformance)
 # ---------------------------------------------------------------------------
 
 @app.post("/sessions/{session_id}/delivery-notice")
