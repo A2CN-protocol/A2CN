@@ -2865,8 +2865,8 @@ is capability negotiation (what features do you support), not commercial negotia
 
 A2CN's offer/counteroffer schema is a profile extension. A2CN's session state
 machine is a method extension. A2CN's discovery document fields map to data-only
-AgentCard extensions. A formal A2A extension proposal implementing A2CN as an A2A
-extension is pending with A2A governance (see OQ-011).
+AgentCard extensions. A2CN has defined a provisional extension URI while the
+formal A2A governance outcome is pending (see OQ-011).
 
 The A2CN A2A extension URI is:
 
@@ -2932,8 +2932,9 @@ with a Concordia fulfillment attestation. The A2CN message records the dispute
 resolution outcome and binds it to the transaction record; the Concordia artifact
 can then reference the A2CN session, transaction record, and dispute resolution
 as evidence that an obligation was fulfilled, rejected, or settled. Erik Newton's
-adapter path `concordia/adapters/a2cn/dispute_resolved.py` is the reference shape
-for this composition.
+Concordia adapter for A2CN provides the reference shape for this composition; see
+the Concordia Protocol repository at
+https://github.com/eriknewton/concordia-protocol.
 
 **Precedent:** UCP (Universal Commerce Protocol) and AP2 (payment authorization)
 are both implemented as A2A extensions. The pattern is documented and supported.
