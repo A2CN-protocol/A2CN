@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2cn.dev/schemas/delivery-acknowledged/0.2",
   "title": "A2CN DeliveryAcknowledgedMessage",
-  "description": "Buyer acknowledgment of a DELIVERY_NOTICE. accepted=true closes the lifecycle; accepted=false triggers DISPUTED status (v0.3 planned, OQ-017)",
+  "description": "Buyer acknowledgment of a DELIVERY_NOTICE. accepted=true closes the lifecycle; accepted=false triggers DISPUTED status. Normative at Level 3 conformance as of v0.2.1 (OQ-017 resolved).",
   "type": "object",
   "required": [
     "message_id",
