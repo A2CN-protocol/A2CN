@@ -97,13 +97,13 @@ async def test_session_init_idempotency(test_client):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_turn_taking_enforced(test_client):
+async def test_turn_taking_enforced(test_client, responder_test_client):
     """NOT_YOUR_TURN returned for out-of-turn message."""
     session_id = await _create_session(test_client)
 
     # Responder tries to send before initiator — must fail
     offer = _offer(session_id, 1, 1, RESPONDER_DID)
-    r = await test_client.post(
+    r = await responder_test_client.post(
         f"/sessions/{session_id}/messages", json=offer, headers=init_headers(offer["message_id"])
     )
     assert r.status_code == 409
@@ -329,7 +329,7 @@ def test_transaction_record_deterministic():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_sequence_ordering_strict(test_client):
+async def test_sequence_ordering_strict(test_client, responder_test_client):
     """Gap in sequence_number rejected with SEQUENCE_ERROR."""
     session_id = await _create_session(test_client)
 
@@ -343,7 +343,7 @@ async def test_sequence_ordering_strict(test_client):
     # Now send seq=3 (skipping 2) — must fail
     bad_offer = _offer(session_id, 3, 2, RESPONDER_DID, msg_type="counteroffer",
                        in_reply_to=offer["message_id"])
-    r2 = await test_client.post(
+    r2 = await responder_test_client.post(
         f"/sessions/{session_id}/messages", json=bad_offer, headers=init_headers(bad_offer["message_id"])
     )
     assert r2.status_code == 422
