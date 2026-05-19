@@ -173,11 +173,11 @@ async def test_send_offer_succeeds(test_client):
 
 
 @pytest.mark.asyncio
-async def test_not_your_turn(test_client):
+async def test_not_your_turn(test_client, responder_test_client):
     session_id = await _create_session(test_client)
     # Responder tries to send before initiator
     offer = _make_offer_msg(session_id, 1, 1, RESPONDER_DID)
-    r = await test_client.post(
+    r = await responder_test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
         headers=init_headers(offer["message_id"]),

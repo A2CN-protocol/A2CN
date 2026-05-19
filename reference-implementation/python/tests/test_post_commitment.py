@@ -41,73 +41,6 @@ async def _create_session(client) -> str:
     return r.json()["session_id"]
 
 
-async def _complete_session(client) -> tuple[str, str]:
-    """Create + complete a session. Returns (session_id, record_hash)."""
-    session_id = await _create_session(client)
-
-    timestamp = "2026-04-01T10:00:00Z"
-    expires_at = "2030-01-01T00:00:00Z"
-    terms = {"total_value": 10_000_000, "currency": "USD", "seat_count": 50}
-    offer_id = str(uuid.uuid4())
-    protocol_act = {
-        "protocol_version": "0.2",
-        "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 1,
-        "message_type": "offer",
-        "sender_did": INITIATOR_DID,
-        "timestamp": timestamp,
-        "expires_at": expires_at,
-        "terms": terms,
-    }
-    pah = hash_object(protocol_act)
-    offer = {
-        "message_type": "offer",
-        "message_id": offer_id,
-        "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 1,
-        "sender_did": INITIATOR_DID,
-        "sender_agent_id": "test-agent",
-        "sender_verification_method": f"{INITIATOR_DID}#key-1",
-        "timestamp": timestamp,
-        "expires_at": expires_at,
-        "terms": terms,
-        "protocol_act_hash": pah,
-        "protocol_act_signature": "eyJ...",
-    }
-    r = await client.post(
-        f"/sessions/{session_id}/messages", json=offer, headers=_h(offer_id)
-    )
-    assert r.status_code == 200, r.text
-
-    acc_id = str(uuid.uuid4())
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": acc_id,
-        "session_id": session_id,
-        "in_reply_to": offer_id,
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": offer_id,
-        "accepted_protocol_act_hash": pah,
-        "sender_did": RESPONDER_DID,
-        "sender_agent_id": "test-agent",
-        "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
-        "timestamp": "2026-04-01T10:01:00Z",
-        "acceptance_signature": "eyJ...",
-    }
-    r = await client.post(
-        f"/sessions/{session_id}/messages", json=acceptance, headers=_h(acc_id)
-    )
-    assert r.status_code == 200, r.text
-
-    r = await client.get(f"/sessions/{session_id}/record")
-    assert r.status_code == 200, r.text
-    record_hash = r.json()["record_hash"]
-    return session_id, record_hash
-
-
 def _delivery_notice_body(session_id: str, record_hash: str, msg_id: str | None = None) -> dict:
     mid = msg_id or str(uuid.uuid4())
     return {
@@ -333,8 +266,8 @@ class TestJsonSchemaValidation:
 
 @pytest.mark.asyncio
 class TestDeliveryNoticeEndpoint:
-    async def test_valid_delivery_notice_accepted(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_valid_delivery_notice_accepted(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _delivery_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-notice", json=body, headers=_h(body["message_id"])
@@ -354,8 +287,8 @@ class TestDeliveryNoticeEndpoint:
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "SESSION_WRONG_STATE"
 
-    async def test_delivery_notice_rejected_if_hash_mismatch(self, test_client):
-        session_id, _ = await _complete_session(test_client)
+    async def test_delivery_notice_rejected_if_hash_mismatch(self, test_client, responder_test_client):
+        session_id, _ = await _complete_session(test_client, responder_test_client)
         bad_hash = "b" * 64  # wrong hash
         body = _delivery_notice_body(session_id, bad_hash)
         r = await test_client.post(
@@ -371,9 +304,9 @@ class TestDeliveryNoticeEndpoint:
 
 @pytest.mark.asyncio
 class TestDeliveryAcknowledgedEndpoint:
-    async def _setup(self, test_client):
+    async def _setup(self, test_client, responder_test_client):
         """Complete a session and record a delivery notice. Returns (session_id, record_hash, notice_id)."""
-        session_id, record_hash = await _complete_session(test_client)
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         notice_body = _delivery_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-notice",
@@ -384,8 +317,8 @@ class TestDeliveryAcknowledgedEndpoint:
         notice_id = r.json()["delivery_notice_message_id"]
         return session_id, record_hash, notice_id
 
-    async def test_valid_delivery_acknowledged_accepted(self, test_client):
-        session_id, record_hash, notice_id = await self._setup(test_client)
+    async def test_valid_delivery_acknowledged_accepted(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await self._setup(test_client, responder_test_client)
         body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=True)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-acknowledged", json=body, headers=_h(body["message_id"])
@@ -394,16 +327,16 @@ class TestDeliveryAcknowledgedEndpoint:
         data = r.json()
         assert data["post_commitment_status"] == "CLOSED"
 
-    async def test_accepted_true_sets_closed(self, test_client):
-        session_id, record_hash, notice_id = await self._setup(test_client)
+    async def test_accepted_true_sets_closed(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await self._setup(test_client, responder_test_client)
         body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=True)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-acknowledged", json=body, headers=_h(body["message_id"])
         )
         assert r.json()["post_commitment_status"] == "CLOSED"
 
-    async def test_accepted_false_sets_disputed(self, test_client):
-        session_id, record_hash, notice_id = await self._setup(test_client)
+    async def test_accepted_false_sets_disputed(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await self._setup(test_client, responder_test_client)
         body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=False)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-acknowledged", json=body, headers=_h(body["message_id"])
@@ -411,8 +344,8 @@ class TestDeliveryAcknowledgedEndpoint:
         assert r.status_code == 200
         assert r.json()["post_commitment_status"] == "DISPUTED"
 
-    async def test_rejected_if_no_delivery_notice(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_rejected_if_no_delivery_notice(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _delivery_ack_body(session_id, record_hash, "nonexistent-notice-id", accepted=True)
         r = await test_client.post(
             f"/sessions/{session_id}/delivery-acknowledged", json=body, headers=_h(body["message_id"])
@@ -427,8 +360,8 @@ class TestDeliveryAcknowledgedEndpoint:
 
 @pytest.mark.asyncio
 class TestDisputeNoticeEndpoint:
-    async def test_valid_dispute_notice_accepted(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_valid_dispute_notice_accepted(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
@@ -439,16 +372,16 @@ class TestDisputeNoticeEndpoint:
         assert data["session_id"] == session_id
         assert "dispute_notice_message_id" in data
 
-    async def test_dispute_sets_post_commitment_status_to_disputed(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_dispute_sets_post_commitment_status_to_disputed(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
         )
         assert r.json()["post_commitment_status"] == "DISPUTED"
 
-    async def test_dispute_stores_raised_by_and_dispute_type(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_dispute_stores_raised_by_and_dispute_type(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_notice_body(session_id, record_hash)
         body["raised_by"] = "seller"
         body["dispute_type"] = "payment_failure"
@@ -466,8 +399,8 @@ class TestDisputeNoticeEndpoint:
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "SESSION_WRONG_STATE"
 
-    async def test_dispute_note_references_meeting_place(self, test_client):
-        session_id, record_hash = await _complete_session(test_client)
+    async def test_dispute_note_references_meeting_place(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
@@ -479,7 +412,7 @@ class TestDisputeNoticeEndpoint:
 # Helpers — complete a session with two clients (avoids SENDER_DID_MISMATCH)
 # ---------------------------------------------------------------------------
 
-async def _complete_session_properly(
+async def _complete_session(
     initiator_client, responder_client
 ) -> tuple[str, str]:
     """Complete a session using the correct JWT for each party. Returns (session_id, record_hash)."""
@@ -552,7 +485,7 @@ async def _setup_disputed_session(
     initiator_client, responder_client
 ) -> tuple[str, str, str]:
     """Complete a session and open a DISPUTE_NOTICE. Returns (session_id, record_hash, dispute_notice_id)."""
-    session_id, record_hash = await _complete_session_properly(initiator_client, responder_client)
+    session_id, record_hash = await _complete_session(initiator_client, responder_client)
     body = _dispute_notice_body(session_id, record_hash)
     r = await initiator_client.post(
         f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
@@ -724,7 +657,7 @@ class TestDisputeResolvedEndpoint:
     async def test_dispute_resolved_rejected_if_not_in_disputed_status(
         self, test_client, responder_test_client
     ):
-        session_id, record_hash = await _complete_session_properly(test_client, responder_test_client)
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_resolved_body(session_id, record_hash, "nonexistent-notice-id")
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
@@ -804,7 +737,7 @@ class TestDisputeResolvedEndpoint:
     async def test_not_in_disputed_status_error_includes_spec_ref(
         self, test_client, responder_test_client
     ):
-        session_id, record_hash = await _complete_session_properly(test_client, responder_test_client)
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_resolved_body(session_id, record_hash, "irrelevant-notice-id")
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
