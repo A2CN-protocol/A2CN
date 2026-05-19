@@ -15,6 +15,21 @@ cleanup() {
   if [[ -n "${BUYER_PID:-}" ]]; then kill "$BUYER_PID" 2>/dev/null || true; fi
   rm -f "$SUPPLIER_LOG" "$BUYER_LOG"
 }
+
+print_logs_on_failure() {
+  exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    echo
+    echo "--- supplier log ---"
+    cat "$SUPPLIER_LOG" 2>/dev/null || true
+    echo
+    echo "--- buyer log ---"
+    cat "$BUYER_LOG" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+
+trap print_logs_on_failure ERR
 trap cleanup EXIT
 
 uv run python "$DEMO_DIR/supplier_agent.py" --port 8002 >"$SUPPLIER_LOG" 2>&1 &

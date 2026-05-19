@@ -34,6 +34,9 @@ SUPPLIER_URL = f"http://127.0.0.1:{SUPPLIER_PORT}"
 BUYER_KEY_ID = f"{BUYER_DID}#key-1"
 SUPPLIER_KEY_ID = f"{SUPPLIER_DID}#key-1"
 
+# Demo-only keys. They are committed so the two separate demo processes can
+# verify each other's JWTs without external DID hosting; never use them in
+# production or for real counterparty authentication.
 BUYER_PRIVATE_JWK = {
     "kty": "EC",
     "crv": "P-256",
@@ -42,6 +45,7 @@ BUYER_PRIVATE_JWK = {
     "d": "XZJC7OiOPA9RvV6yobPgm1kZdg9htDWgIxXP0wDT6b0",
 }
 
+# Demo-only key; see warning above.
 SUPPLIER_PRIVATE_JWK = {
     "kty": "EC",
     "crv": "P-256",

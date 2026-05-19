@@ -148,6 +148,11 @@ async def run_negotiation() -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the A2CN two-process buyer agent")
-    parser.add_argument("--port", type=int, default=BUYER_PORT)
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=BUYER_PORT,
+        help="Port to listen on; must match BUYER_PORT in demo_shared.py",
+    )
     args = parser.parse_args()
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
