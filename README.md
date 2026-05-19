@@ -2,8 +2,7 @@
 
 **The missing protocol layer for machine-to-machine B2B commerce.**
 
-A2CN is maintained by **Mandate Labs**, the company building neutral
-infrastructure for agent-to-agent commercial negotiation.
+A2CN defines neutral infrastructure for agent-to-agent commercial negotiation.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
@@ -64,7 +63,7 @@ The original discovery model required both parties to have independently deploye
 
 ```
 Buyer agent creates a signed SessionInvitation
-    → delivers via BID_CREATED webhook / email / Meeting Place
+    → delivers via BID_CREATED webhook / email / neutral invitation relay
         → Supplier receives, validates signature, accepts
             → Buyer sends standard SessionInit to acceptor's endpoint
                 → Normal A2CN session proceeds
@@ -232,8 +231,8 @@ Fairmarkit / Pactum / Zip        Salesforce Revenue Cloud / Dynamics 365
               (dual-signed, content-addressed)
                         ↓
         ────────────────┴────────────────────────
-      AP2              Luminance        Meeting Place
-   (payment)        (contract)       (dispute resolution)
+      AP2              Luminance        Neutral Custodian
+   (payment)        (contract)       (record custody / dispute evidence)
 ```
 
 A2CN fits between the platforms that generate offers and the infrastructure that executes payment and formalizes contracts. Neither side needs to change their internal pricing logic or CRM workflow — A2CN is the exchange layer in between.
@@ -316,7 +315,7 @@ A2CN/
 | Security review | ✓ Passed — 0 critical, 0 high findings |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
-| Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
+| Neutral third-party record custody | 📋 Planned — v0.3 |
 | Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE / DISPUTE_RESOLVED) | ✓ Complete — v0.2.1 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | 📋 Planned — v0.3 |

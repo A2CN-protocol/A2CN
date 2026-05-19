@@ -399,13 +399,13 @@ class TestDisputeNoticeEndpoint:
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "SESSION_WRONG_STATE"
 
-    async def test_dispute_note_references_meeting_place(self, test_client, responder_test_client):
+    async def test_dispute_note_references_neutral_resolver(self, test_client, responder_test_client):
         session_id, record_hash = await _complete_session(test_client, responder_test_client)
         body = _dispute_notice_body(session_id, record_hash)
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
         )
-        assert "Meeting Place" in r.json()["note"]
+        assert "neutral resolver" in r.json()["note"]
 
 
 # ---------------------------------------------------------------------------
