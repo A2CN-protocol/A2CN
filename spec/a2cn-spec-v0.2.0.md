@@ -2397,8 +2397,11 @@ Webhook POST requests MUST include these headers:
 
 Webhook receivers MUST resolve the sender's DID document, locate the verification
 method referenced by `X-A2CN-Sender-Verification-Method`, verify that it is
-controlled by `X-A2CN-Sender-DID`, verify the compact JWS signature, and compare
-the verified JWS payload to `X-A2CN-Body-SHA256` before processing the callback.
+controlled by `X-A2CN-Sender-DID`, independently compute
+`base64url(SHA-256(received_body_bytes))` and compare it to
+`X-A2CN-Body-SHA256`, verify the compact JWS signature, and confirm the verified
+JWS payload matches the independently computed hash before processing the
+callback.
 The signing suite follows Section 13.4: ES256 by default, with EdDSA/Ed25519
 also accepted when the sender's verification method uses an Ed25519 key.
 
