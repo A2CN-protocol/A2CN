@@ -169,6 +169,8 @@ class TestPostgreSQLSessionStore:
     def test_table_name_validation(self):
         with pytest.raises(ValueError, match="table_name"):
             PostgreSQLSessionStore(FakePostgresConnection(), table_name="sessions;drop")
+        with pytest.raises(ValueError, match="table_name"):
+            PostgreSQLSessionStore(FakePostgresConnection(), table_name="1sessions")
 
     def test_initialize_schema_commits(self):
         conn = FakePostgresConnection()

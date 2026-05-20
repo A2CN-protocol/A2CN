@@ -200,7 +200,9 @@ signatures and 1s/4s/16s retry backoff.
 `configure_responder()` accepts an optional `session_store` implementing the
 `SessionStore` interface. The default `InMemorySessionStore` is suitable for
 demos and tests; use a persistent store when post-commitment lifecycle state
-must survive process restarts.
+must survive process restarts. In async ASGI deployments, wrap synchronous store
+calls with `asyncio.to_thread()` or use async-native drivers such as
+`redis.asyncio` or the psycopg3 async interface.
 
 ```python
 from session_store import RedisSessionStore, PostgreSQLSessionStore

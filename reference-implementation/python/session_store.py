@@ -145,9 +145,13 @@ class PostgreSQLSessionStore(SessionStore):
     """
 
     def __init__(self, connection: Any, *, table_name: str = "a2cn_sessions") -> None:
-        if not table_name.replace("_", "").isalnum():
+        if (
+            not table_name
+            or not table_name[0].isalpha()
+            or not table_name.replace("_", "").isalnum()
+        ):
             raise ValueError(
-                "table_name must contain only letters, numbers, and underscores"
+                "table_name must start with a letter and contain only letters, numbers, and underscores"
             )
         self.connection = connection
         self.table_name = table_name
