@@ -125,7 +125,7 @@ def test_get_public_key_ed25519_roundtrip():
     jwk = public_key_to_jwk(pub)
     vm = {
         "id": f"{INITIATOR_DID}#ed25519-1",
-        "type": "Ed25519VerificationKey2020",
+        "type": "JsonWebKey2020",
         "controller": INITIATOR_DID,
         "publicKeyJwk": jwk,
     }

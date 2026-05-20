@@ -95,12 +95,10 @@ def get_public_key(verification_method: dict) -> SigningPublicKey:
     if vm_type not in (
         "JsonWebKey2020",
         "EcdsaSecp256r1VerificationKey2019",
-        "Ed25519VerificationKey2020",
     ):
         raise ValueError(
             f"Unsupported verification method type: {vm_type!r}. "
-            "Only JsonWebKey2020, EcdsaSecp256r1VerificationKey2019, "
-            "and Ed25519VerificationKey2020 are supported."
+            "Only JsonWebKey2020 and EcdsaSecp256r1VerificationKey2019 are supported."
         )
 
     jwk = verification_method.get("publicKeyJwk")
