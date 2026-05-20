@@ -3219,34 +3219,122 @@ Fairmarkit's developer API (developers.fairmarkit.com) exposes documented
 webhooks and REST endpoints that enable A2CN integration without requiring
 Fairmarkit platform changes.
 
-**Path A — A2CN as buyer outreach channel:**
-When Fairmarkit initiates a sourcing event, for each supplier it attempts
-discovery at `/.well-known/a2cn-agent`. For A2CN-capable suppliers, the
-buyer agent initiates an A2CN session instead of sending an email invitation.
-The A2CN transaction record's `agreed_terms` are submitted as the award
-via `POST /self-service/api/v3/responses/...`. The ERP writeBack flow is
-unchanged.
+**Path A — Shipped reference adapter: `BID_CREATED` webhook to A2CN session.**
+Fairmarkit fires a `BID_CREATED` webhook when a supplier is invited to a sourcing
+event. A supplier-side A2CN adapter can receive that webhook, translate the event
+payload into a `goods_procurement` terms object, and start or accept an A2CN
+session using Component 8 Session Invitation. This path is implemented in the
+Python reference implementation as `FairmakitEventParser`.
 
-**Path B — Supplier-side A2CN agent on Fairmarkit events:**
-Fairmarkit exposes a `BID_CREATED` webhook that fires when a supplier is
-invited to an event. A supplier with an A2CN-capable agent can configure this
-webhook to trigger the Session Invitation acceptance flow. The supplier agent
-processes the sourcing event data, responds to the inviting party's
-`accept_endpoint`, and negotiates via A2CN. The resulting terms are submitted
-to Fairmarkit via the existing response API.
+Reference implementation shape:
 
-**Data model mapping — Fairmarkit → A2CN `goods_procurement` terms:**
+```python
+from adapters.fairmarkit_adapter import FairmakitEventParser
+
+summary = FairmakitEventParser.parse_bid_created_webhook(payload)
+terms = FairmakitEventParser.bid_created_to_goods_procurement_terms(payload)
+```
+
+The `summary` object is suitable for
+`SessionInvitation.proposed_terms_summary`. The `terms` object is suitable for
+an A2CN `goods_procurement` Offer.
+
+**Path B — A2CN agreement to Fairmarkit response payload.**
+After an A2CN session reaches `COMPLETED`, the adapter can translate the
+transaction record's `agreed_terms` into Fairmarkit's response submission shape.
+The reference implementation performs the data conversion only; production
+integrations are responsible for authentication, idempotency, and POST delivery
+to Fairmarkit's response API.
+
+```python
+response = FairmakitEventParser.terms_to_fairmarkit_response(
+    agreed_terms,
+    session_id=session_id,
+    request_id=fairmarkit_request_id,
+)
+```
+
+The response payload is designed for submission to:
+
+```text
+POST /self-service/api/v3/responses/request/{request_id}/
+```
+
+**Optional direct-discovery path.**
+When a buyer-side Fairmarkit integration has the supplier's domain, it MAY first
+attempt A2CN discovery at `https://{supplier-domain}/.well-known/a2cn-agent`. If
+the supplier is A2CN-capable, the buyer-side agent can initiate a standard A2CN
+session directly. If discovery fails, the integration can fall back to the
+Fairmarkit `BID_CREATED` webhook path above.
+
+**Data model mapping — Fairmarkit `BID_CREATED` → A2CN `goods_procurement`:**
 
 | Fairmarkit field | A2CN `goods_procurement` terms field |
 |-----------------|--------------------------------------|
-| Line item description | `line_items[].description` |
-| Quantity | `line_items[].quantity` |
-| Unit of measure (UOM) | `line_items[].unit_of_measure` |
-| Unit price | `line_items[].unit_price` |
-| Delivery days | `delivery_days` |
-| MFG part number | `line_items[].manufacturer_part_number` |
-| Internal part number | `line_items[].internal_part_number` |
-| Benchmark price | Not transmitted (internal buyer reference) |
+| `request_id` | `fairmarkit_request_id` in `proposed_terms_summary`; `request_id` in response payload |
+| `deadline` | `proposed_terms_summary.deadline` |
+| `items[].description` | `line_items[].description` |
+| `items[].quantity` | `line_items[].quantity` |
+| `items[].uom` | `line_items[].unit_of_measure` |
+| `items[].unit_price` | `line_items[].unit_price` in cents |
+| `items[].mfg_part_number` | `line_items[].manufacturer_part_number` |
+| `items[].internal_part_number` | `line_items[].internal_part_number` |
+| Computed sum of line items | `total_value` in cents |
+| Delivery requirement, if supplied by integration | `delivery_days`; reference default is 14 |
+| Payment terms, if supplied by integration | `payment_terms.net_days`; reference default is 30 |
+| Benchmark price | Not transmitted; internal buyer reference |
+
+**A2CN `goods_procurement` → Fairmarkit response payload:**
+
+| A2CN `agreed_terms` field | Fairmarkit response field |
+|--------------------------|---------------------------|
+| `line_items[].description` | `items[].description` |
+| `line_items[].quantity` | `items[].quantity` |
+| `line_items[].unit_price` in cents | `items[].unit_price` as decimal currency units |
+| `line_items[].total` in cents | `items[].total_price` as decimal currency units |
+| `line_items[].unit_of_measure` | `items[].uom` |
+| `line_items[].manufacturer_part_number` | `items[].manufacturer_part_number` |
+| `line_items[].internal_part_number` | `items[].internal_part_number` |
+| `total_value` in cents | `total_price` as decimal currency units |
+| `currency` | `currency` |
+| `payment_terms.net_days` | `payment_terms`, formatted as `Net {n}` |
+| `delivery_days` | `delivery_days` and `items[].delivery_days` |
+| A2CN session id | `a2cn_session_id` and response `notes` |
+
+**Discovery document for a Fairmarkit-hosted or Fairmarkit-adjacent A2CN endpoint:**
+
+```json
+{
+  "a2cn_version": "0.2",
+  "agent_did": "did:web:supplier.example",
+  "conformance_level": 2,
+  "deal_types": ["goods_procurement"],
+  "mandate_methods": ["declared"],
+  "endpoint": "https://supplier.example/a2cn",
+  "agent_id": "supplier-fairmarkit-a2cn-agent",
+  "verification_method": "did:web:supplier.example#key-1",
+  "platform_integrations": [
+    {
+      "platform": "fairmarkit",
+      "event_types": ["BID_CREATED"],
+      "response_endpoint": "/self-service/api/v3/responses/request/{request_id}/"
+    }
+  ]
+}
+```
+
+The `platform_integrations` array is non-normative metadata. It helps operators
+document how a hosted or adjacent endpoint is wired, but it is not required for
+A2CN discovery validation. The trust anchor remains the DID document referenced
+by `agent_did` and `verification_method`.
+
+**Coupa ecosystem note.**
+Fairmarkit deployments often sit inside broader Coupa procurement estates through
+marketplace or platform integrations. A2CN implementations SHOULD bind to the
+Fairmarkit webhook and response API boundary rather than to Coupa-internal object
+models. If a Coupa or ERP identifier is forwarded in a Fairmarkit payload, the
+adapter MAY preserve it as an opaque reference, but MUST NOT treat it as an A2CN
+authorization grant.
 
 ### 16.5 AP2
 
@@ -3293,7 +3381,7 @@ Keelvar is an AI-powered strategic sourcing platform. Keelvar fires a
 `SOURCING_EVENTS_FEED_UPDATED` webhook when a new sourcing event becomes
 available to a supplier.
 
-**Path B — Supplier-side A2CN agent on Keelvar events (zero platform changes):**
+**Supplier-side webhook path — A2CN agent on Keelvar events (zero platform changes):**
 When Keelvar posts a `SOURCING_EVENTS_FEED_UPDATED` webhook, a supplier's A2CN
 agent translates the event into A2CN `goods_procurement` terms and initiates or
 accepts an A2CN session. On completion, the agreed terms are translated back into
@@ -3358,15 +3446,16 @@ The following platforms are expected to interact with A2CN agents as the
 ecosystem matures:
 
 **SAP Ariba / SAP Business Network:** Dominant enterprise procurement platform.
-A2CN agents operating as suppliers on Ariba events follow the same Path B pattern
-as Fairmarkit and Keelvar — webhook triggers A2CN session, agreed terms submitted
-via Ariba response API. No Ariba platform changes required for supplier-side agents.
+A2CN agents operating as suppliers on Ariba events follow the same supplier-side
+webhook pattern as Fairmarkit and Keelvar — webhook triggers A2CN session, agreed
+terms submitted via Ariba response API. No Ariba platform changes required for
+supplier-side agents.
 
-**Coupa:** Coupa's supplier portal exposes event webhooks. Path B integration
-follows identical pattern to Fairmarkit and Keelvar.
+**Coupa:** Coupa's supplier portal exposes event webhooks. Supplier-side webhook
+integration follows the same pattern as Fairmarkit and Keelvar.
 
 **Ivalua:** Ivalua's API-first architecture supports webhook-triggered A2CN
-integration using the same Path B pattern.
+integration using the same supplier-side pattern.
 
 **LangGraph / LangChain:** LangGraph multi-agent workflows can host A2CN agents
 using the MCP HTTP transport (Section 16.12). LangGraph state machines map
@@ -3467,6 +3556,18 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-20 — Fairmarkit integration pattern documentation
+
+- Section 16.4 expanded to align with the shipped `FairmakitEventParser`
+  reference adapter.
+- Documented the `BID_CREATED` webhook to A2CN `goods_procurement` mapping,
+  A2CN `agreed_terms` to Fairmarkit response payload mapping, optional direct
+  discovery path, and non-normative discovery metadata for Fairmarkit-adjacent
+  endpoints.
+- Added Coupa ecosystem guidance: integrations bind to the Fairmarkit webhook
+  and response API boundary, and preserve any Coupa/ERP identifiers only as
+  opaque references.
 
 ### Patch 2026-05-19 — Post-commitment lifecycle documentation
 

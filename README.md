@@ -73,7 +73,7 @@ The invitation is ES256-signed using the inviter's DID key. The supplier can ver
 
 ### Platform integration adapters
 
-**Fairmarkit:** `FairmakitEventParser` translates `BID_CREATED` webhook payloads into A2CN `goods_procurement` terms and translates agreed terms back into Fairmarkit's response API format for `POST /self-service/api/v3/responses/...`. Path B integration — zero Fairmarkit platform changes required.
+**Fairmarkit:** `FairmakitEventParser` translates `BID_CREATED` webhook payloads into A2CN `goods_procurement` terms and translates agreed terms back into Fairmarkit's response API format for `POST /self-service/api/v3/responses/...`. Zero Fairmarkit platform changes required.
 
 **Salesforce Revenue Cloud:** `RevenueCloudAdapter` translates Revenue Cloud Pricing API responses (`/connect/pricing/...`) into A2CN offer terms, and translates agreed terms from the transaction record into Revenue Cloud order payloads (`/connect/qoc/sales-transactions`).
 
