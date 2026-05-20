@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from session_store import InMemorySessionStore, SessionStore
+from session_store import (
+    InMemorySessionStore,
+    PostgreSQLSessionStore,
+    RedisSessionStore,
+    SessionStore,
+)
 
 
 class TestInMemorySessionStore:
@@ -62,3 +67,132 @@ class TestInMemorySessionStore:
     def test_session_store_is_abstract(self):
         with pytest.raises(TypeError):
             SessionStore()  # cannot instantiate abstract class
+
+
+class FakeRedis:
+    def __init__(self):
+        self.data = {}
+        self.ttls = {}
+
+    def get(self, key):
+        return self.data.get(key)
+
+    def set(self, key, value, ex=None):
+        self.data[key] = value
+        self.ttls[key] = ex
+
+    def scan_iter(self, pattern):
+        prefix = pattern.removesuffix("*")
+        return [key.encode("utf-8") for key in self.data if key.startswith(prefix)]
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+class TestRedisSessionStore:
+    def test_save_get_and_ttl(self):
+        redis = FakeRedis()
+        store = RedisSessionStore(redis, ttl_seconds=60)
+
+        store.save("sess-1", {"status": "CLOSED"})
+
+        assert store.get("sess-1") == {"status": "CLOSED"}
+        assert redis.ttls["a2cn:session:sess-1"] == 60
+
+    def test_list_active_strips_prefix(self):
+        redis = FakeRedis()
+        store = RedisSessionStore(redis)
+        store.save("sess-b", {"status": "B"})
+        store.save("sess-a", {"status": "A"})
+
+        assert set(store.list_active()) == {"sess-a", "sess-b"}
+
+    def test_delete_removes_key(self):
+        redis = FakeRedis()
+        store = RedisSessionStore(redis)
+        store.save("sess-del", {"status": "A"})
+        store.delete("sess-del")
+
+        assert store.get("sess-del") is None
+
+    def test_save_without_ttl(self):
+        redis = FakeRedis()
+        store = RedisSessionStore(redis, ttl_seconds=None)
+        store.save("sess-no-ttl", {"status": "A"})
+
+        assert redis.ttls["a2cn:session:sess-no-ttl"] is None
+
+
+class FakeCursor:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return self._rows
+
+
+class FakePostgresConnection:
+    def __init__(self):
+        self.data = {}
+        self.statements = []
+        self.commits = 0
+
+    def execute(self, query, params=None):
+        self.statements.append((query, params))
+        normalized = " ".join(query.split()).upper()
+        if normalized.startswith("CREATE TABLE"):
+            return FakeCursor()
+        if normalized.startswith("SELECT SESSION_DATA"):
+            session_id = params[0]
+            if session_id not in self.data:
+                return FakeCursor()
+            return FakeCursor([(self.data[session_id],)])
+        if normalized.startswith("INSERT INTO"):
+            session_id, payload = params
+            self.data[session_id] = payload
+            return FakeCursor()
+        if normalized.startswith("SELECT SESSION_ID"):
+            return FakeCursor([(session_id,) for session_id in sorted(self.data)])
+        if normalized.startswith("DELETE FROM"):
+            self.data.pop(params[0], None)
+            return FakeCursor()
+        raise AssertionError(f"unexpected query: {query}")
+
+    def commit(self):
+        self.commits += 1
+
+
+class TestPostgreSQLSessionStore:
+    def test_table_name_validation(self):
+        with pytest.raises(ValueError, match="table_name"):
+            PostgreSQLSessionStore(FakePostgresConnection(), table_name="sessions;drop")
+        with pytest.raises(ValueError, match="table_name"):
+            PostgreSQLSessionStore(FakePostgresConnection(), table_name="1sessions")
+
+    def test_initialize_schema_commits(self):
+        conn = FakePostgresConnection()
+        store = PostgreSQLSessionStore(conn)
+
+        store.initialize_schema()
+
+        assert "CREATE TABLE" in conn.statements[0][0]
+        assert conn.commits == 1
+
+    def test_save_get_list_and_delete(self):
+        conn = FakePostgresConnection()
+        store = PostgreSQLSessionStore(conn)
+
+        store.save("sess-2", {"status": "B"})
+        store.save("sess-1", {"status": "A"})
+
+        assert store.get("sess-1") == {"status": "A"}
+        assert store.list_active() == ["sess-1", "sess-2"]
+
+        store.delete("sess-1")
+
+        assert store.get("sess-1") is None
+        assert store.list_active() == ["sess-2"]
+        assert conn.commits == 3

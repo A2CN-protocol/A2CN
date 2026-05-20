@@ -1,0 +1,33 @@
+services:
+  redis-session-store:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-session-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres-session-store:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: a2cn
+      POSTGRES_USER: a2cn
+      POSTGRES_PASSWORD: a2cn-dev-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-session-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a2cn -d a2cn"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-session-data:
+  postgres-session-data:

@@ -195,6 +195,35 @@ acceptance = store.accept_invitation(
 Webhooks fire asynchronously on all terminal transitions with DID-key JWS
 signatures and 1s/4s/16s retry backoff.
 
+### Production session stores
+
+`configure_responder()` accepts an optional `session_store` implementing the
+`SessionStore` interface. The default `InMemorySessionStore` is suitable for
+demos and tests; use a persistent store when post-commitment lifecycle state
+must survive process restarts. In async ASGI deployments, wrap synchronous store
+calls with `asyncio.to_thread()` or use async-native drivers such as
+`redis.asyncio` or the psycopg3 async interface.
+
+```python
+from session_store import RedisSessionStore, PostgreSQLSessionStore
+
+# Redis: caller owns the redis-py client configuration.
+store = RedisSessionStore(redis_client, ttl_seconds=60 * 60 * 24 * 30)
+configure_responder(config, session_store=store)
+
+# PostgreSQL: caller owns connection pooling.
+store = PostgreSQLSessionStore(pg_connection)
+store.initialize_schema()
+configure_responder(config, session_store=store)
+```
+
+Local backend examples:
+
+```bash
+docker compose -f docker-compose.session-stores.yml up redis-session-store
+docker compose -f docker-compose.session-stores.yml up postgres-session-store
+```
+
 ### `adapters/fairmarkit_adapter.py`
 
 ```python
@@ -304,6 +333,7 @@ python/
 ├── session.py           # State machine, impasse detection
 ├── record.py            # Deterministic transaction record + audit log
 ├── invitation.py        # Component 8: SessionInvitation lifecycle
+├── session_store.py     # In-memory, Redis, PostgreSQL stores
 ├── server.py            # FastAPI, all endpoints, async webhook delivery
 ├── client.py            # Initiator
 ├── adapters/
@@ -342,6 +372,7 @@ The `skills/` directory lives one level up at
 | Transaction record determinism | ✓ Both sides independently produce identical `record_hash` |
 | Turn-taking + sequence ordering | ✓ Enforced |
 | Idempotency | ✓ Duplicate `message_id` returns cached response |
+| Session persistence | ✓ In-memory default, Redis/PostgreSQL production stores |
 | Webhook delivery | ✓ Async, DID-key JWS signed, non-fatal on failure |
 | JWT request authentication | 🔄 In progress — CONF-003 skipped |
 | Rate limiting | 📋 Planned |

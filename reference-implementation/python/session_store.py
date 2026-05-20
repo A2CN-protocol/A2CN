@@ -5,38 +5,14 @@ The reference implementation ships InMemorySessionStore as the default.
 For production deployments where sessions span hours or days across
 process restarts, implement SessionStore with a durable backend.
 
-Production implementation example (Redis):
-
-    import json
-    import redis
-    from session_store import SessionStore
-
-    class RedisSessionStore(SessionStore):
-        def __init__(self, redis_client: redis.Redis):
-            self.redis = redis_client
-
-        def get(self, session_id: str) -> dict | None:
-            data = self.redis.get(f"a2cn:session:{session_id}")
-            return json.loads(data) if data else None
-
-        def save(self, session_id: str, session_data: dict) -> None:
-            self.redis.set(
-                f"a2cn:session:{session_id}",
-                json.dumps(session_data),
-                ex=86400 * 30  # 30-day TTL
-            )
-
-        def list_active(self) -> list[str]:
-            return [
-                k.decode().replace("a2cn:session:", "")
-                for k in self.redis.scan_iter("a2cn:session:*")
-            ]
-
-        def delete(self, session_id: str) -> None:
-            self.redis.delete(f"a2cn:session:{session_id}")
+Production backends are optional. Install the backend driver used by your
+deployment, then pass the store instance to configure_responder(...,
+session_store=store).
 """
 
 from abc import ABC, abstractmethod
+import json
+from typing import Any
 
 
 class SessionStore(ABC):
@@ -104,3 +80,138 @@ class InMemorySessionStore(SessionStore):
 
     def delete(self, session_id: str) -> None:
         self._store.pop(session_id, None)
+
+
+class RedisSessionStore(SessionStore):
+    """
+    Redis-backed session store for production single-instance or small-cluster
+    deployments.
+
+    The constructor accepts an already configured redis-py client so callers can
+    own TLS, auth, sentinel, cluster, and connection-pool settings.
+    """
+
+    def __init__(
+        self,
+        redis_client: Any,
+        *,
+        key_prefix: str = "a2cn:session:",
+        ttl_seconds: int | None = 60 * 60 * 24 * 30,
+    ) -> None:
+        self.redis = redis_client
+        self.key_prefix = key_prefix
+        self.ttl_seconds = ttl_seconds
+
+    def _key(self, session_id: str) -> str:
+        return f"{self.key_prefix}{session_id}"
+
+    def get(self, session_id: str) -> dict | None:
+        data = self.redis.get(self._key(session_id))
+        if data is None:
+            return None
+        if isinstance(data, bytes):
+            data = data.decode("utf-8")
+        return json.loads(data)
+
+    def save(self, session_id: str, session_data: dict) -> None:
+        payload = json.dumps(session_data, separators=(",", ":"), sort_keys=True)
+        key = self._key(session_id)
+        if self.ttl_seconds is None:
+            self.redis.set(key, payload)
+        else:
+            self.redis.set(key, payload, ex=self.ttl_seconds)
+
+    def list_active(self) -> list[str]:
+        prefix_len = len(self.key_prefix)
+        session_ids: list[str] = []
+        for key in self.redis.scan_iter(f"{self.key_prefix}*"):
+            if isinstance(key, bytes):
+                key = key.decode("utf-8")
+            session_ids.append(key[prefix_len:])
+        return session_ids
+
+    def delete(self, session_id: str) -> None:
+        self.redis.delete(self._key(session_id))
+
+
+class PostgreSQLSessionStore(SessionStore):
+    """
+    PostgreSQL-backed session store for deployments that require durable,
+    transactional persistence.
+
+    The constructor accepts a DB-API/psycopg-style connection object. Callers own
+    connection pooling and transaction policy; this class commits writes when the
+    connection exposes commit().
+    """
+
+    def __init__(self, connection: Any, *, table_name: str = "a2cn_sessions") -> None:
+        if (
+            not table_name
+            or not table_name[0].isalpha()
+            or not table_name.replace("_", "").isalnum()
+        ):
+            raise ValueError(
+                "table_name must start with a letter and contain only letters, numbers, and underscores"
+            )
+        self.connection = connection
+        self.table_name = table_name
+
+    def initialize_schema(self) -> None:
+        """Create the backing table if it does not already exist."""
+        self.connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                session_id TEXT PRIMARY KEY,
+                session_data JSONB NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        self._commit()
+
+    def get(self, session_id: str) -> dict | None:
+        cursor = self.connection.execute(
+            f"SELECT session_data FROM {self.table_name} WHERE session_id = %s",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        data = row[0] if isinstance(row, tuple) else row["session_data"]
+        if isinstance(data, str):
+            return json.loads(data)
+        return data
+
+    def save(self, session_id: str, session_data: dict) -> None:
+        payload = json.dumps(session_data, separators=(",", ":"), sort_keys=True)
+        self.connection.execute(
+            f"""
+            INSERT INTO {self.table_name} (session_id, session_data, updated_at)
+            VALUES (%s, %s::jsonb, NOW())
+            ON CONFLICT (session_id)
+            DO UPDATE SET session_data = EXCLUDED.session_data, updated_at = NOW()
+            """,
+            (session_id, payload),
+        )
+        self._commit()
+
+    def list_active(self) -> list[str]:
+        cursor = self.connection.execute(
+            f"SELECT session_id FROM {self.table_name} ORDER BY session_id"
+        )
+        return [
+            row[0] if isinstance(row, tuple) else row["session_id"]
+            for row in cursor.fetchall()
+        ]
+
+    def delete(self, session_id: str) -> None:
+        self.connection.execute(
+            f"DELETE FROM {self.table_name} WHERE session_id = %s",
+            (session_id,),
+        )
+        self._commit()
+
+    def _commit(self) -> None:
+        commit = getattr(self.connection, "commit", None)
+        if commit is not None:
+            commit()
