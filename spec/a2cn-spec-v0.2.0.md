@@ -1167,7 +1167,8 @@ The **protocol act object** used for signing is:
 1. Construct the protocol act object with the fields above
 2. Serialize using RFC 8785 JSON Canonicalization Scheme (JCS)
 3. Compute: protocol_act_hash = base64url(SHA-256(jcs_bytes))
-4. Sign: protocol_act_signature = JWS(protocol_act_hash, sender_private_key, "ES256")
+4. Sign: protocol_act_signature = JWS(protocol_act_hash, sender_private_key, signing_alg)
+   where signing_alg is ES256 or EdDSA/Ed25519 per Section 13.4
 ```
 
 `protocol_act_hash` and `protocol_act_signature` are included in the offer message.
@@ -2122,7 +2123,7 @@ so the recipient can verify its authenticity.
 | `accept_endpoint` | string | HTTPS URL to POST acceptance to |
 | `decline_endpoint` | string | HTTPS URL to POST decline to |
 | `inviter_verification_method` | string | Verification method ID used to sign the invitation |
-| `invitation_signature` | string | Base64url-encoded ES256 signature over the canonical invitation object |
+| `invitation_signature` | string | Base64url-encoded signature over the canonical invitation object |
 
 #### 11.2.2 Invitation Signature
 
@@ -2130,9 +2131,8 @@ The invitation MUST be signed before transmission. Signing procedure:
 
 1. Construct the invitation object with all required fields EXCEPT `invitation_signature`
 2. Serialize to canonical JSON using RFC 8785 JCS
-3. Compute SHA-256 hash of the canonical bytes
-4. Sign the hash with ES256 using the key identified by `inviter_verification_method`
-5. Base64url-encode the signature and set as `invitation_signature`
+3. Sign the canonical bytes using the signing suite identified by `inviter_verification_method`
+4. Base64url-encode the signature and set as `invitation_signature`
 
 Recipients MUST:
 1. Resolve the inviter's DID document to obtain the public key at `inviter_verification_method`
@@ -2325,7 +2325,8 @@ the message body's `message_id`) to implement idempotency per Section 6.1.
 Every request MUST include `Authorization: Bearer {jwt}`.
 
 JWT requirements:
-- Algorithm: ES256
+- Algorithm: ES256 by default; EdDSA/Ed25519 when the sender's session
+  verification method uses an Ed25519 key
 - `iss`: Sender's DID
 - `aud`: Receiver's DID
 - `iat`: Current Unix timestamp
@@ -2506,6 +2507,12 @@ limitation. Mitigations:
    security requirements SHOULD use a DID method other than `did:web` that
    provides stronger guarantees (e.g., `did:key` for read-only identities,
    or blockchain-anchored DIDs).
+
+**Signing suite agility.** A2CN implementations MUST accept EdDSA/Ed25519
+signed messages as an alternate to ES256. The signing suite is declared at
+session initiation by each party's `verification_method` and the corresponding
+DID document key material. A party's signing suite MUST remain consistent for
+the session lifetime unless the parties establish a new session.
 
 ### 13.5 Mandate Scope Enforcement
 
@@ -3435,7 +3442,7 @@ Cursor) and HTTP/SSE transport (LangGraph, remote agent frameworks).
 
 **Configuration:** Agent identity (DID, org name, max commitment) is set via
 environment variables. The server generates and publishes a DID document on
-startup. Authentication uses ES256 JWT Bearer tokens with anti-replay protection.
+startup. Authentication uses DID-key JWT Bearer tokens with anti-replay protection.
 
 MCP configuration template: `mcp_server_config.json`.
 Reference: Section 16.1 (MCP protocol relationship), `mcp_server.py`.
@@ -3556,6 +3563,12 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-20 — Ed25519 alternate signing suite
+
+- Section 13.4 updated to require EdDSA/Ed25519 acceptance alongside ES256,
+  with signing suite selection bound to the session-initiation verification
+  method and held consistent for the session lifetime.
 
 ### Patch 2026-05-20 — Fairmarkit integration pattern documentation
 

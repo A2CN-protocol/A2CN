@@ -5,8 +5,8 @@ import respx
 import httpx
 
 from a2cn.did import resolve_did_web, _did_web_to_url, get_verification_method, get_public_key
-from a2cn.crypto import generate_keypair, public_key_to_jwk
-from tests.conftest import make_did_document, INITIATOR_DID, RESPONDER_DID
+from a2cn.crypto import generate_keypair, generate_ed25519_keypair, public_key_to_jwk
+from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +113,24 @@ def test_get_public_key_roundtrip():
 def test_get_public_key_unsupported_type_raises():
     vm = {
         "id": "did:web:example.com#key-1",
-        "type": "Ed25519VerificationKey2020",
+        "type": "RsaVerificationKey2018",
         "controller": "did:web:example.com",
     }
     with pytest.raises(ValueError, match="Unsupported verification method type"):
         get_public_key(vm)
+
+
+def test_get_public_key_ed25519_roundtrip():
+    _, pub = generate_ed25519_keypair()
+    jwk = public_key_to_jwk(pub)
+    vm = {
+        "id": f"{INITIATOR_DID}#ed25519-1",
+        "type": "JsonWebKey2020",
+        "controller": INITIATOR_DID,
+        "publicKeyJwk": jwk,
+    }
+    recovered = get_public_key(vm)
+    assert public_key_to_jwk(recovered) == jwk
 
 
 def test_get_public_key_missing_jwk_raises():

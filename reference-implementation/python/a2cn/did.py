@@ -8,9 +8,8 @@ did:web:example.com:path:to   → https://example.com/path/to/did.json
 """
 
 import httpx
-from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 
-from a2cn.crypto import public_key_from_jwk
+from a2cn.crypto import SigningPublicKey, public_key_from_jwk
 
 
 async def resolve_did_web(did: str, client: httpx.AsyncClient | None = None) -> dict:
@@ -85,28 +84,35 @@ def get_verification_method(did_document: dict, method_id: str) -> dict:
     raise KeyError(f"Verification method {method_id!r} not found in DID document")
 
 
-def get_public_key(verification_method: dict) -> EllipticCurvePublicKey:
+def get_public_key(verification_method: dict) -> SigningPublicKey:
     """
-    Return a cryptography public key object from a JsonWebKey2020 verification method.
+    Return a cryptography public key object from a supported verification method.
 
     Raises:
         ValueError: if the verification method type is not supported or the key cannot be parsed
     """
     vm_type = verification_method.get("type")
-    if vm_type not in ("JsonWebKey2020", "EcdsaSecp256r1VerificationKey2019"):
+    if vm_type not in (
+        "JsonWebKey2020",
+        "EcdsaSecp256r1VerificationKey2019",
+    ):
         raise ValueError(
             f"Unsupported verification method type: {vm_type!r}. "
-            "Only JsonWebKey2020 is supported."
+            "Only JsonWebKey2020 and EcdsaSecp256r1VerificationKey2019 are supported."
         )
 
     jwk = verification_method.get("publicKeyJwk")
     if not jwk:
         raise ValueError("Verification method missing 'publicKeyJwk' field")
 
-    if jwk.get("kty") != "EC" or jwk.get("crv") != "P-256":
+    supported_jwk = (
+        (jwk.get("kty") == "EC" and jwk.get("crv") == "P-256")
+        or (jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519")
+    )
+    if not supported_jwk:
         raise ValueError(
             f"Unsupported key type/curve: kty={jwk.get('kty')!r}, crv={jwk.get('crv')!r}. "
-            "Only EC P-256 keys are supported."
+            "Only EC P-256 and OKP Ed25519 keys are supported."
         )
 
     return public_key_from_jwk(jwk)

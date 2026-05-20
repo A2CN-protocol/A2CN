@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone, timedelta
 
 from a2cn.invitation import InvitationStore
-from a2cn.crypto import generate_keypair, verify_invitation_signature
+from a2cn.crypto import generate_keypair, generate_ed25519_keypair, verify_invitation_signature
 from a2cn.messages import InvitationStatus
 
 
@@ -69,6 +69,36 @@ class TestInvitationCreation:
         _, invitation, priv, pub = _make_store_with_invitation()
         inv_dict = asdict(invitation)
         assert verify_invitation_signature(inv_dict, pub) is True
+
+    def test_ed25519_invitation_signature_verifies(self):
+        store = InvitationStore()
+        priv, pub = generate_ed25519_keypair()
+        invitation = store.create_invitation(
+            inviter_did="did:web:buyer.example",
+            inviter_endpoint="https://buyer.example/a2cn",
+            inviter_discovery_url="https://buyer.example/.well-known/a2cn-agent",
+            inviter_verification_method="did:web:buyer.example#ed25519-1",
+            private_key=priv,
+            proposed_deal_type="goods_procurement",
+            proposed_session_params={
+                "currency": "USD",
+                "max_rounds": 5,
+                "session_timeout_seconds": 86400,
+                "round_timeout_seconds": 3600,
+            },
+            proposed_terms_summary={
+                "description": "Hydraulic fluid drums",
+                "estimated_value": 1800000,
+                "currency": "USD",
+            },
+            inviter_mandate_summary={
+                "mandate_type": "declared",
+                "max_commitment_value": 2500000,
+                "authorized_deal_types": ["goods_procurement"],
+            },
+        )
+
+        assert verify_invitation_signature(asdict(invitation), pub) is True
 
     def test_tampered_invitation_fails_verification(self):
         _, invitation, priv, pub = _make_store_with_invitation()
