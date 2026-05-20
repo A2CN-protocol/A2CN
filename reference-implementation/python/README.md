@@ -107,7 +107,7 @@ Demonstrates Component 8: Session Invitation. The supplier has **no pre-deployed
 └─────────────────────────────┘        └──────────────────────────────┘
          ↓                                          ↓
     crypto.py                                  record.py
-    JCS + SHA-256 + ES256                      Deterministic
+    JCS + SHA-256 + ES256/Ed25519             Deterministic
     invitation signing                         transaction record
     did.py
     did:web resolution
@@ -133,7 +133,7 @@ sig = sign_invitation(invitation_dict, private_key)
 assert verify_invitation_signature(invitation_dict, public_key)
 ```
 
-RFC 8785 JCS canonicalization. P-256 / ES256. Invitation signing excludes the `invitation_signature` field from canonical form.
+RFC 8785 JCS canonicalization. P-256 / ES256 by default, with Ed25519 / EdDSA as an alternate signing suite. Invitation signing excludes the `invitation_signature` field from canonical form.
 
 ### `messages.py` — Wire format
 
@@ -278,7 +278,7 @@ pytest tests/ -v   # 300+ passed
 
 | Test file | What it covers |
 |-----------|---------------|
-| `test_crypto.py` | JCS, ES256, invitation signing |
+| `test_crypto.py` | JCS, ES256, Ed25519, invitation signing |
 | `test_session.py` | State machine, turn-taking, impasse |
 | `test_server.py` | All HTTP endpoints, error codes |
 | `test_invitations.py` | Invitation lifecycle, signature, expiry |
@@ -297,7 +297,7 @@ A2CN_ENDPOINT=http://your-server:8000 pytest tests/conformance/ -v
 
 ```
 python/
-├── crypto.py            # P-256, JCS, SHA-256, ES256, invitation signing
+├── crypto.py            # P-256, Ed25519, JCS, SHA-256, signing
 ├── did.py               # did:web resolution
 ├── messages.py          # Wire-format dataclasses, validation, error codes
 ├── session.py           # State machine, impasse detection
@@ -336,8 +336,8 @@ The `skills/` directory lives one level up at
 
 | Category | Status |
 |----------|--------|
-| Cryptographic primitives | ✓ JCS, P-256, ES256, UUID v5 |
-| Invitation signing | ✓ ES256+JCS, excludes signature field from canonical form |
+| Cryptographic primitives | ✓ JCS, P-256, Ed25519, ES256/EdDSA, UUID v5 |
+| Invitation signing | ✓ ES256/Ed25519 + JCS, excludes signature field from canonical form |
 | Transaction record determinism | ✓ Both sides independently produce identical `record_hash` |
 | Turn-taking + sequence ordering | ✓ Enforced |
 | Idempotency | ✓ Duplicate `message_id` returns cached response |

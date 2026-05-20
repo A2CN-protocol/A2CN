@@ -69,7 +69,7 @@ Buyer agent creates a signed SessionInvitation
                 → Normal A2CN session proceeds
 ```
 
-The invitation is ES256-signed using the inviter's DID key. The supplier can verify authenticity before activating any endpoint. This is the integration pattern for Fairmarkit and other procurement platforms that use supplier webhooks.
+The invitation is signed using the inviter's DID key (ES256 by default, EdDSA/Ed25519 also supported). The supplier can verify authenticity before activating any endpoint. This is the integration pattern for Fairmarkit and other procurement platforms that use supplier webhooks.
 
 ### Platform integration adapters
 
@@ -272,7 +272,7 @@ A2CN/
 │           └── saas_renewal.schema.json
 └── reference-implementation/
     └── python/
-        ├── crypto.py                # JCS, SHA-256, ES256 signing
+        ├── crypto.py                # JCS, SHA-256, ES256/Ed25519 signing
         ├── did.py                   # did:web resolution
         ├── messages.py              # Wire-format dataclasses
         ├── session.py               # State machine + turn enforcement

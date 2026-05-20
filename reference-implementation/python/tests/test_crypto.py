@@ -5,6 +5,7 @@ import jcs
 
 from a2cn.crypto import (
     generate_keypair,
+    generate_ed25519_keypair,
     private_key_to_jwk,
     public_key_to_jwk,
     public_key_from_jwk,
@@ -44,6 +45,16 @@ def test_generate_keypair_returns_p256():
     assert isinstance(pub.curve, SECP256R1)
 
 
+def test_generate_ed25519_keypair_returns_ed25519():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+        Ed25519PublicKey,
+    )
+    priv, pub = generate_ed25519_keypair()
+    assert isinstance(priv, Ed25519PrivateKey)
+    assert isinstance(pub, Ed25519PublicKey)
+
+
 def test_keypair_uniqueness():
     priv1, _ = generate_keypair()
     priv2, _ = generate_keypair()
@@ -72,6 +83,28 @@ def test_private_key_jwk_roundtrip():
 
     recovered = private_key_from_jwk(jwk)
     assert recovered.private_numbers().private_value == priv.private_numbers().private_value
+
+
+def test_ed25519_public_key_jwk_roundtrip():
+    priv, pub = generate_ed25519_keypair()
+    jwk = public_key_to_jwk(pub)
+    assert jwk["kty"] == "OKP"
+    assert jwk["crv"] == "Ed25519"
+    assert "d" not in jwk
+
+    recovered = public_key_from_jwk(jwk)
+    assert public_key_to_jwk(recovered) == jwk
+
+
+def test_ed25519_private_key_jwk_roundtrip():
+    priv, pub = generate_ed25519_keypair()
+    jwk = private_key_to_jwk(priv)
+    assert jwk["kty"] == "OKP"
+    assert jwk["crv"] == "Ed25519"
+    assert "d" in jwk
+
+    recovered = private_key_from_jwk(jwk)
+    assert private_key_to_jwk(recovered) == jwk
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +167,18 @@ def test_jws_with_kid():
     assert recovered == "myhash"
 
 
+def test_jws_ed25519_roundtrip():
+    import jwt as pyjwt
+    priv, pub = generate_ed25519_keypair()
+    token = sign_jws("ed25519-payload", priv, kid="did:web:example.com#ed25519-1")
+    header = pyjwt.get_unverified_header(token)
+    assert header["alg"] == "EdDSA"
+    assert header["kid"] == "did:web:example.com#ed25519-1"
+
+    recovered = verify_jws(token, pub)
+    assert recovered == "ed25519-payload"
+
+
 # ---------------------------------------------------------------------------
 # JWT create / verify roundtrip
 # ---------------------------------------------------------------------------
@@ -179,6 +224,32 @@ def test_jwt_with_session_id():
     )
     payload = verify_jwt(token, pub, expected_audience="did:web:b")
     assert payload["session_id"] == "my-session-id"
+
+
+def test_jwt_ed25519_roundtrip():
+    import jwt as pyjwt
+    priv, pub = generate_ed25519_keypair()
+    token = create_jwt(
+        issuer_did="did:web:initiator.example",
+        audience_did="did:web:responder.example",
+        private_key=priv,
+        kid="did:web:initiator.example#ed25519-1",
+        purpose="a2cn_session_init",
+        exp_seconds=300,
+    )
+    header = pyjwt.get_unverified_header(token)
+    assert header["alg"] == "EdDSA"
+    assert header["kid"] == "did:web:initiator.example#ed25519-1"
+
+    payload = verify_jwt(
+        token,
+        pub,
+        expected_audience="did:web:responder.example",
+        expected_issuer="did:web:initiator.example",
+    )
+    assert payload["iss"] == "did:web:initiator.example"
+    assert payload["aud"] == "did:web:responder.example"
+    assert payload["purpose"] == "a2cn_session_init"
 
 
 def test_jwt_expired_raises():

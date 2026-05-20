@@ -4,8 +4,19 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from a2cn.crypto import hash_object
-from tests.conftest import make_session_init, INITIATOR_DID, RESPONDER_DID
+from a2cn.crypto import (
+    create_jwt,
+    generate_ed25519_keypair,
+    hash_object,
+    public_key_to_jwk,
+)
+from tests.conftest import (
+    INITIATOR_DID,
+    RESPONDER_DID,
+    SERVER_DID,
+    make_did_document,
+    make_session_init,
+)
 
 A2CN_CT = "application/a2cn+json"
 HEADERS = {"Content-Type": A2CN_CT, "Idempotency-Key": "placeholder"}
@@ -43,6 +54,34 @@ async def test_session_init_returns_201(test_client):
     assert data["message_type"] == "session_ack"
     assert "session_id" in data
     assert data["current_turn"] == "initiator"
+
+
+@pytest.mark.asyncio
+async def test_session_init_accepts_ed25519_jwt(raw_test_client):
+    import a2cn.server as server_module
+
+    priv, pub = generate_ed25519_keypair()
+    server_module.register_did_document(
+        INITIATOR_DID,
+        make_did_document(INITIATOR_DID, "ed25519-1", public_key_to_jwk(pub)),
+    )
+
+    body = make_session_init()
+    body["initiator"]["verification_method"] = f"{INITIATOR_DID}#ed25519-1"
+    token = create_jwt(
+        INITIATOR_DID,
+        SERVER_DID,
+        priv,
+        kid=f"{INITIATOR_DID}#ed25519-1",
+        exp_seconds=3600,
+    )
+    headers = init_headers(body["message_id"])
+    headers["Authorization"] = f"Bearer {token}"
+
+    r = await raw_test_client.post("/sessions", json=body, headers=headers)
+
+    assert r.status_code == 201
+    assert r.json()["current_turn"] == "initiator"
 
 
 @pytest.mark.asyncio
