@@ -192,7 +192,8 @@ acceptance = store.accept_invitation(
 | `POST /invitations/{id}/accept` | Accept invitation |
 | `POST /invitations/{id}/decline` | Decline invitation |
 
-Webhooks fire asynchronously on all terminal transitions with 1s/4s/16s retry backoff.
+Webhooks fire asynchronously on all terminal transitions with DID-key JWS
+signatures and 1s/4s/16s retry backoff.
 
 ### `adapters/fairmarkit_adapter.py`
 
@@ -341,7 +342,7 @@ The `skills/` directory lives one level up at
 | Transaction record determinism | ✓ Both sides independently produce identical `record_hash` |
 | Turn-taking + sequence ordering | ✓ Enforced |
 | Idempotency | ✓ Duplicate `message_id` returns cached response |
-| Webhook delivery | ✓ Async, non-fatal on failure |
+| Webhook delivery | ✓ Async, DID-key JWS signed, non-fatal on failure |
 | JWT request authentication | 🔄 In progress — CONF-003 skipped |
 | Rate limiting | 📋 Planned |
 

@@ -1,14 +1,19 @@
 """Tests for a2cn.server — FastAPI endpoints."""
 
 import uuid
+import httpx
 import pytest
 import pytest_asyncio
+import respx
 
 from a2cn.crypto import (
     create_jwt,
     generate_ed25519_keypair,
+    generate_keypair,
+    hash_bytes,
     hash_object,
     public_key_to_jwk,
+    verify_jws,
 )
 from tests.conftest import (
     INITIATOR_DID,
@@ -149,6 +154,56 @@ async def test_get_session_not_found(test_client):
     r = await test_client.get("/sessions/nonexistent-id")
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "SESSION_NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Webhook delivery
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_deliver_webhook_uses_did_key_jws_signature():
+    import jwt as pyjwt
+    from a2cn.server import deliver_webhook
+
+    priv, pub = generate_keypair()
+    route = respx.post("https://receiver.example/a2cn/callbacks").mock(
+        return_value=httpx.Response(204)
+    )
+    payload = {
+        "event_type": "session.completed",
+        "session_id": "session-123",
+        "occurred_at": "2026-05-20T05:00:00Z",
+        "session_state": "COMPLETED",
+        "terminal": True,
+        "a2cn_version": "0.2",
+    }
+
+    await deliver_webhook(
+        "https://receiver.example/a2cn/callbacks",
+        "session.completed",
+        "session-123",
+        payload,
+        {"max_retries": 1},
+        sender_did=INITIATOR_DID,
+        sender_verification_method=f"{INITIATOR_DID}#key-1",
+        private_key=priv,
+    )
+
+    assert route.called
+    request = route.calls[0].request
+    body_hash = hash_bytes(request.content)
+
+    assert request.headers["X-A2CN-Sender-DID"] == INITIATOR_DID
+    assert (
+        request.headers["X-A2CN-Sender-Verification-Method"]
+        == f"{INITIATOR_DID}#key-1"
+    )
+    assert request.headers["X-A2CN-Body-SHA256"] == body_hash
+    signature_header = pyjwt.get_unverified_header(request.headers["X-A2CN-Signature"])
+    assert signature_header["alg"] == "ES256"
+    assert signature_header["kid"] == f"{INITIATOR_DID}#key-1"
+    assert verify_jws(request.headers["X-A2CN-Signature"], pub) == body_hash
 
 
 # ---------------------------------------------------------------------------

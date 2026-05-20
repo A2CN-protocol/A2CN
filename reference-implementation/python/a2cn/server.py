@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
-import hmac
 import logging
 import os
 import time
@@ -50,7 +48,12 @@ from a2cn.messages import (
     INVITATION_SIGNATURE_INVALID,
     INVITATION_VERSION_MISMATCH,
 )
-from a2cn.crypto import verify_jwt, verify_invitation_signature, public_key_from_jwk
+from a2cn.crypto import (
+    hash_bytes,
+    sign_jws,
+    verify_jwt,
+    verify_invitation_signature,
+)
 from a2cn.did import resolve_did_web, get_verification_method, get_public_key
 from session_store import InMemorySessionStore, SessionStore
 
@@ -1001,11 +1004,15 @@ async def _fire_terminal_webhook(session: Session, webhook_url: str) -> None:
     await deliver_webhook(webhook_url, event_type, session.session_id, payload.to_dict())
 
 
-# Webhook signing: v0.2 uses HMAC-SHA256 with session_id as key material.
-# v0.3 will upgrade to ES256 signed JWS envelope using sender DID verification method.
-# Receivers MUST verify X-A2CN-Signature before processing webhook payloads.
+# Webhook signing: DID-key JWS over the exact request body hash.
+# Receivers MUST verify X-A2CN-Signature against X-A2CN-Sender-Verification-Method
+# before processing webhook payloads.
 async def deliver_webhook(url: str, event_type: str, session_id: str, payload: dict,
-                          retry_config: dict = None) -> None:
+                          retry_config: dict = None,
+                          *,
+                          sender_did: str | None = None,
+                          sender_verification_method: str | None = None,
+                          private_key: Any | None = None) -> None:
     """
     Attempt webhook delivery with signed headers.
     Backoff: 1s, 4s, 16s between attempts.
@@ -1013,15 +1020,28 @@ async def deliver_webhook(url: str, event_type: str, session_id: str, payload: d
     """
     import json
     body_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-    sig_bytes = hmac.new(session_id.encode(), body_bytes, hashlib.sha256).digest()
-    sig_b64 = base64.urlsafe_b64encode(sig_bytes).rstrip(b"=").decode()
+    sender_did = sender_did or _responder_config.get("agent_info", {}).get("did", "")
+    sender_verification_method = (
+        sender_verification_method
+        or _responder_config.get("agent_info", {}).get("verification_method", "")
+    )
+    private_key = private_key or _responder_config.get("private_key")
+    if not sender_did or not sender_verification_method or private_key is None:
+        logger.error("Webhook delivery to %s skipped: sender DID signing material is not configured", url)
+        return
+
+    body_hash = hash_bytes(body_bytes)
+    signature_jws = sign_jws(body_hash, private_key, kid=sender_verification_method)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     headers = {
         "Content-Type": A2CN_CONTENT_TYPE,
         "X-A2CN-Timestamp": timestamp,
         "X-A2CN-Session-ID": session_id,
         "X-A2CN-Event-Type": event_type,
-        "X-A2CN-Signature": sig_b64,
+        "X-A2CN-Sender-DID": sender_did,
+        "X-A2CN-Sender-Verification-Method": sender_verification_method,
+        "X-A2CN-Body-SHA256": body_hash,
+        "X-A2CN-Signature": signature_jws,
     }
     max_retries = (retry_config or {}).get("max_retries", 3)
     backoff_seconds = [1, 4, 16]
