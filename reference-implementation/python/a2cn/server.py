@@ -682,7 +682,7 @@ async def post_dispute_notice(session_id: str, request: Request,
         "dispute_notice_message_id": message_id,
         "session_id": session_id,
         "post_commitment_status": "DISPUTED",
-        "note": "Dispute recorded. Route to neutral resolver via Meeting Place or designated dispute resolution service.",
+        "note": "Dispute recorded. Route to a designated neutral resolver or dispute resolution service.",
     })
 
 
