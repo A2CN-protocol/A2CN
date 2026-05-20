@@ -1125,8 +1125,8 @@
 
     <div class="proof-strip">
       <div class="proof-item">
-        <div class="proof-number">$20M</div>
-        <div class="proof-label">Pactum's Series A for agent procurement negotiation — <strong>a closed system serving Walmart and Maersk</strong></div>
+        <div class="proof-number">B2B</div>
+        <div class="proof-label">Agent negotiation is already appearing in procurement — <strong>but current systems are closed and buyer-side</strong></div>
       </div>
       <div class="proof-item">
         <div class="proof-number">3</div>
@@ -1175,8 +1175,8 @@
             <div class="tl-year">2022</div>
             <div class="tl-dot"></div>
             <div class="tl-content">
-              <div class="tl-title">Pactum raises $20M Series A</div>
-              <div class="tl-desc">An AI agent negotiates tail-spend contracts for Walmart and Maersk. <span class="hl">Proof the market exists.</span> Closed platform; buyer-side only.</div>
+              <div class="tl-title">Procurement negotiation agents enter production</div>
+              <div class="tl-desc">AI agents begin negotiating tail-spend contracts for large enterprises. <span class="hl">Proof the category exists.</span> Closed platform; buyer-side only.</div>
             </div>
           </div>
 
@@ -1212,7 +1212,7 @@
             <div class="tl-dot"></div>
             <div class="tl-content">
               <div class="tl-title">A2CN v0.2.0 — you are here</div>
-              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 202 tests, Fairmarkit + Keelvar + Salesforce adapters, MCP server, A2A extension proposal submitted.</div>
+              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 300+ tests, Fairmarkit + Keelvar + Salesforce adapters, MCP server, A2A extension proposal submitted.</div>
             </div>
           </div>
 
@@ -1220,8 +1220,8 @@
             <div class="tl-year">next</div>
             <div class="tl-dot"></div>
             <div class="tl-content">
-              <div class="tl-title">Meeting Place — neutral transaction hosting</div>
-              <div class="tl-desc">When a design partner needs it: a hosted layer where agents from different orgs can run A2CN sessions without either side self-hosting. Currently planned, not built.</div>
+              <div class="tl-title">Neutral record custody</div>
+              <div class="tl-desc">Optional third-party custody for completed transaction records, so neither negotiating party controls the only durable copy.</div>
             </div>
           </div>
         </div>
@@ -1457,9 +1457,8 @@
     <div class="section-label">Where it stands</div>
     <h2 class="section-heading">Built. Being proposed. Still to come.</h2>
     <p class="section-lede">
-      A2CN is a solo build by one person with GTM experience across 5+ AI/ML startups —
-      built from the sales seat, not the engineering org. The reference implementation
-      has 202 passing tests. The A2A extension proposal is in review.
+      A2CN is an open protocol with a complete Python reference implementation,
+      300+ passing tests, platform adapters, and an A2A extension proposal in review.
     </p>
 
     <div class="status-split">
@@ -1470,7 +1469,7 @@
         </div>
         <ul>
           <li>Protocol spec v0.2.0 <span class="detail">3,700+ lines, 8 components, Apache 2.0</span></li>
-          <li>Reference implementation <span class="detail">Python, 202 tests passing</span></li>
+          <li>Reference implementation <span class="detail">Python, 300+ tests passing</span></li>
           <li>Session invitation <span class="detail">cold-start adoption solved</span></li>
           <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Salesforce Revenue Cloud</span></li>
           <li>MCP server <span class="detail">Claude Desktop, LangChain, LangGraph, Agentforce, Cursor</span></li>
@@ -1495,7 +1494,7 @@
           <div class="status-col-count count-plan">3</div>
         </div>
         <ul>
-          <li>Meeting Place <span class="detail">neutral transaction hosting, v0.3 — built when a design partner needs it</span></li>
+          <li>Neutral third-party record custody <span class="detail">optional v0.3 architecture</span></li>
           <li>TypeScript reference implementation</li>
           <li>SDK <span class="detail">pip + npm</span></li>
         </ul>
@@ -1507,36 +1506,32 @@
 <!-- ── FOUNDER ── -->
 <section class="founder-section">
   <div class="container">
-    <div class="section-label">Who's building this</div>
+    <div class="section-label">Maintainer note</div>
     <div class="founder-wrap">
       <div class="founder-left">
         <div class="founder-name">Christian</div>
-        <div class="founder-role">A2CN · solo author · Austin, TX</div>
+        <div class="founder-role">A2CN protocol maintainer</div>
         <div class="founder-creds">
-          <div class="founder-cred">Early GTM at <strong>5+ AI/ML startups</strong> — including <strong>Samsung Next</strong> and <strong>Comet ML</strong></div>
-          <div class="founder-cred">Spent years watching enterprise buyers evaluate AI tooling from the sales seat — <strong>what actually blocks deployment</strong></div>
-          <div class="founder-cred">Built A2CN's spec, reference implementation, platform adapters, and MCP server solo</div>
+          <div class="founder-cred">Protocol specification, reference implementation, platform adapters, and MCP server</div>
+          <div class="founder-cred">Focus on cross-organizational authority, sequencing, and tamper-evident records</div>
+          <div class="founder-cred">Open-source implementation under the Apache 2.0 license</div>
         </div>
       </div>
       <div class="founder-right">
         <p>
-          I'm not a protocol author by training — I'm a GTM person who spent
-          years selling AI tooling into enterprise procurement. The more I
-          thought about where this is all going, the more it kept coming back
-          to the same question: <em>the agents can do the work, but there have
-          to be guardrails for how they safely commit across company lines.</em>
+          A2CN exists because autonomous agents need protocol-level guardrails
+          before they can safely commit to commercial terms across organizational
+          boundaries.
         </p>
         <p>
-          A2CN is my attempt to actually build what that future needs. The spec
-          is rigorous because it has to be — signing, DIDs, dual-signed records,
-          formally specified state machines. But the reason it exists isn't
-          academic. It's because the agents are going to show up, and the
-          guardrails need to be there before they do.
+          The protocol focuses on the parts that must be shared across parties:
+          signing, DIDs, mandates, dual-signed records, deterministic hashes, and
+          formally specified state machines.
         </p>
         <p>
-          If you're a PM at a procurement platform, a contract AI company, or an
-          agent framework wondering how to handle cross-organizational commitment —
-          I want to talk. That's the bottleneck right now, not code.
+          If you are building agent systems that need cross-organizational
+          commitment, feedback on the protocol and reference implementation is
+          welcome.
         </p>
       </div>
     </div>
@@ -1546,12 +1541,12 @@
 <!-- ── GET INVOLVED ── -->
 <section>
   <div class="container">
-    <div class="section-label">Partner with us</div>
+    <div class="section-label">Get involved</div>
     <h2 class="section-heading">If your platform is about to hit this problem, talk to us.</h2>
     <p class="section-lede">
-      Design partner conversations are the active bottleneck. If you're running a procurement
-      platform, a contract AI, or an agent framework that will soon need to commit on terms
-      across organizational boundaries, we want to hear from you.
+      If you're running a procurement platform, a contract AI, or an agent framework that
+      will soon need to commit on terms across organizational boundaries, we want to hear
+      from you.
     </p>
 
     <div class="involve-grid">
@@ -1567,17 +1562,17 @@
       <div class="involve-card">
         <div class="involve-title">Build on it</div>
         <div class="involve-body">
-          Python reference implementation with 202 passing tests. LangChain, CrewAI,
+          Python reference implementation with 300+ passing tests. LangChain, CrewAI,
           and Agentforce compatible. Apache 2.0 license.
         </div>
         <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN →</a>
       </div>
 
       <div class="involve-card">
-        <div class="involve-title">Become a design partner</div>
+        <div class="involve-title">Share implementation feedback</div>
         <div class="involve-body">
-          Pilot A2CN with your platform. Shape the v0.3 spec. Get integration
-          support directly from the maintainer.
+          Try A2CN with your platform, open issues for gaps, and help shape the next
+          protocol iteration.
         </div>
         <a class="involve-link" href="mailto:contact@a2cn.io">contact@a2cn.io →</a>
       </div>
@@ -1599,7 +1594,7 @@
 <footer>
   <div class="footer-inner">
     <span class="footer-brand">A2CN</span>
-    <span class="footer-meta">Apache 2.0 · spec v0.2.0 · 202 tests passing · built by one person in Austin, TX</span>
+    <span class="footer-meta">Apache 2.0 · spec v0.2.0 · 300+ tests passing</span>
   </div>
 </footer>
 

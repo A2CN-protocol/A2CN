@@ -3033,7 +3033,7 @@ with their resolution version rather than being renumbered.
 | OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
 | OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
 | OQ-020 | Mandate revocation signal | Open | Decide whether revocation is represented by a dedicated `MANDATE_REVOKED` message type or by absence of a fresh approval/mandate receipt. |
-| OQ-021 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending design partner validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
+| OQ-021 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending implementation validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
 
 Submit feedback via GitHub issues tagged `open-question`.
 
