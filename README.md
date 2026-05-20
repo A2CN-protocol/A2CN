@@ -89,7 +89,7 @@ Two registered deal types now have normative JSON schemas:
 
 ### Webhooks required at Level 2
 
-Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery with exponential backoff retry.
+Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery uses DID-key JWS signatures and exponential backoff retry.
 
 ### Human approval state for high-value commitments
 

@@ -2361,9 +2361,11 @@ document directly.
 | 429 | Rate limited |
 | 503 | DID resolution failure (temporary) |
 
-#### 11.1.6 Webhook Callbacks (RECOMMENDED)
+#### 11.1.6 Webhook Callbacks (RECOMMENDED; REQUIRED at Level 2)
 
 Implementations SHOULD support webhook callbacks to avoid polling overhead.
+Level 2 and Level 3 implementations MUST support webhook callbacks for terminal
+state transitions.
 
 SessionInit MAY include a `webhook_url` field in `metadata`:
 ```json
@@ -2375,11 +2377,30 @@ SessionInit MAY include a `webhook_url` field in `metadata`:
 If a `webhook_url` is provided, the receiving party SHOULD POST incoming messages
 to that URL in addition to making them available via the polling endpoint.
 
-Webhook POST requests MUST include the same `Authorization: Bearer {jwt}` header
-as standard A2CN requests. Webhook JWTs MUST have `iss` set to the webhook
-sender's DID and `aud` set to the webhook receiver's DID. Webhook receivers MUST
-resolve the sender's DID document and verify the JWT against the sender's declared
-`verification_method` before processing the callback.
+Webhook POST requests MUST be signed with a DID-key JWS over the exact request
+body hash. The sender computes `base64url(SHA-256(body_bytes))` over the HTTP
+request body bytes and signs that value with the private key corresponding to
+the sender's declared verification method. The JWS protected header MUST include
+`kid` set to the DID URL of the sender's verification method.
+
+Webhook POST requests MUST include these headers:
+
+| Header | Value |
+|--------|-------|
+| `X-A2CN-Timestamp` | ISO 8601 UTC timestamp for the delivery attempt |
+| `X-A2CN-Session-ID` | A2CN session identifier |
+| `X-A2CN-Event-Type` | Webhook event type |
+| `X-A2CN-Sender-DID` | Sender DID |
+| `X-A2CN-Sender-Verification-Method` | DID URL of the signing verification method |
+| `X-A2CN-Body-SHA256` | Base64url SHA-256 digest of the exact request body bytes |
+| `X-A2CN-Signature` | Compact JWS over `X-A2CN-Body-SHA256` |
+
+Webhook receivers MUST resolve the sender's DID document, locate the verification
+method referenced by `X-A2CN-Sender-Verification-Method`, verify that it is
+controlled by `X-A2CN-Sender-DID`, verify the compact JWS signature, and compare
+the verified JWS payload to `X-A2CN-Body-SHA256` before processing the callback.
+The signing suite follows Section 13.4: ES256 by default, with EdDSA/Ed25519
+also accepted when the sender's verification method uses an Ed25519 key.
 
 Webhook delivery is best-effort. The polling endpoint remains the authoritative
 source. Implementations MUST NOT rely exclusively on webhooks.
@@ -3563,6 +3584,13 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-20 — DID-key JWS webhook signing
+
+- Section 11.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
+  instead of HMAC-SHA256/shared-secret signed.
+- Webhook signature headers now include sender DID, sender verification method,
+  body hash, and compact JWS over the body hash.
 
 ### Patch 2026-05-20 — Ed25519 alternate signing suite
 
