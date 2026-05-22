@@ -15,11 +15,13 @@ import uuid
 import pytest
 
 from a2cn.crypto import hash_object, sign_jws
+from a2cn.fulfillment import FULFILLMENT_ATTESTATION_SCHEMA
 from a2cn.messages import (
     DeliveryNoticeMessage,
     DeliveryAcknowledgedMessage,
     DisputeNoticeMessage,
     DisputeResolvedMessage,
+    FulfillmentAttestation,
 )
 from tests.conftest import make_session_init, INITIATOR_DID, RESPONDER_DID
 
@@ -153,6 +155,27 @@ class TestDeliveryAcknowledgedDataclass:
         )
         d = msg.to_dict()
         assert d["accepted"] is False
+
+
+# ---------------------------------------------------------------------------
+# FulfillmentAttestation dataclass
+# ---------------------------------------------------------------------------
+
+class TestFulfillmentAttestationDataclass:
+    def test_instantiation_with_required_fields(self):
+        msg = FulfillmentAttestation(
+            attestation_type="FulfillmentAttestation",
+            id=f"urn:concordia:fulfillment:{uuid.uuid4()}",
+            issued_at="2026-04-03T09:00:00Z",
+            agreement_attestation_id="sess-1",
+            fulfillment={"status": "fulfilled_clean"},
+            references=[{"type": "receipt", "id": "sess-1", "relationship": "fulfills"}],
+            signature={"alg": "Ed25519", "value": "abc"},
+        )
+        d = msg.to_dict()
+        assert d["attestation_type"] == "FulfillmentAttestation"
+        assert d["references"][0]["relationship"] == "fulfills"
+        assert "meta" not in d
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +397,93 @@ class TestDeliveryAcknowledgedEndpoint:
         )
         assert r.status_code == 400
         assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
+
+
+# ---------------------------------------------------------------------------
+# Server endpoint tests: FulfillmentAttestation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+class TestFulfillmentAttestationEndpoint:
+    async def _setup_delivery_notice(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
+        notice_body = _delivery_notice_body(session_id, record_hash)
+        r = await test_client.post(
+            f"/sessions/{session_id}/delivery-notice",
+            json=notice_body,
+            headers=_h(notice_body["message_id"]),
+        )
+        assert r.status_code == 200, r.text
+        return session_id, record_hash, r.json()["delivery_notice_message_id"]
+
+    async def _clean_attestation(self, test_client, responder_test_client):
+        session_id, record_hash, notice_id = await self._setup_delivery_notice(
+            test_client, responder_test_client
+        )
+        body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=True)
+        r = await test_client.post(
+            f"/sessions/{session_id}/delivery-acknowledged",
+            json=body,
+            headers=_h(body["message_id"]),
+        )
+        assert r.status_code == 200, r.text
+        r = await test_client.get(f"/sessions/{session_id}/fulfillment-attestation")
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    async def test_fulfillment_attestation_emitted_on_clean_delivery(
+        self, test_client, responder_test_client
+    ):
+        attestation = await self._clean_attestation(test_client, responder_test_client)
+        assert attestation["attestation_type"] == "FulfillmentAttestation"
+        assert attestation["fulfillment"]["status"] == "fulfilled_clean"
+        assert attestation["references"][0]["relationship"] == "fulfills"
+        assert attestation["signature"]["alg"] == "Ed25519"
+        assert attestation["signature"]["value"]
+
+    async def test_fulfillment_attestation_not_emitted_on_rejected_delivery(
+        self, test_client, responder_test_client
+    ):
+        session_id, record_hash, notice_id = await self._setup_delivery_notice(
+            test_client, responder_test_client
+        )
+        body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=False)
+        r = await test_client.post(
+            f"/sessions/{session_id}/delivery-acknowledged",
+            json=body,
+            headers=_h(body["message_id"]),
+        )
+        assert r.status_code == 200, r.text
+        r = await test_client.get(f"/sessions/{session_id}/fulfillment-attestation")
+        assert r.status_code == 409
+        assert r.json()["error"]["code"] == "FULFILLMENT_ATTESTATION_PENDING"
+
+    async def test_fulfillment_attestation_emitted_after_dispute_resolved(
+        self, test_client, responder_test_client
+    ):
+        session_id, record_hash, notice_id = await _setup_disputed_session(
+            test_client, responder_test_client
+        )
+        body = _dispute_resolved_body(session_id, record_hash, notice_id)
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-resolved",
+            json=body,
+            headers=_h(body["message_id"]),
+        )
+        assert r.status_code == 200, r.text
+        r = await test_client.get(f"/sessions/{session_id}/fulfillment-attestation")
+        assert r.status_code == 200, r.text
+        attestation = r.json()
+        assert attestation["fulfillment"]["status"] == "fulfilled_with_mediation"
+        assert attestation["meta"]["mediator_invoked"] is True
+        assert attestation["meta"]["resolver_did"] == "did:web:resolver.neutral.example"
+
+    async def test_fulfillment_attestation_schema_valid(
+        self, test_client, responder_test_client
+    ):
+        jsonschema = pytest.importorskip("jsonschema")
+        attestation = await self._clean_attestation(test_client, responder_test_client)
+        jsonschema.validate(attestation, FULFILLMENT_ATTESTATION_SCHEMA)
 
 
 # ---------------------------------------------------------------------------

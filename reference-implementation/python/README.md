@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-469%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -187,6 +187,7 @@ acceptance = store.accept_invitation(
 | `POST /sessions/{id}/messages` | Offer / counteroffer / acceptance / rejection / withdrawal |
 | `GET /sessions/{id}/record` | Transaction record (COMPLETED only) |
 | `GET /sessions/{id}/audit` | Audit log (any terminal state) |
+| `GET /sessions/{id}/fulfillment-attestation` | Concordia FulfillmentAttestation after clean delivery or dispute resolution |
 | `POST /invitations` | Receive inbound invitation |
 | `POST /invitations/create` | Create outbound invitation |
 | `POST /invitations/{id}/accept` | Accept invitation |
@@ -194,6 +195,11 @@ acceptance = store.accept_invitation(
 
 Webhooks fire asynchronously on all terminal transitions with DID-key JWS
 signatures and 1s/4s/16s retry backoff.
+
+Post-commitment fulfillment can also compose with Concordia. Configure
+`fulfillment_private_key` with an Ed25519 key to emit a signed
+`FulfillmentAttestation` when `delivery_acknowledged.accepted=true` or when a
+`dispute_resolved` message closes a mediated fulfillment path.
 
 ### Production session stores
 
@@ -303,7 +309,7 @@ Fork it, modify it, or build your own from scratch.
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 469 passed
+pytest tests/ -v   # 474 passed
 ```
 
 | Test file | What it covers |

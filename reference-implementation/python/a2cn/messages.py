@@ -689,6 +689,34 @@ class DisputeResolvedMessage:
         })
 
 
+@dataclass
+class FulfillmentAttestation:
+    """
+    Concordia-shaped artifact emitted when A2CN post-commitment fulfillment
+    reaches a clean or mediated terminal state.
+    """
+    attestation_type: str
+    id: str
+    issued_at: str
+    agreement_attestation_id: str
+    fulfillment: dict[str, Any]
+    references: list[dict[str, Any]]
+    signature: dict[str, Any]
+    meta: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict:
+        return _drop_none({
+            "attestation_type": self.attestation_type,
+            "id": self.id,
+            "issued_at": self.issued_at,
+            "agreement_attestation_id": self.agreement_attestation_id,
+            "fulfillment": self.fulfillment,
+            "references": self.references,
+            "signature": self.signature,
+            "meta": self.meta,
+        })
+
+
 def validate_deal_type_terms(deal_type: str, terms: dict) -> list[str]:
     """
     Validates terms dict against deal-type-specific schema.

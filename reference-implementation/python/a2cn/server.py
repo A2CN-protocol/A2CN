@@ -39,6 +39,7 @@ from fastapi.responses import JSONResponse
 from a2cn.session import Session, SessionManager, SessionState, A2CNError, _now
 from a2cn.record import generate_transaction_record, generate_audit_log
 from a2cn.invitation import InvitationStore
+from a2cn.fulfillment import build_fulfillment_attestation
 from a2cn.messages import (
     WebhookPayload,
     InvitationStatus,
@@ -108,6 +109,29 @@ def configure_responder(config: dict, session_store: "SessionStore | None" = Non
         )
     if session_store is not None:
         _session_store = session_store
+
+
+def _build_fulfillment_attestation(
+    session_id: str,
+    pc_data: dict[str, Any],
+    dispute_resolved_message: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    agent_info = _responder_config.get("agent_info", {})
+    private_key = (
+        _responder_config.get("fulfillment_private_key")
+        or _responder_config.get("private_key")
+    )
+    if private_key is None:
+        raise ValueError("Server fulfillment private key not configured")
+
+    session_record = dict(pc_data)
+    session_record["session_id"] = session_id
+    return build_fulfillment_attestation(
+        session_record,
+        private_key=private_key,
+        signer_did=agent_info.get("did"),
+        dispute_resolved_message=dispute_resolved_message,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -675,8 +699,21 @@ async def post_delivery_acknowledged(session_id: str, request: Request,
     message_id = body.get("message_id", str(uuid.uuid4()))
 
     pc_data["post_commitment_status"] = post_commitment_status
+    pc_data["delivery_acknowledged"] = body
     if not accepted:
         pc_data["dispute_reason"] = body.get("notes", "")
+    else:
+        try:
+            pc_data["fulfillment_attestation"] = _build_fulfillment_attestation(
+                session_id, pc_data
+            )
+        except ValueError as exc:
+            return error_response(
+                "FULFILLMENT_ATTESTATION_ERROR",
+                str(exc),
+                500,
+                session_id=session_id,
+            )
     pc_data["acknowledgment_message_id"] = message_id
     _session_store.save(session_id, pc_data)
 
@@ -830,6 +867,17 @@ async def post_dispute_resolved(session_id: str, request: Request,
     pc_data["dispute_resolution"] = body
     pc_data["post_commitment_status"] = "RESOLVED"
     pc_data["dispute_resolved_message_id"] = message_id
+    try:
+        pc_data["fulfillment_attestation"] = _build_fulfillment_attestation(
+            session_id, pc_data, dispute_resolved_message=body
+        )
+    except ValueError as exc:
+        return error_response(
+            "FULFILLMENT_ATTESTATION_ERROR",
+            str(exc),
+            500,
+            session_id=session_id,
+        )
     _session_store.save(session_id, pc_data)
 
     return a2cn_response({
@@ -838,6 +886,31 @@ async def post_dispute_resolved(session_id: str, request: Request,
         "resolution_outcome": resolution_outcome,
         "post_commitment_status": "RESOLVED",
     })
+
+
+@app.get("/sessions/{session_id}/fulfillment-attestation")
+async def get_fulfillment_attestation(session_id: str, request: Request,
+                                      _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    _get_session_or_404(session_id)
+    pc_data = _session_store.get(session_id) or {}
+    attestation = pc_data.get("fulfillment_attestation")
+    if attestation:
+        return a2cn_response(attestation)
+
+    if pc_data.get("post_commitment_status") == "DISPUTED":
+        return error_response(
+            "FULFILLMENT_ATTESTATION_PENDING",
+            "Session is disputed and has no DISPUTE_RESOLVED attestation yet",
+            409,
+            session_id=session_id,
+        )
+
+    return error_response(
+        "FULFILLMENT_ATTESTATION_NOT_FOUND",
+        "No fulfillment attestation has been emitted for this session",
+        404,
+        session_id=session_id,
+    )
 
 
 # ---------------------------------------------------------------------------

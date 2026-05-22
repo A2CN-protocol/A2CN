@@ -5,7 +5,7 @@ import pytest_asyncio
 import httpx
 from httpx import AsyncClient, ASGITransport
 
-from a2cn.crypto import generate_keypair, public_key_to_jwk, create_jwt
+from a2cn.crypto import generate_keypair, generate_ed25519_keypair, public_key_to_jwk, create_jwt
 
 
 class _BearerAuth(httpx.Auth):
@@ -98,6 +98,7 @@ def responder_did_doc(responder_keypair):
 @pytest.fixture
 def responder_config(responder_keypair):
     priv, pub = responder_keypair
+    fulfillment_priv, _fulfillment_pub = generate_ed25519_keypair()
     return {
         "agent_info": {
             "organization_name": "Acme Corp",
@@ -120,6 +121,7 @@ def responder_config(responder_keypair):
         "deal_types": ["saas_renewal"],
         "max_rounds_by_deal_type": {"saas_renewal": 5},
         "private_key": priv,
+        "fulfillment_private_key": fulfillment_priv,
     }
 
 
