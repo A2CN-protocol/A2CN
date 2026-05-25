@@ -167,9 +167,7 @@ python examples/saas_renewal.py
 python examples/saas_renewal.py --deal-type goods_procurement
 
 # Session Invitation flow (Fairmarkit integration pattern)
-# Terminal 1:
-uvicorn server:app --port 8002
-# Terminal 2:
+# Starts a configured supplier server on localhost:8001
 python examples/invitation_flow.py
 ```
 

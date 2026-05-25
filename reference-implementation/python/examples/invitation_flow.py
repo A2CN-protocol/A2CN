@@ -20,7 +20,9 @@ Demonstrates:
 Run with:
   cd reference-implementation/python
   uv run python examples/invitation_flow.py
-  (or: ./venv/Scripts/python examples/invitation_flow.py)
+
+The demo starts a configured supplier server on localhost:8001. If another
+process is already listening on that port, stop it before running the demo.
 """
 
 from __future__ import annotations
@@ -103,8 +105,10 @@ async def main() -> None:
         verify_invitation_signature,
         hash_object,
         sign_jws,
+        create_jwt,
     )
-    from a2cn.server import app, configure_responder, manager
+    import a2cn.server as server_module
+    from a2cn.server import app, configure_responder, manager, register_did_document
     from a2cn.client import A2CNClient
     from a2cn.invitation import InvitationStore
     from a2cn.messages import InvitationStatus
@@ -115,6 +119,7 @@ async def main() -> None:
     # -----------------------------------------------------------------------
     buyer_priv, buyer_pub = generate_keypair()
     supplier_priv, supplier_pub = generate_keypair()
+    server_module.SERVER_DID = "did:web:localhost"
 
     supplier_agent_info = {
         "organization_name": "TechSupply Inc",
@@ -143,6 +148,60 @@ async def main() -> None:
         "max_rounds_by_deal_type": {"goods_procurement": 5},
         "private_key": supplier_priv,
     })
+
+    buyer_did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": BUYER_DID,
+        "verificationMethod": [
+            {
+                "id": f"{BUYER_DID}#key-1",
+                "type": "JsonWebKey2020",
+                "controller": BUYER_DID,
+                "publicKeyJwk": public_key_to_jwk(buyer_pub),
+            }
+        ],
+        "authentication": [f"{BUYER_DID}#key-1"],
+        "assertionMethod": [f"{BUYER_DID}#key-1"],
+    }
+    supplier_did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": SUPPLIER_DID,
+        "verificationMethod": [
+            {
+                "id": f"{SUPPLIER_DID}#key-1",
+                "type": "JsonWebKey2020",
+                "controller": SUPPLIER_DID,
+                "publicKeyJwk": public_key_to_jwk(supplier_pub),
+            }
+        ],
+        "authentication": [f"{SUPPLIER_DID}#key-1"],
+        "assertionMethod": [f"{SUPPLIER_DID}#key-1"],
+    }
+    register_did_document(BUYER_DID, buyer_did_doc)
+    register_did_document(SUPPLIER_DID, supplier_did_doc)
+
+    class _DemoAuth(httpx.Auth):
+        def __init__(self, issuer_did: str, private_key, kid: str) -> None:
+            self.issuer_did = issuer_did
+            self.private_key = private_key
+            self.kid = kid
+
+        def auth_flow(self, request):
+            token = create_jwt(
+                self.issuer_did,
+                server_module.SERVER_DID,
+                self.private_key,
+                kid=self.kid,
+                exp_seconds=300,
+            )
+            request.headers["Authorization"] = f"Bearer {token}"
+            yield request
 
     # -----------------------------------------------------------------------
     # 2. Start the supplier's A2CN server
@@ -203,7 +262,14 @@ async def main() -> None:
     # -----------------------------------------------------------------------
     # 5. Supplier receives invitation via POST /invitations
     # -----------------------------------------------------------------------
-    async with httpx.AsyncClient() as http:
+    async with (
+        httpx.AsyncClient(
+            auth=_DemoAuth(BUYER_DID, buyer_priv, f"{BUYER_DID}#key-1")
+        ) as http,
+        httpx.AsyncClient(
+            auth=_DemoAuth(SUPPLIER_DID, supplier_priv, f"{SUPPLIER_DID}#key-1")
+        ) as supplier_http,
+    ):
         r = await http.post(f"{SUPPLIER_ENDPOINT}/invitations", json=inv_dict)
         assert r.status_code in (200, 201), f"POST /invitations failed: {r.status_code} {r.text}"
         receive_resp = r.json()
@@ -229,7 +295,7 @@ async def main() -> None:
             "acceptor_verification_method": f"{SUPPLIER_DID}#key-1",
             "acceptor_public_key_jwk": public_key_to_jwk(supplier_pub),
         }
-        r = await http.post(
+        r = await supplier_http.post(
             f"{SUPPLIER_ENDPOINT}/invitations/{invitation.invitation_id}/accept",
             json=accept_payload,
         )
@@ -341,7 +407,7 @@ async def main() -> None:
             exp = _now_fixed(900)
             msg_id = str(uuid.uuid4())
             act = {
-                "protocol_version": "0.1",
+                "protocol_version": "0.2",
                 "session_id": sess_id,
                 "round_number": rnd,
                 "sequence_number": seq,
@@ -433,7 +499,7 @@ async def main() -> None:
         msg_id = str(uuid.uuid4())
         # Acceptance uses current round (3), not a new round; sequence advances
         act = {
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "session_id": session_id,
             "round_number": 3,
             "sequence_number": 4,
