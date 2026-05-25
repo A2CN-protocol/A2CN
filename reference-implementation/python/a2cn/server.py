@@ -51,7 +51,7 @@ from a2cn.messages import (
 )
 from a2cn.crypto import verify_jwt, verify_invitation_signature, public_key_from_jwk
 from a2cn.did import resolve_did_web, get_verification_method, get_public_key
-from session_store import InMemorySessionStore, SessionStore
+from a2cn.session_store import InMemorySessionStore, SessionStore
 
 logger = logging.getLogger(__name__)
 

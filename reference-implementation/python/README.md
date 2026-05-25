@@ -22,9 +22,7 @@ pip install -e .
 python examples/saas_renewal.py
 
 # Run the Session Invitation / Fairmarkit integration demo
-# Terminal 1 (supplier, port 8002):
-uvicorn server:app --port 8002
-# Terminal 2:
+# Starts a configured supplier server on localhost:8001
 python examples/invitation_flow.py
 ```
 
@@ -63,6 +61,8 @@ python examples/saas_renewal.py --verbose                # print every message e
 ### `examples/invitation_flow.py` — Session Invitation demo (Fairmarkit pattern)
 
 Demonstrates Component 8: Session Invitation. The supplier has **no pre-deployed A2CN endpoint** at the start of the flow.
+The demo starts a configured supplier A2CN server on `localhost:8001`; stop any
+other process on that port before running it.
 
 ```
 1. Buyer creates signed SessionInvitation for a goods_procurement event

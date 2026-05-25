@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from session_store import InMemorySessionStore, SessionStore
+from a2cn.session_store import InMemorySessionStore, SessionStore
 
 
 class TestInMemorySessionStore:
