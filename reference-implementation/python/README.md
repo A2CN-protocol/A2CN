@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-300%2B%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -20,6 +20,9 @@ pip install -e .
 
 # Run the bilateral SaaS renewal demo
 python examples/saas_renewal.py
+
+# Run the two-process HTTP demo (buyer on 8001, supplier on 8002)
+../../demos/two_process/run_demo.sh
 
 # Run the Session Invitation / Fairmarkit integration demo
 # Starts a configured supplier server on localhost:8001
@@ -41,7 +44,8 @@ Expected output from `saas_renewal.py`:
 ✓ A2CN bilateral session complete
 ```
 
-Two processes. Different organizations. Neither controls the authoritative record. Both independently derived the same hash.
+For a real two-process HTTP run with separate buyer and supplier agents, use
+`../../demos/two_process/run_demo.sh`.
 
 ---
 
@@ -57,6 +61,14 @@ python examples/saas_renewal.py --deal-type goods_procurement  # goods_procureme
 python examples/saas_renewal.py --impasse-threshold 2    # impasse after 2 non-moving rounds
 python examples/saas_renewal.py --verbose                # print every message envelope
 ```
+
+### `../../demos/two_process/run_demo.sh` — Two-process HTTP demo
+
+Starts a buyer process on port 8001 and a supplier process on port 8002. The
+buyer initiates a SaaS renewal negotiation over HTTP, the supplier returns two
+counteroffers, and the buyer accepts. The demo prints both independently
+generated transaction record hashes side by side and exits non-zero if they do
+not match.
 
 ### `examples/invitation_flow.py` — Session Invitation demo (Fairmarkit pattern)
 
@@ -95,7 +107,7 @@ other process on that port before running it.
 └─────────────────────────────┘        └──────────────────────────────┘
          ↓                                          ↓
     crypto.py                                  record.py
-    JCS + SHA-256 + ES256                      Deterministic
+    JCS + SHA-256 + ES256/Ed25519             Deterministic
     invitation signing                         transaction record
     did.py
     did:web resolution
@@ -121,7 +133,7 @@ sig = sign_invitation(invitation_dict, private_key)
 assert verify_invitation_signature(invitation_dict, public_key)
 ```
 
-RFC 8785 JCS canonicalization. P-256 / ES256. Invitation signing excludes the `invitation_signature` field from canonical form.
+RFC 8785 JCS canonicalization. P-256 / ES256 by default, with Ed25519 / EdDSA as an alternate signing suite. Invitation signing excludes the `invitation_signature` field from canonical form.
 
 ### `messages.py` — Wire format
 
@@ -180,7 +192,37 @@ acceptance = store.accept_invitation(
 | `POST /invitations/{id}/accept` | Accept invitation |
 | `POST /invitations/{id}/decline` | Decline invitation |
 
-Webhooks fire asynchronously on all terminal transitions with 1s/4s/16s retry backoff.
+Webhooks fire asynchronously on all terminal transitions with DID-key JWS
+signatures and 1s/4s/16s retry backoff.
+
+### Production session stores
+
+`configure_responder()` accepts an optional `session_store` implementing the
+`SessionStore` interface. The default `InMemorySessionStore` is suitable for
+demos and tests; use a persistent store when post-commitment lifecycle state
+must survive process restarts. In async ASGI deployments, wrap synchronous store
+calls with `asyncio.to_thread()` or use async-native drivers such as
+`redis.asyncio` or the psycopg3 async interface.
+
+```python
+from session_store import RedisSessionStore, PostgreSQLSessionStore
+
+# Redis: caller owns the redis-py client configuration.
+store = RedisSessionStore(redis_client, ttl_seconds=60 * 60 * 24 * 30)
+configure_responder(config, session_store=store)
+
+# PostgreSQL: caller owns connection pooling.
+store = PostgreSQLSessionStore(pg_connection)
+store.initialize_schema()
+configure_responder(config, session_store=store)
+```
+
+Local backend examples:
+
+```bash
+docker compose -f docker-compose.session-stores.yml up redis-session-store
+docker compose -f docker-compose.session-stores.yml up postgres-session-store
+```
 
 ### `adapters/fairmarkit_adapter.py`
 
@@ -261,12 +303,12 @@ Fork it, modify it, or build your own from scratch.
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 202 passed
+pytest tests/ -v   # 300+ passed
 ```
 
 | Test file | What it covers |
 |-----------|---------------|
-| `test_crypto.py` | JCS, ES256, invitation signing |
+| `test_crypto.py` | JCS, ES256, Ed25519, invitation signing |
 | `test_session.py` | State machine, turn-taking, impasse |
 | `test_server.py` | All HTTP endpoints, error codes |
 | `test_invitations.py` | Invitation lifecycle, signature, expiry |
@@ -285,12 +327,13 @@ A2CN_ENDPOINT=http://your-server:8000 pytest tests/conformance/ -v
 
 ```
 python/
-├── crypto.py            # P-256, JCS, SHA-256, ES256, invitation signing
+├── crypto.py            # P-256, Ed25519, JCS, SHA-256, signing
 ├── did.py               # did:web resolution
 ├── messages.py          # Wire-format dataclasses, validation, error codes
 ├── session.py           # State machine, impasse detection
 ├── record.py            # Deterministic transaction record + audit log
 ├── invitation.py        # Component 8: SessionInvitation lifecycle
+├── session_store.py     # In-memory, Redis, PostgreSQL stores
 ├── server.py            # FastAPI, all endpoints, async webhook delivery
 ├── client.py            # Initiator
 ├── adapters/
@@ -324,12 +367,13 @@ The `skills/` directory lives one level up at
 
 | Category | Status |
 |----------|--------|
-| Cryptographic primitives | ✓ JCS, P-256, ES256, UUID v5 |
-| Invitation signing | ✓ ES256+JCS, excludes signature field from canonical form |
+| Cryptographic primitives | ✓ JCS, P-256, Ed25519, ES256/EdDSA, UUID v5 |
+| Invitation signing | ✓ ES256/Ed25519 + JCS, excludes signature field from canonical form |
 | Transaction record determinism | ✓ Both sides independently produce identical `record_hash` |
 | Turn-taking + sequence ordering | ✓ Enforced |
 | Idempotency | ✓ Duplicate `message_id` returns cached response |
-| Webhook delivery | ✓ Async, non-fatal on failure |
+| Session persistence | ✓ In-memory default, Redis/PostgreSQL production stores |
+| Webhook delivery | ✓ Async, DID-key JWS signed, non-fatal on failure |
 | JWT request authentication | 🔄 In progress — CONF-003 skipped |
 | Rate limiting | 📋 Planned |
 

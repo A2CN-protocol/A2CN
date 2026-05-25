@@ -2,9 +2,11 @@
 
 **The missing protocol layer for machine-to-machine B2B commerce.**
 
+A2CN defines neutral infrastructure for agent-to-agent commercial negotiation.
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
-[![Tests](https://img.shields.io/badge/Tests-202%20passing-brightgreen.svg)](reference-implementation/python/tests)
+[![Tests](https://img.shields.io/badge/Tests-300%2B%20passing-brightgreen.svg)](reference-implementation/python/tests)
 [![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
@@ -61,17 +63,17 @@ The original discovery model required both parties to have independently deploye
 
 ```
 Buyer agent creates a signed SessionInvitation
-    → delivers via BID_CREATED webhook / email / Meeting Place
+    → delivers via BID_CREATED webhook / email / neutral invitation relay
         → Supplier receives, validates signature, accepts
             → Buyer sends standard SessionInit to acceptor's endpoint
                 → Normal A2CN session proceeds
 ```
 
-The invitation is ES256-signed using the inviter's DID key. The supplier can verify authenticity before activating any endpoint. This is the integration pattern for Fairmarkit and other procurement platforms that use supplier webhooks.
+The invitation is signed using the inviter's DID key (ES256 by default, EdDSA/Ed25519 also supported). The supplier can verify authenticity before activating any endpoint. This is the integration pattern for Fairmarkit and other procurement platforms that use supplier webhooks.
 
 ### Platform integration adapters
 
-**Fairmarkit:** `FairmakitEventParser` translates `BID_CREATED` webhook payloads into A2CN `goods_procurement` terms and translates agreed terms back into Fairmarkit's response API format for `POST /self-service/api/v3/responses/...`. Path B integration — zero Fairmarkit platform changes required.
+**Fairmarkit:** `FairmakitEventParser` translates `BID_CREATED` webhook payloads into A2CN `goods_procurement` terms and translates agreed terms back into Fairmarkit's response API format for `POST /self-service/api/v3/responses/...`. Zero Fairmarkit platform changes required.
 
 **Salesforce Revenue Cloud:** `RevenueCloudAdapter` translates Revenue Cloud Pricing API responses (`/connect/pricing/...`) into A2CN offer terms, and translates agreed terms from the transaction record into Revenue Cloud order payloads (`/connect/qoc/sales-transactions`).
 
@@ -87,7 +89,14 @@ Two registered deal types now have normative JSON schemas:
 
 ### Webhooks required at Level 2
 
-Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery with exponential backoff retry.
+Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, `TIMED_OUT`) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery uses DID-key JWS signatures and exponential backoff retry.
+
+### Human approval state for high-value commitments
+
+`AWAITING_HUMAN_APPROVAL` is the protocol-level pause state for offers that cross
+the mandate's `requires_human_approval_above` threshold. The session resumes when
+a signed approval receipt references the paused offer hash, preserving the
+negotiation trail while keeping human oversight explicit and auditable.
 
 ---
 
@@ -100,7 +109,7 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 | **Session Invitation** *(v0.2)* | Push-based pre-session handshake for parties without deployed endpoints |
 | **Offer exchange** | Canonical schema for offers, counteroffers, acceptances, rejections, withdrawals |
 | **Deal-type terms** *(v0.2)* | Normative schemas for `goods_procurement` and `saas_renewal` |
-| **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection |
+| **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection, human approval pauses |
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
 | **Post-commitment lifecycle** | DELIVERY_NOTICE (seller confirms delivery), DELIVERY_ACKNOWLEDGED (buyer closes or disputes), DISPUTE_NOTICE (neutral evidence anchoring) — v0.3 |
@@ -111,6 +120,36 @@ Webhook callbacks on all terminal state transitions (`COMPLETED`, `REJECTED_FINA
 - A platform or SaaS product
 - A competitor to MCP, A2A, UCP, or AP2 — complementary to all of them
 - Controlled by any single commercial entity
+
+---
+
+## Ecosystem
+
+A2CN is designed as one layer in a three-protocol substrate for autonomous
+commerce:
+
+| Protocol | Boundary |
+|----------|----------|
+| **A2CN** | Session establishment, mandate verification, commercial terms, transaction records |
+| **Concordia** | Negotiation envelope, shared mandate semantics, cross-domain negotiation artifacts |
+| **Verascore** | Reputation, scoring, and post-commitment performance signals |
+
+A2CN coordinates with [Concordia Protocol](https://github.com/eriknewton/concordia-protocol) on a joint Agent Mandate Specification and A2A extension path. A2CN is the procurement-vertical layer; Concordia covers cross-domain negotiation semantics. Both compose cleanly on A2A transport.
+
+The A2A extension URI is:
+
+```text
+https://a2cn.io/extensions/commercial-negotiation/v1
+```
+
+Discussion is tracked in [A2A Discussion #1737](https://github.com/a2aproject/A2A/discussions/1737), including the relationship between A2CN, Concordia, and adjacent negotiation/reputation work.
+
+The joint work includes:
+- A shared Agent Mandate Specification covering delegation chains, DID-VC verification, and revocation semantics
+- A joint procurement patterns library (`concordia-a2cn/procurement-patterns`) with canonical RFQ, BAFO, and reverse auction patterns expressed in both protocol shapes
+- Coordinated A2A extension proposals filed simultaneously
+
+Neither protocol requires the other. Both remain independently usable.
 
 ---
 
@@ -139,7 +178,7 @@ python examples/invitation_flow.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 202 passed
+# 300+ passed
 ```
 
 ---
@@ -190,11 +229,24 @@ Fairmarkit / Pactum / Zip        Salesforce Revenue Cloud / Dynamics 365
               (dual-signed, content-addressed)
                         ↓
         ────────────────┴────────────────────────
-      AP2              Luminance        Meeting Place
-   (payment)        (contract)       (dispute resolution)
+      AP2              Luminance        Neutral Custodian
+   (payment)        (contract)       (record custody / dispute evidence)
 ```
 
 A2CN fits between the platforms that generate offers and the infrastructure that executes payment and formalizes contracts. Neither side needs to change their internal pricing logic or CRM workflow — A2CN is the exchange layer in between.
+
+---
+
+## Compliance context
+
+The EU AI Act's human oversight requirements become operationally urgent for
+high-risk AI systems in August 2026. A2CN gives commercial agents a
+machine-readable way to show when human oversight was required, which offer
+triggered it, who approved it, and which signed transaction record resulted.
+
+This is why the protocol treats mandate thresholds, approval receipts, audit
+logs, and deterministic transaction records as first-class protocol artifacts
+rather than platform-local implementation details.
 
 ---
 
@@ -202,7 +254,7 @@ A2CN fits between the platforms that generate offers and the infrastructure that
 
 Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns for Fairmarkit, Salesforce Revenue Cloud, Dynamics 365, Luminance, and A2A, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (202 tests).
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (300+ tests).
 
 ---
 
@@ -218,7 +270,7 @@ A2CN/
 │           └── saas_renewal.schema.json
 └── reference-implementation/
     └── python/
-        ├── crypto.py                # JCS, SHA-256, ES256 signing
+        ├── crypto.py                # JCS, SHA-256, ES256/Ed25519 signing
         ├── did.py                   # did:web resolution
         ├── messages.py              # Wire-format dataclasses
         ├── session.py               # State machine + turn enforcement
@@ -251,16 +303,17 @@ A2CN/
 | Milestone | Status |
 |-----------|--------|
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
-| Reference implementation (Python) | ✓ Complete — 202 tests passing |
+| Reference implementation (Python) | ✓ Complete — 300+ tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
 | Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
+| AWAITING_HUMAN_APPROVAL state | ✓ Complete — high-value offers pause until signed approval receipt |
 | Security review | ✓ Passed — 0 critical, 0 high findings |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
-| A2A extension proposal | 🔄 In progress |
-| Meeting Place (neutral transaction hosting) | 📋 Planned — v0.3 |
+| A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
+| Neutral third-party record custody | 📋 Planned — v0.3 |
 | Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE / DISPUTE_RESOLVED) | ✓ Complete — v0.2.1 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | 📋 Planned — v0.3 |
@@ -276,6 +329,8 @@ A2CN/
 **Developers building on LangChain, CrewAI, Salesforce Agentforce, or Microsoft Copilot Studio** with agents that need to interact with counterparty agents across organizational boundaries.
 
 **Protocol and distributed systems engineers** interested in open standards work. The cryptographic design, session state machine, and deterministic record generation all have interesting problems. Open issues tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22help+wanted%22) and [`good first issue`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22good+first+issue%22).
+
+**Protocol co-founders with enterprise GTM or BD background** — if you want to help build the standard and the business around it alongside the technical work, reach out at contact@a2cn.io.
 
 ---
 

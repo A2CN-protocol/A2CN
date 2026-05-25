@@ -59,9 +59,9 @@ per RFC 8615. Registration will be submitted concurrent with the v0.2 release.
 9. Component 6: Transaction Record
 10. Component 7: Audit Log
 11. Component 8: Session Invitation *(new in v0.2)*
-12. Transport Binding
-13. Error Handling
-14. Security Considerations
+12. Transport Binding and Error Handling
+13. Security Considerations
+14. Human Approval and ApprovalReceipt Binding
 15. Open Questions
 16. Relationship to Other Protocols
 17. Conformance
@@ -1167,7 +1167,8 @@ The **protocol act object** used for signing is:
 1. Construct the protocol act object with the fields above
 2. Serialize using RFC 8785 JSON Canonicalization Scheme (JCS)
 3. Compute: protocol_act_hash = base64url(SHA-256(jcs_bytes))
-4. Sign: protocol_act_signature = JWS(protocol_act_hash, sender_private_key, "ES256")
+4. Sign: protocol_act_signature = JWS(protocol_act_hash, sender_private_key, signing_alg)
+   where signing_alg is ES256 or EdDSA/Ed25519 per Section 13.4
 ```
 
 `protocol_act_hash` and `protocol_act_signature` are included in the offer message.
@@ -1332,6 +1333,9 @@ for `GET /sessions/{session_id}`.
   "sequence_number": "integer",
   "latest_offer_id": "string",
   "latest_offer_hash": "string",
+  "approval_pending_offer_id": "string | null",
+  "approval_pending_offer_hash": "string | null",
+  "approval_receipt_id": "string | null",
   "terminal_reason": "string",
   "terminal_message_id": "string",
   "session_created_at": "string",
@@ -1340,10 +1344,13 @@ for `GET /sessions/{session_id}`.
 }
 ```
 
-`current_turn` — `"initiator"` | `"responder"` | `"none"` (in terminal states)  
-`state_updated_at` — updated on every state transition  
-`terminal_reason` — set when entering a terminal state, null otherwise  
-`terminal_message_id` — the message_id that caused the terminal transition
+- `current_turn` — `"initiator"` | `"responder"` | `"none"` (in terminal states)
+- `state_updated_at` — updated on every state transition
+- `approval_pending_offer_id` — the offer, counteroffer, or acceptance paused for human approval, null otherwise
+- `approval_pending_offer_hash` — the `protocol_act_hash` of the paused act, null otherwise
+- `approval_receipt_id` — the approval artifact that released the pause, null until approved
+- `terminal_reason` — set when entering a terminal state, null otherwise
+- `terminal_message_id` — the message_id that caused the terminal transition
 
 Two parties may temporarily disagree on session state due to network delays.
 Each party MUST treat their locally maintained state as authoritative for
@@ -1373,6 +1380,7 @@ scenarios.
 | `PENDING` | No | SessionInit sent, awaiting ack |
 | `ACTIVE` | No | Session established, awaiting first offer from initiator |
 | `NEGOTIATING` | No | Offer sent; awaiting response from turn holder |
+| `AWAITING_HUMAN_APPROVAL` | No | A threshold-crossing offer, counteroffer, or acceptance is paused until a valid approval receipt is available |
 | `COMPLETED` | Yes | Agreement reached, transaction record generated |
 | `REJECTED_FINAL` | Yes | Max rounds reached with no agreement |
 | `WITHDRAWN` | Yes | One party withdrew |
@@ -1415,6 +1423,15 @@ ambiguity where it previously meant both "ready for first offer" and
 ┌──────────┐                    [NEGOTIATING, turn flips,
 │COMPLETED │                     round_number increments]
 └──────────┘                             │
+                                         │ threshold-crossing act
+                                         ▼
+                              ┌──────────────────────────┐
+                              │ AWAITING_HUMAN_APPROVAL  │
+                              └────────────┬─────────────┘
+                                           │ valid ApprovalReceipt
+                                           ▼
+                                  [NEGOTIATING resumes]
+                                         │
                                          │ rejection received
                                          ▼
                            [NEGOTIATING, turn = rejecting party,
@@ -1448,10 +1465,18 @@ From NEGOTIATING or ACTIVE:
 - → COMPLETED: valid Acceptance received
 - → NEGOTIATING: valid Counteroffer received; `current_turn` flips; `round_number` increments
 - → NEGOTIATING: valid Rejection received when round_number < max_rounds; `current_turn` = rejecting party; round_number does NOT increment
+- → AWAITING_HUMAN_APPROVAL: the next Offer, Counteroffer, or Acceptance would exceed the acting party's `requires_human_approval_above` threshold
 - → REJECTED_FINAL: Rejection received when round_number = max_rounds
 - → WITHDRAWN: Withdrawal sent or received
 - → TIMED_OUT: round_timeout_seconds elapsed, or session_timeout_seconds elapsed
 - → ERROR: protocol violation received (wrong turn, wrong sequence, invalid signature)
+
+**From AWAITING_HUMAN_APPROVAL:**
+- → NEGOTIATING: valid ApprovalReceipt received for the paused offer hash; the approving party may send the paused Offer, Counteroffer, or Acceptance
+- → AWAITING_HUMAN_APPROVAL: ApprovalReceipt expires before the paused act is sent or accepted; the session remains paused and requires a fresh ApprovalReceipt
+- → WITHDRAWN: Withdrawal sent or received
+- → TIMED_OUT: session_timeout_seconds elapsed
+- → ERROR: invalid ApprovalReceipt received (wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`)
 
 **Terminal states** (COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, ERROR):
 - No further state transitions are valid
@@ -1466,6 +1491,9 @@ From NEGOTIATING or ACTIVE:
 - `round_number` does NOT increment on Rejection, Acceptance, or Withdrawal
 - `sequence_number` starts at 1 and increments for every message (offers,
   counteroffers, acceptances, rejections, withdrawals)
+- Entering or exiting `AWAITING_HUMAN_APPROVAL` does not increment
+  `round_number` or `sequence_number`; only the paused protocol act increments
+  `sequence_number` when it is actually transmitted
 - Retransmissions of the same message (same `message_id`) MUST NOT increment
   `sequence_number`
 
@@ -1658,8 +1686,9 @@ Any party verifying a transaction record MUST:
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
-> bilateral storage is correct for v0.1. The Meeting Place concept will provide
-> optional neutral hosting in v0.2.
+> bilateral storage is correct for v0.1. Implementations MAY optionally route
+> committed transaction records to a neutral third-party record custodian for
+> independent custody.
 
 ---
 
@@ -1743,7 +1772,15 @@ Schema: `spec/schemas/audit-log.schema.json`
   "audit_metadata": {
     "ai_system_involved": "boolean",
     "human_oversight_present": "boolean",
-    "autonomous_decision": "boolean"
+    "autonomous_decision": "boolean",
+    "human_approval_receipts": [
+      {
+        "approval_receipt_id": "string",
+        "offer_hash": "string",
+        "threshold_crossed": "string",
+        "approved_at": "string"
+      }
+    ]
   }
 }
 ```
@@ -1760,14 +1797,250 @@ able to intervene during the negotiation.
 **`audit_metadata.autonomous_decision`** (boolean, REQUIRED)  
 `true` if the agent made offers or accepted terms without per-round human approval.
 
-**Important:** All `audit_metadata` fields are self-declared by the implementing
-agent and are not cryptographically verifiable by the protocol. Recipients of audit
-logs MUST treat these fields as attestations by the declaring party, not as
-protocol-verified facts.
+**`audit_metadata.human_approval_receipts`** (array, OPTIONAL)
+Contains one entry for each approval receipt used to leave
+`AWAITING_HUMAN_APPROVAL`. Each entry records the approval artifact id, the
+paused offer hash, the threshold crossed, and the approval timestamp. The full
+ApprovalReceipt artifact MAY be stored outside the audit log and referenced by
+id.
+
+**Important:** `audit_metadata` fields are self-declared by the implementing
+agent unless they reference signed artifacts such as ApprovalReceipts. Recipients
+of audit logs MUST treat unsigned fields as attestations by the declaring party,
+not as protocol-verified facts.
 
 Note: The negotiation log records message types, hashes, and values — not full
 terms content. Full terms are only in the transaction record for completed sessions.
 This minimizes data retention obligations while preserving auditability.
+
+### 10.4 EU AI Act Article 14 Human Oversight Mapping
+
+Where an A2CN deployment is part of a system that the deployer or provider
+classifies as a high-risk AI system under Regulation (EU) 2024/1689, Article 14
+requires effective human oversight measures that are proportionate to the risks,
+level of autonomy, and context of use of the system.
+
+A2CN does not determine whether a particular procurement or commercial agent is
+a high-risk AI system, and an A2CN audit log is not a substitute for a legal
+compliance assessment. Instead, A2CN provides protocol-level evidence that can
+support an Article 14 oversight program:
+
+| Article 14 oversight concern | A2CN protocol evidence |
+| --- | --- |
+| Human oversight can be assigned and exercised during use | `AWAITING_HUMAN_APPROVAL` is a non-terminal pause state that prevents the threshold-crossing act from completing autonomously |
+| Oversight measures are tied to autonomy and context | `requires_human_approval_above` expresses a mandate-level threshold for autonomous Offers, Counteroffers, and Acceptances |
+| Human operators can monitor the system's conduct | `/sessions/{id}`, `/sessions/{id}/messages`, `/sessions/{id}/record`, and `/sessions/{id}/audit` expose session state, message history, transaction record hashes, and terminal audit logs |
+| Human intervention is recorded | ApprovalReceipt references bind the approving operator, the session id, the paused offer hash, the threshold crossed, and approval timestamp |
+| The system can produce logs suitable for interpretation | `negotiation_log` entries retain sequence number, message type, sender DID, timestamp, offered value, and `protocol_act_hash` without duplicating full commercial terms |
+
+The `requires_human_approval_above` field is the machine-readable oversight
+trigger. Implementations that support this field MUST evaluate it before an
+Offer, Counteroffer, or Acceptance whose value can bind the acting principal is
+transmitted or accepted. If the value exceeds the threshold, the implementation
+MUST enter `AWAITING_HUMAN_APPROVAL` and MUST NOT complete the act until a valid
+ApprovalReceipt is bound as described in Section 14.
+
+For high-risk deployments, implementers SHOULD expose the threshold source
+(mandate id or mandate hash), the applicable threshold currency, the paused
+message id, the paused `protocol_act_hash`, and the ApprovalReceipt id in
+operator dashboards and compliance exports.
+
+EU AI Act application dates and guidance are still subject to official
+implementation and amendment activity. As of v0.2.0, the European Commission
+describes the AI Act as generally applicable from 2 August 2026 with exceptions,
+and notes separate timelines for some high-risk systems. Implementers MUST
+track the applicable legal date and obligations for their deployment context.
+
+### 10.5 Compliance Export Package
+
+For regulator, auditor, or enterprise governance review, an A2CN implementation
+SHOULD be able to export a compliance package containing:
+
+1. The A2CN audit log from `/sessions/{id}/audit`
+2. The transaction record from `/sessions/{id}/record`, if the session reached
+   `COMPLETED`
+3. The session message history from `/sessions/{id}/messages`
+4. The mandate or mandate hash for each party
+5. Any ApprovalReceipt artifacts referenced by `audit_metadata.human_approval_receipts`
+6. A deployment-local statement identifying the legal basis for classifying, or
+   not classifying, the system as high-risk
+
+The export package SHOULD use the following top-level shape:
+
+```json
+{
+  "export_type": "a2cn_compliance_export",
+  "export_version": "0.1",
+  "generated_at": "2026-05-19T00:00:00Z",
+  "regulatory_context": {
+    "framework": "EU AI Act",
+    "mapping": "Article 14 human oversight",
+    "high_risk_classification": "deployers-assessment-required",
+    "legal_assessment_reference": "string | null"
+  },
+  "session_id": "string",
+  "audit_log": {},
+  "transaction_record": "object | null",
+  "message_history": [],
+  "mandate_references": [
+    {
+      "party": "initiator | responder",
+      "mandate_id": "string | null",
+      "mandate_hash": "string | null",
+      "requires_human_approval_above": "number | null",
+      "currency": "string | null"
+    }
+  ],
+  "approval_receipts": [
+    {
+      "approval_receipt_id": "string",
+      "artifact": {}
+    }
+  ]
+}
+```
+
+The compliance export SHOULD preserve signed artifacts verbatim where available.
+If an ApprovalReceipt is stored outside A2CN, the export MAY include only the
+receipt id, hash, issuer, verification method, and retrieval URI, provided the
+retrieval system preserves the receipt for the required retention period.
+
+### 10.6 Post-Commitment Lifecycle *(Level 3 conformance)*
+
+The post-commitment lifecycle begins after a session reaches `COMPLETED` and a
+transaction record is available. These messages are normative at Level 3
+conformance. They let parties distinguish a commitment that was fulfilled,
+acknowledged, disputed, or resolved after a neutral review.
+
+Post-commitment lifecycle statuses are tracked separately from the core A2CN
+session state. The underlying A2CN session remains `COMPLETED`; the lifecycle
+overlay records delivery, closure, dispute, and resolution status.
+
+```text
+COMPLETED
+    │
+    │ DELIVERY_NOTICE
+    ▼
+DELIVERY_NOTICE_RECORDED
+    │
+    ├─ DELIVERY_ACKNOWLEDGED accepted=true ───────────────▶ CLOSED
+    │
+    ├─ DELIVERY_ACKNOWLEDGED accepted=false ──────────────▶ DISPUTED
+    │
+    └─ DISPUTE_NOTICE ───────────────────────────────────▶ DISPUTED
+
+COMPLETED ── DISPUTE_NOTICE ─────────────────────────────▶ DISPUTED
+
+DISPUTED ── DISPUTE_RESOLVED ────────────────────────────▶ RESOLVED
+```
+
+All post-commitment messages MUST reference the `session_id` and
+`transaction_record_hash` of the agreed transaction record. Implementations MUST
+reject a post-commitment message whose `transaction_record_hash` does not match
+the locally generated transaction record hash for the session.
+
+#### 10.6.1 DELIVERY_NOTICE
+
+`DELIVERY_NOTICE` is sent by the seller or obligated delivery party to record
+delivery against a completed session.
+
+Normative fields:
+
+| Field | Requirement |
+| --- | --- |
+| `message_type` | MUST be `DELIVERY_NOTICE` |
+| `message_id` | Unique message identifier |
+| `session_id` | A2CN session being delivered against |
+| `transaction_record_hash` | Hash of the agreed transaction record |
+| `delivery_timestamp` | ISO 8601 timestamp when delivery occurred |
+| `delivery_reference` | Optional tracking number, purchase order reference, invoice reference, or other delivery identifier |
+| `notes` | Optional human-readable delivery notes |
+
+The corresponding JSON Schema is
+`spec/schemas/delivery_notice.schema.json`.
+
+#### 10.6.2 DELIVERY_ACKNOWLEDGED
+
+`DELIVERY_ACKNOWLEDGED` is sent by the buyer or delivery recipient in response
+to a `DELIVERY_NOTICE`.
+
+Normative fields:
+
+| Field | Requirement |
+| --- | --- |
+| `message_type` | MUST be `DELIVERY_ACKNOWLEDGED` |
+| `message_id` | Unique message identifier |
+| `session_id` | A2CN session being acknowledged |
+| `transaction_record_hash` | Hash of the agreed transaction record |
+| `delivery_notice_message_id` | `message_id` of the `DELIVERY_NOTICE` being acknowledged |
+| `acknowledgment_timestamp` | ISO 8601 timestamp of acknowledgment |
+| `accepted` | `true` closes the lifecycle as `CLOSED`; `false` moves the lifecycle to `DISPUTED` |
+| `notes` | Optional human-readable acknowledgment or rejection notes |
+
+An implementation MUST reject `DELIVERY_ACKNOWLEDGED` if the referenced
+`delivery_notice_message_id` does not match a recorded `DELIVERY_NOTICE` for the
+same session. The corresponding JSON Schema is
+`spec/schemas/delivery_acknowledged.schema.json`.
+
+#### 10.6.3 DISPUTE_NOTICE
+
+`DISPUTE_NOTICE` is sent by either party to open a post-commitment dispute. It
+MAY be sent directly after `COMPLETED` or after a `DELIVERY_NOTICE` /
+`DELIVERY_ACKNOWLEDGED accepted=false` path.
+
+Normative fields:
+
+| Field | Requirement |
+| --- | --- |
+| `message_type` | MUST be `DISPUTE_NOTICE` |
+| `message_id` | Unique message identifier |
+| `session_id` | A2CN session being disputed |
+| `transaction_record_hash` | Hash of the agreed transaction record |
+| `raised_by` | `buyer` or `seller` |
+| `dispute_type` | `non_delivery`, `wrong_quantity`, `quality`, `payment_failure`, `terms_violation`, or `other` |
+| `description` | Human-readable dispute description |
+| `dispute_timestamp` | ISO 8601 timestamp when the dispute was raised |
+| `evidence_references` | Optional list of document references, content hashes, or URLs supporting the dispute |
+| `resolution_requested` | Optional requested path: `renegotiate`, `cancel`, or `neutral_review` |
+
+Recording a valid `DISPUTE_NOTICE` moves the post-commitment lifecycle to
+`DISPUTED`. The corresponding JSON Schema is
+`spec/schemas/dispute_notice.schema.json`.
+
+#### 10.6.4 DISPUTE_RESOLVED
+
+`DISPUTE_RESOLVED` is sent by the neutral resolver, or by another resolver
+explicitly accepted by both parties, to record the outcome of a dispute opened
+by `DISPUTE_NOTICE`. This message closes the disputed post-commitment lifecycle.
+
+Normative fields:
+
+| Field | Requirement |
+| --- | --- |
+| `message_type` | MUST be `DISPUTE_RESOLVED` |
+| `message_id` | Unique message identifier |
+| `session_id` | A2CN session whose dispute is being resolved |
+| `transaction_record_hash` | Hash of the agreed transaction record |
+| `dispute_notice_message_id` | `message_id` of the `DISPUTE_NOTICE` being closed |
+| `resolution_outcome` | MUST be one of `buyer_prevails`, `seller_prevails`, or `mutual_settlement` |
+| `resolver_did` | DID of the neutral resolver |
+| `resolution_timestamp` | ISO 8601 timestamp when the resolution was issued |
+| `resolution_notes` | Optional human-readable explanation from the resolver |
+| `evidence_references` | Optional list of supporting evidence references for the ruling |
+
+An implementation MUST reject `DISPUTE_RESOLVED` unless the session has an open
+`DISPUTE_NOTICE` and the `dispute_notice_message_id` matches the recorded
+dispute notice for the same session. It MUST reject any `resolution_outcome`
+outside the enum above. The corresponding JSON Schema is
+`spec/schemas/dispute_resolved.schema.json`.
+
+#### 10.6.5 Concordia Composition
+
+A2CN's `DISPUTE_RESOLVED` message can compose with a Concordia fulfillment
+attestation. The A2CN message supplies the commercial dispute outcome and binds
+it to both the transaction record and the original dispute notice. Section 16.2
+documents the cross-protocol `references[]` relationship vocabulary and
+Concordia adapter reference for this composition.
 
 ---
 
@@ -1782,8 +2055,8 @@ only negotiate via A2CN if both have already adopted the protocol.
 
 Component 8 introduces a complementary push-based pattern. An inviting party
 (typically the buyer) sends a `SessionInvitation` message to a counterparty
-through any delivery channel — direct HTTP, email, the Meeting Place invitation
-service, or an existing procurement platform webhook. The receiving party
+through any delivery channel — direct HTTP, email, a neutral invitation relay,
+or an existing procurement platform webhook. The receiving party
 evaluates the invitation, optionally activates or provisions an A2CN endpoint,
 and responds with their endpoint details. The inviting party then proceeds with
 a standard `SessionInit` (Component 3).
@@ -1850,7 +2123,7 @@ so the recipient can verify its authenticity.
 | `accept_endpoint` | string | HTTPS URL to POST acceptance to |
 | `decline_endpoint` | string | HTTPS URL to POST decline to |
 | `inviter_verification_method` | string | Verification method ID used to sign the invitation |
-| `invitation_signature` | string | Base64url-encoded ES256 signature over the canonical invitation object |
+| `invitation_signature` | string | Base64url-encoded signature over the canonical invitation object |
 
 #### 11.2.2 Invitation Signature
 
@@ -1858,9 +2131,8 @@ The invitation MUST be signed before transmission. Signing procedure:
 
 1. Construct the invitation object with all required fields EXCEPT `invitation_signature`
 2. Serialize to canonical JSON using RFC 8785 JCS
-3. Compute SHA-256 hash of the canonical bytes
-4. Sign the hash with ES256 using the key identified by `inviter_verification_method`
-5. Base64url-encode the signature and set as `invitation_signature`
+3. Sign the canonical bytes using the signing suite identified by `inviter_verification_method`
+4. Base64url-encode the signature and set as `invitation_signature`
 
 Recipients MUST:
 1. Resolve the inviter's DID document to obtain the public key at `inviter_verification_method`
@@ -1949,10 +2221,10 @@ at least one of the following delivery channels:
 endpoint at the counterparty's domain. Appropriate when the counterparty has a
 known web presence but no A2CN endpoint yet.
 
-**Meeting Place Delivery:** The inviting party submits the `SessionInvitation`
-to the Meeting Place's invitation service, which delivers via the counterparty's
-preferred channel (email, webhook, or directly if they have a registered endpoint).
-The Meeting Place records the invitation and acceptance/decline for audit purposes.
+**Neutral Relay Delivery:** The inviting party submits the `SessionInvitation`
+to a neutral invitation relay, which delivers via the counterparty's preferred
+channel (email, webhook, or directly if they have a registered endpoint). The
+relay records the invitation and acceptance/decline for audit purposes.
 This is the RECOMMENDED delivery channel for counterparties without known A2CN
 endpoints.
 
@@ -1972,7 +2244,7 @@ When Fairmarkit initiates a sourcing event, for each invited supplier it:
 3. If the endpoint does not exist: delivers `SessionInvitation` via:
    - The `BID_CREATED` webhook (if the supplier has configured a webhook URL in Fairmarkit)
    - The Fairmarkit email invitation (with the `SessionInvitation` JSON as an attachment)
-   - The Meeting Place invitation service (if configured)
+   - A neutral invitation relay (if configured)
 
 The supplier's A2CN agent, upon receiving the `SessionInvitation`, responds to
 the `accept_endpoint`. Fairmarkit's buyer agent then sends a `SessionInit` to the
@@ -1980,24 +2252,26 @@ supplier's newly-activated endpoint. The resulting A2CN transaction record is
 submitted back to Fairmarkit via `POST /self-service/api/v3/responses/...` as the
 award data.
 
-### 11.6 Hosted Endpoint Provisioning (Meeting Place Pattern)
+### 11.6 Hosted Endpoint Provisioning (Neutral Provider Pattern)
 
-The Meeting Place MAY offer hosted A2CN endpoint provisioning to allow suppliers
-to participate in A2CN sessions without deploying their own server infrastructure.
-When a supplier accepts an invitation through the Meeting Place's interface:
+A neutral hosted endpoint provider MAY offer A2CN endpoint provisioning to allow
+suppliers to participate in A2CN sessions without deploying their own server
+infrastructure. When a supplier accepts an invitation through the provider's
+interface:
 
-1. The Meeting Place provisions a session-scoped A2CN endpoint on the supplier's behalf
+1. The provider provisions a session-scoped A2CN endpoint on the supplier's behalf
 2. The supplier configures negotiation parameters via a web interface: minimum acceptable
    price, maximum discount percentage, acceptable payment terms, delivery flexibility
-3. The Meeting Place's hosted agent conducts the session within these constraints
-4. The resulting transaction record notes `"hosted_endpoint": true` and `"hosted_by": "meeting-place.a2cn.dev"`
+3. The provider's hosted agent conducts the session within these constraints
+4. The resulting transaction record notes `"hosted_endpoint": true` and a
+   provider-controlled `"hosted_by"` identifier
 5. Both parties receive the standard dual-signed transaction record
 
-**Mandate for hosted endpoints:** The Meeting Place MUST generate a Tier 1
+**Mandate for hosted endpoints:** The hosted endpoint provider MUST generate a Tier 1
 (Declared) mandate scoped to the parameters the supplier has configured. The
 mandate's `max_commitment_value` MUST NOT exceed what the supplier explicitly
-authorized. The Meeting Place MUST NOT commit to terms outside the supplier's
-configured bounds.
+authorized. The provider MUST NOT commit to terms outside the supplier's configured
+bounds.
 
 Hosted endpoint sessions are fully interoperable with self-hosted A2CN endpoints.
 The buyer agent cannot distinguish a hosted endpoint from a self-hosted one
@@ -2051,7 +2325,8 @@ the message body's `message_id`) to implement idempotency per Section 6.1.
 Every request MUST include `Authorization: Bearer {jwt}`.
 
 JWT requirements:
-- Algorithm: ES256
+- Algorithm: ES256 by default; EdDSA/Ed25519 when the sender's session
+  verification method uses an Ed25519 key
 - `iss`: Sender's DID
 - `aud`: Receiver's DID
 - `iat`: Current Unix timestamp
@@ -2086,9 +2361,11 @@ document directly.
 | 429 | Rate limited |
 | 503 | DID resolution failure (temporary) |
 
-#### 11.1.6 Webhook Callbacks (RECOMMENDED)
+#### 11.1.6 Webhook Callbacks (RECOMMENDED; REQUIRED at Level 2)
 
 Implementations SHOULD support webhook callbacks to avoid polling overhead.
+Level 2 and Level 3 implementations MUST support webhook callbacks for terminal
+state transitions.
 
 SessionInit MAY include a `webhook_url` field in `metadata`:
 ```json
@@ -2100,11 +2377,33 @@ SessionInit MAY include a `webhook_url` field in `metadata`:
 If a `webhook_url` is provided, the receiving party SHOULD POST incoming messages
 to that URL in addition to making them available via the polling endpoint.
 
-Webhook POST requests MUST include the same `Authorization: Bearer {jwt}` header
-as standard A2CN requests. Webhook JWTs MUST have `iss` set to the webhook
-sender's DID and `aud` set to the webhook receiver's DID. Webhook receivers MUST
-resolve the sender's DID document and verify the JWT against the sender's declared
-`verification_method` before processing the callback.
+Webhook POST requests MUST be signed with a DID-key JWS over the exact request
+body hash. The sender computes `base64url(SHA-256(body_bytes))` over the HTTP
+request body bytes and signs that value with the private key corresponding to
+the sender's declared verification method. The JWS protected header MUST include
+`kid` set to the DID URL of the sender's verification method.
+
+Webhook POST requests MUST include these headers:
+
+| Header | Value |
+|--------|-------|
+| `X-A2CN-Timestamp` | ISO 8601 UTC timestamp for the delivery attempt |
+| `X-A2CN-Session-ID` | A2CN session identifier |
+| `X-A2CN-Event-Type` | Webhook event type |
+| `X-A2CN-Sender-DID` | Sender DID |
+| `X-A2CN-Sender-Verification-Method` | DID URL of the signing verification method |
+| `X-A2CN-Body-SHA256` | Base64url SHA-256 digest of the exact request body bytes |
+| `X-A2CN-Signature` | Compact JWS over `X-A2CN-Body-SHA256` |
+
+Webhook receivers MUST resolve the sender's DID document, locate the verification
+method referenced by `X-A2CN-Sender-Verification-Method`, verify that it is
+controlled by `X-A2CN-Sender-DID`, independently compute
+`base64url(SHA-256(received_body_bytes))` and compare it to
+`X-A2CN-Body-SHA256`, verify the compact JWS signature, and confirm the verified
+JWS payload matches the independently computed hash before processing the
+callback.
+The signing suite follows Section 13.4: ES256 by default, with EdDSA/Ed25519
+also accepted when the sender's verification method uses an Ed25519 key.
 
 Webhook delivery is best-effort. The polling endpoint remains the authoritative
 source. Implementations MUST NOT rely exclusively on webhooks.
@@ -2232,6 +2531,12 @@ limitation. Mitigations:
    security requirements SHOULD use a DID method other than `did:web` that
    provides stronger guarantees (e.g., `did:key` for read-only identities,
    or blockchain-anchored DIDs).
+
+**Signing suite agility.** A2CN implementations MUST accept EdDSA/Ed25519
+signed messages as an alternate to ES256. The signing suite is declared at
+session initiation by each party's `verification_method` and the corresponding
+DID document key material. A party's signing suite MUST remain consistent for
+the session lifetime unless the parties establish a new session.
 
 ### 13.5 Mandate Scope Enforcement
 
@@ -2632,6 +2937,109 @@ of these requirements.
 
 ---
 
+## 14. Human Approval and ApprovalReceipt Binding
+
+`AWAITING_HUMAN_APPROVAL` is the non-terminal pause state used when an
+Offer, Counteroffer, or Acceptance would exceed the acting party's mandate
+threshold for autonomous commitment.
+
+The threshold field is `requires_human_approval_above` on the acting party's
+mandate. When the proposed act crosses that threshold, the implementation MUST
+pause before transmitting the act and MUST enter `AWAITING_HUMAN_APPROVAL`.
+The party remains the turn holder while paused. A2CN does not define an outbound
+call to a human approval system; it defines the state name, the transition pair,
+and the receipt binding required to resume the session.
+
+### 14.1 ApprovalReceipt Artifact
+
+An ApprovalReceipt is an operator-side artifact that records a human approval
+decision. Concordia defines the receipt artifact shape; A2CN binds that receipt
+to an A2CN session and offer hash.
+
+An A2CN implementation MAY accept ApprovalReceipt artifacts from Concordia or
+from another approval system if the artifact is signed and contains equivalent
+fields. To leave `AWAITING_HUMAN_APPROVAL`, the receipt MUST:
+
+1. State an approval decision for the paused act
+2. Reference the A2CN session id
+3. Reference the paused offer's `protocol_act_hash`
+4. Reference the mandate that required approval
+5. Be signed by an operator-side key trusted by the mandate issuer
+6. Be unexpired at the time the paused act is transmitted
+
+Example:
+
+```json
+{
+  "artifact_type": "ApprovalReceipt",
+  "id": "urn:concordia:receipt:7f2e1a93",
+  "scope": {
+    "decision": "approve",
+    "offer_hash": "sha256:b4c1...e09f",
+    "amount": "150000.00 USD",
+    "threshold_crossed": "100000.00 USD"
+  },
+  "references": [
+    {
+      "type": "negotiation_session",
+      "id": "a2cn:session:9e4d2c11",
+      "relationship": "approves"
+    },
+    {
+      "type": "mandate",
+      "id": "a2cn:mandate:m-2026-04-19-0007",
+      "relationship": "fulfills"
+    }
+  ]
+}
+```
+
+### 14.2 Transition Semantics
+
+Entering `AWAITING_HUMAN_APPROVAL` is local to the party whose mandate requires
+approval. The counterparty may only observe the pause by polling session state,
+receiving an implementation-specific pending response, or timing out.
+
+While paused:
+
+- `current_turn` remains with the approving party
+- `round_number` does not change
+- `sequence_number` does not change
+- `latest_offer_id` and `latest_offer_hash` continue to reference the last
+  transmitted offer
+- `approval_pending_offer_id` and `approval_pending_offer_hash` identify the
+  paused act
+
+When a valid ApprovalReceipt is available, the implementation records
+`approval_receipt_id`, exits to `NEGOTIATING`, and transmits the paused act using
+the next valid `sequence_number`. If the paused act is an Acceptance, the normal
+Acceptance transition then moves the session to `COMPLETED`.
+
+If the ApprovalReceipt expires before the paused act is sent or accepted, the
+session MUST NOT terminate solely because of the receipt expiry. The session
+remains in or re-enters `AWAITING_HUMAN_APPROVAL` and requires a fresh receipt
+for the same offer hash or a new sub-threshold act.
+
+### 14.3 Audit Requirements
+
+Implementations that use `AWAITING_HUMAN_APPROVAL` MUST include the approval
+receipt id and paused offer hash in the audit log. The audit log SHOULD preserve
+enough information to answer:
+
+- Which offer crossed the threshold
+- Which threshold was crossed
+- Who approved the act, as represented by the receipt signature
+- When approval was granted
+- Which transmitted act consumed the approval
+
+This makes human oversight visible at the protocol layer without requiring A2CN
+to standardize the enterprise workflow behind the approval decision.
+
+For Article 14 (EU AI Act) evidence mapping and compliance export format, see
+Section 10.4 and 10.5.
+
+---
+
 ## 15. Open Questions
 
 Open questions carry stable IDs across versions. Resolved questions are marked
@@ -2644,16 +3052,19 @@ with their resolution version rather than being renumbered.
 | OQ-003 | DID resolver fallback when temporarily unavailable | Open | 24h cache allowed |
 | OQ-004 | Deal-type-specific terms schemas | **RESOLVED v0.2** | `goods_procurement` and `saas_renewal` schemas defined in Section 18 and `spec/schemas/terms/`. Additional types via extension pattern. |
 | OQ-005 | Configurable impasse threshold | **RESOLVED v0.2** | `impasse_threshold` field added to `session_params`. Default 3 consecutive rounds with no movement triggers IMPASSE state. Configurable 1–10. |
-| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; Meeting Place in v0.3 |
+| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; optional neutral third-party record custodian in v0.3 |
 | OQ-007 | Neutral transaction record storage (original) | **RESOLVED v0.1.1** | Bilateral storage correct for v0.1 |
 | OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED; promoted to REQUIRED at Level 2 in v0.2 |
 | OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
 | OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
-| OQ-011 | A2CN as A2A extension | Open | A2A's extension system supports profile extensions (DataPart schemas) and method extensions (new RPC methods). A2CN's offer exchange and session state machine could be implemented as an A2A extension. Proposal to A2A governance pending. |
+| OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
 | OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
-| OQ-013 | DID VC mandate for hosted endpoints | Open | When the Meeting Place hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the Meeting Place can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
-| OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.1** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.1. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
-| OQ-018 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending design partner validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
+| OQ-013 | DID VC mandate for hosted endpoints | Open | When a neutral hosted endpoint provider hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the provider can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
+| OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.1** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.1; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
+| OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
+| OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
+| OQ-020 | Mandate revocation signal | Open | Decide whether revocation is represented by a dedicated `MANDATE_REVOKED` message type or by absence of a fresh approval/mandate receipt. |
+| OQ-021 | UBL 2.1 invoice export | Open | Should the A2CN transaction record include a normative UBL 2.1 export method for ERP integration (SAP, Oracle Financials, Microsoft Dynamics 365)? Proposed: yes, as a non-normative reference implementation in v0.3, with normative status pending implementation validation. Rationale: enterprise procurement teams require ERP-compatible document output from completed negotiations. |
 
 Submit feedback via GitHub issues tagged `open-question`.
 
@@ -2720,8 +3131,76 @@ is capability negotiation (what features do you support), not commercial negotia
 
 A2CN's offer/counteroffer schema is a profile extension. A2CN's session state
 machine is a method extension. A2CN's discovery document fields map to data-only
-AgentCard extensions. A formal A2A extension proposal implementing A2CN as an A2A
-extension is pending with A2A governance (see OQ-011).
+AgentCard extensions. A2CN has defined a provisional extension URI while the
+formal A2A governance outcome is pending (see OQ-011).
+
+The A2CN A2A extension URI is:
+
+```text
+https://a2cn.io/extensions/commercial-negotiation/v1
+```
+
+Agents declare support for this extension in their AgentCard extension metadata.
+Agents that do not recognize the URI MUST ignore it gracefully and MAY continue
+ordinary A2A communication without invoking A2CN-specific methods or DataParts.
+
+Example AgentCard fragment:
+
+```json
+{
+  "extensions": [
+    {
+      "uri": "https://a2cn.io/extensions/commercial-negotiation/v1",
+      "required": false,
+      "params": {
+        "a2cn_discovery_url": "https://seller.example/.well-known/a2cn-agent",
+        "supported_deal_types": ["goods_procurement", "saas_renewal"],
+        "conformance_level": 2
+      }
+    }
+  ]
+}
+```
+
+**Three-protocol substrate split:** A2CN is scoped as one layer in a broader A2A
+commercial-negotiation substrate:
+
+| Protocol | Boundary |
+|----------|----------|
+| **A2CN** | Session establishment, mandate verification, commercial state machine, offer exchange, transaction records |
+| **Concordia** | Negotiation envelope, receipt format, fulfillment attestations, and cross-protocol `references[]` semantics |
+| **BidAngel** | Procurement payload semantics: opportunity, requirement, lot, evaluation criteria, and sourcing-event context |
+
+This split keeps A2CN from absorbing every procurement concept. A2CN decides
+whether a party is authorized to negotiate and records what the parties agreed
+to. BidAngel describes the procurement opportunity being negotiated. Concordia
+provides portable receipts and reference relationships that can bind A2CN,
+BidAngel, and adjacent protocols into one auditable negotiation graph.
+
+The starter relationship vocabulary for cross-protocol `references[]` entries is:
+
+| Relationship | Meaning |
+|--------------|---------|
+| `fulfills` | Artifact satisfies a mandate, requirement, or obligation |
+| `approves` | Artifact authorizes a paused or pending act |
+| `enforces` | Artifact applies a constraint, policy, or mandate boundary |
+| `rejects` | Artifact records refusal of a proposed act or requirement |
+| `satisfies` | Artifact meets a stated requirement without necessarily fulfilling a legal obligation |
+
+This vocabulary is being scoped for the A2A profile with Concordia and BidAngel.
+Implementations MUST preserve unknown `relationship` values as opaque strings
+when reading or forwarding `references[]`. Unknown relationship values MUST NOT
+be dropped, rewritten, or treated as authorization grants unless the
+implementation explicitly recognizes their semantics.
+
+**Concordia adapter composition:** A2CN's `DISPUTE_RESOLVED` message can compose
+with a Concordia fulfillment attestation. The A2CN message records the dispute
+resolution outcome and binds it to the transaction record; the Concordia artifact
+can then reference the A2CN session, transaction record, and dispute resolution
+as evidence that an obligation was fulfilled, rejected, or settled. Erik Newton's
+Concordia adapter for A2CN provides the reference shape for this composition; see
+the Concordia Protocol repository at
+https://github.com/eriknewton/concordia-protocol.
 
 **Precedent:** UCP (Universal Commerce Protocol) and AP2 (payment authorization)
 are both implemented as A2A extensions. The pattern is documented and supported.
@@ -2771,34 +3250,122 @@ Fairmarkit's developer API (developers.fairmarkit.com) exposes documented
 webhooks and REST endpoints that enable A2CN integration without requiring
 Fairmarkit platform changes.
 
-**Path A — A2CN as buyer outreach channel:**
-When Fairmarkit initiates a sourcing event, for each supplier it attempts
-discovery at `/.well-known/a2cn-agent`. For A2CN-capable suppliers, the
-buyer agent initiates an A2CN session instead of sending an email invitation.
-The A2CN transaction record's `agreed_terms` are submitted as the award
-via `POST /self-service/api/v3/responses/...`. The ERP writeBack flow is
-unchanged.
+**Path A — Shipped reference adapter: `BID_CREATED` webhook to A2CN session.**
+Fairmarkit fires a `BID_CREATED` webhook when a supplier is invited to a sourcing
+event. A supplier-side A2CN adapter can receive that webhook, translate the event
+payload into a `goods_procurement` terms object, and start or accept an A2CN
+session using Component 8 Session Invitation. This path is implemented in the
+Python reference implementation as `FairmakitEventParser`.
 
-**Path B — Supplier-side A2CN agent on Fairmarkit events:**
-Fairmarkit exposes a `BID_CREATED` webhook that fires when a supplier is
-invited to an event. A supplier with an A2CN-capable agent can configure this
-webhook to trigger the Session Invitation acceptance flow. The supplier agent
-processes the sourcing event data, responds to the inviting party's
-`accept_endpoint`, and negotiates via A2CN. The resulting terms are submitted
-to Fairmarkit via the existing response API.
+Reference implementation shape:
 
-**Data model mapping — Fairmarkit → A2CN `goods_procurement` terms:**
+```python
+from adapters.fairmarkit_adapter import FairmakitEventParser
+
+summary = FairmakitEventParser.parse_bid_created_webhook(payload)
+terms = FairmakitEventParser.bid_created_to_goods_procurement_terms(payload)
+```
+
+The `summary` object is suitable for
+`SessionInvitation.proposed_terms_summary`. The `terms` object is suitable for
+an A2CN `goods_procurement` Offer.
+
+**Path B — A2CN agreement to Fairmarkit response payload.**
+After an A2CN session reaches `COMPLETED`, the adapter can translate the
+transaction record's `agreed_terms` into Fairmarkit's response submission shape.
+The reference implementation performs the data conversion only; production
+integrations are responsible for authentication, idempotency, and POST delivery
+to Fairmarkit's response API.
+
+```python
+response = FairmakitEventParser.terms_to_fairmarkit_response(
+    agreed_terms,
+    session_id=session_id,
+    request_id=fairmarkit_request_id,
+)
+```
+
+The response payload is designed for submission to:
+
+```text
+POST /self-service/api/v3/responses/request/{request_id}/
+```
+
+**Optional direct-discovery path.**
+When a buyer-side Fairmarkit integration has the supplier's domain, it MAY first
+attempt A2CN discovery at `https://{supplier-domain}/.well-known/a2cn-agent`. If
+the supplier is A2CN-capable, the buyer-side agent can initiate a standard A2CN
+session directly. If discovery fails, the integration can fall back to the
+Fairmarkit `BID_CREATED` webhook path above.
+
+**Data model mapping — Fairmarkit `BID_CREATED` → A2CN `goods_procurement`:**
 
 | Fairmarkit field | A2CN `goods_procurement` terms field |
 |-----------------|--------------------------------------|
-| Line item description | `line_items[].description` |
-| Quantity | `line_items[].quantity` |
-| Unit of measure (UOM) | `line_items[].unit_of_measure` |
-| Unit price | `line_items[].unit_price` |
-| Delivery days | `delivery_days` |
-| MFG part number | `line_items[].manufacturer_part_number` |
-| Internal part number | `line_items[].internal_part_number` |
-| Benchmark price | Not transmitted (internal buyer reference) |
+| `request_id` | `fairmarkit_request_id` in `proposed_terms_summary`; `request_id` in response payload |
+| `deadline` | `proposed_terms_summary.deadline` |
+| `items[].description` | `line_items[].description` |
+| `items[].quantity` | `line_items[].quantity` |
+| `items[].uom` | `line_items[].unit_of_measure` |
+| `items[].unit_price` | `line_items[].unit_price` in cents |
+| `items[].mfg_part_number` | `line_items[].manufacturer_part_number` |
+| `items[].internal_part_number` | `line_items[].internal_part_number` |
+| Computed sum of line items | `total_value` in cents |
+| Delivery requirement, if supplied by integration | `delivery_days`; reference default is 14 |
+| Payment terms, if supplied by integration | `payment_terms.net_days`; reference default is 30 |
+| Benchmark price | Not transmitted; internal buyer reference |
+
+**A2CN `goods_procurement` → Fairmarkit response payload:**
+
+| A2CN `agreed_terms` field | Fairmarkit response field |
+|--------------------------|---------------------------|
+| `line_items[].description` | `items[].description` |
+| `line_items[].quantity` | `items[].quantity` |
+| `line_items[].unit_price` in cents | `items[].unit_price` as decimal currency units |
+| `line_items[].total` in cents | `items[].total_price` as decimal currency units |
+| `line_items[].unit_of_measure` | `items[].uom` |
+| `line_items[].manufacturer_part_number` | `items[].manufacturer_part_number` |
+| `line_items[].internal_part_number` | `items[].internal_part_number` |
+| `total_value` in cents | `total_price` as decimal currency units |
+| `currency` | `currency` |
+| `payment_terms.net_days` | `payment_terms`, formatted as `Net {n}` |
+| `delivery_days` | `delivery_days` and `items[].delivery_days` |
+| A2CN session id | `a2cn_session_id` and response `notes` |
+
+**Discovery document for a Fairmarkit-hosted or Fairmarkit-adjacent A2CN endpoint:**
+
+```json
+{
+  "a2cn_version": "0.2",
+  "agent_did": "did:web:supplier.example",
+  "conformance_level": 2,
+  "deal_types": ["goods_procurement"],
+  "mandate_methods": ["declared"],
+  "endpoint": "https://supplier.example/a2cn",
+  "agent_id": "supplier-fairmarkit-a2cn-agent",
+  "verification_method": "did:web:supplier.example#key-1",
+  "platform_integrations": [
+    {
+      "platform": "fairmarkit",
+      "event_types": ["BID_CREATED"],
+      "response_endpoint": "/self-service/api/v3/responses/request/{request_id}/"
+    }
+  ]
+}
+```
+
+The `platform_integrations` array is non-normative metadata. It helps operators
+document how a hosted or adjacent endpoint is wired, but it is not required for
+A2CN discovery validation. The trust anchor remains the DID document referenced
+by `agent_did` and `verification_method`.
+
+**Coupa ecosystem note.**
+Fairmarkit deployments often sit inside broader Coupa procurement estates through
+marketplace or platform integrations. A2CN implementations SHOULD bind to the
+Fairmarkit webhook and response API boundary rather than to Coupa-internal object
+models. If a Coupa or ERP identifier is forwarded in a Fairmarkit payload, the
+adapter MAY preserve it as an opaque reference, but MUST NOT treat it as an A2CN
+authorization grant.
 
 ### 16.5 AP2
 
@@ -2845,7 +3412,7 @@ Keelvar is an AI-powered strategic sourcing platform. Keelvar fires a
 `SOURCING_EVENTS_FEED_UPDATED` webhook when a new sourcing event becomes
 available to a supplier.
 
-**Path B — Supplier-side A2CN agent on Keelvar events (zero platform changes):**
+**Supplier-side webhook path — A2CN agent on Keelvar events (zero platform changes):**
 When Keelvar posts a `SOURCING_EVENTS_FEED_UPDATED` webhook, a supplier's A2CN
 agent translates the event into A2CN `goods_procurement` terms and initiates or
 accepts an A2CN session. On completion, the agreed terms are translated back into
@@ -2899,7 +3466,7 @@ Cursor) and HTTP/SSE transport (LangGraph, remote agent frameworks).
 
 **Configuration:** Agent identity (DID, org name, max commitment) is set via
 environment variables. The server generates and publishes a DID document on
-startup. Authentication uses ES256 JWT Bearer tokens with anti-replay protection.
+startup. Authentication uses DID-key JWT Bearer tokens with anti-replay protection.
 
 MCP configuration template: `mcp_server_config.json`.
 Reference: Section 16.1 (MCP protocol relationship), `mcp_server.py`.
@@ -2910,15 +3477,16 @@ The following platforms are expected to interact with A2CN agents as the
 ecosystem matures:
 
 **SAP Ariba / SAP Business Network:** Dominant enterprise procurement platform.
-A2CN agents operating as suppliers on Ariba events follow the same Path B pattern
-as Fairmarkit and Keelvar — webhook triggers A2CN session, agreed terms submitted
-via Ariba response API. No Ariba platform changes required for supplier-side agents.
+A2CN agents operating as suppliers on Ariba events follow the same supplier-side
+webhook pattern as Fairmarkit and Keelvar — webhook triggers A2CN session, agreed
+terms submitted via Ariba response API. No Ariba platform changes required for
+supplier-side agents.
 
-**Coupa:** Coupa's supplier portal exposes event webhooks. Path B integration
-follows identical pattern to Fairmarkit and Keelvar.
+**Coupa:** Coupa's supplier portal exposes event webhooks. Supplier-side webhook
+integration follows the same pattern as Fairmarkit and Keelvar.
 
 **Ivalua:** Ivalua's API-first architecture supports webhook-triggered A2CN
-integration using the same Path B pattern.
+integration using the same supplier-side pattern.
 
 **LangGraph / LangChain:** LangGraph multi-agent workflows can host A2CN agents
 using the MCP HTTP transport (Section 16.12). LangGraph state machines map
@@ -2948,9 +3516,10 @@ A software system is a **conformant A2CN implementation** if it:
 6. Generates protocol act signatures per Section 7.3 using RFC 8785 JCS
 7. Generates transaction records per Section 9
 8. Generates audit logs per Section 10
-9. Implements all error codes from Section 12
-10. Passes the A2CN conformance test suite at `spec/conformance-tests/`
-11. Produces messages that validate against the normative JSON Schemas at
+9. Implements `AWAITING_HUMAN_APPROVAL` when mandate thresholds require human approval (Section 14)
+10. Implements all error codes from Section 12
+11. Passes the A2CN conformance test suite at `spec/conformance-tests/`
+12. Produces messages that validate against the normative JSON Schemas at
     `spec/schemas/`
 
 ### 16.2 Conformance Levels
@@ -2961,7 +3530,7 @@ for any conformant implementation.
 
 **Level 1 — Core:** Discovery, session initiation, offer exchange with full
 protocol act signing, session state machine, turn-taking, idempotency, and
-compliance with all MUST requirements in Sections 3–13. Declared mandates only.
+compliance with all MUST requirements in Sections 3–14. Declared mandates only.
 DID VC mandate verification is not required at Level 1.
 
 **Level 2 — Full:** All Level 1 requirements, plus DID VC mandate verification
@@ -2971,8 +3540,9 @@ promoted from RECOMMENDED to REQUIRED at Level 2 in v0.2.
 
 **Level 3 — Extended:** All Level 2 requirements, plus Session Invitation support
 (Component 8, Section 11), impasse detection (Section 8.7), MESO terms support
-(Section 7.2.3), hosted endpoint provisioning (Section 11.6), and all RECOMMENDED
-behaviors throughout the specification.
+(Section 7.2.3), ApprovalReceipt binding for human approval pauses (Section 14),
+post-commitment lifecycle messages (Section 10.6), hosted endpoint provisioning
+(Section 11.6), and all RECOMMENDED behaviors throughout the specification.
 
 Implementations MUST declare their conformance level in their discovery document
 using the field `"conformance_level": 1 | 2 | 3`. This field is REQUIRED.
@@ -3017,6 +3587,76 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-05-20 — DID-key JWS webhook signing
+
+- Section 11.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
+  instead of HMAC-SHA256/shared-secret signed.
+- Webhook signature headers now include sender DID, sender verification method,
+  body hash, and compact JWS over the body hash.
+
+### Patch 2026-05-20 — Ed25519 alternate signing suite
+
+- Section 13.4 updated to require EdDSA/Ed25519 acceptance alongside ES256,
+  with signing suite selection bound to the session-initiation verification
+  method and held consistent for the session lifetime.
+
+### Patch 2026-05-20 — Fairmarkit integration pattern documentation
+
+- Section 16.4 expanded to align with the shipped `FairmakitEventParser`
+  reference adapter.
+- Documented the `BID_CREATED` webhook to A2CN `goods_procurement` mapping,
+  A2CN `agreed_terms` to Fairmarkit response payload mapping, optional direct
+  discovery path, and non-normative discovery metadata for Fairmarkit-adjacent
+  endpoints.
+- Added Coupa ecosystem guidance: integrations bind to the Fairmarkit webhook
+  and response API boundary, and preserve any Coupa/ERP identifiers only as
+  opaque references.
+
+### Patch 2026-05-19 — Post-commitment lifecycle documentation
+
+- Section 10.6 added: documents the Level 3 post-commitment lifecycle from
+  `DELIVERY_NOTICE` through `DELIVERY_ACKNOWLEDGED`, `DISPUTE_NOTICE`, and
+  `DISPUTE_RESOLVED`.
+- `DISPUTE_RESOLVED` fields documented normatively, including
+  `transaction_record_hash`, `dispute_notice_message_id`, `resolution_outcome`,
+  `resolver_did`, and `resolution_timestamp`.
+- OQ-017 updated to point to the normative Section 10.6 lifecycle definition.
+- Concordia composition cross-reference added for `DISPUTE_RESOLVED`.
+
+### Patch 2026-05-19 — EU AI Act Article 14 oversight mapping
+
+- Section 10.4 added: maps Article 14 human oversight requirements to A2CN
+  protocol artifacts (`AWAITING_HUMAN_APPROVAL`, `requires_human_approval_above`,
+  `human_approval_receipts`, `negotiation_log`, session endpoints).
+- Section 10.5 added: defines a compliance export package shape for regulator,
+  auditor, and enterprise governance review.
+- Section 14.3 updated: cross-reference to Sections 10.4 and 10.5.
+- Does not classify any deployment as high-risk; legal determination is
+  explicitly left to deploying organizations.
+
+### Patch 2026-05-18 — A2A extension URI and substrate split
+
+- Section 16.2 now defines the A2CN A2A extension URI:
+  `https://a2cn.io/extensions/commercial-negotiation/v1`.
+- Added AgentCard extension declaration example.
+- Documented the A2CN / Concordia / BidAngel substrate split.
+- Added starter cross-protocol `references[]` relationship vocabulary and
+  forward-compatibility rule for unknown relationship values.
+- Documented `DISPUTE_RESOLVED` composition with Concordia fulfillment
+  attestations.
+- Updated OQ-011 status to reflect the scoped URI/profile while governance
+  outcome remains pending.
+
+### Patch 2026-05-17 — Human approval pause state
+
+- Section 8 state machine updated with non-terminal
+  `AWAITING_HUMAN_APPROVAL`.
+- Section 14 added to bind ApprovalReceipt artifacts to A2CN sessions and
+  paused offer hashes.
+- Audit log metadata extended with optional approval receipt references.
+- Open questions OQ-018/OQ-019/OQ-020 added for approval expiry, threshold
+  shape, and mandate revocation signaling.
 
 ### v0.2.0 (2026-04-08) — Section 13.9 LLM integration patterns
 
@@ -3095,8 +3735,8 @@ barrier in the pull-based discovery model. Key additions:
   specification, and lifecycle (PENDING → ACCEPTED/DECLINED/EXPIRED)
 - `InvitationAcceptance` and `InvitationDecline` message types
 - Invitation signature procedure using RFC 8785 JCS + ES256
-- Three delivery channels defined: Direct HTTP, Meeting Place, Platform Webhook
-- Meeting Place hosted endpoint provisioning pattern (supplier participates
+- Three delivery channels defined: Direct HTTP, Neutral Relay, Platform Webhook
+- Neutral hosted endpoint provisioning pattern (supplier participates
   in A2CN sessions without deploying their own server)
 - Fairmarkit integration pattern documented as normative example:
   `BID_CREATED` webhook triggers Session Invitation acceptance; A2CN session
@@ -3161,7 +3801,7 @@ Sections substantially rewritten and expanded with concrete integration patterns
   Pactum-style bundle negotiations
 - OQ-011: A2CN as A2A extension — formal proposal filed, outcome pending
 - OQ-012: Multi-party invitation for reverse auction contexts
-- OQ-013: DID VC mandate for Meeting Place hosted endpoints
+- OQ-013: DID VC mandate for neutral hosted endpoints
 
 **Introduction updated:**
 

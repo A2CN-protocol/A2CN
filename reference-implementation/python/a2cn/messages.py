@@ -515,7 +515,7 @@ INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# v0.3 planned: Post-commitment lifecycle (OQ-017)
+# v0.2.1: Post-commitment lifecycle (OQ-017 resolved; Level 3 conformance)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -590,8 +590,8 @@ class DisputeNoticeMessage:
     committed or delivered session. Freezes further automated processing
     and anchors the dispute to the agreed transaction record.
 
-    Disputes should be routed to a neutral resolver. Meeting Place
-    provides neutral evidence custody and dispute resolution as an
+    Disputes should be routed to a neutral resolver. A neutral third-party
+    custodian may provide evidence custody and dispute resolution as an
     optional hosted service.
     """
     message_id: str

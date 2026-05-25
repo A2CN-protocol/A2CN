@@ -1,11 +1,27 @@
 """Tests for a2cn.server — FastAPI endpoints."""
 
 import uuid
+import httpx
 import pytest
 import pytest_asyncio
+import respx
 
-from a2cn.crypto import hash_object
-from tests.conftest import make_session_init, INITIATOR_DID, RESPONDER_DID
+from a2cn.crypto import (
+    create_jwt,
+    generate_ed25519_keypair,
+    generate_keypair,
+    hash_bytes,
+    hash_object,
+    public_key_to_jwk,
+    verify_jws,
+)
+from tests.conftest import (
+    INITIATOR_DID,
+    RESPONDER_DID,
+    SERVER_DID,
+    make_did_document,
+    make_session_init,
+)
 
 A2CN_CT = "application/a2cn+json"
 HEADERS = {"Content-Type": A2CN_CT, "Idempotency-Key": "placeholder"}
@@ -43,6 +59,34 @@ async def test_session_init_returns_201(test_client):
     assert data["message_type"] == "session_ack"
     assert "session_id" in data
     assert data["current_turn"] == "initiator"
+
+
+@pytest.mark.asyncio
+async def test_session_init_accepts_ed25519_jwt(raw_test_client):
+    import a2cn.server as server_module
+
+    priv, pub = generate_ed25519_keypair()
+    server_module.register_did_document(
+        INITIATOR_DID,
+        make_did_document(INITIATOR_DID, "ed25519-1", public_key_to_jwk(pub)),
+    )
+
+    body = make_session_init()
+    body["initiator"]["verification_method"] = f"{INITIATOR_DID}#ed25519-1"
+    token = create_jwt(
+        INITIATOR_DID,
+        SERVER_DID,
+        priv,
+        kid=f"{INITIATOR_DID}#ed25519-1",
+        exp_seconds=3600,
+    )
+    headers = init_headers(body["message_id"])
+    headers["Authorization"] = f"Bearer {token}"
+
+    r = await raw_test_client.post("/sessions", json=body, headers=headers)
+
+    assert r.status_code == 201
+    assert r.json()["current_turn"] == "initiator"
 
 
 @pytest.mark.asyncio
@@ -113,6 +157,56 @@ async def test_get_session_not_found(test_client):
 
 
 # ---------------------------------------------------------------------------
+# Webhook delivery
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_deliver_webhook_uses_did_key_jws_signature():
+    import jwt as pyjwt
+    from a2cn.server import deliver_webhook
+
+    priv, pub = generate_keypair()
+    route = respx.post("https://receiver.example/a2cn/callbacks").mock(
+        return_value=httpx.Response(204)
+    )
+    payload = {
+        "event_type": "session.completed",
+        "session_id": "session-123",
+        "occurred_at": "2026-05-20T05:00:00Z",
+        "session_state": "COMPLETED",
+        "terminal": True,
+        "a2cn_version": "0.2",
+    }
+
+    await deliver_webhook(
+        "https://receiver.example/a2cn/callbacks",
+        "session.completed",
+        "session-123",
+        payload,
+        {"max_retries": 1},
+        sender_did=INITIATOR_DID,
+        sender_verification_method=f"{INITIATOR_DID}#key-1",
+        private_key=priv,
+    )
+
+    assert route.called
+    request = route.calls[0].request
+    body_hash = hash_bytes(request.content)
+
+    assert request.headers["X-A2CN-Sender-DID"] == INITIATOR_DID
+    assert (
+        request.headers["X-A2CN-Sender-Verification-Method"]
+        == f"{INITIATOR_DID}#key-1"
+    )
+    assert request.headers["X-A2CN-Body-SHA256"] == body_hash
+    signature_header = pyjwt.get_unverified_header(request.headers["X-A2CN-Signature"])
+    assert signature_header["alg"] == "ES256"
+    assert signature_header["kid"] == f"{INITIATOR_DID}#key-1"
+    assert verify_jws(request.headers["X-A2CN-Signature"], pub) == body_hash
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions/{session_id}/messages
 # ---------------------------------------------------------------------------
 
@@ -173,11 +267,11 @@ async def test_send_offer_succeeds(test_client):
 
 
 @pytest.mark.asyncio
-async def test_not_your_turn(test_client):
+async def test_not_your_turn(test_client, responder_test_client):
     session_id = await _create_session(test_client)
     # Responder tries to send before initiator
     offer = _make_offer_msg(session_id, 1, 1, RESPONDER_DID)
-    r = await test_client.post(
+    r = await responder_test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
         headers=init_headers(offer["message_id"]),
@@ -207,6 +301,53 @@ async def test_message_idempotency(test_client):
     r1 = await test_client.post(f"/sessions/{session_id}/messages", json=offer, headers=h)
     r2 = await test_client.post(f"/sessions/{session_id}/messages", json=offer, headers=h)
     assert r1.json() == r2.json()
+
+
+@pytest.mark.asyncio
+async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client):
+    body = make_session_init()
+    body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000
+    r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
+    session_id = r.json()["session_id"]
+
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID)
+    offer_r = await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=offer,
+        headers=init_headers(offer["message_id"]),
+    )
+    assert offer_r.status_code == 200
+    assert offer_r.json()["state"] == "AWAITING_HUMAN_APPROVAL"
+
+    receipt = {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:test",
+        "scope": {
+            "decision": "approve",
+            "offer_hash": offer["protocol_act_hash"],
+            "amount": "95000.00 USD",
+            "threshold_crossed": "90000.00 USD",
+        },
+        "references": [
+            {
+                "type": "negotiation_session",
+                "id": f"a2cn:session:{session_id}",
+                "relationship": "approves",
+            }
+        ],
+        "approver_did": INITIATOR_DID,
+        "expires_at": "2030-01-01T00:00:00Z",
+    }
+    receipt_r = await test_client.post(
+        f"/sessions/{session_id}/approval-receipt",
+        json=receipt,
+        headers=init_headers("approval-receipt-test"),
+    )
+
+    assert receipt_r.status_code == 200
+    assert receipt_r.json()["state"] == "NEGOTIATING"
+    assert receipt_r.json()["current_turn"] == "responder"
+    assert receipt_r.json()["approval_receipt_id"] == "urn:concordia:receipt:test"
 
 
 # ---------------------------------------------------------------------------

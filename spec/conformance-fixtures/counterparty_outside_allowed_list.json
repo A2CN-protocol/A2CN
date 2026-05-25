@@ -1,0 +1,19 @@
+{
+  "id": "counterparty_outside_allowed_list",
+  "status": "active",
+  "summary": "Session initiation is rejected when the counterparty DID is outside the mandate allow-list.",
+  "given": {
+    "initiator_did": "did:web:unknown-buyer.example",
+    "responder_mandate": {
+      "mandate_type": "declared",
+      "allowed_counterparties": [
+        "did:web:approved-buyer.example"
+      ]
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "MANDATE_INVALID",
+    "reason": "Counterparty DID is not listed in allowed_counterparties."
+  }
+}

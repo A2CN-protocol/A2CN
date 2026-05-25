@@ -42,10 +42,10 @@ Strict turn-taking, strict sequence ordering, impasse detection. States: `PENDIN
 Both parties independently generate an identical record after acceptance. Determinism: `record_id` = UUID v5, `generated_at` = Acceptance timestamp, `record_hash` = SHA-256(JCS(record)).
 
 ### 7 — Audit log
-Structured compliance trace for all terminal states. EU AI Act structured export available via Meeting Place (v0.3).
+Structured compliance trace for all terminal states. EU AI Act structured export can compose with a neutral third-party record custodian.
 
 ### 8 — Session Invitation *(v0.2)*
-Push-based pre-session handshake. Buyer creates a signed `SessionInvitation`, delivers via webhook/HTTP/Meeting Place. Supplier validates ES256 signature, accepts, provides their endpoint. Buyer proceeds with standard `SessionInit`. Includes hosted endpoint provisioning pattern for suppliers without their own server.
+Push-based pre-session handshake. Buyer creates a signed `SessionInvitation`, delivers via webhook/HTTP/neutral invitation relay. Supplier validates ES256 signature, accepts, provides their endpoint. Buyer proceeds with standard `SessionInit`. Includes hosted endpoint provisioning pattern for suppliers without their own server.
 
 ---
 
@@ -69,7 +69,7 @@ Protocol act signing is required at **all levels**.
 | **Salesforce Revenue Cloud** | `/connect/pricing/...` → offer terms; agreed terms → `/connect/qoc/sales-transactions` |
 | **Microsoft Dynamics 365** | `api_invoke_action: NegotiationResponseCalculator` via ERP MCP Server |
 | **Luminance** | A2CN transaction record → contract formalization input |
-| **A2A** | A2CN as A2A profile/method extension (OQ-011, proposal filed) |
+| **A2A** | A2CN extension URI `https://a2cn.io/extensions/commercial-negotiation/v1`; A2CN / Concordia / BidAngel substrate split |
 | **AP2** | A2CN transaction record → AP2 Intent Mandate |
 
 ---
@@ -83,7 +83,7 @@ Protocol act signing is required at **all levels**.
 | OQ-005 | Impasse threshold | **RESOLVED v0.2** |
 | OQ-009 | Platform DID proxy model | Open |
 | OQ-010 | MESO offers | Open |
-| OQ-011 | A2CN as A2A extension | Open — proposal filed |
+| OQ-011 | A2CN as A2A extension | Open — profile scoped |
 | OQ-012 | Multi-party invitation | Open |
 
 [→ GitHub issues tagged `open-question`](https://github.com/A2CN-protocol/A2CN/issues)
