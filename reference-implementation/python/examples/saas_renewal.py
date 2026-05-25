@@ -97,8 +97,9 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
     # -----------------------------------------------------------------------
     # 1. Configure and start the responder (Acme / seller side)
     # -----------------------------------------------------------------------
-    from a2cn.crypto import generate_keypair, public_key_to_jwk
-    from a2cn.server import app, configure_responder, manager
+    from a2cn.crypto import generate_keypair, public_key_to_jwk, create_jwt
+    import a2cn.server as server_module
+    from a2cn.server import app, configure_responder, manager, register_did_document
     from a2cn.client import A2CNClient
     from a2cn.record import generate_transaction_record
 
@@ -110,6 +111,7 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
     # Generate keys for both parties (Week 2 will use real DID-resolved keys)
     acme_priv, acme_pub = generate_keypair()
     techcorp_priv, techcorp_pub = generate_keypair()
+    server_module.SERVER_DID = "did:web:localhost"
 
     acme_agent_info = {
         "organization_name": "Acme Corp",
@@ -136,7 +138,57 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
         "mandate": acme_mandate,
         "deal_types": ["saas_renewal", "services_contract", deal_type],
         "max_rounds_by_deal_type": {deal_type: 5},
+        "private_key": acme_priv,
     })
+
+    techcorp_did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": TECHCORP_DID,
+        "verificationMethod": [
+            {
+                "id": f"{TECHCORP_DID}#key-1",
+                "type": "JsonWebKey2020",
+                "controller": TECHCORP_DID,
+                "publicKeyJwk": public_key_to_jwk(techcorp_pub),
+            }
+        ],
+        "authentication": [f"{TECHCORP_DID}#key-1"],
+        "assertionMethod": [f"{TECHCORP_DID}#key-1"],
+    }
+    acme_did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": ACME_DID,
+        "verificationMethod": [
+            {
+                "id": f"{ACME_DID}#key-2026-01",
+                "type": "JsonWebKey2020",
+                "controller": ACME_DID,
+                "publicKeyJwk": public_key_to_jwk(acme_pub),
+            }
+        ],
+        "authentication": [f"{ACME_DID}#key-2026-01"],
+        "assertionMethod": [f"{ACME_DID}#key-2026-01"],
+    }
+    register_did_document(TECHCORP_DID, techcorp_did_doc)
+    register_did_document(ACME_DID, acme_did_doc)
+
+    class _DemoAuth(httpx.Auth):
+        def auth_flow(self, request):
+            token = create_jwt(
+                TECHCORP_DID,
+                server_module.SERVER_DID,
+                techcorp_priv,
+                kid=f"{TECHCORP_DID}#key-1",
+                exp_seconds=300,
+            )
+            request.headers["Authorization"] = f"Bearer {token}"
+            yield request
 
     # Start server in background thread
     server_thread = threading.Thread(target=start_server, args=(app, SELLER_PORT), daemon=True)
@@ -146,7 +198,7 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
     # -----------------------------------------------------------------------
     # 2. Initiator (TechCorp / buyer side) fetches discovery
     # -----------------------------------------------------------------------
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(auth=_DemoAuth()) as http:
         # Serve discovery document from the server itself for this demo
         # (in production this would be fetched from the seller's domain)
         techcorp_agent_info = {
@@ -259,7 +311,7 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
             exp = _now_fixed(900)
             msg_id = __import__("uuid").uuid4().__str__()
             act = {
-                "protocol_version": "0.1",
+                "protocol_version": "0.2",
                 "session_id": sess_id,
                 "round_number": rnd,
                 "sequence_number": seq,
