@@ -66,6 +66,7 @@ class TestVendrPricingToA2CNTerms:
         assert benchmark["low"] == 8_500_000
         assert benchmark["median"] == 9_500_000
         assert benchmark["high"] == 11_000_000
+        assert terms["custom_terms"]["vendr"]["source"] == "vendr_mcp"
 
     def test_percentage_discount_values_are_supported(self):
         pricing = {
@@ -79,6 +80,18 @@ class TestVendrPricingToA2CNTerms:
 
         assert terms["line_items"][0]["unit_price"] == 85_000
         assert terms["total_value"] == 850_000
+
+    def test_flat_observed_discount_field_is_supported(self):
+        terms = vendr_pricing_to_a2cn_terms({
+            "product": "AI Contract Review",
+            "list_price": 2000.0,
+            "seat_count": 5,
+            "observed_discount": 0.25,
+        })
+
+        assert terms["line_items"][0]["unit_price"] == 150_000
+        assert terms["total_value"] == 750_000
+        assert terms["custom_terms"]["vendr"]["observed_discount"] == 0.25
 
     def test_missing_seat_count_defaults_to_one_valid_seat(self):
         terms = vendr_pricing_to_a2cn_terms({"list_price": 500.0})
@@ -122,6 +135,17 @@ class TestVendrWebhookParser:
         assert VendrWebhookParser.verify_webhook_signature(
             body,
             f"sha256={digest}",
+            secret,
+        )
+
+    def test_webhook_signature_accepts_v1_prefixed_digest(self):
+        body = webhook_body_for_signature(SAMPLE_VENDR_WEBHOOK)
+        secret = "vendr-secret"
+        digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
+        assert VendrWebhookParser.verify_webhook_signature(
+            body,
+            f"v1={digest}",
             secret,
         )
 
