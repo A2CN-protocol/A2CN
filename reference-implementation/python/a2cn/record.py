@@ -103,6 +103,9 @@ def generate_transaction_record(session: Session) -> dict:
         "final_acceptance": {
             "message_id": final_acceptance.get("message_id", ""),
             "sender_did": final_acceptance.get("sender_did", ""),
+            "round_number": final_acceptance.get("round_number"),
+            "sequence_number": final_acceptance.get("sequence_number"),
+            "accepted_offer_id": final_acceptance.get("accepted_offer_id", ""),
             "accepted_protocol_act_hash": final_acceptance.get("accepted_protocol_act_hash", ""),
             "acceptance_signature": final_acceptance.get("acceptance_signature", ""),
         },
@@ -166,6 +169,13 @@ def verify_transaction_record(
             record,
             did=final_acceptance["sender_did"],
             signature=final_acceptance["acceptance_signature"],
+            expected_payload=hash_object({
+                "session_id": record["session_id"],
+                "round_number": final_acceptance["round_number"],
+                "sequence_number": final_acceptance["sequence_number"],
+                "accepted_offer_id": final_acceptance["accepted_offer_id"],
+                "accepted_protocol_act_hash": accepted_hash,
+            }),
         ):
             return False
 

@@ -82,30 +82,44 @@ def _make_session():
     return manager, session, did_documents
 
 
-def _offer(session_id: str) -> dict:
+def _offer(
+    session_id: str,
+    *,
+    sender_did: str = INITIATOR_DID,
+    sequence_number: int = 1,
+    round_number: int = 1,
+    message_type: str = "offer",
+    message_id: str = "offer-1",
+    in_reply_to: str | None = None,
+) -> dict:
     timestamp = "2026-03-24T10:01:00Z"
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
         "protocol_version": "0.2",
         "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 1,
-        "message_type": "offer",
-        "sender_did": INITIATOR_DID,
+        "round_number": round_number,
+        "sequence_number": sequence_number,
+        "message_type": message_type,
+        "sender_did": sender_did,
         "timestamp": timestamp,
         "expires_at": expires_at,
         "terms": terms,
     }
     protocol_act_hash = hash_object(protocol_act)
-    verification_method = f"{INITIATOR_DID}#key-1"
-    return {
-        "message_type": "offer",
-        "message_id": "offer-1",
+    if sender_did == INITIATOR_DID:
+        private_key = INITIATOR_PRIVATE_KEY
+        verification_method = f"{INITIATOR_DID}#key-1"
+    else:
+        private_key = RESPONDER_PRIVATE_KEY
+        verification_method = f"{RESPONDER_DID}#key-2026-01"
+    offer = {
+        "message_type": message_type,
+        "message_id": message_id,
         "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 1,
-        "sender_did": INITIATOR_DID,
+        "round_number": round_number,
+        "sequence_number": sequence_number,
+        "sender_did": sender_did,
         "sender_agent_id": "buyer-agent",
         "sender_verification_method": verification_method,
         "timestamp": timestamp,
@@ -114,37 +128,52 @@ def _offer(session_id: str) -> dict:
         "protocol_act_hash": protocol_act_hash,
         "protocol_act_signature": sign_jws(
             protocol_act_hash,
-            INITIATOR_PRIVATE_KEY,
+            private_key,
             kid=verification_method,
         ),
     }
+    if in_reply_to:
+        offer["in_reply_to"] = in_reply_to
+    return offer
 
 
-def _acceptance(session_id: str, offer: dict) -> dict:
-    verification_method = f"{RESPONDER_DID}#key-2026-01"
+def _acceptance(
+    session_id: str,
+    offer: dict,
+    *,
+    sender_did: str = RESPONDER_DID,
+    message_id: str = "acceptance-1",
+    sequence_number: int = 2,
+) -> dict:
+    if sender_did == INITIATOR_DID:
+        private_key = INITIATOR_PRIVATE_KEY
+        verification_method = f"{INITIATOR_DID}#key-1"
+    else:
+        private_key = RESPONDER_PRIVATE_KEY
+        verification_method = f"{RESPONDER_DID}#key-2026-01"
     payload = {
         "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 2,
+        "round_number": offer["round_number"],
+        "sequence_number": sequence_number,
         "accepted_offer_id": offer["message_id"],
         "accepted_protocol_act_hash": offer["protocol_act_hash"],
     }
     return {
         "message_type": "acceptance",
-        "message_id": "acceptance-1",
+        "message_id": message_id,
         "session_id": session_id,
         "in_reply_to": offer["message_id"],
-        "round_number": 1,
-        "sequence_number": 2,
+        "round_number": offer["round_number"],
+        "sequence_number": sequence_number,
         "accepted_offer_id": offer["message_id"],
         "accepted_protocol_act_hash": offer["protocol_act_hash"],
-        "sender_did": RESPONDER_DID,
+        "sender_did": sender_did,
         "sender_agent_id": "seller-agent",
         "sender_verification_method": verification_method,
         "timestamp": "2026-03-24T10:03:00Z",
         "acceptance_signature": sign_jws(
             hash_object(payload),
-            RESPONDER_PRIVATE_KEY,
+            private_key,
             kid=verification_method,
         ),
     }
@@ -155,6 +184,31 @@ def _completed_record():
     offer = _offer(session.session_id)
     manager.process_message(session, offer)
     manager.process_message(session, _acceptance(session.session_id, offer))
+    return generate_transaction_record(session), did_documents, list(session._offer_chain)
+
+
+def _completed_multiround_record():
+    manager, session, did_documents = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    counteroffer = _offer(
+        session.session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="counteroffer",
+        message_id="counteroffer-1",
+        in_reply_to=offer["message_id"],
+    )
+    manager.process_message(session, counteroffer)
+    acceptance = _acceptance(
+        session.session_id,
+        counteroffer,
+        sender_did=INITIATOR_DID,
+        message_id="acceptance-2",
+        sequence_number=3,
+    )
+    manager.process_message(session, acceptance)
     return generate_transaction_record(session), did_documents, list(session._offer_chain)
 
 
@@ -200,6 +254,18 @@ def test_verify_transaction_record_rejects_tampered_acceptance_signature():
     assert not verify_transaction_record(record, did_documents, offer_hashes)
 
 
+def test_verify_transaction_record_rejects_acceptance_jws_with_wrong_payload():
+    record, did_documents, offer_hashes = _completed_record()
+    record["final_acceptance"]["acceptance_signature"] = sign_jws(
+        "not-the-acceptance-payload",
+        RESPONDER_PRIVATE_KEY,
+        kid=f"{RESPONDER_DID}#key-2026-01",
+    )
+    record = _with_recomputed_record_hash(record)
+
+    assert not verify_transaction_record(record, did_documents, offer_hashes)
+
+
 def test_verify_transaction_record_rejects_accepted_hash_mismatch():
     record, did_documents, offer_hashes = _completed_record()
     record["final_acceptance"]["accepted_protocol_act_hash"] = "sha256-tampered"
@@ -214,6 +280,13 @@ def test_verify_transaction_record_rejects_offer_chain_hash_mismatch():
     record = _with_recomputed_record_hash(record)
 
     assert not verify_transaction_record(record, did_documents, offer_hashes)
+
+
+def test_verify_transaction_record_accepts_multiround_offer_chain():
+    record, did_documents, offer_hashes = _completed_multiround_record()
+
+    assert verify_transaction_record(record, did_documents, offer_hashes)
+    assert not verify_transaction_record(record, did_documents)
 
 
 def test_verify_transaction_record_rejects_missing_required_fields():
