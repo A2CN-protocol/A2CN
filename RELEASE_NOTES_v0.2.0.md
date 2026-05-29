@@ -14,6 +14,8 @@ Solves the cold-start problem. A buyer agent can now invite a supplier who has n
 - **Fairmarkit** — FairmakitEventParser translates BID_CREATED webhook payloads into A2CN goods_procurement terms and translates agreed terms back into Fairmarkit's response API format. Path B integration — zero Fairmarkit platform changes required.
 - **Salesforce Revenue Cloud** — RevenueCloudAdapter translates Revenue Cloud Pricing API responses into A2CN offer terms and translates agreed terms into Revenue Cloud order payloads.
 - **Keelvar** — SOURCING_EVENTS_FEED_UPDATED webhook → A2CN session translation.
+- **DealHub** — DealHubEventParser translates quoteReady webhook payloads into A2CN saas_renewal terms and translates agreed terms back into DealHub Actions API calls to mark the quote as externally signed.
+- **Nue.io** — NueEventParser translates Nue pricing and subscription data into A2CN saas_renewal terms and translates agreed terms into Nue order creation with externalReference linkage for audit.
 
 ### Deal-type-specific terms schemas
 - `goods_procurement` — delivery_days, unit_of_measure, manufacturer and internal part numbers

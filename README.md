@@ -77,6 +77,10 @@ The invitation is signed using the inviter's DID key (ES256 by default, EdDSA/Ed
 
 **Salesforce Revenue Cloud:** `RevenueCloudAdapter` translates Revenue Cloud Pricing API responses (`/connect/pricing/...`) into A2CN offer terms, and translates agreed terms from the transaction record into Revenue Cloud order payloads (`/connect/qoc/sales-transactions`).
 
+**DealHub:** `DealHubEventParser` translates `quoteReady` webhook payloads into A2CN `saas_renewal` terms via the DealHub Quote API, and translates agreed terms back into DealHub Actions API calls (`POST .../quotes/{id}/actions`) to mark the quote as externally signed.
+
+**Nue.io:** `NueEventParser` translates Nue pricing and subscription data into A2CN `saas_renewal` terms, and translates agreed terms into Nue order creation (`POST {NUE_BASE_URL}/orders`) with `externalReference: a2cn-session-{id}` for audit linkage.
+
 ### Deal-type-specific terms schemas
 
 Two registered deal types now have normative JSON schemas:
@@ -281,7 +285,9 @@ A2CN/
         ├── adapters/
         │   ├── fairmarkit_adapter.py    # Fairmarkit → A2CN translation
         │   ├── keelvar_adapter.py       # Keelvar → A2CN translation
-        │   └── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
+        │   ├── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
+        │   ├── dealhub_adapter.py       # DealHub → A2CN translation
+        │   └── nue_adapter.py           # Nue.io → A2CN translation
         ├── tests/
         │   ├── test_invitations.py
         │   ├── test_deal_type_terms.py
@@ -305,7 +311,7 @@ A2CN/
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
 | Reference implementation (Python) | ✓ Complete — 390 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
-| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar |
+| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar, DealHub, Nue.io |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
