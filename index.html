@@ -1212,7 +1212,7 @@
             <div class="tl-dot"></div>
             <div class="tl-content">
               <div class="tl-title">A2CN v0.2.0 — you are here</div>
-              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 390 tests, Fairmarkit + Keelvar + Salesforce adapters, MCP server, A2A extension proposal submitted.</div>
+              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 390 tests, Fairmarkit + Keelvar + Salesforce + DealHub + Nue adapters, MCP server, A2A extension proposal submitted.</div>
             </div>
           </div>
 
@@ -1292,6 +1292,8 @@
             <button class="pg-platform active" data-platform="fairmarkit">Fairmarkit</button>
             <button class="pg-platform" data-platform="keelvar">Keelvar</button>
             <button class="pg-platform" data-platform="salesforce">Salesforce Revenue Cloud</button>
+            <button class="pg-platform" data-platform="dealhub">DealHub</button>
+            <button class="pg-platform" data-platform="nue">Nue.io</button>
           </div>
 
           <div class="pg-controls">
@@ -1471,7 +1473,7 @@
           <li>Protocol spec v0.2.0 <span class="detail">3,700+ lines, 8 components, Apache 2.0</span></li>
           <li>Reference implementation <span class="detail">Python, 390 tests passing</span></li>
           <li>Session invitation <span class="detail">cold-start adoption solved</span></li>
-          <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Salesforce Revenue Cloud</span></li>
+          <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io</span></li>
           <li>MCP server <span class="detail">Claude Desktop, LangChain, LangGraph, Agentforce, Cursor</span></li>
           <li>JWT request authentication <span class="detail">ES256/Ed25519, anti-replay, DID verification</span></li>
           <li>LLM integration pattern <span class="detail">Section 13.9, separation of concerns</span></li>
@@ -1819,6 +1821,55 @@ agreed_terms = <span class="pg-kw">await</span> session.<span class="pg-fn">nego
     contract_id, agreed_terms, session_id=session.id
 )
 <span class="pg-cm"># → PATCH /services/data/v60.0/sobjects/Contract/{id}</span>`
+      },
+      dealhub: {
+        file: 'adapters/dealhub_adapter.py',
+        badge: 'event: quoteReady',
+        render: (value, days) => `<span class="pg-kw">from</span> <span class="pg-mo">adapters.dealhub_adapter</span> <span class="pg-kw">import</span> <span class="pg-nb">DealHubEventParser</span>
+
+<span class="pg-cm"># 1. DealHub fires quoteReady webhook → seller's endpoint</span>
+params = <span class="pg-nb">DealHubEventParser</span>.<span class="pg-fn">quote_ready_webhook_to_session_params</span>(payload)
+quote = <span class="pg-kw">await</span> <span class="pg-nb">DealHubEventParser</span>.<span class="pg-fn">fetch_quote_details</span>(params[<span class="pg-st">"dealhub_quote_id"</span>])
+
+<span class="pg-cm"># 2. Translate quote → A2CN saas_renewal terms</span>
+terms = <span class="pg-nb">DealHubEventParser</span>.<span class="pg-fn">quote_to_a2cn_offer_terms</span>(quote)
+<span class="pg-cm"># → {total_value: <span class="pg-num">${value.toLocaleString()}</span>, currency: <span class="pg-st">"USD"</span>,</span>
+<span class="pg-cm">#    payment_terms: {net_days: <span class="pg-num">${days}</span>}, seat_count: <span class="pg-num">100</span>}</span>
+
+<span class="pg-cm"># 3. Run A2CN session with buyer agent</span>
+session = <span class="pg-nb">A2CNSession</span>.<span class="pg-fn">start</span>(terms, counterparty_did=<span class="pg-st">"did:web:buyer.com"</span>)
+agreed_terms = <span class="pg-kw">await</span> session.<span class="pg-fn">negotiate</span>()
+
+<span class="pg-cm"># 4. Mark quote as externally signed in DealHub</span>
+<span class="pg-kw">await</span> <span class="pg-nb">DealHubEventParser</span>.<span class="pg-fn">agreed_terms_to_dealhub_action</span>(
+    params[<span class="pg-st">"dealhub_quote_id"</span>], a2cn_session_id=session.id, record_hash=session.record_hash
+)
+<span class="pg-cm"># → POST {DEALHUB_BASE_URL}/api/v1/quotes/{quote_id}/actions</span>`
+      },
+      nue: {
+        file: 'adapters/nue_adapter.py',
+        badge: 'event: subscription renewal',
+        render: (value, days) => `<span class="pg-kw">from</span> <span class="pg-mo">adapters.nue_adapter</span> <span class="pg-kw">import</span> <span class="pg-nb">NueEventParser</span>
+
+<span class="pg-cm"># 1. Fetch active subscriptions from Nue</span>
+subscriptions = <span class="pg-kw">await</span> <span class="pg-nb">NueEventParser</span>.<span class="pg-fn">fetch_customer_subscriptions</span>(customer_id)
+
+<span class="pg-cm"># 2. Translate subscription → A2CN saas_renewal terms</span>
+terms = <span class="pg-nb">NueEventParser</span>.<span class="pg-fn">subscription_to_renewal_terms</span>(subscriptions[<span class="pg-num">0</span>])
+<span class="pg-cm"># → {total_value: <span class="pg-num">${value.toLocaleString()}</span>, currency: <span class="pg-st">"USD"</span>,</span>
+<span class="pg-cm">#    subscription_tier: <span class="pg-st">"enterprise"</span>, seat_count: <span class="pg-num">100</span>}</span>
+
+<span class="pg-cm"># 3. Run A2CN session with buyer agent</span>
+session = <span class="pg-nb">A2CNSession</span>.<span class="pg-fn">start</span>(terms, counterparty_did=<span class="pg-st">"did:web:buyer.com"</span>)
+agreed_terms = <span class="pg-kw">await</span> session.<span class="pg-fn">negotiate</span>()
+
+<span class="pg-cm"># 4. Create Nue order from agreed terms</span>
+<span class="pg-kw">await</span> <span class="pg-nb">NueEventParser</span>.<span class="pg-fn">a2cn_terms_to_nue_order</span>(
+    agreed_terms, customer_id=customer_id,
+    price_book_id=price_book_id, product_id=product_id,
+    a2cn_session_id=session.id, record_hash=session.record_hash
+)
+<span class="pg-cm"># → POST {NUE_BASE_URL}/orders (externalReference: a2cn-session-{id})</span>`
       }
     };
 
