@@ -36,8 +36,6 @@ Tools exposed:
     a2cn_get_session_status    Poll for counterparty response
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 import uuid

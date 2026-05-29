@@ -3714,7 +3714,7 @@ LLMs as their reasoning layer.
 - Round-trip `lot_id` ↔ `internal_part_number` field mapping (USD ↔ cents)
 - `terms_to_keelvar_bid_response` translates agreed A2CN terms to Keelvar bid
   response payload for submission to the Keelvar sourcing event API
-- 17 tests added (`TestKeelvarAdapter`); total test count: 202
+- 17 tests added (`TestKeelvarAdapter`); total test count at that patch point: 202
 
 **New: A2CN MCP Server (Section 16.12)**
 

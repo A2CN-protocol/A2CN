@@ -11,7 +11,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jcs" },
-    { name = "mcp" },
+    { name = "mcp", specifier = "==1.12.4" },
     { name = "pyjwt" },
     { name = "uvicorn" },
 ]
@@ -30,7 +30,7 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.115.0" },
     { name = "httpx", specifier = "==0.27.0" },
     { name = "jcs", specifier = "==0.2.1" },
-    { name = "mcp" },
+    { name = "mcp", specifier = "==1.12.4" },
     { name = "pyjwt", specifier = "==2.9.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==8.3.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "==0.24.0" },
