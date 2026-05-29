@@ -20,6 +20,9 @@ from a2cn.crypto import public_key_to_jwk
 
 HEADERS_CT = {"Content-Type": "application/a2cn+json"}
 
+INITIATOR_PRIVATE_KEY, INITIATOR_PUBLIC_KEY = generate_keypair()
+RESPONDER_PRIVATE_KEY, RESPONDER_PUBLIC_KEY = generate_keypair()
+
 
 def init_headers(message_id: str) -> dict:
     return {"Content-Type": "application/a2cn+json", "Idempotency-Key": message_id}
@@ -36,7 +39,7 @@ async def _create_session(client) -> str:
     return r.json()["session_id"]
 
 
-def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
+def _offer(session_id, seq, rnd, sender_did, private_key, msg_type="offer", in_reply_to=None,
            msg_id=None):
     msg_id = msg_id or str(uuid.uuid4())
     timestamp = "2026-03-24T10:00:00Z"
@@ -54,6 +57,11 @@ def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
         "terms": terms,
     }
     pah = hash_object(protocol_act)
+    verification_method = (
+        f"{INITIATOR_DID}#key-1"
+        if sender_did == INITIATOR_DID
+        else f"{RESPONDER_DID}#key-2026-01"
+    )
     msg = {
         "message_type": msg_type,
         "message_id": msg_id,
@@ -62,12 +70,12 @@ def _offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None,
         "sequence_number": seq,
         "sender_did": sender_did,
         "sender_agent_id": "conformance-agent",
-        "sender_verification_method": f"{sender_did}#key-1",
+        "sender_verification_method": verification_method,
         "timestamp": timestamp,
         "expires_at": expires_at,
         "terms": terms,
         "protocol_act_hash": pah,
-        "protocol_act_signature": "eyJ...",
+        "protocol_act_signature": sign_jws(pah, private_key, kid=verification_method),
     }
     if in_reply_to:
         msg["in_reply_to"] = in_reply_to
@@ -97,12 +105,12 @@ async def test_session_init_idempotency(test_client):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_turn_taking_enforced(test_client, responder_test_client):
+async def test_turn_taking_enforced(test_client, responder_test_client, responder_keypair):
     """NOT_YOUR_TURN returned for out-of-turn message."""
     session_id = await _create_session(test_client)
 
     # Responder tries to send before initiator — must fail
-    offer = _offer(session_id, 1, 1, RESPONDER_DID)
+    offer = _offer(session_id, 1, 1, RESPONDER_DID, responder_keypair[0])
     r = await responder_test_client.post(
         f"/sessions/{session_id}/messages", json=offer, headers=init_headers(offer["message_id"])
     )
@@ -209,6 +217,14 @@ async def test_jwt_valid_token_accepted(raw_test_client, initiator_keypair, init
 def test_transaction_record_deterministic():
     """Both sides generate identical record_hash independently."""
     mgr = SessionManager()
+    mgr.register_did_document(
+        INITIATOR_DID,
+        make_did_document(INITIATOR_DID, "key-1", public_key_to_jwk(INITIATOR_PUBLIC_KEY)),
+    )
+    mgr.register_did_document(
+        RESPONDER_DID,
+        make_did_document(RESPONDER_DID, "key-2026-01", public_key_to_jwk(RESPONDER_PUBLIC_KEY)),
+    )
     session_id = str(uuid.uuid4())
 
     init_msg = {
@@ -290,9 +306,20 @@ def test_transaction_record_deterministic():
         "expires_at": _offer_expires,
         "terms": _offer_terms,
         "protocol_act_hash": _offer_pah,
-        "protocol_act_signature": "eyJ...",
+        "protocol_act_signature": sign_jws(
+            _offer_pah,
+            INITIATOR_PRIVATE_KEY,
+            kid=f"{INITIATOR_DID}#key-1",
+        ),
     }
 
+    acceptance_payload = {
+        "session_id": session_id,
+        "round_number": 1,
+        "sequence_number": 2,
+        "accepted_offer_id": "offer-1",
+        "accepted_protocol_act_hash": _offer_pah,
+    }
     acceptance_msg = {
         "message_type": "acceptance",
         "message_id": "acc-1",
@@ -306,7 +333,11 @@ def test_transaction_record_deterministic():
         "sender_agent_id": "seller-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": "eyJ...",
+        "acceptance_signature": sign_jws(
+            hash_object(acceptance_payload),
+            RESPONDER_PRIVATE_KEY,
+            kid=f"{RESPONDER_DID}#key-2026-01",
+        ),
     }
 
     mgr.process_message(sess, offer_msg)
@@ -329,19 +360,19 @@ def test_transaction_record_deterministic():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_sequence_ordering_strict(test_client, responder_test_client):
+async def test_sequence_ordering_strict(test_client, responder_test_client, initiator_keypair, responder_keypair):
     """Gap in sequence_number rejected with SEQUENCE_ERROR."""
     session_id = await _create_session(test_client)
 
     # Send seq=1 OK
-    offer = _offer(session_id, 1, 1, INITIATOR_DID)
+    offer = _offer(session_id, 1, 1, INITIATOR_DID, initiator_keypair[0])
     r = await test_client.post(
         f"/sessions/{session_id}/messages", json=offer, headers=init_headers(offer["message_id"])
     )
     assert r.status_code == 200
 
     # Now send seq=3 (skipping 2) — must fail
-    bad_offer = _offer(session_id, 3, 2, RESPONDER_DID, msg_type="counteroffer",
+    bad_offer = _offer(session_id, 3, 2, RESPONDER_DID, responder_keypair[0], msg_type="counteroffer",
                        in_reply_to=offer["message_id"])
     r2 = await responder_test_client.post(
         f"/sessions/{session_id}/messages", json=bad_offer, headers=init_headers(bad_offer["message_id"])
@@ -355,7 +386,7 @@ async def test_sequence_ordering_strict(test_client, responder_test_client):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_terminal_state_reentry(test_client):
+async def test_terminal_state_reentry(test_client, initiator_keypair):
     """SESSION_WRONG_STATE returned for messages on completed/terminal session."""
     session_id = await _create_session(test_client)
 
@@ -375,7 +406,7 @@ async def test_terminal_state_reentry(test_client):
     )
 
     # Try to send another offer
-    offer = _offer(session_id, 2, 1, INITIATOR_DID)
+    offer = _offer(session_id, 2, 1, INITIATOR_DID, initiator_keypair[0])
     r = await test_client.post(
         f"/sessions/{session_id}/messages", json=offer, headers=init_headers(offer["message_id"])
     )

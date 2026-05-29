@@ -13,6 +13,7 @@ from a2cn.crypto import (
     hash_bytes,
     hash_object,
     public_key_to_jwk,
+    sign_jws,
     verify_jws,
 )
 from tests.conftest import (
@@ -216,7 +217,7 @@ async def _create_session(client) -> str:
     return r.json()["session_id"]
 
 
-def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
+def _make_offer_msg(session_id, seq, rnd, sender_did, private_key, msg_type="offer",
                     in_reply_to=None, msg_id=None):
     msg_id = msg_id or str(uuid.uuid4())
     timestamp = "2026-03-24T10:01:00Z"
@@ -234,6 +235,11 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
         "terms": terms,
     }
     pah = hash_object(protocol_act)
+    verification_method = (
+        f"{INITIATOR_DID}#key-1"
+        if sender_did == INITIATOR_DID
+        else f"{RESPONDER_DID}#key-2026-01"
+    )
     msg = {
         "message_type": msg_type,
         "message_id": msg_id,
@@ -242,12 +248,12 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
         "sequence_number": seq,
         "sender_did": sender_did,
         "sender_agent_id": "test-agent",
-        "sender_verification_method": f"{sender_did}#key-1",
+        "sender_verification_method": verification_method,
         "timestamp": timestamp,
         "expires_at": expires_at,
         "terms": terms,
         "protocol_act_hash": pah,
-        "protocol_act_signature": "eyJ...",
+        "protocol_act_signature": sign_jws(pah, private_key, kid=verification_method),
     }
     if in_reply_to:
         msg["in_reply_to"] = in_reply_to
@@ -255,9 +261,9 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, msg_type="offer",
 
 
 @pytest.mark.asyncio
-async def test_send_offer_succeeds(test_client):
+async def test_send_offer_succeeds(test_client, initiator_keypair):
     session_id = await _create_session(test_client)
-    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID)
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID, initiator_keypair[0])
     r = await test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
@@ -267,10 +273,10 @@ async def test_send_offer_succeeds(test_client):
 
 
 @pytest.mark.asyncio
-async def test_not_your_turn(test_client, responder_test_client):
+async def test_not_your_turn(test_client, responder_test_client, responder_keypair):
     session_id = await _create_session(test_client)
     # Responder tries to send before initiator
-    offer = _make_offer_msg(session_id, 1, 1, RESPONDER_DID)
+    offer = _make_offer_msg(session_id, 1, 1, RESPONDER_DID, responder_keypair[0])
     r = await responder_test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
@@ -281,9 +287,9 @@ async def test_not_your_turn(test_client, responder_test_client):
 
 
 @pytest.mark.asyncio
-async def test_sequence_error(test_client):
+async def test_sequence_error(test_client, initiator_keypair):
     session_id = await _create_session(test_client)
-    offer = _make_offer_msg(session_id, 5, 1, INITIATOR_DID)  # wrong seq
+    offer = _make_offer_msg(session_id, 5, 1, INITIATOR_DID, initiator_keypair[0])  # wrong seq
     r = await test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
@@ -294,9 +300,9 @@ async def test_sequence_error(test_client):
 
 
 @pytest.mark.asyncio
-async def test_message_idempotency(test_client):
+async def test_message_idempotency(test_client, initiator_keypair):
     session_id = await _create_session(test_client)
-    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID)
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID, initiator_keypair[0])
     h = init_headers(offer["message_id"])
     r1 = await test_client.post(f"/sessions/{session_id}/messages", json=offer, headers=h)
     r2 = await test_client.post(f"/sessions/{session_id}/messages", json=offer, headers=h)
@@ -304,13 +310,13 @@ async def test_message_idempotency(test_client):
 
 
 @pytest.mark.asyncio
-async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client):
+async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client, initiator_keypair):
     body = make_session_init()
     body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
     session_id = r.json()["session_id"]
 
-    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID)
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID, initiator_keypair[0])
     offer_r = await test_client.post(
         f"/sessions/{session_id}/messages",
         json=offer,
