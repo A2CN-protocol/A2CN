@@ -62,10 +62,18 @@ INITIATOR_PRIVATE_KEY, INITIATOR_PUBLIC_KEY = generate_keypair()
 RESPONDER_PRIVATE_KEY, RESPONDER_PUBLIC_KEY = generate_keypair()
 
 
-def _make_offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None):
+def _make_offer(
+    session_id,
+    seq,
+    rnd,
+    sender_did,
+    msg_type="offer",
+    in_reply_to=None,
+    terms=None,
+):
     timestamp = "2026-03-24T10:01:00Z"
     expires_at = "2030-01-01T00:00:00Z"
-    terms = {"total_value": 9_500_000, "currency": "USD"}
+    terms = terms or {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
         "protocol_version": "0.2",
         "session_id": session_id,
@@ -442,6 +450,118 @@ def test_acceptance_signature_mismatch_rejected():
         mgr.process_message(sess, acceptance)
     assert exc_info.value.code == "INVALID_SIGNATURE"
     assert exc_info.value.http_status == 400
+
+
+def test_offer_at_max_commitment_value_accepted():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "max_commitment_value": 9_500_000,
+        "max_commitment_currency": "USD",
+    }
+
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    result = mgr.process_message(sess, offer)
+
+    assert result["state"] == SessionState.NEGOTIATING
+    assert sess.latest_offer_hash == offer["protocol_act_hash"]
+
+
+def test_offer_over_max_commitment_value_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "max_commitment_value": 9_499_999,
+        "max_commitment_currency": "USD",
+    }
+
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, offer)
+
+    assert exc_info.value.code == "MANDATE_INVALID"
+    assert exc_info.value.http_status == 403
+    assert sess.sequence_number == 0
+    assert sess.state == SessionState.ACTIVE
+
+
+def test_offer_currency_mismatch_rejected():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "max_commitment_value": 20_000_000,
+        "max_commitment_currency": "EUR",
+    }
+
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, offer)
+
+    assert exc_info.value.code == "MANDATE_INVALID"
+    assert exc_info.value.http_status == 403
+    assert sess.sequence_number == 0
+
+
+def test_acceptance_at_max_commitment_value_completes():
+    mgr, sess = _new_session()
+    sess.responder_mandate = {
+        "mandate_type": "declared",
+        "principal_did": RESPONDER_DID,
+        "max_commitment_value": 9_500_000,
+        "max_commitment_currency": "USD",
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    acceptance = _make_acceptance(sess, offer)
+    mgr.process_message(sess, acceptance)
+
+    assert sess.state == SessionState.COMPLETED
+
+
+def test_acceptance_over_max_commitment_value_rejected():
+    mgr, sess = _new_session()
+    sess.responder_mandate = {
+        "mandate_type": "declared",
+        "principal_did": RESPONDER_DID,
+        "max_commitment_value": 9_499_999,
+        "max_commitment_currency": "USD",
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    acceptance = _make_acceptance(sess, offer)
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, acceptance)
+
+    assert exc_info.value.code == "MANDATE_INVALID"
+    assert exc_info.value.http_status == 403
+    assert sess.state == SessionState.NEGOTIATING
+    assert sess.sequence_number == 1
+    assert sess._final_acceptance is None
+
+
+def test_acceptance_currency_mismatch_rejected():
+    mgr, sess = _new_session()
+    sess.responder_mandate = {
+        "mandate_type": "declared",
+        "principal_did": RESPONDER_DID,
+        "max_commitment_value": 20_000_000,
+        "max_commitment_currency": "EUR",
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+
+    acceptance = _make_acceptance(sess, offer)
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, acceptance)
+
+    assert exc_info.value.code == "MANDATE_INVALID"
+    assert exc_info.value.http_status == 403
+    assert sess.state == SessionState.NEGOTIATING
 
 
 def test_acceptance_in_active_state_raises():

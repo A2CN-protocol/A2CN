@@ -492,6 +492,7 @@ class SessionManager:
             payload_hash=expected_hash,
             signature_field="protocol_act_signature",
         )
+        self._enforce_max_commitment(session, sender_role, terms, message)
 
         # Message type check: round 1 must be "offer", round 2+ must be "counteroffer"
         if round_number == 1:
@@ -733,6 +734,61 @@ class SessionManager:
         except (TypeError, ValueError):
             return False
 
+    def _enforce_max_commitment(
+        self,
+        session: Session,
+        role: str,
+        terms: dict,
+        message: dict,
+    ) -> None:
+        """Enforce a declared mandate's hard commitment cap before state mutation."""
+        mandate = self._mandate_for_role(session, role)
+        max_value = mandate.get("max_commitment_value")
+        if max_value is None:
+            return
+
+        total_value = terms.get("total_value") if isinstance(terms, dict) else None
+        if total_value is None:
+            return
+
+        expected_currency = mandate.get("max_commitment_currency")
+        actual_currency = terms.get("currency") if isinstance(terms, dict) else None
+        if expected_currency and actual_currency != expected_currency:
+            raise A2CNError(
+                "MANDATE_INVALID",
+                (
+                    f"Commitment currency {actual_currency!r} does not match {role} "
+                    f"mandate currency {expected_currency!r}"
+                ),
+                403,
+                session_id=session.session_id,
+                message_id=message.get("message_id"),
+            )
+
+        try:
+            total = int(total_value)
+            cap = int(max_value)
+        except (TypeError, ValueError):
+            raise A2CNError(
+                "MANDATE_INVALID",
+                "Commitment total_value or mandate max_commitment_value is not an integer",
+                403,
+                session_id=session.session_id,
+                message_id=message.get("message_id"),
+            )
+
+        if total > cap:
+            raise A2CNError(
+                "MANDATE_INVALID",
+                (
+                    f"Commitment total_value {total} exceeds {role} mandate "
+                    f"max_commitment_value {cap}"
+                ),
+                403,
+                session_id=session.session_id,
+                message_id=message.get("message_id"),
+            )
+
     def _handle_acceptance(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
         sender_did = message.get("sender_did", "")
@@ -815,8 +871,12 @@ class SessionManager:
 
         now = _now()
         final_offer_total_value = None
+        final_offer_terms = {}
         if final_offer:
-            final_offer_total_value = (final_offer.get("terms") or {}).get("total_value")
+            final_offer_terms = final_offer.get("terms") or {}
+            final_offer_total_value = final_offer_terms.get("total_value")
+
+        self._enforce_max_commitment(session, sender_role, final_offer_terms, message)
 
         if self._requires_human_approval(session, sender_role, final_offer_total_value):
             session.sequence_number = sequence_number
