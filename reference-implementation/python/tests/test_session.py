@@ -4,7 +4,8 @@ import uuid
 import pytest
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError
-from a2cn.crypto import generate_keypair, hash_object, sign_jws
+from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
+from tests.conftest import make_did_document
 
 
 INITIATOR_DID = "did:web:techcorp.example"
@@ -57,6 +58,9 @@ SESSION_ACK = {
     "current_turn": "initiator",
 }
 
+INITIATOR_PRIVATE_KEY, INITIATOR_PUBLIC_KEY = generate_keypair()
+RESPONDER_PRIVATE_KEY, RESPONDER_PUBLIC_KEY = generate_keypair()
+
 
 def _make_offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=None):
     timestamp = "2026-03-24T10:01:00Z"
@@ -74,6 +78,12 @@ def _make_offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=
         "terms": terms,
     }
     pah = hash_object(protocol_act)
+    private_key = INITIATOR_PRIVATE_KEY if sender_did == INITIATOR_DID else RESPONDER_PRIVATE_KEY
+    verification_method = (
+        f"{INITIATOR_DID}#key-1"
+        if sender_did == INITIATOR_DID
+        else f"{RESPONDER_DID}#key-2026-01"
+    )
     msg = {
         "message_type": msg_type,
         "message_id": str(uuid.uuid4()),
@@ -82,20 +92,81 @@ def _make_offer(session_id, seq, rnd, sender_did, msg_type="offer", in_reply_to=
         "sequence_number": seq,
         "sender_did": sender_did,
         "sender_agent_id": "agent",
-        "sender_verification_method": f"{sender_did}#key-1",
+        "sender_verification_method": verification_method,
         "timestamp": timestamp,
         "expires_at": expires_at,
         "terms": terms,
         "protocol_act_hash": pah,
-        "protocol_act_signature": "eyJ...",
+        "protocol_act_signature": sign_jws(pah, private_key, kid=verification_method),
     }
     if in_reply_to:
         msg["in_reply_to"] = in_reply_to
     return msg
 
 
+def _resign_offer(offer: dict) -> None:
+    protocol_act = {
+        "protocol_version": "0.2",
+        "session_id": offer["session_id"],
+        "round_number": offer["round_number"],
+        "sequence_number": offer["sequence_number"],
+        "message_type": offer["message_type"],
+        "sender_did": offer["sender_did"],
+        "timestamp": offer["timestamp"],
+        "expires_at": offer["expires_at"],
+        "terms": offer["terms"],
+    }
+    offer["protocol_act_hash"] = hash_object(protocol_act)
+    private_key = INITIATOR_PRIVATE_KEY if offer["sender_did"] == INITIATOR_DID else RESPONDER_PRIVATE_KEY
+    offer["protocol_act_signature"] = sign_jws(
+        offer["protocol_act_hash"],
+        private_key,
+        kid=offer["sender_verification_method"],
+    )
+
+
+def _make_acceptance(sess: Session, offer: dict, *, msg_id="acc-1") -> dict:
+    sender_did = RESPONDER_DID
+    verification_method = f"{RESPONDER_DID}#key-2026-01"
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": msg_id,
+        "session_id": sess.session_id,
+        "in_reply_to": offer["message_id"],
+        "round_number": offer["round_number"],
+        "sequence_number": sess.sequence_number + 1,
+        "accepted_offer_id": offer["message_id"],
+        "accepted_protocol_act_hash": offer["protocol_act_hash"],
+        "sender_did": sender_did,
+        "sender_agent_id": "acme-agent",
+        "sender_verification_method": verification_method,
+        "timestamp": "2026-03-24T10:05:00Z",
+    }
+    payload = {
+        "session_id": acceptance["session_id"],
+        "round_number": acceptance["round_number"],
+        "sequence_number": acceptance["sequence_number"],
+        "accepted_offer_id": acceptance["accepted_offer_id"],
+        "accepted_protocol_act_hash": acceptance["accepted_protocol_act_hash"],
+    }
+    acceptance["acceptance_signature"] = sign_jws(
+        hash_object(payload),
+        RESPONDER_PRIVATE_KEY,
+        kid=verification_method,
+    )
+    return acceptance
+
+
 def _new_session(session_id="sess-001") -> tuple[SessionManager, Session]:
     mgr = SessionManager()
+    mgr.register_did_document(
+        INITIATOR_DID,
+        make_did_document(INITIATOR_DID, "key-1", public_key_to_jwk(INITIATOR_PUBLIC_KEY)),
+    )
+    mgr.register_did_document(
+        RESPONDER_DID,
+        make_did_document(RESPONDER_DID, "key-2026-01", public_key_to_jwk(RESPONDER_PUBLIC_KEY)),
+    )
     sess = mgr.create_session(session_id, SESSION_INIT, SESSION_ACK, "2026-03-24T10:00:00Z")
     # Tests use a historical created_at; give them a large timeout so they never expire
     sess.session_timeout_seconds = 86400 * 365 * 100
@@ -222,21 +293,7 @@ def test_acceptance_transitions_to_completed():
     o1 = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
     mgr.process_message(sess, o1)
 
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": "acc-1",
-        "session_id": sess.session_id,
-        "in_reply_to": o1["message_id"],
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": o1["message_id"],
-        "accepted_protocol_act_hash": o1["protocol_act_hash"],
-        "sender_did": RESPONDER_DID,
-        "sender_agent_id": "acme-agent",
-        "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
-        "timestamp": "2026-03-24T10:05:00Z",
-        "acceptance_signature": "eyJ...",
-    }
+    acceptance = _make_acceptance(sess, o1)
     mgr.process_message(sess, acceptance)
     assert sess.state == SessionState.COMPLETED
     assert sess.current_turn == "none"
@@ -350,6 +407,43 @@ def test_protocol_act_hash_mismatch_rejected():
     assert exc_info.value.http_status == 400
 
 
+def test_protocol_act_signature_mismatch_rejected():
+    mgr, sess = _new_session()
+    o = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    o["protocol_act_signature"] = sign_jws(
+        o["protocol_act_hash"],
+        RESPONDER_PRIVATE_KEY,
+        kid=f"{RESPONDER_DID}#key-2026-01",
+    )
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, o)
+    assert exc_info.value.code == "INVALID_SIGNATURE"
+    assert exc_info.value.http_status == 400
+
+
+def test_acceptance_signature_mismatch_rejected():
+    mgr, sess = _new_session()
+    o1 = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, o1)
+
+    acceptance = _make_acceptance(sess, o1)
+    acceptance["acceptance_signature"] = sign_jws(
+        hash_object({
+            "session_id": acceptance["session_id"],
+            "round_number": acceptance["round_number"],
+            "sequence_number": acceptance["sequence_number"],
+            "accepted_offer_id": acceptance["accepted_offer_id"],
+            "accepted_protocol_act_hash": acceptance["accepted_protocol_act_hash"],
+        }),
+        INITIATOR_PRIVATE_KEY,
+        kid=f"{INITIATOR_DID}#key-1",
+    )
+    with pytest.raises(A2CNError) as exc_info:
+        mgr.process_message(sess, acceptance)
+    assert exc_info.value.code == "INVALID_SIGNATURE"
+    assert exc_info.value.http_status == 400
+
+
 def test_acceptance_in_active_state_raises():
     """Finding 2.8: acceptance in ACTIVE state (before any offer) raises SESSION_WRONG_STATE."""
     mgr, sess = _new_session()
@@ -379,40 +473,14 @@ def test_offer_expiry_check():
     o1 = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
     # Backdate expiry to force expiration
     o1["expires_at"] = "2020-01-01T00:00:00Z"
-    # Recompute hash with the new expires_at (otherwise hash mismatch fires first)
-    from a2cn.crypto import hash_object as _ho
-    protocol_act = {
-        "protocol_version": "0.2",
-        "session_id": o1["session_id"],
-        "round_number": o1["round_number"],
-        "sequence_number": o1["sequence_number"],
-        "message_type": o1["message_type"],
-        "sender_did": o1["sender_did"],
-        "timestamp": o1["timestamp"],
-        "expires_at": o1["expires_at"],
-        "terms": o1["terms"],
-    }
-    o1["protocol_act_hash"] = _ho(protocol_act)
+    # Recompute hash/signature with the new expires_at (otherwise signature mismatch fires first)
+    _resign_offer(o1)
     mgr.process_message(sess, o1)
 
     # Update session hash tracker
     sess.latest_offer_hash = o1["protocol_act_hash"]
 
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": str(uuid.uuid4()),
-        "session_id": sess.session_id,
-        "in_reply_to": o1["message_id"],
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": o1["message_id"],
-        "accepted_protocol_act_hash": o1["protocol_act_hash"],
-        "sender_did": RESPONDER_DID,
-        "sender_agent_id": "acme-agent",
-        "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
-        "timestamp": "2026-03-24T10:05:00Z",
-        "acceptance_signature": "eyJ...",
-    }
+    acceptance = _make_acceptance(sess, o1, msg_id=str(uuid.uuid4()))
     with pytest.raises(A2CNError) as exc_info:
         mgr.process_message(sess, acceptance)
     assert exc_info.value.code == "OFFER_EXPIRED"
@@ -592,21 +660,7 @@ def test_threshold_crossing_acceptance_enters_awaiting_human_approval_then_compl
     offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
     mgr.process_message(sess, offer)
 
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": "acc-requires-approval",
-        "session_id": sess.session_id,
-        "in_reply_to": offer["message_id"],
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": offer["message_id"],
-        "accepted_protocol_act_hash": offer["protocol_act_hash"],
-        "sender_did": RESPONDER_DID,
-        "sender_agent_id": "acme-agent",
-        "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
-        "timestamp": "2026-03-24T10:05:00Z",
-        "acceptance_signature": "eyJ...",
-    }
+    acceptance = _make_acceptance(sess, offer, msg_id="acc-requires-approval")
 
     result = mgr.process_message(sess, acceptance)
     assert result["state"] == SessionState.AWAITING_HUMAN_APPROVAL

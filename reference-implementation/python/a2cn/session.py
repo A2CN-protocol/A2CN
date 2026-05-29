@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from a2cn.crypto import hash_object
+from a2cn.crypto import hash_object, verify_jws
+from a2cn.did import get_public_key, get_verification_method
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +145,11 @@ class SessionManager:
         self._sessions: dict[str, Session] = {}
         # Pre-session idempotency: message_id → response dict
         self._init_responses: dict[str, dict] = {}
+        self._did_documents: dict[str, dict] = {}
+
+    def register_did_document(self, did: str, did_document: dict) -> None:
+        """Register a resolved DID document for protocol-act signature checks."""
+        self._did_documents[did] = did_document
 
     # ------------------------------------------------------------------
     # Session creation (on SessionInit)
@@ -366,6 +372,72 @@ class SessionManager:
             session_id=session.session_id,
         )
 
+    def _verify_sender_signature(
+        self,
+        session: Session,
+        message: dict,
+        *,
+        payload_hash: str,
+        signature_field: str,
+    ) -> None:
+        sender_did = message.get("sender_did", "")
+        message_id = message.get("message_id")
+        verification_method = message.get("sender_verification_method", "")
+        signature = message.get(signature_field, "")
+
+        if not verification_method or not signature:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"Missing sender_verification_method or {signature_field}",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+        if not (
+            verification_method == sender_did
+            or verification_method.startswith(f"{sender_did}#")
+        ):
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                "sender_verification_method is not controlled by sender_did",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+
+        did_document = self._did_documents.get(sender_did)
+        if did_document is None:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"No DID document registered for sender {sender_did!r}",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+
+        try:
+            vm = get_verification_method(did_document, verification_method)
+            public_key = get_public_key(vm)
+            signed_payload_hash = verify_jws(signature, public_key)
+        except Exception as exc:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"{signature_field} verification failed",
+                400,
+                detail=str(exc),
+                session_id=session.session_id,
+                message_id=message_id,
+            ) from exc
+
+        if signed_payload_hash != payload_hash:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"{signature_field} payload does not match message fields",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+
     def _handle_offer(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
         message_type = message.get("message_type", "")
@@ -383,30 +455,43 @@ class SessionManager:
 
         # Protocol act hash verification (finding 4.3)
         claimed_hash = message.get("protocol_act_hash")
-        if claimed_hash:
-            terms = message.get("terms", {})
-            timestamp = message.get("timestamp", "")
-            expires_at = message.get("expires_at", "")
-            protocol_act = {
-                "protocol_version": "0.2",  # Section 7.3.1
-                "session_id": message.get("session_id", ""),
-                "round_number": message.get("round_number"),
-                "sequence_number": message.get("sequence_number"),
-                "message_type": message_type,
-                "sender_did": sender_did,
-                "timestamp": timestamp,
-                "expires_at": expires_at,
-                "terms": terms,
-            }
-            expected_hash = hash_object(protocol_act)
-            if claimed_hash != expected_hash:
-                raise A2CNError(
-                    "INVALID_SIGNATURE",
-                    "Protocol act hash does not match message fields",
-                    400,
-                    session_id=session.session_id,
-                    message_id=message_id,
-                )
+        if not claimed_hash:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                "Missing protocol_act_hash",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+        terms = message.get("terms", {})
+        timestamp = message.get("timestamp", "")
+        expires_at = message.get("expires_at", "")
+        protocol_act = {
+            "protocol_version": "0.2",  # Section 7.3.1
+            "session_id": message.get("session_id", ""),
+            "round_number": message.get("round_number"),
+            "sequence_number": message.get("sequence_number"),
+            "message_type": message_type,
+            "sender_did": sender_did,
+            "timestamp": timestamp,
+            "expires_at": expires_at,
+            "terms": terms,
+        }
+        expected_hash = hash_object(protocol_act)
+        if claimed_hash != expected_hash:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                "Protocol act hash does not match message fields",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
+        self._verify_sender_signature(
+            session,
+            message,
+            payload_hash=expected_hash,
+            signature_field="protocol_act_signature",
+        )
 
         # Message type check: round 1 must be "offer", round 2+ must be "counteroffer"
         if round_number == 1:
@@ -672,6 +757,20 @@ class SessionManager:
 
         # Sequence check
         self._check_sequence(session, message)
+
+        acceptance_payload = {
+            "session_id": message.get("session_id", ""),
+            "round_number": message.get("round_number"),
+            "sequence_number": message.get("sequence_number"),
+            "accepted_offer_id": accepted_offer_id,
+            "accepted_protocol_act_hash": accepted_hash,
+        }
+        self._verify_sender_signature(
+            session,
+            message,
+            payload_hash=hash_object(acceptance_payload),
+            signature_field="acceptance_signature",
+        )
 
         # Offer hash match
         if accepted_offer_id != session.latest_offer_id:

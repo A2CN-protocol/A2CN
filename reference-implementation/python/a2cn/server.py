@@ -50,6 +50,7 @@ from a2cn.messages import (
 )
 from a2cn.crypto import (
     hash_bytes,
+    public_key_to_jwk,
     sign_jws,
     verify_jwt,
     verify_invitation_signature,
@@ -84,6 +85,27 @@ def configure_responder(config: dict, session_store: "SessionStore | None" = Non
     """Set responder identity info (DID, agent info, mandate, private key, etc.)."""
     global _responder_config, _session_store
     _responder_config = config
+    agent_info = config.get("agent_info", {})
+    private_key = config.get("private_key")
+    did = agent_info.get("did")
+    verification_method = agent_info.get("verification_method")
+    if did and verification_method and private_key is not None:
+        manager.register_did_document(
+            did,
+            {
+                "id": did,
+                "verificationMethod": [
+                    {
+                        "id": verification_method,
+                        "type": "JsonWebKey2020",
+                        "controller": did,
+                        "publicKeyJwk": public_key_to_jwk(private_key.public_key()),
+                    }
+                ],
+                "authentication": [verification_method],
+                "assertionMethod": [verification_method],
+            },
+        )
     if session_store is not None:
         _session_store = session_store
 
@@ -164,6 +186,7 @@ _did_doc_override: dict[str, dict] = {}
 def register_did_document(did: str, did_document: dict) -> None:
     """Pre-register a DID document so JWT verification skips HTTP resolution."""
     _did_doc_override[did] = did_document
+    manager.register_did_document(did, did_document)
 
 
 def _clean_expired_jtis() -> None:
@@ -210,6 +233,7 @@ async def verify_jwt_auth(request: Request) -> dict:
             try:
                 async with httpx.AsyncClient() as http:
                     did_doc = await resolve_did_web(iss, http)
+                manager.register_did_document(iss, did_doc)
             except Exception as exc:
                 raise A2CNError("INVALID_JWT", f"Could not resolve issuer DID: {exc}", 401)
 

@@ -14,7 +14,7 @@ import json
 import uuid
 import pytest
 
-from a2cn.crypto import hash_object
+from a2cn.crypto import hash_object, sign_jws
 from a2cn.messages import (
     DeliveryNoticeMessage,
     DeliveryAcknowledgedMessage,
@@ -434,6 +434,7 @@ async def _complete_session(
         "terms": terms,
     }
     pah = hash_object(protocol_act)
+    initiator_private_key = initiator_client.auth._private_key
     offer = {
         "message_type": "offer",
         "message_id": offer_id,
@@ -447,7 +448,11 @@ async def _complete_session(
         "expires_at": expires_at,
         "terms": terms,
         "protocol_act_hash": pah,
-        "protocol_act_signature": "eyJ...",
+        "protocol_act_signature": sign_jws(
+            pah,
+            initiator_private_key,
+            kid=f"{INITIATOR_DID}#key-1",
+        ),
     }
     r = await initiator_client.post(
         f"/sessions/{session_id}/messages", json=offer, headers=_h(offer_id)
@@ -455,6 +460,14 @@ async def _complete_session(
     assert r.status_code == 200, r.text
 
     acc_id = str(uuid.uuid4())
+    acceptance_payload = {
+        "session_id": session_id,
+        "round_number": 1,
+        "sequence_number": 2,
+        "accepted_offer_id": offer_id,
+        "accepted_protocol_act_hash": pah,
+    }
+    responder_private_key = responder_client.auth._private_key
     acceptance = {
         "message_type": "acceptance",
         "message_id": acc_id,
@@ -468,7 +481,11 @@ async def _complete_session(
         "sender_agent_id": "test-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
         "timestamp": "2026-04-01T10:01:00Z",
-        "acceptance_signature": "eyJ...",
+        "acceptance_signature": sign_jws(
+            hash_object(acceptance_payload),
+            responder_private_key,
+            kid=f"{RESPONDER_DID}#key-2026-01",
+        ),
     }
     r = await responder_client.post(
         f"/sessions/{session_id}/messages", json=acceptance, headers=_h(acc_id)
