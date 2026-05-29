@@ -355,6 +355,12 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
     # Validate required fields
     _require(body, ["message_type", "message_id", "protocol_version", "session_params", "initiator", "initiator_mandate"])
 
+    initiator_did = (body.get("initiator") or {}).get("did", "")
+    if initiator_did and initiator_did != _jwt.get("iss", ""):
+        return error_response("SENDER_DID_MISMATCH",
+                               "JWT issuer does not match initiator.did in request body",
+                               401, detail="Section 14.1", message_id=message_id)
+
     if body.get("message_type") != "session_init":
         return error_response("WRONG_MESSAGE_TYPE", "Expected message_type 'session_init'", 400, message_id=message_id)
 
