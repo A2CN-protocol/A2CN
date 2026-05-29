@@ -51,35 +51,37 @@ def _did_web_to_url(did: str) -> str:
         return f"https://{domain}/.well-known/did.json"
 
 
-def get_verification_method(did_document: dict, method_id: str) -> dict:
+def get_verification_method(
+    did_document: dict,
+    method_id: str,
+    *,
+    allowed_relationships: tuple[str, ...] = ("assertionMethod", "authentication"),
+) -> dict:
     """
-    Extract a specific verification method from a DID document by its DID URL.
+    Extract a signing verification method from a DID document by its DID URL.
 
-    Searches verificationMethod, authentication, assertionMethod arrays.
+    The method MUST be authorized for one of the allowed verification
+    relationships. By default this permits assertion signatures and JWT
+    authentication signatures, while excluding keyAgreement-only keys.
 
     Raises:
         KeyError: if the method is not found
     """
-    search_keys = [
-        "verificationMethod",
-        "authentication",
-        "assertionMethod",
-        "keyAgreement",
-        "capabilityInvocation",
-        "capabilityDelegation",
-    ]
+    verification_methods = {
+        method.get("id"): method
+        for method in did_document.get("verificationMethod", [])
+        if isinstance(method, dict) and method.get("id")
+    }
 
-    for key in search_keys:
+    for key in allowed_relationships:
         for method in did_document.get(key, []):
-            # Methods can be embedded objects or string references
-            if isinstance(method, dict):
-                if method.get("id") == method_id:
-                    return method
-            elif isinstance(method, str) and method == method_id:
-                # It's a reference — look up in verificationMethod
-                for vm in did_document.get("verificationMethod", []):
-                    if isinstance(vm, dict) and vm.get("id") == method_id:
-                        return vm
+            # Methods can be embedded objects or string references.
+            if isinstance(method, dict) and method.get("id") == method_id:
+                return method
+            if isinstance(method, str) and method == method_id:
+                if method_id in verification_methods:
+                    return verification_methods[method_id]
+                break
 
     raise KeyError(f"Verification method {method_id!r} not found in DID document")
 
