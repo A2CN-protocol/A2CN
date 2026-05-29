@@ -108,6 +108,8 @@ class TestAribaEventParser:
         )
 
         assert terms["line_items"][0]["internal_part_number"] == "LOT-HF-001"
+        assert terms["line_items"][0]["ariba_item_id"] == "10"
+        assert terms["line_items"][0]["ariba_lot_id"] == "LOT-HF-001"
         assert terms["custom_terms"]["ariba"]["event_id"] == "evt-ariba-001"
 
     def test_discovery_rfx_aliases_supported(self):
@@ -161,6 +163,8 @@ class TestAribaWriteBackPayloads:
         assert bid["eventId"] == "evt-ariba-001"
         assert bid["supplierId"] == "supplier-001"
         assert bid["totalAmount"] == 19_700.0
+        assert bid["items"][0]["itemId"] == "10"
+        assert bid["items"][0]["lotId"] == "LOT-HF-001"
         assert bid["items"][0]["unitPrice"] == 360.0
         assert bid["items"][0]["totalPrice"] == 18_000.0
         assert bid["paymentTerms"] == "Net 45"
@@ -187,6 +191,12 @@ class TestAribaAuthHelpers:
         assert headers["apiKey"] == "app-key"
         assert headers["Accept"] == "application/json"
 
+    def test_ariba_auth_headers_reads_api_key_from_env(self):
+        with patch.dict(os.environ, {"ARIBA_API_KEY": "env-app-key"}):
+            headers = ariba_auth_headers("access-token")
+
+        assert headers["apiKey"] == "env-app-key"
+
     def test_ariba_auth_headers_require_api_key(self):
         env = {k: v for k, v in os.environ.items() if k != "ARIBA_API_KEY"}
         with patch.dict(os.environ, env, clear=True):
@@ -208,6 +218,22 @@ class TestAribaAuthHelpers:
         _, kwargs = mock_client.post.call_args
         assert kwargs["data"] == {"grant_type": "client_credentials"}
         assert kwargs["auth"] == ("client-id", "client-secret")
+
+    @pytest.mark.asyncio
+    async def test_fetch_ariba_access_token_accepts_explicit_token_url(self):
+        mock_cm, mock_client = _make_async_client_mock({"access_token": "token-456"})
+        with patch("adapters.ariba_adapter.httpx.AsyncClient", return_value=mock_cm):
+            with patch.dict(os.environ, {
+                "ARIBA_CLIENT_ID": "client-id",
+                "ARIBA_CLIENT_SECRET": "client-secret",
+            }, clear=True):
+                token = await fetch_ariba_access_token(
+                    token_url="https://example.ariba.com/oauth/token"
+                )
+
+        assert token == "token-456"
+        mock_client.post.assert_called_once()
+        assert mock_client.post.call_args.args[0] == "https://example.ariba.com/oauth/token"
 
     @pytest.mark.asyncio
     async def test_fetch_ariba_access_token_requires_env(self):

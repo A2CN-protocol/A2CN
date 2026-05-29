@@ -177,7 +177,7 @@ class AribaEventParser:
                 {
                     key: value
                     for key, value in item.items()
-                    if key not in {"currency", "ariba_item_id", "ariba_lot_id"}
+                    if key != "currency"
                 }
                 for item in parsed["line_items"]
             ],
