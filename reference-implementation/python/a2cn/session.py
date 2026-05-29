@@ -62,7 +62,7 @@ class Session:
     # Offer tracking
     latest_offer_id: str | None = None
     latest_offer_hash: str | None = None
-    latest_offer_total_value: int | None = None  # for impasse detection
+    latest_offer_total_value: int | None = None  # for impasse detection / reporting
 
     # Human approval pause state
     approval_pending_offer_id: str | None = None
@@ -75,6 +75,8 @@ class Session:
     # v0.2.0: Impasse detection (OQ-005)
     impasse_threshold: int = 3                   # from session_params
     consecutive_non_moving_rounds: int = 0
+    _impasse_last_total_by_role: dict[str, Any] = field(default_factory=dict)
+    _impasse_unchanged_roles_this_round: set[str] = field(default_factory=set)
 
     # Timing
     session_created_at: str = ""
@@ -550,23 +552,21 @@ class SessionManager:
         session.state = SessionState.NEGOTIATING
         session.state_updated_at = now
 
-        # v0.2.0: Impasse detection — only on counteroffers (round > 1)
-        if round_number > 1 and new_total_value is not None:
-            if _is_moving_round(session.latest_offer_total_value, new_total_value):
-                session.consecutive_non_moving_rounds = 0
-            else:
-                session.consecutive_non_moving_rounds += 1
-                if session.consecutive_non_moving_rounds >= session.impasse_threshold:
-                    session.state = SessionState.IMPASSE
-                    session.current_turn = "none"
-                    session.terminal_reason = "impasse"
-                    session.terminal_message_id = message_id
-                    session.state_updated_at = now
-                    if message.get("protocol_act_hash"):
-                        session._offer_chain.append(message["protocol_act_hash"])
-                    session._message_log.append(message)
-                    session.latest_offer_total_value = new_total_value
-                    return session.to_state_dict()
+        if new_total_value is not None and _record_impasse_progress(
+            session,
+            sender_role,
+            new_total_value,
+        ):
+            session.state = SessionState.IMPASSE
+            session.current_turn = "none"
+            session.terminal_reason = "impasse"
+            session.terminal_message_id = message_id
+            session.state_updated_at = now
+            if message.get("protocol_act_hash"):
+                session._offer_chain.append(message["protocol_act_hash"])
+            session._message_log.append(message)
+            session.latest_offer_total_value = new_total_value
+            return session.to_state_dict()
 
         session.latest_offer_total_value = new_total_value
 
@@ -1031,16 +1031,32 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _is_moving_round(prev_total_value: int | None, new_total_value: int) -> bool:
+def _record_impasse_progress(session: Session, sender_role: str, new_total_value: Any) -> bool:
     """
-    A round is moving if the delta in total_value is >= 0.5% of prev_total_value.
-    Returns True (moving) when prev is None or zero.
+    Track spec §8.7 soft-impasse progress.
+
+    A non-moving full round is complete only after both parties repeat their own
+    previous total_value exactly. Any party changing total_value resets the
+    consecutive count.
     """
-    if prev_total_value is None or prev_total_value == 0:
-        return True
-    delta = abs(new_total_value - prev_total_value)
-    threshold = prev_total_value * 0.005
-    return delta >= threshold
+    last_total = session._impasse_last_total_by_role.get(sender_role)
+    session._impasse_last_total_by_role[sender_role] = new_total_value
+
+    if last_total is None:
+        session._impasse_unchanged_roles_this_round.discard(sender_role)
+        return False
+
+    if new_total_value != last_total:
+        session.consecutive_non_moving_rounds = 0
+        session._impasse_unchanged_roles_this_round.clear()
+        return False
+
+    session._impasse_unchanged_roles_this_round.add(sender_role)
+    if {"initiator", "responder"}.issubset(session._impasse_unchanged_roles_this_round):
+        session.consecutive_non_moving_rounds += 1
+        session._impasse_unchanged_roles_this_round.clear()
+
+    return session.consecutive_non_moving_rounds >= session.impasse_threshold
 
 
 def _receipt_references_session(receipt: dict, session_id: str) -> bool:

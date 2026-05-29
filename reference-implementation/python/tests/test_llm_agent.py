@@ -478,14 +478,14 @@ class TestMockLLMNegotiation:
     @pytest.mark.asyncio
     async def test_impasse_detection(self):
         """
-        When both parties offer values that change by < 0.5% per round, the
-        session transitions to IMPASSE after impasse_threshold non-moving rounds.
+        When both parties repeat their own total_value exactly, the session
+        transitions to IMPASSE after impasse_threshold non-moving full rounds.
 
         Setup:
           Buyer always counters at $100,020 (10_002_000 cents).
           Seller always counters at $100,000 (10_000_000 cents).
-          Delta = $20 / $100,000 = 0.02% < 0.5% threshold → non-moving.
-          impasse_threshold = 2 → IMPASSE triggers at round 3.
+          impasse_threshold = 2 → IMPASSE triggers after both parties repeat
+          their own prior value twice.
 
         The FixedValueLLM always counteroffers (never accepts) so neither side
         exits the loop voluntarily — the session state machine must end it.

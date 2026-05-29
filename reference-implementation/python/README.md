@@ -152,7 +152,7 @@ errors = validate_deal_type_terms("goods_procurement", terms_dict)
 
 States: `PENDING → ACTIVE → NEGOTIATING → COMPLETED / REJECTED_FINAL / WITHDRAWN / IMPASSE / TIMED_OUT / ERROR`
 
-**Impasse detection (v0.2):** `consecutive_non_moving_rounds >= impasse_threshold` → `IMPASSE`. A round is non-moving if `|delta_total_value| < 0.5% of prev_total_value`.
+**Impasse detection (v0.2):** `consecutive_non_moving_rounds >= impasse_threshold` → `IMPASSE`. A full round is non-moving when both parties repeat their own previous `total_value` exactly.
 
 Enforces: turn-taking, sequence ordering, offer expiry, hash integrity, terminal state enforcement, idempotency.
 
