@@ -11,13 +11,17 @@ Implements:
 
 import base64
 import hashlib
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import jcs
 import jwt as pyjwt
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import utils
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -162,18 +166,19 @@ def sign_jws(payload_str: str, private_key: SigningPrivateKey, kid: str | None =
     if kid:
         headers["kid"] = kid
 
-    pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+    protected = _b64url_encode(
+        json.dumps(headers, separators=(",", ":"), sort_keys=True).encode("utf-8")
     )
-    token = pyjwt.encode(
-        {"payload": payload_str},  # wrap in a claim so PyJWT is happy
-        pem,
-        algorithm=algorithm,
-        headers=headers,
-    )
-    return token
+    payload = _b64url_encode(payload_str.encode("utf-8"))
+    signing_input = f"{protected}.{payload}".encode("ascii")
+
+    if isinstance(private_key, Ed25519PrivateKey):
+        signature = private_key.sign(signing_input)
+    else:
+        der_signature = private_key.sign(signing_input, ec.ECDSA(hashes.SHA256()))
+        signature = _ecdsa_der_to_raw(der_signature)
+
+    return f"{protected}.{payload}.{_b64url_encode(signature)}"
 
 
 def verify_jws(token: str, public_key: SigningPublicKey) -> str:
@@ -181,16 +186,28 @@ def verify_jws(token: str, public_key: SigningPublicKey) -> str:
     Verify a JWS compact token and return the payload string.
     Raises jwt.InvalidSignatureError on failure.
     """
-    pem = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    decoded = pyjwt.decode(
-        token,
-        pem,
-        algorithms=[_jwt_algorithm_for_public_key(public_key)],
-    )
-    return decoded["payload"]
+    try:
+        protected, payload, signature = token.split(".")
+        header = json.loads(_b64url_decode(protected))
+        expected_alg = _jwt_algorithm_for_public_key(public_key)
+        if header.get("alg") != expected_alg:
+            raise pyjwt.exceptions.InvalidSignatureError("JWS alg does not match key type")
+
+        signing_input = f"{protected}.{payload}".encode("ascii")
+        signature_bytes = _b64url_decode(signature)
+        if isinstance(public_key, Ed25519PublicKey):
+            public_key.verify(signature_bytes, signing_input)
+        else:
+            public_key.verify(
+                _ecdsa_raw_to_der(signature_bytes),
+                signing_input,
+                ec.ECDSA(hashes.SHA256()),
+            )
+        return _b64url_decode(payload).decode("utf-8")
+    except pyjwt.exceptions.InvalidSignatureError:
+        raise
+    except (InvalidSignature, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise pyjwt.exceptions.InvalidSignatureError("Invalid JWS signature") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +355,19 @@ def _b64url_decode(s: str) -> bytes:
     # Re-add padding
     padded = s + "=" * (-len(s) % 4)
     return base64.urlsafe_b64decode(padded)
+
+
+def _ecdsa_der_to_raw(der_signature: bytes) -> bytes:
+    r, s = utils.decode_dss_signature(der_signature)
+    return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+def _ecdsa_raw_to_der(raw_signature: bytes) -> bytes:
+    if len(raw_signature) != 64:
+        raise ValueError("ES256 signatures must be 64 raw bytes")
+    r = int.from_bytes(raw_signature[:32], "big")
+    s = int.from_bytes(raw_signature[32:], "big")
+    return utils.encode_dss_signature(r, s)
 
 
 def _jwt_algorithm_for_private_key(private_key: SigningPrivateKey) -> str:
