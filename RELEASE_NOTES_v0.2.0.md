@@ -2,7 +2,7 @@
 
 **Released:** April 2026  
 **Spec:** v0.2.0 (3,300+ lines)  
-**Tests:** 202 passing  
+**Tests:** 390 passing
 **License:** Apache 2.0
 
 ## What's new in v0.2.0
@@ -55,7 +55,7 @@ python examples/keelvar_demo.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 202 passed
+# 390 passed
 ```
 
 ## What's next (v0.3)
