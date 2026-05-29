@@ -91,6 +91,22 @@ async def test_session_init_accepts_ed25519_jwt(raw_test_client):
 
 
 @pytest.mark.asyncio
+async def test_session_init_rejects_initiator_did_mismatch(test_client):
+    body = make_session_init()
+    body["initiator"]["did"] = "did:web:impostor.example"
+
+    r = await test_client.post(
+        "/sessions",
+        json=body,
+        headers=init_headers(body["message_id"]),
+    )
+
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "SENDER_DID_MISMATCH"
+    assert "initiator.did" in r.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_session_init_content_type(test_client):
     body = make_session_init()
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
