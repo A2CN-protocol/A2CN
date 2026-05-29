@@ -86,6 +86,30 @@ def test_get_verification_method_found():
     assert vm["id"] == vm_id
 
 
+def test_get_verification_method_rejects_key_agreement_only_key():
+    priv, pub = generate_keypair()
+    vm_id = f"{INITIATOR_DID}#agreement-key"
+    did_doc = {
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/suites/jws-2020/v1",
+        ],
+        "id": INITIATOR_DID,
+        "verificationMethod": [
+            {
+                "id": vm_id,
+                "type": "JsonWebKey2020",
+                "controller": INITIATOR_DID,
+                "publicKeyJwk": public_key_to_jwk(pub),
+            }
+        ],
+        "keyAgreement": [vm_id],
+    }
+
+    with pytest.raises(KeyError, match="not found"):
+        get_verification_method(did_doc, vm_id)
+
+
 def test_get_verification_method_not_found_raises():
     priv, pub = generate_keypair()
     did_doc = make_did_document(INITIATOR_DID, "key-1", public_key_to_jwk(pub))
