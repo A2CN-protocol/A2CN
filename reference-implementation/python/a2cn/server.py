@@ -120,8 +120,12 @@ async def transport_auth_middleware(request: Request, call_next) -> Response:
     Enforce Bearer JWT on all state-mutating requests (POST, PUT, PATCH).
     Only validates token shape here; full DID-based signature verification
     is performed by verify_jwt_auth dependency on each protected endpoint.
+    Inbound invitation delivery is the cold-start exception: POST /invitations
+    authenticates with invitation_signature instead of transport JWT.
     """
     if request.method in ("POST", "PUT", "PATCH"):
+        if request.method == "POST" and request.url.path == "/invitations":
+            return await call_next(request)
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return JSONResponse(
@@ -891,7 +895,6 @@ async def receive_invitation(request: Request) -> Response:
     if not body.get("invitation_signature"):
         return error_response("MISSING_INVITATION_SIGNATURE", "invitation_signature is required", 400)
 
-    # TODO v0.3: Verify invitation signature against inviter DID document
     # Resolve DID document (_did_doc_override first, then HTTP)
     if inviter_did in _did_doc_override:
         did_doc = _did_doc_override[inviter_did]
