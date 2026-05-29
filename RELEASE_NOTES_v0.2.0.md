@@ -20,7 +20,7 @@ Solves the cold-start problem. A buyer agent can now invite a supplier who has n
 - `saas_renewal` — seat_count, subscription_tier, support_tier, auto_renew_terms, uptime_sla_percent
 
 ### Impasse detection
-Configurable `impasse_threshold` in session_params. When N consecutive rounds show less than 0.5% movement in total_value, session transitions to IMPASSE. Default N=3, configurable 1-10.
+Configurable `impasse_threshold` in session_params. When N consecutive full rounds show no change in total_value from either party, session transitions to IMPASSE. Default N=3, configurable 1-10.
 
 ### LLM negotiation skills file
 Reference skills file for LLM agents participating in A2CN sessions. Covers warmth-dominance calibration, chain-of-thought reasoning patterns, and Inject+Voss prompt injection defense. Based on Vaccaro et al. (2026) arXiv:2503.06416v3 — 182,812 AI-to-AI negotiations.

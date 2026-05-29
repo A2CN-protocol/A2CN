@@ -229,6 +229,76 @@ def test_turn_flips_after_counteroffer():
     assert sess.round_number == 2
 
 
+def test_impasse_counts_only_full_rounds_with_no_change():
+    mgr, sess = _new_session()
+    sess.max_rounds = 6
+    sess.impasse_threshold = 2
+
+    totals = [
+        (INITIATOR_DID, 10_000_000),
+        (RESPONDER_DID, 9_900_000),
+        (INITIATOR_DID, 10_000_000),
+        (RESPONDER_DID, 9_900_000),
+        (INITIATOR_DID, 10_000_000),
+        (RESPONDER_DID, 9_900_000),
+    ]
+
+    previous = None
+    for index, (sender_did, total_value) in enumerate(totals, start=1):
+        message = _make_offer(
+            sess.session_id,
+            index,
+            index,
+            sender_did,
+            msg_type="offer" if index == 1 else "counteroffer",
+            in_reply_to=previous,
+            terms={"total_value": total_value, "currency": "USD"},
+        )
+        mgr.process_message(sess, message)
+        previous = message["message_id"]
+
+        if index == 3:
+            assert sess.consecutive_non_moving_rounds == 0
+            assert sess.state == SessionState.NEGOTIATING
+        if index == 4:
+            assert sess.consecutive_non_moving_rounds == 1
+            assert sess.state == SessionState.NEGOTIATING
+
+    assert sess.state == SessionState.IMPASSE
+    assert sess.current_turn == "none"
+    assert sess.consecutive_non_moving_rounds == 2
+
+
+def test_impasse_treats_any_total_value_change_as_movement():
+    mgr, sess = _new_session()
+    sess.max_rounds = 6
+    sess.impasse_threshold = 1
+
+    totals = [
+        (INITIATOR_DID, 10_000_000),
+        (RESPONDER_DID, 9_999_980),
+        (INITIATOR_DID, 10_000_020),
+        (RESPONDER_DID, 9_999_980),
+    ]
+
+    previous = None
+    for index, (sender_did, total_value) in enumerate(totals, start=1):
+        message = _make_offer(
+            sess.session_id,
+            index,
+            index,
+            sender_did,
+            msg_type="offer" if index == 1 else "counteroffer",
+            in_reply_to=previous,
+            terms={"total_value": total_value, "currency": "USD"},
+        )
+        mgr.process_message(sess, message)
+        previous = message["message_id"]
+
+    assert sess.state == SessionState.NEGOTIATING
+    assert sess.consecutive_non_moving_rounds == 0
+
+
 # ---------------------------------------------------------------------------
 # Sequence number enforcement (Section 7.1)
 # ---------------------------------------------------------------------------

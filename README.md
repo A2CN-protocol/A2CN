@@ -85,7 +85,7 @@ Two registered deal types now have normative JSON schemas:
 
 ### Impasse detection
 
-`impasse_threshold` field in `session_params`. When N consecutive rounds show less than 0.5% movement in `total_value`, the session transitions to `IMPASSE`. Default N = 3, configurable 1–10.
+`impasse_threshold` field in `session_params`. When N consecutive full rounds show no change in `total_value` from either party, the session transitions to `IMPASSE`. Default N = 3, configurable 1–10.
 
 ### Webhooks required at Level 2
 
