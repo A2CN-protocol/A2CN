@@ -1171,6 +1171,10 @@ The **protocol act object** used for signing is:
    where signing_alg is ES256 or EdDSA/Ed25519 per Section 13.4
 ```
 
+`protocol_act_signature` MUST use attached JWS Compact Serialization. The JWS
+payload segment MUST be `base64url(ASCII(protocol_act_hash))`; implementations
+MUST NOT wrap the hash in JWT claims such as `{"payload": protocol_act_hash}`.
+
 `protocol_act_hash` and `protocol_act_signature` are included in the offer message.
 
 Receivers MUST verify the signature before processing the offer:
@@ -1216,7 +1220,8 @@ Schema: `spec/schemas/acceptance.schema.json`
 **`accepted_protocol_act_hash`** — MUST match the `protocol_act_hash` of the
 accepted offer. This binds the acceptance to the specific protocol act.
 
-**`acceptance_signature`** — JWS over the JCS-canonicalized form of:
+**`acceptance_signature`** — JWS over the base64url SHA-256 hash of the
+JCS-canonicalized form of:
 ```json
 {
   "session_id": "...",
@@ -1232,6 +1237,11 @@ acceptance could be replayed within the same session against a different offer
 at the same round position. Both signatures (the offer's `protocol_act_signature`
 and the acceptance's `acceptance_signature`) together form the dual-signature
 basis of the transaction record.
+
+Like `protocol_act_signature`, `acceptance_signature` uses attached JWS Compact
+Serialization and signs the hash string for this canonical acceptance object as
+the JWS payload bytes. The payload segment MUST be
+`base64url(ASCII(acceptance_payload_hash))`, not a JWT claim set.
 
 Receivers MUST reject acceptances of expired offers (`expires_at` in the past).
 

@@ -1,5 +1,8 @@
 """Tests for a2cn.crypto"""
 
+import base64
+import json
+
 import pytest
 import jcs
 
@@ -150,6 +153,21 @@ def test_jws_roundtrip():
     assert recovered == payload
 
 
+def test_jws_compact_payload_is_the_raw_payload_string():
+    priv, _ = generate_keypair()
+    payload = "sha256-somehashvalue"
+    token = sign_jws(payload, priv, kid="did:web:example.com#key-1")
+    header_b64, payload_b64, signature_b64 = token.split(".")
+
+    header = json.loads(_b64url_decode(header_b64))
+    assert header["alg"] == "ES256"
+    assert header["kid"] == "did:web:example.com#key-1"
+    assert _b64url_decode(payload_b64).decode("utf-8") == payload
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(_b64url_decode(payload_b64))
+    assert signature_b64
+
+
 def test_jws_wrong_key_raises():
     import jwt as pyjwt
     priv1, _ = generate_keypair()
@@ -177,6 +195,10 @@ def test_jws_ed25519_roundtrip():
 
     recovered = verify_jws(token, pub)
     assert recovered == "ed25519-payload"
+
+
+def _b64url_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
 # ---------------------------------------------------------------------------
