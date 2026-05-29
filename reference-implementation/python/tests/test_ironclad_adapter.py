@@ -249,11 +249,26 @@ class TestIroncladHttpUpdate:
         assert kwargs["headers"]["x-as-user-email"] == "legal@example.com"
         assert kwargs["json"] == {"updates": []}
 
-    def test_update_workflow_metadata_requires_token(self):
+    @pytest.mark.asyncio
+    async def test_update_workflow_metadata_omits_actor_header_when_absent(self):
+        mock_cm, mock_client = _make_async_client_mock({"id": "wf-002"})
+        with patch("adapters.ironclad_adapter.httpx.AsyncClient", return_value=mock_cm):
+            with patch.dict(os.environ, {
+                "IRONCLAD_API_TOKEN": "test-token",
+                "IRONCLAD_BASE_URL": "https://demo.ironcladapp.com/public/api/v1",
+            }, clear=True):
+                result = await update_ironclad_workflow_metadata(
+                    "wf-002",
+                    {"updates": []},
+                )
+
+        assert result["id"] == "wf-002"
+        _, kwargs = mock_client.patch.call_args
+        assert "x-as-user-email" not in kwargs["headers"]
+
+    @pytest.mark.asyncio
+    async def test_update_workflow_metadata_requires_token(self):
         env = {k: v for k, v in os.environ.items() if k != "IRONCLAD_API_TOKEN"}
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="IRONCLAD_API_TOKEN"):
-                import asyncio
-                asyncio.get_event_loop().run_until_complete(
-                    update_ironclad_workflow_metadata("wf-001", {"updates": []})
-                )
+                await update_ironclad_workflow_metadata("wf-001", {"updates": []})

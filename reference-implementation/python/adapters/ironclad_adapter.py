@@ -102,7 +102,7 @@ class IroncladWebhookParser:
                 signature_bytes = bytes.fromhex(signature)
             else:
                 return False
-            if algorithm not in {"RSA-SHA256", "RSASHA256", "SHA256"}:
+            if algorithm not in {"RSASHA256", "SHA256"}:
                 return False
 
             public_key = serialization.load_pem_public_key(
