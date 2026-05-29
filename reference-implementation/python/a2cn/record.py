@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Callable, Mapping
 
-from a2cn.crypto import hash_object, canonicalize, hash_bytes
+from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
+from a2cn.did import get_public_key, get_verification_method
 from a2cn.session import Session, SessionState, _now
 
 # A2CN namespace UUID for record_id (UUID v5) — Appendix A
@@ -120,6 +122,102 @@ def _compute_offer_chain_hash(offer_hashes: list[str]) -> str:
     """
     canonical = canonicalize(offer_hashes)
     return hash_bytes(canonical)
+
+
+def verify_transaction_record(
+    record: dict,
+    did_resolver: Mapping[str, dict] | Callable[[str], dict],
+    offer_hashes: list[str] | None = None,
+) -> bool:
+    """
+    Verify a transaction record per Section 9.5.
+
+    `did_resolver` may be a mapping of DID → DID document or a callable returning
+    a DID document. For multi-round sessions, pass the chronological offer hash
+    list as `offer_hashes` so `offer_chain_hash` can be independently recomputed.
+    """
+    try:
+        final_offer = record["final_offer"]
+        final_acceptance = record["final_acceptance"]
+        offer_hash = final_offer["protocol_act_hash"]
+        accepted_hash = final_acceptance["accepted_protocol_act_hash"]
+
+        if not _record_hash_matches(record):
+            return False
+
+        if accepted_hash != offer_hash:
+            return False
+
+        chain_hashes = offer_hashes if offer_hashes is not None else [offer_hash]
+        if record.get("offer_chain_hash") != _compute_offer_chain_hash(chain_hashes):
+            return False
+
+        if not _verify_record_signature(
+            did_resolver,
+            record,
+            did=final_offer["sender_did"],
+            signature=final_offer["protocol_act_signature"],
+            expected_payload=offer_hash,
+        ):
+            return False
+
+        if not _verify_record_signature(
+            did_resolver,
+            record,
+            did=final_acceptance["sender_did"],
+            signature=final_acceptance["acceptance_signature"],
+        ):
+            return False
+
+        return True
+    except Exception:
+        return False
+
+
+def _record_hash_matches(record: dict) -> bool:
+    claimed_hash = record.get("record_hash")
+    if not claimed_hash:
+        return False
+    candidate = dict(record)
+    candidate["record_hash"] = ""
+    return hash_object(candidate) == claimed_hash
+
+
+def _verify_record_signature(
+    did_resolver: Mapping[str, dict] | Callable[[str], dict],
+    record: dict,
+    *,
+    did: str,
+    signature: str,
+    expected_payload: str | None = None,
+) -> bool:
+    verification_method = _verification_method_for_did(record, did)
+    if not verification_method or not signature:
+        return False
+
+    did_document = _resolve_did_document(did_resolver, did)
+    vm = get_verification_method(did_document, verification_method)
+    public_key = get_public_key(vm)
+    signed_payload = verify_jws(signature, public_key)
+    return expected_payload is None or signed_payload == expected_payload
+
+
+def _resolve_did_document(
+    did_resolver: Mapping[str, dict] | Callable[[str], dict],
+    did: str,
+) -> dict:
+    if isinstance(did_resolver, Mapping):
+        return did_resolver[did]
+    return did_resolver(did)
+
+
+def _verification_method_for_did(record: dict, did: str) -> str:
+    parties = record.get("parties", {})
+    for role in ("initiator", "responder"):
+        party = parties.get(role, {})
+        if party.get("did") == did:
+            return party.get("verification_method", "")
+    return ""
 
 
 def generate_audit_log(session: Session) -> dict:
