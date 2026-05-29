@@ -286,6 +286,8 @@ def generate_audit_log(session: Session) -> dict:
         }
         negotiation_log.append(entry)
 
+    human_oversight_present = bool(session.approval_receipts)
+
     return {
         "log_type": "a2cn_audit_log",
         "log_version": "0.1",
@@ -319,7 +321,7 @@ def generate_audit_log(session: Session) -> dict:
         "protocol_violations": [],
         "audit_metadata": {
             "ai_system_involved": True,
-            "human_oversight_present": False,
-            "autonomous_decision": True,
+            "human_oversight_present": human_oversight_present,
+            "autonomous_decision": not human_oversight_present,
         },
     }

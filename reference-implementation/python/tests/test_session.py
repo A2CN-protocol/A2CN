@@ -5,6 +5,7 @@ import pytest
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError
 from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
+from a2cn.record import generate_audit_log
 from tests.conftest import make_did_document
 
 
@@ -693,6 +694,45 @@ def test_approval_receipt_releases_pause_and_restores_counterparty_turn():
     assert result["approval_receipt_id"] == "urn:concordia:receipt:test"
     assert result["approval_pending_offer_hash"] is None
     assert sess.approval_receipts[-1]["id"] == "urn:concordia:receipt:test"
+
+
+def test_audit_metadata_defaults_to_autonomous_without_approval_receipts():
+    mgr, sess = _new_session()
+    withdrawal = {
+        "message_type": "withdrawal",
+        "message_id": "withdrawal-autonomous",
+        "session_id": sess.session_id,
+        "sequence_number": 1,
+        "sender_did": INITIATOR_DID,
+        "sender_agent_id": "tc-agent",
+        "timestamp": "2026-03-24T10:02:00Z",
+        "reason_code": "STRATEGY_DECISION",
+    }
+    mgr.process_message(sess, withdrawal)
+
+    metadata = generate_audit_log(sess)["audit_metadata"]
+
+    assert metadata["ai_system_involved"] is True
+    assert metadata["human_oversight_present"] is False
+    assert metadata["autonomous_decision"] is True
+
+
+def test_audit_metadata_reflects_human_approval_receipt():
+    mgr, sess = _new_session()
+    sess.initiator_mandate = {
+        "mandate_type": "declared",
+        "principal_did": INITIATOR_DID,
+        "requires_human_approval_above": 9_000_000,
+    }
+    offer = _make_offer(sess.session_id, 1, 1, INITIATOR_DID)
+    mgr.process_message(sess, offer)
+    mgr.apply_approval_receipt(sess, _approval_receipt(sess))
+
+    metadata = generate_audit_log(sess)["audit_metadata"]
+
+    assert metadata["ai_system_involved"] is True
+    assert metadata["human_oversight_present"] is True
+    assert metadata["autonomous_decision"] is False
 
 
 def test_approval_receipt_wrong_offer_hash_rejected():
