@@ -5,10 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>A2CN Docs - Developer Guide</title>
   <meta name="description" content="Developer documentation for A2CN: quickstart, protocol lifecycle, API endpoints, transaction records, and integration adapters.">
+  <link rel="canonical" href="https://a2cn.io/docs.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="A2CN">
+  <meta property="og:title" content="A2CN Developer Docs">
+  <meta property="og:description" content="Quickstarts, protocol lifecycle, API endpoints, transaction records, MCP notes, and integration adapter docs for A2CN developers.">
+  <meta property="og:url" content="https://a2cn.io/docs.html">
+  <meta property="og:image" content="https://a2cn.io/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="A2CN Developer Docs">
+  <meta name="twitter:description" content="Build agents that negotiate with A2CN quickstarts, protocol reference, records, and adapter docs.">
+  <meta name="twitter:image" content="https://a2cn.io/og-cover.png">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"A2CN Developer Docs","description":"Developer documentation for A2CN: quickstarts, protocol lifecycle, API endpoints, transaction records, MCP notes, and integration adapters.","url":"https://a2cn.io/docs.html","isPartOf":{"@type":"WebSite","name":"A2CN","url":"https://a2cn.io"},"about":{"@type":"SoftwareApplication","name":"A2CN","applicationCategory":"DeveloperApplication","softwareVersion":"0.2.0","codeRepository":"https://github.com/A2CN-protocol/A2CN"}}</script>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <!-- Plausible requires an a2cn.io site to be created before events flow. -->
+  <script defer data-domain="a2cn.io" src="https://plausible.io/js/script.tagged-events.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -19,7 +35,7 @@
       --border-lit: #2f3850;
       --text: #e8ecf3;
       --text-dim: #a8b2c7;
-      --muted: #6c7793;
+      --muted: #7a86a1;
       --blue: #5b9cff;
       --amber: #ffb547;
       --green: #4ade80;
@@ -530,6 +546,7 @@
       .docs-sidebar { grid-template-columns: 1fr; }
       h1 { font-size: 3.2rem; }
     }
+    @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
   </style>
 </head>
 <body>
@@ -543,7 +560,8 @@
       <a class="btn" href="index.html#integrations">Integrations</a>
       <a class="btn" href="#quickstart">Quickstart</a>
       <a class="btn" href="#reference">Reference</a>
-      <a class="btn btn-primary" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub &rarr;</a>
+      <a class="btn plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>Talk to us about a design partnership</a>
+      <a class="btn btn-primary plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub &rarr;</a>
     </div>
   </div>
 </nav>
@@ -565,7 +583,7 @@
         <div><strong>Quickstart:</strong> session creation, offer, acceptance, record.</div>
         <div><strong>Concepts:</strong> lifecycle, mandates, signatures, DIDs.</div>
         <div><strong>Reference:</strong> endpoints, messages, records, MCP notes.</div>
-        <div><strong>Adapters:</strong> 11 procurement, CPQ, CLM, renewal, and signature integrations.</div>
+        <div><strong>Adapters:</strong> 11 platform adapters across procurement, CPQ, CLM, renewal, and signature.</div>
       </div>
     </div>
   </div>
@@ -612,7 +630,7 @@
       <div class="callout">
         <strong>Canonical implementation:</strong> the Python reference server is the executable model for v0.2.0 behavior and currently ships with 465 passing tests.
         Source, tests, and deeper implementation detail remain available in the
-        <a href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub repository</a>.
+        <a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub repository</a>.
       </div>
     </section>
 
@@ -1048,7 +1066,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>saas_renewal</code> terms with integer-cent values and mandate context.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Summary artifact for CRM, sourcing notes, or agent memory. Vendr webhooks are one-way.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-ironclad" data-doc-title="Ironclad integration" data-doc-kind="Adapter">
@@ -1062,7 +1080,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Heuristic routing to <code>saas_renewal</code> or <code>goods_procurement</code>.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Workflow metadata update or <code>POST /records</code> payload with <code>a2cnRecordHash</code>.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-ariba" data-doc-title="SAP Ariba integration" data-doc-kind="Adapter">
@@ -1076,7 +1094,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>goods_procurement</code> terms with normalized total value and line items.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Ariba bid payload or RFx acknowledgement with original item and lot identifiers.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-jaggaer" data-doc-title="JAGGAER integration" data-doc-kind="Adapter">
@@ -1090,7 +1108,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Line-item goods terms retaining <code>jaggaer_item_id</code> and <code>jaggaer_lot_id</code>.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Response payload with prices converted from cents back to decimal values.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-conga" data-doc-title="Conga integration" data-doc-kind="Adapter">
@@ -1104,7 +1122,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Keyword heuristic selects <code>saas_renewal</code> or <code>goods_procurement</code>.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Quote update payload plus CLM external references for session ID and record hash.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-docusign" data-doc-title="DocuSign integration" data-doc-kind="Adapter">
@@ -1118,7 +1136,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>A2CN remains the canonical commercial commitment; DocuSign executes signature workflow.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Connect events mark signature completed, declined, or voided.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-dealhub" data-doc-title="DealHub integration" data-doc-kind="Adapter">
@@ -1132,7 +1150,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>saas_renewal</code> terms with total value, seat count, tier, and term length.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>External-signature action marking the quote won with A2CN audit notes.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-nue" data-doc-title="Nue.io integration" data-doc-kind="Adapter">
@@ -1146,7 +1164,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>SaaS renewal terms and mandate bounds based on floor discount configuration.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Nue order payload with <code>a2cn_session_id</code>, record hash, and notes.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-revenue-cloud" data-doc-title="Salesforce Revenue Cloud integration" data-doc-kind="Adapter">
@@ -1160,7 +1178,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Commercial terms normalized for negotiation and commitment checks.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Order payload for <code>/connect/qoc/sales-transactions</code>.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-fairmarkit" data-doc-title="Fairmarkit integration" data-doc-kind="Adapter">
@@ -1174,7 +1192,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>goods_procurement</code> terms with line items and delivery days.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Supplier response payload referencing the completed A2CN session.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
         </article>
 
         <article class="adapter-doc" id="adapter-keelvar" data-doc-title="Keelvar integration" data-doc-kind="Adapter">
@@ -1188,7 +1206,7 @@ assert ok is True</code></pre>
             <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Goods procurement terms aligned with Keelvar item and event context.</p></div>
             <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Keelvar response payload from completed transaction-record terms.</p></div>
           </div>
-          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+          <p><a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
         </article>
       </div>
     </section>
@@ -1203,6 +1221,17 @@ assert ok is True</code></pre>
 </footer>
 
 <script>
+  // Maintainer note: replace SCHEDULING_URL_PLACEHOLDER with a real booking URL.
+  // If it is intentionally cleared, these CTAs fall back to email.
+  (function schedulingFallback() {
+    const schedulingUrl = 'SCHEDULING_URL_PLACEHOLDER';
+    document.querySelectorAll('[data-scheduling-link]').forEach(link => {
+      if (!schedulingUrl || !link.getAttribute('href')) {
+        link.href = 'mailto:contact@a2cn.io';
+      }
+    });
+  })();
+
   (function docsSearch() {
     const input = document.getElementById('docs-search-input');
     const results = document.getElementById('docs-search-results');
