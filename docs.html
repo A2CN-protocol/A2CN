@@ -560,7 +560,7 @@
       <a class="btn" href="index.html#integrations">Integrations</a>
       <a class="btn" href="#quickstart">Quickstart</a>
       <a class="btn" href="#reference">Reference</a>
-      <a class="btn plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>Talk to us about a design partnership</a>
+      <a class="btn plausible-event-name=Contact+Click" href="https://calendar.app.google/CuBXFU1ZCKvZCQMP7">Talk to us about a design partnership</a>
       <a class="btn btn-primary plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub &rarr;</a>
     </div>
   </div>
@@ -1221,17 +1221,6 @@ assert ok is True</code></pre>
 </footer>
 
 <script>
-  // Maintainer note: replace SCHEDULING_URL_PLACEHOLDER with a real booking URL.
-  // If it is intentionally cleared, these CTAs fall back to email.
-  (function schedulingFallback() {
-    const schedulingUrl = 'SCHEDULING_URL_PLACEHOLDER';
-    document.querySelectorAll('[data-scheduling-link]').forEach(link => {
-      if (schedulingUrl === 'SCHEDULING_URL_PLACEHOLDER' || !schedulingUrl || !link.getAttribute('href')) {
-        link.href = 'mailto:contact@a2cn.io';
-      }
-    });
-  })();
-
   (function docsSearch() {
     const input = document.getElementById('docs-search-input');
     const results = document.getElementById('docs-search-results');
