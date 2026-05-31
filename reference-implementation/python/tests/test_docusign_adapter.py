@@ -197,6 +197,18 @@ class TestDocuSignConnectParser:
         assert update["post_commitment_status"] == "signature_declined"
         assert update["completed"] is False
 
+    def test_parse_completed_event_name_without_explicit_status(self):
+        update = DocuSignConnectParser.parse_envelope_event({
+            "event": "envelope-completed",
+            "data": {
+                "envelopeId": "env-003",
+            },
+        })
+
+        assert update["envelope_status"] == "completed"
+        assert update["post_commitment_status"] == "signature_completed"
+        assert update["completed"] is True
+
     def test_verify_hmac_signature_accepts_valid_signature(self):
         payload_bytes = json.dumps({"event": "envelope-completed"}).encode("utf-8")
         signature = base64.b64encode(

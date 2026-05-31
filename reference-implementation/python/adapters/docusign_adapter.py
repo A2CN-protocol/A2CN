@@ -268,7 +268,7 @@ class DocuSignConnectParser:
             or payload.get("event")
             or ""
         )
-        status_normalized = str(status).lower()
+        status_normalized = _normalize_envelope_status(status)
         custom_fields = _custom_fields_from_payload(data, envelope_summary, payload)
         event_name = payload.get("event") or payload.get("eventName") or ""
         return {
@@ -288,11 +288,7 @@ def _custom_fields_from_payload(*sections: dict) -> dict:
     fields: dict[str, str] = {}
     for section in sections:
         custom_fields = section.get("customFields", {})
-        text_fields = (
-            custom_fields.get("textCustomFields")
-            or section.get("customFields", {}).get("textCustomFields")
-            or []
-        )
+        text_fields = custom_fields.get("textCustomFields") or []
         if isinstance(text_fields, dict):
             text_fields = text_fields.get("textCustomField", [])
         for item in text_fields:
@@ -301,6 +297,13 @@ def _custom_fields_from_payload(*sections: dict) -> dict:
             if name:
                 fields[str(name)] = "" if value is None else str(value)
     return fields
+
+
+def _normalize_envelope_status(status: Any) -> str:
+    normalized = str(status).lower()
+    if normalized.startswith("envelope-"):
+        normalized = normalized.removeprefix("envelope-")
+    return normalized
 
 
 def _post_commitment_status(envelope_status: str) -> str:
