@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>A2CN Docs - Developer Guide</title>
   <meta name="description" content="Developer documentation for A2CN: quickstart, protocol lifecycle, API endpoints, transaction records, and integration adapters.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -25,9 +26,9 @@
       --codebg: #10151f;
       --radius: 10px;
       --max: 1180px;
-      --display: 'Instrument Serif', Georgia, serif;
-      --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
-      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --display: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+      --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     }
     html { scroll-behavior: smooth; }
     body {
@@ -131,9 +132,9 @@
     }
     h1 {
       font-family: var(--display);
-      font-size: clamp(3rem, 8vw, 6.4rem);
-      line-height: 0.92;
-      font-weight: 400;
+      font-size: clamp(2.55rem, 6vw, 4.85rem);
+      line-height: 0.98;
+      font-weight: 600;
       letter-spacing: 0;
       margin-bottom: 1.4rem;
     }
@@ -182,6 +183,62 @@
       background: rgba(20, 26, 38, 0.68);
       padding: 0.8rem;
     }
+    .docs-search {
+      display: grid;
+      gap: 0.45rem;
+      padding-bottom: 0.7rem;
+      margin-bottom: 0.3rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .docs-search label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .docs-search input {
+      width: 100%;
+      border: 1px solid var(--border-lit);
+      border-radius: 8px;
+      background: var(--codebg);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.88rem;
+      padding: 0.55rem 0.65rem;
+      outline: none;
+    }
+    .docs-search input:focus {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.12);
+    }
+    .search-results {
+      display: none;
+      gap: 0.25rem;
+      max-height: 260px;
+      overflow: auto;
+    }
+    .search-results.active { display: grid; }
+    .search-result {
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.45rem 0.5rem;
+      color: var(--text-dim);
+      background: rgba(16, 21, 31, 0.7);
+      font-size: 0.82rem;
+    }
+    .search-result strong {
+      display: block;
+      color: var(--text);
+      font-weight: 600;
+    }
+    .search-result span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-top: 0.1rem;
+    }
     .docs-sidebar a {
       color: var(--text-dim);
       font-size: 0.88rem;
@@ -210,9 +267,9 @@
     }
     h2 {
       font-family: var(--display);
-      font-size: clamp(2rem, 5vw, 3.6rem);
-      line-height: 1;
-      font-weight: 400;
+      font-size: clamp(1.7rem, 3.8vw, 2.55rem);
+      line-height: 1.12;
+      font-weight: 600;
       letter-spacing: 0;
       margin-bottom: 1rem;
     }
@@ -373,6 +430,59 @@
     }
     .adapter-name { color: var(--text); font-weight: 600; margin-bottom: 0.25rem; }
     .adapter-meta { color: var(--muted); font-size: 0.82rem; }
+    .adapter-docs {
+      display: grid;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .adapter-doc {
+      scroll-margin-top: 90px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 1.1rem;
+    }
+    .adapter-doc-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .adapter-doc h3 {
+      margin: 0;
+      color: var(--text);
+    }
+    .adapter-doc-tags {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .adapter-doc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.9rem;
+    }
+    .adapter-doc-field {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--codebg);
+      padding: 0.75rem;
+    }
+    .adapter-doc-label {
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+    .adapter-doc-field p {
+      font-size: 0.86rem;
+      margin: 0;
+    }
     .callout {
       border: 1px solid rgba(255, 181, 71, 0.35);
       background: rgba(255, 181, 71, 0.07);
@@ -408,6 +518,7 @@
       .flow-step { border-right: none; border-bottom: 1px solid var(--border); }
       .flow-step:last-child { border-bottom: none; }
       .adapter-index { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .adapter-doc-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
       nav { padding: 0 1rem; }
@@ -462,6 +573,11 @@
 
 <main class="docs-shell">
   <aside class="docs-sidebar" aria-label="Docs navigation">
+    <div class="docs-search">
+      <label for="docs-search-input">Search docs</label>
+      <input id="docs-search-input" type="search" placeholder="Search adapters, endpoints, records" autocomplete="off">
+      <div class="search-results" id="docs-search-results" aria-live="polite"></div>
+    </div>
     <a href="#overview">Overview</a>
     <a href="#quickstart">Quickstart</a>
     <a href="#lifecycle">Message lifecycle</a>
@@ -875,50 +991,205 @@ assert ok is True</code></pre>
         to A2CN mandates and signatures.
       </p>
       <div class="adapter-index">
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-vendr">
           <div class="adapter-name">Vendr</div>
           <div class="adapter-meta">Renewal benchmarks and webhook context into SaaS mandates.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-ironclad">
           <div class="adapter-name">Ironclad</div>
           <div class="adapter-meta">Workflow attributes, records, and CLM metadata write-back.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-ariba">
           <div class="adapter-name">SAP Ariba</div>
           <div class="adapter-meta">Event Management and Discovery RFx publication flows.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-jaggaer">
           <div class="adapter-name">JAGGAER</div>
           <div class="adapter-meta">ASO sourcing events, push events, and CHES polling.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-conga">
           <div class="adapter-name">Conga</div>
           <div class="adapter-meta">CPQ quotes and CLM agreement reference updates.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-docusign">
           <div class="adapter-name">DocuSign</div>
           <div class="adapter-meta">Transaction records into envelopes; Connect status callbacks.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-dealhub">
           <div class="adapter-name">DealHub</div>
           <div class="adapter-meta">Quote-ready webhooks and external-signature actions.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-nue">
           <div class="adapter-name">Nue.io</div>
           <div class="adapter-meta">Quote/order payloads and billing-stage linkage.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-revenue-cloud">
           <div class="adapter-name">Revenue Cloud</div>
           <div class="adapter-meta">Salesforce pricing responses and order payloads.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-fairmarkit">
           <div class="adapter-name">Fairmarkit</div>
           <div class="adapter-meta">Bid-created sourcing webhooks into goods procurement sessions.</div>
         </a>
-        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">
+        <a class="adapter-link" href="#adapter-keelvar">
           <div class="adapter-name">Keelvar</div>
           <div class="adapter-meta">Sourcing optimization events and response payloads.</div>
         </a>
+      </div>
+      <div class="adapter-docs">
+        <article class="adapter-doc" id="adapter-vendr" data-doc-title="Vendr integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Vendr</h3>
+            <div class="adapter-doc-tags"><span class="badge">saas_renewal</span><span class="badge">MCP</span><span class="badge">webhooks</span></div>
+          </div>
+          <p>Vendr benchmark and renewal context can seed an A2CN SaaS renewal session. The clean path is MCP-to-MCP: an agent asks Vendr for pricing intelligence, converts it into A2CN terms, and lets A2CN own the bilateral negotiation and record.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Renewal webhook or MCP pricing benchmark.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>saas_renewal</code> terms with integer-cent values and mandate context.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Summary artifact for CRM, sourcing notes, or agent memory. Vendr webhooks are one-way.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-ironclad" data-doc-title="Ironclad integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Ironclad</h3>
+            <div class="adapter-doc-tags"><span class="badge">CLM</span><span class="badge">webhooks</span><span class="badge">records</span></div>
+          </div>
+          <p>Ironclad workflow attributes become A2CN commercial terms, while completed A2CN sessions can write final values and record hashes back to Ironclad workflow metadata or record properties.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Workflow webhook with contract value, counterparty, dates, and line attributes.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Heuristic routing to <code>saas_renewal</code> or <code>goods_procurement</code>.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Workflow metadata update or <code>POST /records</code> payload with <code>a2cnRecordHash</code>.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-ariba" data-doc-title="SAP Ariba integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>SAP Ariba</h3>
+            <div class="adapter-doc-tags"><span class="badge">goods_procurement</span><span class="badge">RFx</span><span class="badge">OAuth</span></div>
+          </div>
+          <p>SAP Ariba Event Management and Discovery RFx publication events map into A2CN goods procurement terms. The adapter preserves Ariba item and lot IDs for bid reconstruction.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Event items or Discovery RFx lots with quantities, unit prices, and delivery terms.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>goods_procurement</code> terms with normalized total value and line items.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Ariba bid payload or RFx acknowledgement with original item and lot identifiers.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-jaggaer" data-doc-title="JAGGAER integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>JAGGAER</h3>
+            <div class="adapter-doc-tags"><span class="badge">goods_procurement</span><span class="badge">ASO</span><span class="badge">push/poll</span></div>
+          </div>
+          <p>JAGGAER ASO customer-host and sourcing events translate to A2CN goods procurement terms. Integrations can start from event-driven push payloads or CHES polling.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>ASO sourcing event, CHES event response, or tenant-normalized push event.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Line-item goods terms retaining <code>jaggaer_item_id</code> and <code>jaggaer_lot_id</code>.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Response payload with prices converted from cents back to decimal values.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-conga" data-doc-title="Conga integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Conga</h3>
+            <div class="adapter-doc-tags"><span class="badge">CPQ</span><span class="badge">CLM</span><span class="badge">Salesforce</span></div>
+          </div>
+          <p>Conga CPQ quote and cart payloads can start A2CN sessions, and completed A2CN records can be linked back to Conga CLM agreements.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Quote/cart line items from Conga CPQ, Salesforce SOQL shapes, or Advantage Platform payloads.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Keyword heuristic selects <code>saas_renewal</code> or <code>goods_procurement</code>.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Quote update payload plus CLM external references for session ID and record hash.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-docusign" data-doc-title="DocuSign integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>DocuSign</h3>
+            <div class="adapter-doc-tags"><span class="badge">eSignature</span><span class="badge">Connect</span><span class="badge">post-commitment</span></div>
+          </div>
+          <p>DocuSign is a formalization layer after A2CN completes. The adapter turns a dual-signed transaction record into an envelope and parses Connect callbacks into post-commitment status.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Completed A2CN transaction record with parties, contacts, final terms, and record hash.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>A2CN remains the canonical commercial commitment; DocuSign executes signature workflow.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Connect events mark signature completed, declined, or voided.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-dealhub" data-doc-title="DealHub integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>DealHub</h3>
+            <div class="adapter-doc-tags"><span class="badge">CPQ</span><span class="badge">saas_renewal</span><span class="badge">webhooks</span></div>
+          </div>
+          <p>DealHub quote-ready webhooks and quote details become A2CN SaaS renewal sessions. Completed records can be linked back through DealHub Actions API calls.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p><code>quoteReady</code> webhook plus quote detail fetch.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>saas_renewal</code> terms with total value, seat count, tier, and term length.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>External-signature action marking the quote won with A2CN audit notes.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-nue" data-doc-title="Nue.io integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Nue.io</h3>
+            <div class="adapter-doc-tags"><span class="badge">revenue lifecycle</span><span class="badge">orders</span><span class="badge">renewals</span></div>
+          </div>
+          <p>Nue pricing, subscription, and order data can seed A2CN session terms and receive agreed terms back as Nue order creation payloads with audit references.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Pricing, subscription renewal, or quote/order payload from Nue.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>SaaS renewal terms and mandate bounds based on floor discount configuration.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Nue order payload with <code>a2cn_session_id</code>, record hash, and notes.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">Source guide on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-revenue-cloud" data-doc-title="Salesforce Revenue Cloud integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Salesforce Revenue Cloud</h3>
+            <div class="adapter-doc-tags"><span class="badge">CPQ</span><span class="badge">orders</span><span class="badge">source</span></div>
+          </div>
+          <p>The Revenue Cloud adapter translates Salesforce Pricing API responses into A2CN offer terms and maps agreed terms back into Revenue Cloud order payloads.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Pricing response from <code>/connect/pricing/...</code>.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Commercial terms normalized for negotiation and commitment checks.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Order payload for <code>/connect/qoc/sales-transactions</code>.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-fairmarkit" data-doc-title="Fairmarkit integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Fairmarkit</h3>
+            <div class="adapter-doc-tags"><span class="badge">sourcing</span><span class="badge">goods_procurement</span><span class="badge">source</span></div>
+          </div>
+          <p>Fairmarkit <code>BID_CREATED</code> sourcing webhooks can be parsed into A2CN goods procurement terms and sent back as response payloads when negotiation completes.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Bid-created webhook with request ID, item quantities, unit prices, and deadline.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p><code>goods_procurement</code> terms with line items and delivery days.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Supplier response payload referencing the completed A2CN session.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+        </article>
+
+        <article class="adapter-doc" id="adapter-keelvar" data-doc-title="Keelvar integration" data-doc-kind="Adapter">
+          <div class="adapter-doc-head">
+            <h3>Keelvar</h3>
+            <div class="adapter-doc-tags"><span class="badge">sourcing</span><span class="badge">optimization</span><span class="badge">source</span></div>
+          </div>
+          <p>Keelvar sourcing optimization events can trigger A2CN sessions, with agreed terms converted back into Keelvar response shapes for bid submission or audit.</p>
+          <div class="adapter-doc-grid">
+            <div class="adapter-doc-field"><div class="adapter-doc-label">In</div><p>Sourcing event or invitation accepted into an A2CN session.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">A2CN</div><p>Goods procurement terms aligned with Keelvar item and event context.</p></div>
+            <div class="adapter-doc-field"><div class="adapter-doc-label">Back</div><p>Keelvar response payload from completed transaction-record terms.</p></div>
+          </div>
+          <p><a href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">Adapter source on GitHub &rarr;</a></p>
+        </article>
       </div>
     </section>
   </div>
@@ -932,6 +1203,64 @@ assert ok is True</code></pre>
 </footer>
 
 <script>
+  (function docsSearch() {
+    const input = document.getElementById('docs-search-input');
+    const results = document.getElementById('docs-search-results');
+    if (!input || !results) return;
+
+    const entries = Array.from(document.querySelectorAll('.docs-section, .adapter-doc')).map((node) => {
+      const heading = node.dataset.docTitle || node.querySelector('h2, h3')?.textContent || '';
+      const kind = node.dataset.docKind || (node.classList.contains('adapter-doc') ? 'Adapter' : 'Docs');
+      return {
+        id: node.id,
+        title: heading.trim(),
+        kind,
+        text: node.textContent.toLowerCase(),
+      };
+    }).filter((entry) => entry.id && entry.title);
+
+    function render(query) {
+      const q = query.trim().toLowerCase();
+      results.innerHTML = '';
+      if (!q) {
+        results.classList.remove('active');
+        return;
+      }
+      const matches = entries
+        .filter((entry) => entry.title.toLowerCase().includes(q) || entry.text.includes(q))
+        .slice(0, 8);
+
+      if (matches.length === 0) {
+        results.innerHTML = '<div class="search-result"><strong>No matches</strong><span>Try endpoint, adapter, record, mandate, or signature.</span></div>';
+        results.classList.add('active');
+        return;
+      }
+
+      matches.forEach((entry) => {
+        const link = document.createElement('a');
+        link.className = 'search-result';
+        link.href = `#${entry.id}`;
+        link.innerHTML = `<strong>${entry.title}</strong><span>${entry.kind}</span>`;
+        link.addEventListener('click', () => {
+          results.classList.remove('active');
+          input.value = '';
+        });
+        results.appendChild(link);
+      });
+      results.classList.add('active');
+    }
+
+    input.addEventListener('input', () => render(input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      const first = results.querySelector('a');
+      if (first) {
+        event.preventDefault();
+        first.click();
+      }
+    });
+  })();
+
   document.querySelectorAll('.copy-btn').forEach((button) => {
     button.addEventListener('click', async () => {
       const block = button.closest('.code-card').querySelector('code');

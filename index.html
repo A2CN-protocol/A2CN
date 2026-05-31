@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>A2CN — Agent-to-Agent Commercial Negotiation Protocol</title>
   <meta name="description" content="The missing layer. AI agents can talk and pay. They can't yet negotiate binding commercial terms across organizations. A2CN is the open protocol for that layer.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -32,9 +33,9 @@
       --radius-lg:  16px;
       --max:        1040px;
       --max-narrow: 780px;
-      --display:    'Instrument Serif', Georgia, serif;
-      --mono:       'JetBrains Mono', ui-monospace, Menlo, monospace;
-      --sans:       'Inter', system-ui, -apple-system, sans-serif;
+      --display:    'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      --mono:       'IBM Plex Mono', ui-monospace, Menlo, monospace;
+      --sans:       'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     }
 
     html { scroll-behavior: smooth; }
@@ -1661,7 +1662,7 @@
               <span><strong>A2CN</strong> goods_procurement terms</span>
               <span><strong>Back</strong> supplier response payload</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+            <a class="adapter-link" href="docs.html#adapter-fairmarkit">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1675,7 +1676,7 @@
               <span><strong>A2CN</strong> line items, prices, delivery</span>
               <span><strong>Back</strong> bid response payload</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+            <a class="adapter-link" href="docs.html#adapter-keelvar">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1689,7 +1690,7 @@
               <span><strong>A2CN</strong> goods_procurement session</span>
               <span><strong>Back</strong> bid or acknowledgement payload</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-ariba">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1703,7 +1704,7 @@
               <span><strong>A2CN</strong> goods_procurement terms</span>
               <span><strong>Back</strong> JAGGAER bid response payload</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-jaggaer">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1725,7 +1726,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> quote or order transaction</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+            <a class="adapter-link" href="docs.html#adapter-revenue-cloud">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1739,7 +1740,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> external-signature action</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-dealhub">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1753,7 +1754,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> order payload</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-nue">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1767,7 +1768,7 @@
               <span><strong>A2CN</strong> SaaS or goods terms</span>
               <span><strong>Back</strong> quote update and CLM reference</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-conga">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1789,7 +1790,7 @@
               <span><strong>A2CN</strong> negotiated agreement terms</span>
               <span><strong>Back</strong> workflow attributes or record</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-ironclad">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1803,7 +1804,7 @@
               <span><strong>A2CN</strong> neutral bilateral record</span>
               <span><strong>Back</strong> envelope status via Connect</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-docusign">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1825,7 +1826,7 @@
               <span><strong>A2CN</strong> mandate-aware renewal terms</span>
               <span><strong>Back</strong> audit-ready renewal summary</span>
             </div>
-            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+            <a class="adapter-link" href="docs.html#adapter-vendr">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1848,12 +1849,12 @@
               .lb-accent { fill: #1f1a12; }
               .lbor-m    { stroke: #242b3d; stroke-width: 1.5; fill: none; }
               .lbor-a    { stroke: #ffb547; stroke-width: 2;   fill: none; }
-              .ln-m      { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; fill: #6c7793; }
-              .ln-a      { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; fill: #ffb547; }
-              .ls        { font-family: Inter, sans-serif; font-size: 12.5px; fill: #a8b2c7; }
-              .ls-m      { font-family: Inter, sans-serif; font-size: 12.5px; fill: #6c7793; }
-              .lt-m      { font-family: 'JetBrains Mono', monospace; font-size: 11px; fill: #6c7793; }
-              .lt-a      { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; fill: #ffb547; }
+              .ln-m      { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; fill: #6c7793; }
+              .ln-a      { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; fill: #ffb547; }
+              .ls        { font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; fill: #a8b2c7; }
+              .ls-m      { font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; fill: #6c7793; }
+              .lt-m      { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #6c7793; }
+              .lt-a      { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; fill: #ffb547; }
             </style>
           </defs>
 
