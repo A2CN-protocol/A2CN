@@ -5,10 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>A2CN — Agent-to-Agent Commercial Negotiation Protocol</title>
   <meta name="description" content="The missing layer. AI agents can talk and pay. They can't yet negotiate binding commercial terms across organizations. A2CN is the open protocol for that layer.">
+  <link rel="canonical" href="https://a2cn.io/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="A2CN">
+  <meta property="og:title" content="A2CN — Agent-to-Agent Commercial Negotiation Protocol">
+  <meta property="og:description" content="AI agents can talk and pay. They can't yet negotiate binding commercial terms across organizations. A2CN is the open protocol for that layer.">
+  <meta property="og:url" content="https://a2cn.io/">
+  <meta property="og:image" content="https://a2cn.io/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="A2CN — Agent-to-Agent Commercial Negotiation Protocol">
+  <meta name="twitter:description" content="The missing layer: an open protocol for AI agents to negotiate binding commercial terms across organizations.">
+  <meta name="twitter:image" content="https://a2cn.io/og-cover.png">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"A2CN","applicationCategory":"DeveloperApplication","operatingSystem":"Any","description":"Open protocol for agent-to-agent commercial negotiation across organizations.","url":"https://a2cn.io","license":"https://www.apache.org/licenses/LICENSE-2.0","softwareVersion":"0.2.0","codeRepository":"https://github.com/A2CN-protocol/A2CN","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Organization","name":"A2CN Protocol"}}</script>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <!-- Plausible requires an a2cn.io site to be created before events flow. -->
+  <script defer data-domain="a2cn.io" src="https://plausible.io/js/script.tagged-events.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -21,7 +37,7 @@
       --border-lit: #2f3850;
       --text:       #e8ecf3;
       --text-dim:   #a8b2c7;
-      --muted:      #6c7793;
+      --muted:      #7a86a1;
       --blue:       #5b9cff;
       --blue-deep:  #3b7fe8;
       --amber:      #ffb547;
@@ -273,6 +289,35 @@
       opacity: 0;
       animation: rise 0.8s 0.6s ease-out forwards;
     }
+    .audience-router {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      max-width: 820px;
+      margin-top: 1.25rem;
+      opacity: 0;
+      animation: rise 0.8s 0.7s ease-out forwards;
+    }
+    .audience-chip {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(20, 26, 38, 0.74);
+      padding: 0.8rem 0.9rem;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    .audience-chip strong {
+      display: block;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 0.15rem;
+    }
+    .audience-chip:hover {
+      color: var(--text);
+      background: var(--surface-2);
+      border-color: var(--border-lit);
+      transform: translateY(-1px);
+    }
 
     @keyframes rise {
       from { opacity: 0; transform: translateY(16px); }
@@ -304,9 +349,39 @@
       line-height: 1.45;
     }
     .proof-item .proof-label strong { color: var(--text-dim); font-weight: 500; }
+    .stat-band {
+      padding: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-2);
+    }
+    .stat-band .container {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    .stat-pill {
+      padding: 1rem 1.1rem;
+      border-right: 1px solid var(--border);
+    }
+    .stat-pill:last-child { border-right: none; }
+    .stat-pill strong {
+      display: block;
+      color: var(--text);
+      font-size: 1rem;
+      margin-bottom: 0.15rem;
+    }
+    .stat-pill span {
+      color: var(--text-dim);
+      font-size: 0.86rem;
+    }
 
     @media (max-width: 640px) {
       .proof-strip { grid-template-columns: 1fr; gap: 1.25rem; }
+      .audience-router,
+      .stat-band .container { grid-template-columns: 1fr; }
+      .stat-pill { border-right: none; border-bottom: 1px solid var(--border); }
+      .stat-pill:last-child { border-bottom: none; }
     }
 
     /* ── INTERACTIVE TABS ── */
@@ -1334,6 +1409,7 @@
       .tab-panel { padding: 1.25rem; }
       .nav-links a.btn:not(.btn-primary) { display: none; }
     }
+    @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
   </style>
 </head>
 <body>
@@ -1346,11 +1422,12 @@
       A2CN
     </span>
     <div class="nav-links">
-      <a class="btn" href="docs.html">Docs</a>
+      <a class="btn plausible-event-name=Docs+Click" href="docs.html">Docs</a>
       <a class="btn" href="#how-it-works">How it works</a>
       <a class="btn" href="#integrations">Integrations</a>
       <a class="btn" href="#status">Status</a>
-      <a class="btn btn-primary" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">View on GitHub →</a>
+      <a class="btn btn-primary plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>Talk to us about a design partnership</a>
+      <a class="btn plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub →</a>
     </div>
   </div>
 </nav>
@@ -1375,9 +1452,24 @@
     </p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#interactive">See it in action →</a>
-      <a class="btn" href="docs.html">Read developer docs</a>
+      <a class="btn plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>Talk to us about a design partnership</a>
+      <a class="btn plausible-event-name=Docs+Click" href="docs.html">Read developer docs</a>
       <a class="btn" href="#integrations">Explore integrations</a>
-      <a class="btn" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">Read the spec</a>
+      <a class="btn plausible-event-name=Spec+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">Read the spec</a>
+    </div>
+    <div class="audience-router" aria-label="Audience routes">
+      <a class="audience-chip plausible-event-name=Docs+Click" href="docs.html">
+        <strong>Building an agent</strong>
+        Start with docs →
+      </a>
+      <a class="audience-chip plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>
+        <strong>Running a platform</strong>
+        Talk to us →
+      </a>
+      <a class="audience-chip plausible-event-name=Spec+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">
+        <strong>Researcher / investor</strong>
+        Read the spec →
+      </a>
     </div>
 
     <div class="proof-strip">
@@ -1397,6 +1489,24 @@
   </div>
 </section>
 
+<!-- ── VALIDATION STRIP ── -->
+<section class="stat-band" aria-label="A2CN validation signals">
+  <div class="container">
+    <div class="stat-pill">
+      <strong>182K negotiations studied</strong>
+      <span>MIT/Hopkins agent-to-agent negotiation research</span>
+    </div>
+    <div class="stat-pill">
+      <strong>53% of businesses open</strong>
+      <span>Visa B2AI data on AI-to-AI negotiation</span>
+    </div>
+    <div class="stat-pill">
+      <strong>4 protocol layers</strong>
+      <span>1 still missing: neutral commercial negotiation</span>
+    </div>
+  </div>
+</section>
+
 <!-- ── INTERACTIVE TABS ── -->
 <section class="tabs-section" id="interactive">
   <div class="container">
@@ -1408,26 +1518,26 @@
     </p>
 
     <div class="tabs-shell">
-      <div class="tabs-header" role="tablist">
-        <button class="tab-btn active" data-tab="timeline" role="tab">
+      <div class="tabs-header" role="tablist" aria-label="Protocol explorer views">
+        <button class="tab-btn active" id="tab-timeline" data-tab="timeline" role="tab" aria-selected="true" aria-controls="panel-timeline">
           <span class="tab-btn-num">01</span> Why now
         </button>
-        <button class="tab-btn" data-tab="simulator" role="tab">
+        <button class="tab-btn" id="tab-simulator" data-tab="simulator" role="tab" aria-selected="false" aria-controls="panel-simulator" tabindex="-1">
           <span class="tab-btn-num">02</span> Live negotiation
         </button>
-        <button class="tab-btn" data-tab="playground" role="tab">
+        <button class="tab-btn" id="tab-playground" data-tab="playground" role="tab" aria-selected="false" aria-controls="panel-playground" tabindex="-1">
           <span class="tab-btn-num">03</span> Integration playground
         </button>
       </div>
 
       <!-- TAB 1: TIMELINE -->
-      <div class="tab-panel active" data-panel="timeline">
+      <div class="tab-panel active" id="panel-timeline" data-panel="timeline" role="tabpanel" aria-labelledby="tab-timeline">
         <div class="panel-intro">
           <div class="panel-title">The negotiation layer needs to exist now.</div>
           <div class="panel-sub">Agent protocols have been converging on this gap for three years. A2CN fills it.</div>
         </div>
 
-        <div class="timeline">
+        <div class="timeline" role="slider" tabindex="0" aria-label="A2CN protocol timing timeline" aria-valuemin="2022" aria-valuemax="2026" aria-valuenow="2026" aria-valuetext="A2CN v0.2.0 fills the commercial negotiation layer">
           <div class="tl-row">
             <div class="tl-year">2022</div>
             <div class="tl-dot"></div>
@@ -1485,7 +1595,7 @@
       </div>
 
       <!-- TAB 2: SIMULATOR -->
-      <div class="tab-panel" data-panel="simulator">
+      <div class="tab-panel" id="panel-simulator" data-panel="simulator" role="tabpanel" aria-labelledby="tab-simulator" hidden>
         <div class="panel-intro">
           <div class="panel-title">Watch a bilateral SaaS renewal negotiation.</div>
           <div class="panel-sub">Two agents. Different organizations. Neither controls the authoritative record — the cryptography does.</div>
@@ -1493,8 +1603,8 @@
 
         <div class="sim-wrap">
           <div class="sim-controls">
-            <button id="sim-start" class="btn btn-primary">▶ Start negotiation</button>
-            <button id="sim-reset" class="btn">Reset</button>
+            <button id="sim-start" class="btn btn-primary" type="button">▶ Start negotiation</button>
+            <button id="sim-reset" class="btn" type="button">Reset</button>
             <div class="sim-status" id="sim-status">
               <span class="sim-status-dot"></span>
               <span id="sim-status-text">Ready</span>
@@ -1538,7 +1648,7 @@
       </div>
 
       <!-- TAB 3: PLAYGROUND -->
-      <div class="tab-panel" data-panel="playground">
+      <div class="tab-panel" id="panel-playground" data-panel="playground" role="tabpanel" aria-labelledby="tab-playground" hidden>
         <div class="panel-intro">
           <div class="panel-title">Inspect the adapter pattern.</div>
           <div class="panel-sub">Adapters translate platform events into A2CN sessions and agreed terms back into platform-native payloads.</div>
@@ -1596,6 +1706,10 @@
           lives: sourcing suites, CPQ, CLM, renewal intelligence, and signature systems.
           Each adapter keeps the platform of record intact while giving agents a shared
           way to negotiate and produce a dual-signed transaction record.
+        </p>
+        <p class="section-lede">
+          These adapters are built against each platform's public API and webhook
+          documentation; they are not platform-endorsed integrations.
         </p>
       </div>
       <div class="integration-proof">
@@ -1662,7 +1776,7 @@
               <span><strong>A2CN</strong> goods_procurement terms</span>
               <span><strong>Back</strong> supplier response payload</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-fairmarkit">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-fairmarkit">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1676,7 +1790,7 @@
               <span><strong>A2CN</strong> line items, prices, delivery</span>
               <span><strong>Back</strong> bid response payload</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-keelvar">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-keelvar">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1690,7 +1804,7 @@
               <span><strong>A2CN</strong> goods_procurement session</span>
               <span><strong>Back</strong> bid or acknowledgement payload</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-ariba">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-ariba">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1704,7 +1818,7 @@
               <span><strong>A2CN</strong> goods_procurement terms</span>
               <span><strong>Back</strong> JAGGAER bid response payload</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-jaggaer">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-jaggaer">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1726,7 +1840,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> quote or order transaction</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-revenue-cloud">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-revenue-cloud">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1740,7 +1854,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> external-signature action</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-dealhub">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-dealhub">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1754,7 +1868,7 @@
               <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> order payload</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-nue">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-nue">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1768,7 +1882,7 @@
               <span><strong>A2CN</strong> SaaS or goods terms</span>
               <span><strong>Back</strong> quote update and CLM reference</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-conga">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-conga">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1790,7 +1904,7 @@
               <span><strong>A2CN</strong> negotiated agreement terms</span>
               <span><strong>Back</strong> workflow attributes or record</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-ironclad">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-ironclad">adapter docs →</a>
           </div>
 
           <div class="adapter-card">
@@ -1804,7 +1918,7 @@
               <span><strong>A2CN</strong> neutral bilateral record</span>
               <span><strong>Back</strong> envelope status via Connect</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-docusign">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-docusign">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -1826,7 +1940,7 @@
               <span><strong>A2CN</strong> mandate-aware renewal terms</span>
               <span><strong>Back</strong> audit-ready renewal summary</span>
             </div>
-            <a class="adapter-link" href="docs.html#adapter-vendr">adapter docs →</a>
+            <a class="adapter-link plausible-event-name=Docs+Click" href="docs.html#adapter-vendr">adapter docs →</a>
           </div>
         </div>
       </div>
@@ -2051,11 +2165,10 @@
 <section>
   <div class="container">
     <div class="section-label">Get involved</div>
-    <h2 class="section-heading">If your platform is about to hit this problem, talk to us.</h2>
+    <h2 class="section-heading">Running a sourcing suite, CPQ/CLM, or agent framework about to hit cross-org commitment?</h2>
     <p class="section-lede">
-      If you're running a procurement platform, a contract AI, or an agent framework that
-      will soon need to commit on terms across organizational boundaries, we want to hear
-      from you.
+      Talk to us about a design partnership. We want A2CN to fit the real
+      platform workflows where autonomous commercial commitment will first land.
     </p>
 
     <div class="involve-grid">
@@ -2065,7 +2178,7 @@
           3,700+ lines covering eight protocol components, normative JSON schemas,
           platform integration patterns, and a complete bilateral walkthrough.
         </div>
-        <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">spec/a2cn-spec-v0.2.0.md →</a>
+        <a class="involve-link plausible-event-name=Spec+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">spec/a2cn-spec-v0.2.0.md →</a>
       </div>
 
       <div class="involve-card">
@@ -2074,16 +2187,16 @@
           Start from the developer docs, then drop into the Python reference
           implementation with 465 passing tests. Apache 2.0 license.
         </div>
-        <a class="involve-link" href="docs.html">docs.html →</a>
+        <a class="involve-link plausible-event-name=Docs+Click" href="docs.html">docs.html →</a>
       </div>
 
       <div class="involve-card">
-        <div class="involve-title">Share implementation feedback</div>
+        <div class="involve-title">Talk to us about a design partnership</div>
         <div class="involve-body">
-          Try A2CN with your platform, open issues for gaps, and help shape the next
-          protocol iteration.
+          Bring the platform constraints: auth models, webhooks, approval
+          flows, quote objects, and record custody requirements.
         </div>
-        <a class="involve-link" href="mailto:contact@a2cn.io">contact@a2cn.io →</a>
+        <a class="involve-link plausible-event-name=Contact+Click" href="SCHEDULING_URL_PLACEHOLDER" data-scheduling-link>book a design-partner call →</a>
       </div>
 
       <div class="involve-card">
@@ -2093,7 +2206,7 @@
           MIT/Hopkins research on 182K agent-to-agent negotiations. Drop-in for
           Claude Code, LangChain, CrewAI.
         </div>
-        <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/skills/a2cn-negotiation.md" target="_blank" rel="noopener">reference-implementation/skills/ →</a>
+        <a class="involve-link plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/skills/a2cn-negotiation.md" target="_blank" rel="noopener">reference-implementation/skills/ →</a>
       </div>
     </div>
   </div>
@@ -2108,17 +2221,50 @@
 </footer>
 
 <script>
+  // Maintainer note: replace SCHEDULING_URL_PLACEHOLDER with a real booking URL.
+  // If it is intentionally cleared, these CTAs fall back to email.
+  (function schedulingFallback() {
+    const schedulingUrl = 'SCHEDULING_URL_PLACEHOLDER';
+    document.querySelectorAll('[data-scheduling-link]').forEach(link => {
+      if (schedulingUrl === 'SCHEDULING_URL_PLACEHOLDER' || !schedulingUrl || !link.getAttribute('href')) {
+        link.href = 'mailto:contact@a2cn.io';
+      }
+    });
+  })();
+
   // ═══════════════════════════════════════════════════════════════════════════
   //  TAB ROUTER
   // ═══════════════════════════════════════════════════════════════════════════
   (function tabs() {
     const btns = document.querySelectorAll('.tab-btn');
     const panels = document.querySelectorAll('.tab-panel');
+    function activate(btn) {
+      const tab = btn.dataset.tab;
+      btns.forEach(b => {
+        const isActive = b.dataset.tab === tab;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', String(isActive));
+        b.tabIndex = isActive ? 0 : -1;
+      });
+      panels.forEach(p => {
+        const isActive = p.dataset.panel === tab;
+        p.classList.toggle('active', isActive);
+        p.hidden = !isActive;
+      });
+    }
     btns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        btns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-        panels.forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+      btn.addEventListener('click', () => activate(btn));
+      btn.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const current = Array.from(btns).indexOf(btn);
+        let next = current;
+        if (event.key === 'ArrowLeft') next = (current - 1 + btns.length) % btns.length;
+        if (event.key === 'ArrowRight') next = (current + 1) % btns.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = btns.length - 1;
+        btns[next].focus();
+        activate(btns[next]);
       });
     });
   })();
