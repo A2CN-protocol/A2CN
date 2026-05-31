@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2cn.dev/schemas/dispute-resolved/0.2",
   "title": "A2CN DisputeResolvedMessage",
-  "description": "Resolution of a dispute opened by DISPUTE_NOTICE. Closes the post-commitment dispute lifecycle. Normative at Level 3 conformance as of v0.2.1 (OQ-017 resolved).",
+  "description": "Resolution of a dispute opened by DISPUTE_NOTICE. Closes the post-commitment dispute lifecycle. Normative at Level 3 conformance as of v0.2.0 (OQ-017 resolved).",
   "type": "object",
   "required": [
     "message_id",

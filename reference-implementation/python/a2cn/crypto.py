@@ -318,7 +318,7 @@ def verify_invitation_signature(invitation_dict: dict, public_key: SigningPublic
     Steps:
     1. Extract signature from 'invitation_signature' or 'acceptance_signature'
     2. Copy dict WITHOUT both signature keys
-    3. Serialize to canonical JSON and SHA-256 hash
+    3. Serialize to canonical JSON (JCS)
     4. Verify signature against canonical bytes
     5. Return True if valid, False otherwise
     """
