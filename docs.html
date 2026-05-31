@@ -1226,7 +1226,7 @@ assert ok is True</code></pre>
   (function schedulingFallback() {
     const schedulingUrl = 'SCHEDULING_URL_PLACEHOLDER';
     document.querySelectorAll('[data-scheduling-link]').forEach(link => {
-      if (!schedulingUrl || !link.getAttribute('href')) {
+      if (schedulingUrl === 'SCHEDULING_URL_PLACEHOLDER' || !schedulingUrl || !link.getAttribute('href')) {
         link.href = 'mailto:contact@a2cn.io';
       }
     });
