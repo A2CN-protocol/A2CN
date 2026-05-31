@@ -349,7 +349,7 @@ def conga_quote_to_a2cn_terms(
             default=None,
         )
         if term_months is not None:
-            terms["contract_term_months"] = _int_value(term_months)
+            terms["term_months"] = _int_value(term_months)
     else:
         terms["delivery_days"] = _int_value(_first(
             quote,
@@ -404,8 +404,8 @@ def a2cn_terms_to_conga_quote(
         payload["startDate"] = duration["start_date"]
     if duration.get("end_date"):
         payload["endDate"] = duration["end_date"]
-    if agreed_terms.get("contract_term_months"):
-        payload["termMonths"] = agreed_terms["contract_term_months"]
+    if agreed_terms.get("term_months"):
+        payload["termMonths"] = agreed_terms["term_months"]
     return payload
 
 

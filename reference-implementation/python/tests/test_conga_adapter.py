@@ -87,7 +87,8 @@ class TestCongaQuoteToTerms:
         assert terms["total_value"] == 10_000_000
         assert terms["seat_count"] == 100
         assert terms["subscription_tier"] == "Enterprise Subscription License"
-        assert terms["contract_term_months"] == 12
+        assert terms["term_months"] == 12
+        assert "contract_term_months" not in terms
         assert terms["payment_terms"]["net_days"] == 45
         assert terms["contract_duration"] == {
             "start_date": "2026-07-01",
