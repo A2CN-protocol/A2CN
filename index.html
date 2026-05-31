@@ -763,6 +763,257 @@
       .pg-controls { grid-template-columns: 1fr; }
     }
 
+    /* ── INTEGRATIONS ── */
+    .integrations-section {
+      background:
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 55%, var(--bg) 100%);
+    }
+    .integration-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 2rem;
+      align-items: start;
+      margin-bottom: 2rem;
+    }
+    .integration-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 0.9rem;
+    }
+    .integration-kicker::before {
+      content: "";
+      width: 22px;
+      height: 1px;
+      background: var(--amber);
+    }
+    .integration-proof {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1.1rem;
+    }
+    .integration-proof-title {
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.85rem;
+    }
+    .integration-proof-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.65rem;
+    }
+    .integration-proof-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      padding: 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-2);
+    }
+    .integration-proof-item strong {
+      font-family: var(--display);
+      font-size: 1.45rem;
+      line-height: 1;
+      color: var(--text);
+      font-weight: 400;
+    }
+    .integration-proof-item span {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .integration-flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin: 2rem 0;
+      background: var(--surface);
+    }
+    .integration-flow-step {
+      padding: 1rem 1.1rem;
+      border-right: 1px solid var(--border);
+      position: relative;
+    }
+    .integration-flow-step:last-child { border-right: none; }
+    .integration-flow-step::after {
+      content: "→";
+      position: absolute;
+      right: -0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 1rem;
+      height: 1rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      z-index: 2;
+    }
+    .integration-flow-step:last-child::after { display: none; }
+    .integration-flow-label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .integration-flow-title {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.35;
+      margin-bottom: 0.2rem;
+    }
+    .integration-flow-copy {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+    .adapter-groups {
+      display: flex;
+      flex-direction: column;
+      gap: 1.4rem;
+    }
+    .adapter-group {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    .adapter-group-meta {
+      position: sticky;
+      top: 82px;
+    }
+    .adapter-group-name {
+      font-family: var(--display);
+      font-size: 1.35rem;
+      line-height: 1.15;
+      color: var(--text);
+      margin-bottom: 0.45rem;
+    }
+    .adapter-group-desc {
+      font-size: 0.84rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .adapter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+    .adapter-card {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      min-height: 210px;
+      transition: border-color 0.18s, background 0.18s, transform 0.18s;
+    }
+    .adapter-card:hover {
+      border-color: var(--border-lit);
+      background: var(--surface-2);
+      transform: translateY(-2px);
+    }
+    .adapter-head {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 0.8rem;
+    }
+    .adapter-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .adapter-mode {
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      color: var(--amber);
+      padding: 0.18rem 0.45rem;
+      border: 1px solid rgba(255, 181, 71, 0.35);
+      border-radius: 999px;
+      white-space: nowrap;
+      background: rgba(255, 181, 71, 0.07);
+    }
+    .adapter-copy {
+      font-size: 0.84rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+      flex: 1;
+    }
+    .adapter-path {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.35rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .adapter-path strong {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+    .adapter-link {
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      color: var(--amber);
+      align-self: flex-start;
+    }
+    .adapter-link:hover { text-decoration: underline; color: var(--amber); }
+    @media (max-width: 900px) {
+      .integration-hero,
+      .adapter-group { grid-template-columns: 1fr; }
+      .adapter-group-meta { position: static; }
+      .integration-flow { grid-template-columns: 1fr 1fr; }
+      .integration-flow-step:nth-child(2) { border-right: none; }
+      .integration-flow-step:nth-child(1),
+      .integration-flow-step:nth-child(2) { border-bottom: 1px solid var(--border); }
+    }
+    @media (max-width: 640px) {
+      .integration-proof-list,
+      .integration-flow,
+      .adapter-grid { grid-template-columns: 1fr; }
+      .integration-flow-step {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .integration-flow-step:last-child { border-bottom: none; }
+      .integration-flow-step::after {
+        right: auto;
+        left: 1.1rem;
+        top: auto;
+        bottom: -0.5rem;
+        transform: none;
+      }
+      .adapter-card { min-height: 0; }
+    }
+
     /* ── PROTOCOL STACK (refresh) ── */
     .diagram-wrap {
       background: var(--surface);
@@ -1094,6 +1345,7 @@
     </span>
     <div class="nav-links">
       <a class="btn" href="#how-it-works">How it works</a>
+      <a class="btn" href="#integrations">Integrations</a>
       <a class="btn" href="#status">Status</a>
       <a class="btn btn-primary" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">View on GitHub →</a>
     </div>
@@ -1120,6 +1372,7 @@
     </p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#interactive">See it in action →</a>
+      <a class="btn" href="#integrations">Explore integrations</a>
       <a class="btn" href="https://github.com/A2CN-protocol/A2CN/blob/main/spec/a2cn-spec-v0.2.0.md" target="_blank" rel="noopener">Read the spec</a>
     </div>
 
@@ -1144,10 +1397,10 @@
 <section class="tabs-section" id="interactive">
   <div class="container">
     <div class="section-label">Explore the protocol</div>
-    <h2 class="section-heading">Three ways to understand what A2CN does.</h2>
+    <h2 class="section-heading">Three ways to understand the protocol.</h2>
     <p class="section-lede">
       Scrub the timeline to see why now is the right moment. Run a live negotiation between
-      two agents. Or wire it into a real procurement platform and see the adapter output change.
+      two agents. Or inspect the adapter pattern before the full integration map below.
     </p>
 
     <div class="tabs-shell">
@@ -1212,7 +1465,7 @@
             <div class="tl-dot"></div>
             <div class="tl-content">
               <div class="tl-title">A2CN v0.2.0 — you are here</div>
-              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 390 tests, Fairmarkit + Keelvar + Salesforce + DealHub + Nue adapters, MCP server, A2A extension proposal submitted.</div>
+              <div class="tl-desc">Open, neutral protocol for commercial negotiation between agents from different organizations. 8 components, 465 tests, 11 platform adapters, MCP server, A2A extension proposal submitted.</div>
             </div>
           </div>
 
@@ -1283,8 +1536,8 @@
       <!-- TAB 3: PLAYGROUND -->
       <div class="tab-panel" data-panel="playground">
         <div class="panel-intro">
-          <div class="panel-title">Drop A2CN into a procurement platform.</div>
-          <div class="panel-sub">Zero platform changes. Adapters translate webhook events into A2CN sessions and agreed terms back into response format.</div>
+          <div class="panel-title">Inspect the adapter pattern.</div>
+          <div class="panel-sub">Adapters translate platform events into A2CN sessions and agreed terms back into platform-native payloads.</div>
         </div>
 
         <div class="pg-wrap">
@@ -1323,6 +1576,256 @@
         </div>
       </div>
 
+    </div>
+  </div>
+</section>
+
+<!-- ── INTEGRATIONS ── -->
+<section class="integrations-section" id="integrations">
+  <div class="container">
+    <div class="integration-hero">
+      <div>
+        <div class="integration-kicker">Platform integrations</div>
+        <h2 class="section-heading">A2CN connects agents across the commercial stack.</h2>
+        <p class="section-lede">
+          The protocol is neutral, but adoption starts where commercial work already
+          lives: sourcing suites, CPQ, CLM, renewal intelligence, and signature systems.
+          Each adapter keeps the platform of record intact while giving agents a shared
+          way to negotiate and produce a dual-signed transaction record.
+        </p>
+      </div>
+      <div class="integration-proof">
+        <div class="integration-proof-title">Shipped adapter surface</div>
+        <div class="integration-proof-list">
+          <div class="integration-proof-item">
+            <strong>11</strong>
+            <span>platform adapters across procurement, CPQ, CLM, and signature</span>
+          </div>
+          <div class="integration-proof-item">
+            <strong>4</strong>
+            <span>commercial platform categories with distinct handoff patterns</span>
+          </div>
+          <div class="integration-proof-item">
+            <strong>0</strong>
+            <span>platform rewrites required; adapters sit at API and webhook edges</span>
+          </div>
+          <div class="integration-proof-item">
+            <strong>1</strong>
+            <span>neutral signed record both parties can independently verify</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="integration-flow" aria-label="A2CN integration flow">
+      <div class="integration-flow-step">
+        <div class="integration-flow-label">01 · platform</div>
+        <div class="integration-flow-title">Event or record enters</div>
+        <div class="integration-flow-copy">RFx, quote, workflow, contract, renewal, or envelope event.</div>
+      </div>
+      <div class="integration-flow-step">
+        <div class="integration-flow-label">02 · adapter</div>
+        <div class="integration-flow-title">Translate to A2CN terms</div>
+        <div class="integration-flow-copy">Platform-specific fields become canonical deal terms.</div>
+      </div>
+      <div class="integration-flow-step">
+        <div class="integration-flow-label">03 · protocol</div>
+        <div class="integration-flow-title">Agents negotiate safely</div>
+        <div class="integration-flow-copy">Mandates, signatures, turn order, and commitment caps are enforced.</div>
+      </div>
+      <div class="integration-flow-step">
+        <div class="integration-flow-label">04 · record</div>
+        <div class="integration-flow-title">Write back or formalize</div>
+        <div class="integration-flow-copy">Agreed terms return to the platform, CLM, or signature workflow.</div>
+      </div>
+    </div>
+
+    <div class="adapter-groups">
+      <div class="adapter-group">
+        <div class="adapter-group-meta">
+          <div class="adapter-group-name">Buy-side sourcing and procurement</div>
+          <div class="adapter-group-desc">RFx, sourcing-event, bid, and procurement workflows become A2CN goods-procurement sessions.</div>
+        </div>
+        <div class="adapter-grid">
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Fairmarkit</div>
+              <div class="adapter-mode">buy-side</div>
+            </div>
+            <div class="adapter-copy">Tail-spend bid events can become neutral A2CN negotiations without replacing Fairmarkit as the request platform.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> bid/request event</span>
+              <span><strong>A2CN</strong> goods_procurement terms</span>
+              <span><strong>Back</strong> supplier response payload</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Keelvar</div>
+              <div class="adapter-mode">buy-side</div>
+            </div>
+            <div class="adapter-copy">Sourcing event webhooks translate into structured negotiation terms, then agreed terms return as bid responses.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> sourcing event feed update</span>
+              <span><strong>A2CN</strong> line items, prices, delivery</span>
+              <span><strong>Back</strong> bid response payload</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">SAP Ariba</div>
+              <div class="adapter-mode">buy-side</div>
+            </div>
+            <div class="adapter-copy">Event Management and Discovery RFx payloads can start A2CN sessions while Ariba remains the sourcing system.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> Event Management / Discovery RFx</span>
+              <span><strong>A2CN</strong> goods_procurement session</span>
+              <span><strong>Back</strong> bid or acknowledgement payload</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">JAGGAER</div>
+              <div class="adapter-mode">buy-side</div>
+            </div>
+            <div class="adapter-copy">ASO push or poll events feed A2CN negotiations, preserving JAGGAER customer-host and sourcing references.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> ASO push event or poll result</span>
+              <span><strong>A2CN</strong> goods_procurement terms</span>
+              <span><strong>Back</strong> JAGGAER bid response payload</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="adapter-group">
+        <div class="adapter-group-meta">
+          <div class="adapter-group-name">Sell-side CPQ and revenue</div>
+          <div class="adapter-group-desc">Quote, subscription, and renewal records become A2CN sessions before returning as quote/order updates.</div>
+        </div>
+        <div class="adapter-grid">
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Salesforce Revenue Cloud</div>
+              <div class="adapter-mode">sell-side</div>
+            </div>
+            <div class="adapter-copy">Pricing API responses and renewal quote data map into A2CN terms, then back into quote or order payloads.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> pricing / renewal response</span>
+              <span><strong>A2CN</strong> saas_renewal terms</span>
+              <span><strong>Back</strong> quote or order transaction</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">adapter source →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">DealHub</div>
+              <div class="adapter-mode">sell-side</div>
+            </div>
+            <div class="adapter-copy">Quote-ready webhooks and quote details become A2CN sessions, with final records linked back through DealHub actions.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> quoteReady webhook</span>
+              <span><strong>A2CN</strong> SaaS or goods terms</span>
+              <span><strong>Back</strong> external-signature action</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Nue.io</div>
+              <div class="adapter-mode">sell-side</div>
+            </div>
+            <div class="adapter-copy">Subscription and order data can drive A2CN renewal negotiations while Nue remains the monetization platform.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> subscription renewal record</span>
+              <span><strong>A2CN</strong> saas_renewal terms</span>
+              <span><strong>Back</strong> order payload</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Conga</div>
+              <div class="adapter-mode">sell-side</div>
+            </div>
+            <div class="adapter-copy">CPQ quote and CLM agreement records translate into A2CN terms, then back to Conga quote and contract metadata.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> CPQ quote / CLM agreement</span>
+              <span><strong>A2CN</strong> SaaS or goods terms</span>
+              <span><strong>Back</strong> quote update and CLM reference</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="adapter-group">
+        <div class="adapter-group-meta">
+          <div class="adapter-group-name">CLM, signature, and formalization</div>
+          <div class="adapter-group-desc">Completed negotiations hand off to contract workflow, records, signatures, and post-commitment status.</div>
+        </div>
+        <div class="adapter-grid">
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Ironclad</div>
+              <div class="adapter-mode">CLM</div>
+            </div>
+            <div class="adapter-copy">Workflow metadata can start A2CN negotiations and receive final transaction-record references for CLM formalization.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> workflow webhook or record</span>
+              <span><strong>A2CN</strong> negotiated agreement terms</span>
+              <span><strong>Back</strong> workflow attributes or record</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">DocuSign</div>
+              <div class="adapter-mode">signature</div>
+            </div>
+            <div class="adapter-copy">A2CN transaction records become eSignature envelopes; Connect callbacks report completion back to post-commitment state.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> completed A2CN transaction record</span>
+              <span><strong>A2CN</strong> neutral bilateral record</span>
+              <span><strong>Back</strong> envelope status via Connect</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="adapter-group">
+        <div class="adapter-group-meta">
+          <div class="adapter-group-name">SaaS renewal intelligence</div>
+          <div class="adapter-group-desc">Market benchmarks and renewal context shape agent mandates before negotiation begins.</div>
+        </div>
+        <div class="adapter-grid">
+          <div class="adapter-card">
+            <div class="adapter-head">
+              <div class="adapter-name">Vendr</div>
+              <div class="adapter-mode">renewal</div>
+            </div>
+            <div class="adapter-copy">Benchmark pricing and renewal workflows become A2CN SaaS-renewal terms for agent-to-agent negotiation.</div>
+            <div class="adapter-path">
+              <span><strong>In</strong> pricing benchmark / renewal webhook</span>
+              <span><strong>A2CN</strong> mandate-aware renewal terms</span>
+              <span><strong>Back</strong> audit-ready renewal summary</span>
+            </div>
+            <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -1460,7 +1963,7 @@
     <h2 class="section-heading">Built. Being proposed. Still to come.</h2>
     <p class="section-lede">
       A2CN is an open protocol with a complete Python reference implementation,
-      390 passing tests, platform adapters, and an A2A extension proposal in review.
+      465 passing tests, 11 platform adapters, and an A2A extension proposal in review.
     </p>
 
     <div class="status-split">
@@ -1471,9 +1974,9 @@
         </div>
         <ul>
           <li>Protocol spec v0.2.0 <span class="detail">3,700+ lines, 8 components, Apache 2.0</span></li>
-          <li>Reference implementation <span class="detail">Python, 390 tests passing</span></li>
+          <li>Reference implementation <span class="detail">Python, 465 tests passing</span></li>
           <li>Session invitation <span class="detail">cold-start adoption solved</span></li>
-          <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io</span></li>
+          <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Ariba, JAGGAER, Revenue Cloud, DealHub, Nue.io, Conga, Ironclad, DocuSign, Vendr</span></li>
           <li>MCP server <span class="detail">Claude Desktop, LangChain, LangGraph, Agentforce, Cursor</span></li>
           <li>JWT request authentication <span class="detail">ES256/Ed25519, anti-replay, DID verification</span></li>
           <li>LLM integration pattern <span class="detail">Section 13.9, separation of concerns</span></li>
@@ -1564,7 +2067,7 @@
       <div class="involve-card">
         <div class="involve-title">Build on it</div>
         <div class="involve-body">
-          Python reference implementation with 390 passing tests. LangChain, CrewAI,
+          Python reference implementation with 465 passing tests. LangChain, CrewAI,
           and Agentforce compatible. Apache 2.0 license.
         </div>
         <a class="involve-link" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">github.com/A2CN-protocol/A2CN →</a>
@@ -1596,7 +2099,7 @@
 <footer>
   <div class="footer-inner">
     <span class="footer-brand">A2CN</span>
-    <span class="footer-meta">Apache 2.0 · spec v0.2.0 · 390 tests passing</span>
+    <span class="footer-meta">Apache 2.0 · spec v0.2.0 · 465 tests passing</span>
   </div>
 </footer>
 
