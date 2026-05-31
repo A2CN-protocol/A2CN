@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A2CN Docs - Developer Guide</title>
+  <meta name="description" content="Developer documentation for A2CN: quickstart, protocol lifecycle, API endpoints, transaction records, and integration adapters.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0e14;
+      --surface: #141a26;
+      --surface-2: #1a2030;
+      --border: #242b3d;
+      --border-lit: #2f3850;
+      --text: #e8ecf3;
+      --text-dim: #a8b2c7;
+      --muted: #6c7793;
+      --blue: #5b9cff;
+      --amber: #ffb547;
+      --green: #4ade80;
+      --codebg: #10151f;
+      --radius: 10px;
+      --max: 1180px;
+      --display: 'Instrument Serif', Georgia, serif;
+      --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { color: var(--amber); }
+    ::selection { background: var(--amber); color: var(--bg); }
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10, 14, 20, 0.86);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+    }
+    .nav-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+    .nav-logo {
+      font-family: var(--display);
+      font-size: 1.5rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .nav-logo-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 10px var(--amber);
+    }
+    .nav-links { display: flex; gap: 0.5rem; align-items: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      transition: all 0.18s ease;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      border-color: var(--border-lit);
+      color: var(--text);
+      transform: translateY(-1px);
+    }
+    .btn-primary {
+      background: var(--amber);
+      border-color: var(--amber);
+      color: var(--bg);
+      font-weight: 600;
+    }
+    .btn-primary:hover { color: var(--bg); background: #ffc56b; }
+    .docs-hero {
+      border-bottom: 1px solid var(--border);
+      padding: 5.5rem 1.5rem 3rem;
+      position: relative;
+    }
+    .docs-hero-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+      gap: 3rem;
+      align-items: end;
+    }
+    .eyebrow {
+      font-family: var(--mono);
+      color: var(--amber);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      margin-bottom: 1.1rem;
+    }
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(3rem, 8vw, 6.4rem);
+      line-height: 0.92;
+      font-weight: 400;
+      letter-spacing: 0;
+      margin-bottom: 1.4rem;
+    }
+    .lede {
+      max-width: 720px;
+      color: var(--text-dim);
+      font-size: 1.1rem;
+    }
+    .hero-panel {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(26, 32, 48, 0.85), rgba(16, 21, 31, 0.85));
+      border-radius: var(--radius);
+      padding: 1.1rem;
+    }
+    .hero-panel-title {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      margin-bottom: 0.8rem;
+    }
+    .hero-panel-list {
+      display: grid;
+      gap: 0.65rem;
+      color: var(--text-dim);
+      font-size: 0.92rem;
+    }
+    .hero-panel-list strong { color: var(--text); font-weight: 600; }
+    .docs-shell {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 5rem;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 3rem;
+      align-items: start;
+    }
+    .docs-sidebar {
+      position: sticky;
+      top: 86px;
+      display: grid;
+      gap: 0.35rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(20, 26, 38, 0.68);
+      padding: 0.8rem;
+    }
+    .docs-sidebar a {
+      color: var(--text-dim);
+      font-size: 0.88rem;
+      padding: 0.45rem 0.55rem;
+      border-radius: 7px;
+    }
+    .docs-sidebar a:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+    .docs-content { min-width: 0; }
+    .docs-section {
+      scroll-margin-top: 90px;
+      padding: 0 0 3.5rem;
+      margin-bottom: 3.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .docs-section:last-child { border-bottom: none; margin-bottom: 0; }
+    .section-kicker {
+      font-family: var(--mono);
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 0.65rem;
+    }
+    h2 {
+      font-family: var(--display);
+      font-size: clamp(2rem, 5vw, 3.6rem);
+      line-height: 1;
+      font-weight: 400;
+      letter-spacing: 0;
+      margin-bottom: 1rem;
+    }
+    h3 {
+      font-size: 1.08rem;
+      line-height: 1.25;
+      margin: 1.7rem 0 0.65rem;
+    }
+    p { color: var(--text-dim); margin-bottom: 1rem; }
+    ul { color: var(--text-dim); padding-left: 1.2rem; margin: 0.8rem 0 1rem; }
+    li { margin-bottom: 0.45rem; }
+    code {
+      font-family: var(--mono);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-size: 0.88em;
+    }
+    .code-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--codebg);
+      overflow: hidden;
+      margin: 1rem 0 1.4rem;
+    }
+    .code-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      border-bottom: 1px solid var(--border);
+      padding: 0.65rem 0.8rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .copy-btn {
+      border: 1px solid var(--border-lit);
+      background: transparent;
+      color: var(--text-dim);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      padding: 0.25rem 0.45rem;
+      cursor: pointer;
+    }
+    .copy-btn:hover { color: var(--text); border-color: var(--amber); }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: #dce6f7;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin: 1.2rem 0;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 1rem;
+    }
+    .card-title {
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+    .card p { font-size: 0.92rem; margin-bottom: 0; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 1.2rem 0;
+    }
+    .flow-step {
+      padding: 1rem;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .flow-step:last-child { border-right: none; }
+    .flow-num {
+      font-family: var(--mono);
+      color: var(--amber);
+      font-size: 0.72rem;
+      margin-bottom: 0.35rem;
+    }
+    .flow-title { color: var(--text); font-weight: 600; margin-bottom: 0.25rem; }
+    .flow-step p { font-size: 0.86rem; margin: 0; }
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow-x: auto;
+      margin: 1rem 0 1.4rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+      background: var(--surface);
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+    th {
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      background: var(--surface-2);
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border-lit);
+      border-radius: 999px;
+      padding: 0.18rem 0.5rem;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .adapter-index {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.8rem;
+      margin-top: 1.2rem;
+    }
+    .adapter-link {
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem;
+      background: var(--surface);
+      min-height: 110px;
+    }
+    .adapter-link:hover {
+      border-color: var(--border-lit);
+      background: var(--surface-2);
+      color: var(--blue);
+    }
+    .adapter-name { color: var(--text); font-weight: 600; margin-bottom: 0.25rem; }
+    .adapter-meta { color: var(--muted); font-size: 0.82rem; }
+    .callout {
+      border: 1px solid rgba(255, 181, 71, 0.35);
+      background: rgba(255, 181, 71, 0.07);
+      border-radius: var(--radius);
+      padding: 1rem;
+      color: var(--text-dim);
+      margin: 1.2rem 0;
+    }
+    .callout strong { color: var(--text); }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      color: var(--muted);
+    }
+    .footer-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+    }
+    @media (max-width: 980px) {
+      .docs-hero-inner,
+      .docs-shell { grid-template-columns: 1fr; }
+      .docs-sidebar {
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step { border-right: none; border-bottom: 1px solid var(--border); }
+      .flow-step:last-child { border-bottom: none; }
+      .adapter-index { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      nav { padding: 0 1rem; }
+      .nav-links a:not(.btn-primary) { display: none; }
+      .docs-hero { padding: 4rem 1rem 2rem; }
+      .docs-shell { padding: 2rem 1rem 4rem; }
+      .grid-2,
+      .adapter-index,
+      .docs-sidebar { grid-template-columns: 1fr; }
+      h1 { font-size: 3.2rem; }
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="index.html">
+      <span class="nav-logo-dot"></span>
+      A2CN
+    </a>
+    <div class="nav-links">
+      <a class="btn" href="index.html#integrations">Integrations</a>
+      <a class="btn" href="#quickstart">Quickstart</a>
+      <a class="btn" href="#reference">Reference</a>
+      <a class="btn btn-primary" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub &rarr;</a>
+    </div>
+  </div>
+</nav>
+
+<header class="docs-hero">
+  <div class="docs-hero-inner">
+    <div>
+      <div class="eyebrow">Developer docs - protocol v0.2.0</div>
+      <h1>Build agents that can negotiate.</h1>
+      <p class="lede">
+        A2CN is the shared protocol layer for cross-company commercial negotiation:
+        discovery, mandates, signed offers, acceptance, deterministic transaction
+        records, audit logs, and post-commitment events.
+      </p>
+    </div>
+    <div class="hero-panel">
+      <div class="hero-panel-title">What is documented here</div>
+      <div class="hero-panel-list">
+        <div><strong>Quickstart:</strong> session creation, offer, acceptance, record.</div>
+        <div><strong>Concepts:</strong> lifecycle, mandates, signatures, DIDs.</div>
+        <div><strong>Reference:</strong> endpoints, messages, records, MCP notes.</div>
+        <div><strong>Adapters:</strong> 11 procurement, CPQ, CLM, renewal, and signature integrations.</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="docs-shell">
+  <aside class="docs-sidebar" aria-label="Docs navigation">
+    <a href="#overview">Overview</a>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#lifecycle">Message lifecycle</a>
+    <a href="#concepts">Core concepts</a>
+    <a href="#reference">API reference</a>
+    <a href="#records">Records and audit</a>
+    <a href="#mcp">MCP and agents</a>
+    <a href="#adapters">Adapter index</a>
+  </aside>
+
+  <div class="docs-content">
+    <section class="docs-section" id="overview">
+      <div class="section-kicker">Overview</div>
+      <h2>Where A2CN fits</h2>
+      <p>
+        A2CN sits between the systems that discover commercial opportunities and
+        the systems that execute them. A procurement, CPQ, CLM, renewal, or
+        agent framework can translate local events into A2CN terms, let two
+        authorized agents negotiate, and receive a content-addressed transaction
+        record when the session completes.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Protocol boundary</div>
+          <p>Defines shared messages, turn order, mandate checks, signatures, acceptance, and record verification.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Platform boundary</div>
+          <p>Adapters translate platform-native RFx, quote, workflow, renewal, and envelope events into or out of A2CN.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Canonical implementation:</strong> the Python reference server is the executable model for v0.2.0 behavior and currently ships with 465 passing tests.
+        Source, tests, and deeper implementation detail remain available in the
+        <a href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub repository</a>.
+      </div>
+    </section>
+
+    <section class="docs-section" id="quickstart">
+      <div class="section-kicker">Quickstart</div>
+      <h2>Run a complete bilateral negotiation</h2>
+      <p>
+        The fastest way to see the protocol is the Python reference demo. It
+        creates two agents, exchanges signed offers, accepts the final offer,
+        and verifies that both sides produce the same transaction record hash.
+      </p>
+      <div class="code-card">
+        <div class="code-head">
+          <span>terminal</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>git clone https://github.com/A2CN-protocol/A2CN.git
+cd A2CN/reference-implementation/python
+pip install -e .
+
+python examples/saas_renewal.py
+python examples/saas_renewal.py --deal-type goods_procurement
+../../demos/two_process/run_demo.sh</code></pre>
+      </div>
+
+      <h3>HTTP flow in four calls</h3>
+      <p>
+        Production integrations usually use the client library or adapter helpers,
+        but the wire flow is intentionally simple: create a session, post signed
+        messages, then fetch the completed record.
+      </p>
+      <div class="code-card">
+        <div class="code-head">
+          <span>1. create session</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>curl -X POST https://seller.example.com/sessions \
+  -H "Authorization: Bearer $A2CN_JWT" \
+  -H "Content-Type: application/a2cn+json" \
+  -H "Idempotency-Key: init-001" \
+  -d '{
+    "message_type": "session_init",
+    "message_id": "init-001",
+    "protocol_version": "0.2",
+    "session_params": {
+      "deal_type": "saas_renewal",
+      "currency": "USD",
+      "max_rounds": 6,
+      "session_timeout_seconds": 86400,
+      "round_timeout_seconds": 3600
+    },
+    "initiator": {
+      "did": "did:web:buyer.example",
+      "agent_id": "buyer-agent",
+      "verification_method": "did:web:buyer.example#key-1"
+    },
+    "initiator_mandate": {
+      "currency": "USD",
+      "max_commitment_value": 12500000
+    }
+  }'</code></pre>
+      </div>
+      <div class="code-card">
+        <div class="code-head">
+          <span>2. send signed offer</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>curl -X POST https://seller.example.com/sessions/$SESSION_ID/messages \
+  -H "Authorization: Bearer $A2CN_JWT" \
+  -H "Content-Type: application/a2cn+json" \
+  -H "Idempotency-Key: offer-001" \
+  -d '{
+    "message_type": "offer",
+    "message_id": "offer-001",
+    "session_id": "'"$SESSION_ID"'",
+    "round_number": 1,
+    "sequence_number": 1,
+    "sender_did": "did:web:buyer.example",
+    "sender_agent_id": "buyer-agent",
+    "sender_verification_method": "did:web:buyer.example#key-1",
+    "timestamp": "2026-05-31T18:00:00Z",
+    "expires_at": "2026-05-31T19:00:00Z",
+    "terms": {
+      "deal_type": "saas_renewal",
+      "currency": "USD",
+      "total_value": 9500000,
+      "seat_count": 100,
+      "term_months": 12
+    },
+    "protocol_act_hash": "$PROTOCOL_ACT_HASH",
+    "protocol_act_signature": "$COMPACT_JWS"
+  }'</code></pre>
+      </div>
+      <div class="code-card">
+        <div class="code-head">
+          <span>3. accept an offer</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>curl -X POST https://seller.example.com/sessions/$SESSION_ID/messages \
+  -H "Authorization: Bearer $A2CN_JWT" \
+  -H "Content-Type: application/a2cn+json" \
+  -H "Idempotency-Key: accept-001" \
+  -d '{
+    "message_type": "acceptance",
+    "message_id": "accept-001",
+    "session_id": "'"$SESSION_ID"'",
+    "in_reply_to": "offer-001",
+    "round_number": 1,
+    "sequence_number": 2,
+    "accepted_offer_id": "offer-001",
+    "accepted_protocol_act_hash": "$PROTOCOL_ACT_HASH",
+    "sender_did": "did:web:seller.example",
+    "sender_agent_id": "seller-agent",
+    "sender_verification_method": "did:web:seller.example#key-1",
+    "timestamp": "2026-05-31T18:04:00Z",
+    "acceptance_signature": "$ACCEPTANCE_JWS"
+  }'</code></pre>
+      </div>
+      <div class="code-card">
+        <div class="code-head">
+          <span>4. fetch record</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>curl https://seller.example.com/sessions/$SESSION_ID/record \
+  -H "Authorization: Bearer $A2CN_JWT" \
+  -H "Accept: application/a2cn+json"</code></pre>
+      </div>
+    </section>
+
+    <section class="docs-section" id="lifecycle">
+      <div class="section-kicker">Lifecycle</div>
+      <h2>Message lifecycle</h2>
+      <p>
+        Sessions are bilateral and turn-based. Round 1 begins with an
+        <code>offer</code>; later commercial proposals are <code>counteroffer</code>
+        messages. A terminal message creates either a completed record or an
+        auditable terminal state.
+      </p>
+      <div class="flow" aria-label="A2CN message lifecycle">
+        <div class="flow-step">
+          <div class="flow-num">01</div>
+          <div class="flow-title">Discover</div>
+          <p>Fetch <code>/.well-known/a2cn-agent</code> to learn endpoint, DID, deal types, and verification method.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">02</div>
+          <div class="flow-title">SessionInit</div>
+          <p>Initiator proposes deal type, timeouts, currency, and mandate.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">03</div>
+          <div class="flow-title">Negotiate</div>
+          <p>Offer and counteroffer messages carry signed protocol acts.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">04</div>
+          <div class="flow-title">Accept</div>
+          <p>Acceptance signs the canonical accepted-offer payload.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">05</div>
+          <div class="flow-title">Record</div>
+          <p>Both parties independently compute the same transaction record hash.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="docs-section" id="concepts">
+      <div class="section-kicker">Concepts</div>
+      <h2>Core protocol concepts</h2>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">SessionInit / SessionAck</div>
+          <p>SessionInit declares requested session parameters and the initiator mandate. SessionAck binds the responder, accepted parameters, responder mandate, and initial turn.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Offers and counteroffers</div>
+          <p>Each commercial proposal contains canonical terms, a protocol-act hash, and a compact JWS over that hash.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Mandates</div>
+          <p>Declared mandates constrain agent authority, including hard max commitment value checks before state mutation.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">DID-backed signatures</div>
+          <p>JWT auth and protocol-act signatures resolve DID documents and accept only signing-capable verification methods.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Transaction records</div>
+          <p>Completed sessions emit deterministic records linking final terms, offer chain, acceptance, parties, mandates, and signatures.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Post-commitment events</div>
+          <p>Delivery, acknowledgment, dispute, resolution, contract, and signature workflows can reference the record hash without reopening negotiation.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="docs-section" id="reference">
+      <div class="section-kicker">Reference</div>
+      <h2>Reference server endpoints</h2>
+      <p>
+        The Python server is implemented with FastAPI and returns
+        <code>application/a2cn+json</code> for protocol endpoints. State-mutating
+        endpoints use Bearer JWT authentication, except inbound
+        <code>POST /invitations</code>, which authenticates by invitation signature.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>Purpose</th>
+              <th>Auth</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>GET /.well-known/a2cn-agent</code></td>
+              <td>Discovery document: endpoint, DID, verification method, conformance level, deal types.</td>
+              <td><span class="badge">public</span></td>
+            </tr>
+            <tr>
+              <td><code>POST /sessions</code></td>
+              <td>Create a session from <code>session_init</code> and receive <code>session_ack</code>.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>GET /sessions/{session_id}</code></td>
+              <td>Read canonical session state.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>POST /sessions/{session_id}/messages</code></td>
+              <td>Send <code>offer</code>, <code>counteroffer</code>, <code>acceptance</code>, <code>rejection</code>, or <code>withdrawal</code>.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>POST /sessions/{session_id}/approval-receipt</code></td>
+              <td>Release a human-approval pause with an authorized approval receipt.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>GET /sessions/{session_id}/messages</code></td>
+              <td>Paginated message history after a sequence number.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>GET /sessions/{session_id}/record</code></td>
+              <td>Fetch deterministic transaction record for completed sessions.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>GET /sessions/{session_id}/audit</code></td>
+              <td>Fetch audit log for any terminal session.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
+              <td><code>POST /invitations</code></td>
+              <td>Receive a signed session invitation at cold start.</td>
+              <td><span class="badge">invitation signature</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Message shapes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Message</th>
+              <th>Required identity fields</th>
+              <th>Commitment fields</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>session_init</code></td>
+              <td><code>initiator.did</code>, <code>initiator.verification_method</code></td>
+              <td><code>session_params</code>, <code>initiator_mandate</code></td>
+            </tr>
+            <tr>
+              <td><code>offer</code> / <code>counteroffer</code></td>
+              <td><code>sender_did</code>, <code>sender_agent_id</code>, <code>sender_verification_method</code></td>
+              <td><code>terms</code>, <code>protocol_act_hash</code>, <code>protocol_act_signature</code></td>
+            </tr>
+            <tr>
+              <td><code>acceptance</code></td>
+              <td><code>sender_did</code>, <code>sender_agent_id</code>, <code>sender_verification_method</code></td>
+              <td><code>accepted_offer_id</code>, <code>accepted_protocol_act_hash</code>, <code>acceptance_signature</code></td>
+            </tr>
+            <tr>
+              <td>post-commitment events</td>
+              <td>event sender identity and session ID</td>
+              <td><code>transaction_record_hash</code> plus event-specific evidence</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="docs-section" id="records">
+      <div class="section-kicker">Records</div>
+      <h2>Transaction records and audit logs</h2>
+      <p>
+        A completed A2CN negotiation produces a deterministic transaction record.
+        The verifier checks record hash integrity, accepted-offer linkage, the
+        offer-chain hash, and both party signatures. This makes the record usable
+        as a neutral artifact for CLM, signature, payment, custody, and dispute
+        workflows.
+      </p>
+      <div class="code-card">
+        <div class="code-head">
+          <span>python</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>from a2cn.record import generate_transaction_record, verify_transaction_record
+
+record = generate_transaction_record(session)
+ok = verify_transaction_record(
+    record,
+    did_resolver={
+        "did:web:buyer.example": buyer_did_document,
+        "did:web:seller.example": seller_did_document,
+    },
+)
+assert ok is True</code></pre>
+      </div>
+      <p>
+        Audit logs are available for terminal sessions and include the message
+        log, terminal state, mandate context, and AI-system metadata such as
+        whether human oversight was present.
+      </p>
+    </section>
+
+    <section class="docs-section" id="mcp">
+      <div class="section-kicker">Agents</div>
+      <h2>MCP and agent integration notes</h2>
+      <p>
+        Agent frameworks should keep commercial reasoning separate from protocol
+        custody. The agent can choose terms and negotiation strategy; the A2CN
+        client/server layer should canonicalize, hash, sign, verify, enforce
+        mandates, and store the record.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">LLM agent loop</div>
+          <p>Use MCP tools or client wrappers to expose safe actions: start session, propose terms, accept offer, inspect record.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Separation of concerns</div>
+          <p>Never ask the model to invent hashes, signatures, mandate checks, or DID verification. Those belong in deterministic code.</p>
+        </div>
+      </div>
+      <div class="code-card">
+        <div class="code-head">
+          <span>agent action surface</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>tools:
+  - a2cn.discover_agent(endpoint)
+  - a2cn.start_session(endpoint, session_params, mandate)
+  - a2cn.send_offer(session_id, terms)
+  - a2cn.accept_offer(session_id, offer_id)
+  - a2cn.get_transaction_record(session_id)</code></pre>
+      </div>
+    </section>
+
+    <section class="docs-section" id="adapters">
+      <div class="section-kicker">Integrations</div>
+      <h2>Adapter docs index</h2>
+      <p>
+        Adapters are thin translation layers. They should preserve platform IDs,
+        normalize money into integer minor units, and leave commitment authority
+        to A2CN mandates and signatures.
+      </p>
+      <div class="adapter-index">
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/VENDR_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">Vendr</div>
+          <div class="adapter-meta">Renewal benchmarks and webhook context into SaaS mandates.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/IRONCLAD_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">Ironclad</div>
+          <div class="adapter-meta">Workflow attributes, records, and CLM metadata write-back.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/ARIBA_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">SAP Ariba</div>
+          <div class="adapter-meta">Event Management and Discovery RFx publication flows.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/JAGGAER_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">JAGGAER</div>
+          <div class="adapter-meta">ASO sourcing events, push events, and CHES polling.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/CONGA_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">Conga</div>
+          <div class="adapter-meta">CPQ quotes and CLM agreement reference updates.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DOCUSIGN_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">DocuSign</div>
+          <div class="adapter-meta">Transaction records into envelopes; Connect status callbacks.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">DealHub</div>
+          <div class="adapter-meta">Quote-ready webhooks and external-signature actions.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/NUE_INTEGRATION.md" target="_blank" rel="noopener">
+          <div class="adapter-name">Nue.io</div>
+          <div class="adapter-meta">Quote/order payloads and billing-stage linkage.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/revenue_cloud_adapter.py" target="_blank" rel="noopener">
+          <div class="adapter-name">Revenue Cloud</div>
+          <div class="adapter-meta">Salesforce pricing responses and order payloads.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/fairmarkit_adapter.py" target="_blank" rel="noopener">
+          <div class="adapter-name">Fairmarkit</div>
+          <div class="adapter-meta">Bid-created sourcing webhooks into goods procurement sessions.</div>
+        </a>
+        <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/keelvar_adapter.py" target="_blank" rel="noopener">
+          <div class="adapter-name">Keelvar</div>
+          <div class="adapter-meta">Sourcing optimization events and response payloads.</div>
+        </a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span>A2CN developer docs</span>
+    <span>Apache 2.0 - spec v0.2.0 - 465 tests passing</span>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.copy-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const block = button.closest('.code-card').querySelector('code');
+      try {
+        await navigator.clipboard.writeText(block.textContent);
+        const original = button.textContent;
+        button.textContent = 'Copied';
+        window.setTimeout(() => { button.textContent = original; }, 1100);
+      } catch (error) {
+        button.textContent = 'Select';
+      }
+    });
+  });
+</script>
+</body>
+</html>
