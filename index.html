@@ -933,6 +933,7 @@
       background: var(--surface-2);
       transform: translateY(-2px);
     }
+    .adapter-card-wide { grid-column: 1 / -1; }
     .adapter-head {
       display: flex;
       align-items: start;
@@ -1733,7 +1734,7 @@
             <div class="adapter-copy">Quote-ready webhooks and quote details become A2CN sessions, with final records linked back through DealHub actions.</div>
             <div class="adapter-path">
               <span><strong>In</strong> quoteReady webhook</span>
-              <span><strong>A2CN</strong> SaaS or goods terms</span>
+              <span><strong>A2CN</strong> saas_renewal terms</span>
               <span><strong>Back</strong> external-signature action</span>
             </div>
             <a class="adapter-link" href="https://github.com/A2CN-protocol/A2CN/blob/main/reference-implementation/python/adapters/DEALHUB_INTEGRATION.md" target="_blank" rel="noopener">integration guide →</a>
@@ -1811,7 +1812,7 @@
           <div class="adapter-group-desc">Market benchmarks and renewal context shape agent mandates before negotiation begins.</div>
         </div>
         <div class="adapter-grid">
-          <div class="adapter-card">
+          <div class="adapter-card adapter-card-wide">
             <div class="adapter-head">
               <div class="adapter-name">Vendr</div>
               <div class="adapter-mode">renewal</div>
