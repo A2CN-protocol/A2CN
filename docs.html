@@ -628,7 +628,7 @@
         </div>
       </div>
       <div class="callout">
-        <strong>Canonical implementation:</strong> the Python reference server is the executable model for v0.2.0 behavior and currently ships with 469 passing tests.
+        <strong>Canonical implementation:</strong> the Python reference server is the executable model for v0.2.0 behavior and currently ships with 474 passing tests.
         Source, tests, and deeper implementation detail remain available in the
         <a class="plausible-event-name=GitHub+Click" href="https://github.com/A2CN-protocol/A2CN" target="_blank" rel="noopener">GitHub repository</a>.
       </div>
@@ -889,6 +889,11 @@ python examples/saas_renewal.py --deal-type goods_procurement
               <td><span class="badge">Bearer JWT</span></td>
             </tr>
             <tr>
+              <td><code>GET /sessions/{session_id}/fulfillment-attestation</code></td>
+              <td>Fetch the Concordia-shaped fulfillment attestation emitted after clean delivery acceptance or dispute resolution.</td>
+              <td><span class="badge">Bearer JWT</span></td>
+            </tr>
+            <tr>
               <td><code>POST /invitations</code></td>
               <td>Receive a signed session invitation at cold start.</td>
               <td><span class="badge">invitation signature</span></td>
@@ -942,6 +947,14 @@ python examples/saas_renewal.py --deal-type goods_procurement
         offer-chain hash, and both party signatures. This makes the record usable
         as a neutral artifact for CLM, signature, payment, custody, and dispute
         workflows.
+      </p>
+      <p>
+        When post-commitment fulfillment reaches a terminal state, the reference
+        server can also expose a Concordia-shaped
+        <code>FulfillmentAttestation</code>. A clean
+        <code>delivery_acknowledged</code> emits <code>fulfilled_clean</code>;
+        <code>dispute_resolved</code> emits <code>fulfilled_with_mediation</code>
+        with resolver metadata.
       </p>
       <div class="code-card">
         <div class="code-head">
@@ -1216,7 +1229,7 @@ assert ok is True</code></pre>
 <footer>
   <div class="footer-inner">
     <span>A2CN developer docs</span>
-    <span>Apache 2.0 - spec v0.2.0 - 469 tests passing</span>
+    <span>Apache 2.0 - spec v0.2.0 - 474 tests passing</span>
   </div>
 </footer>
 

@@ -2,7 +2,7 @@
 
 **Released:** April 2026  
 **Spec:** v0.2.0 (3,300+ lines)  
-**Tests:** 469 passing
+**Tests:** 474 passing
 **License:** Apache 2.0
 
 ## What's new in v0.2.0
@@ -36,6 +36,11 @@ Reference skills file for LLM agents participating in A2CN sessions. Covers warm
 ### Webhooks at Level 2
 Terminal state webhooks (COMPLETED, REJECTED_FINAL, WITHDRAWN, IMPASSE, TIMED_OUT) promoted from RECOMMENDED to REQUIRED for Level 2 conformance. Async delivery with exponential backoff retry.
 
+### Concordia fulfillment attestations
+Post-commitment delivery acceptance and dispute resolution can now emit a
+Concordia-shaped `FulfillmentAttestation`, signed with Ed25519 and linked back
+to the A2CN session through `references[]`.
+
 ## Installation
 
 ```bash
@@ -63,7 +68,7 @@ python examples/keelvar_demo.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 469 passed
+# 474 passed
 ```
 
 ## What's next (v0.3)

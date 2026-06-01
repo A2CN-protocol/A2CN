@@ -2046,11 +2046,14 @@ outside the enum above. The corresponding JSON Schema is
 
 #### 10.6.5 Concordia Composition
 
-A2CN's `dispute_resolved` message can compose with a Concordia fulfillment
-attestation. The A2CN message supplies the commercial dispute outcome and binds
-it to both the transaction record and the original dispute notice. Section 16.2
-documents the cross-protocol `references[]` relationship vocabulary and
-Concordia adapter reference for this composition.
+A2CN's post-commitment lifecycle can compose with a Concordia fulfillment
+attestation. A `delivery_acknowledged` message with `accepted=true` supplies the
+clean fulfillment boundary for a `fulfilled_clean` attestation. A
+`dispute_resolved` message supplies the commercial dispute outcome and binds it
+to both the transaction record and the original dispute notice for a
+`fulfilled_with_mediation` attestation. Section 16.2 documents the
+cross-protocol `references[]` relationship vocabulary and Concordia adapter
+reference for this composition.
 
 ---
 
@@ -2347,6 +2350,7 @@ support this binding.
 | GET | `/sessions/{id}/messages` | Get message history (paginated) |
 | GET | `/sessions/{id}/record` | Get transaction record (COMPLETED only) |
 | GET | `/sessions/{id}/audit` | Get audit log (any terminal state) |
+| GET | `/sessions/{id}/fulfillment-attestation` | Get Concordia fulfillment attestation after clean delivery or dispute resolution |
 
 #### 12.1.2 Pagination
 
@@ -3634,6 +3638,14 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-06-01 — Concordia fulfillment attestation emission
+
+- Section 10.6.5 updated to cover both clean delivery acceptance and mediated
+  dispute resolution as inputs to Concordia `FulfillmentAttestation` artifacts.
+- Section 12.1.1 endpoint table updated with
+  `GET /sessions/{id}/fulfillment-attestation` for retrieving the emitted
+  fulfillment artifact.
 
 ### Patch 2026-06-01 — NegotiationGroup extension path
 
