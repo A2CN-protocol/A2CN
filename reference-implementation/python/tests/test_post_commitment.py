@@ -44,7 +44,7 @@ async def _create_session(client) -> str:
 def _delivery_notice_body(session_id: str, record_hash: str, msg_id: str | None = None) -> dict:
     mid = msg_id or str(uuid.uuid4())
     return {
-        "message_type": "DELIVERY_NOTICE",
+        "message_type": "delivery_notice",
         "message_id": mid,
         "session_id": session_id,
         "transaction_record_hash": record_hash,
@@ -58,7 +58,7 @@ def _delivery_ack_body(session_id: str, record_hash: str,
                        msg_id: str | None = None) -> dict:
     mid = msg_id or str(uuid.uuid4())
     return {
-        "message_type": "DELIVERY_ACKNOWLEDGED",
+        "message_type": "delivery_acknowledged",
         "message_id": mid,
         "session_id": session_id,
         "transaction_record_hash": record_hash,
@@ -71,7 +71,7 @@ def _delivery_ack_body(session_id: str, record_hash: str,
 def _dispute_notice_body(session_id: str, record_hash: str, msg_id: str | None = None) -> dict:
     mid = msg_id or str(uuid.uuid4())
     return {
-        "message_type": "DISPUTE_NOTICE",
+        "message_type": "dispute_notice",
         "message_id": mid,
         "session_id": session_id,
         "transaction_record_hash": record_hash,
@@ -94,7 +94,7 @@ class TestDeliveryNoticeDataclass:
             transaction_record_hash="a" * 64,
             delivery_timestamp="2026-04-02T08:00:00Z",
         )
-        assert msg.message_type == "DELIVERY_NOTICE"
+        assert msg.message_type == "delivery_notice"
         assert msg.protocol_version == "0.2"
         assert msg.delivery_reference is None
 
@@ -108,7 +108,7 @@ class TestDeliveryNoticeDataclass:
         d = msg.to_dict()
         assert "delivery_reference" not in d
         assert "notes" not in d
-        assert d["message_type"] == "DELIVERY_NOTICE"
+        assert d["message_type"] == "delivery_notice"
 
     def test_optional_fields_included_when_set(self):
         msg = DeliveryNoticeMessage(
@@ -138,7 +138,7 @@ class TestDeliveryAcknowledgedDataclass:
             acknowledgment_timestamp="2026-04-03T09:00:00Z",
             accepted=True,
         )
-        assert msg.message_type == "DELIVERY_ACKNOWLEDGED"
+        assert msg.message_type == "delivery_acknowledged"
         assert msg.accepted is True
         assert msg.notes is None
 
@@ -169,7 +169,7 @@ class TestDisputeNoticeDataclass:
             dispute_type="non_delivery",
             description="Goods not received.",
         )
-        assert msg.message_type == "DISPUTE_NOTICE"
+        assert msg.message_type == "dispute_notice"
         assert msg.evidence_references == []
         assert msg.resolution_requested is None
         assert msg.dispute_timestamp is not None
@@ -233,7 +233,7 @@ class TestJsonSchemaValidation:
         import pathlib
         schema_path = pathlib.Path(__file__).parents[3] / "spec" / "schemas" / "delivery_notice.schema.json"
         schema = json.loads(schema_path.read_text())
-        assert schema["properties"]["message_type"]["const"] == "DELIVERY_NOTICE"
+        assert schema["properties"]["message_type"]["const"] == "delivery_notice"
         assert "transaction_record_hash" in schema["required"]
         assert schema["additionalProperties"] is False
 
@@ -242,7 +242,7 @@ class TestJsonSchemaValidation:
         import pathlib
         schema_path = pathlib.Path(__file__).parents[3] / "spec" / "schemas" / "delivery_acknowledged.schema.json"
         schema = json.loads(schema_path.read_text())
-        assert schema["properties"]["message_type"]["const"] == "DELIVERY_ACKNOWLEDGED"
+        assert schema["properties"]["message_type"]["const"] == "delivery_acknowledged"
         assert "accepted" in schema["required"]
         assert schema["additionalProperties"] is False
 
@@ -251,7 +251,7 @@ class TestJsonSchemaValidation:
         import pathlib
         schema_path = pathlib.Path(__file__).parents[3] / "spec" / "schemas" / "dispute_notice.schema.json"
         schema = json.loads(schema_path.read_text())
-        assert schema["properties"]["message_type"]["const"] == "DISPUTE_NOTICE"
+        assert schema["properties"]["message_type"]["const"] == "dispute_notice"
         assert "raised_by" in schema["required"]
         assert "dispute_type" in schema["required"]
         valid_types = schema["properties"]["dispute_type"]["enum"]
@@ -261,7 +261,7 @@ class TestJsonSchemaValidation:
 
 
 # ---------------------------------------------------------------------------
-# Server endpoint tests: DELIVERY_NOTICE
+# Server endpoint tests: delivery_notice
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -297,9 +297,19 @@ class TestDeliveryNoticeEndpoint:
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "INVALID_RECORD_HASH"
 
+    async def test_delivery_notice_wrong_message_type_rejected(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
+        body = _delivery_notice_body(session_id, record_hash)
+        body["message_type"] = "DELIVERY_NOTICE"
+        r = await test_client.post(
+            f"/sessions/{session_id}/delivery-notice", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
+
 
 # ---------------------------------------------------------------------------
-# Server endpoint tests: DELIVERY_ACKNOWLEDGED
+# Server endpoint tests: delivery_acknowledged
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -353,9 +363,21 @@ class TestDeliveryAcknowledgedEndpoint:
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "NO_DELIVERY_NOTICE"
 
+    async def test_delivery_acknowledged_wrong_message_type_rejected(
+        self, test_client, responder_test_client
+    ):
+        session_id, record_hash, notice_id = await self._setup(test_client, responder_test_client)
+        body = _delivery_ack_body(session_id, record_hash, notice_id, accepted=True)
+        body["message_type"] = "DELIVERY_ACKNOWLEDGED"
+        r = await test_client.post(
+            f"/sessions/{session_id}/delivery-acknowledged", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
+
 
 # ---------------------------------------------------------------------------
-# Server endpoint tests: DISPUTE_NOTICE
+# Server endpoint tests: dispute_notice
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -406,6 +428,16 @@ class TestDisputeNoticeEndpoint:
             f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
         )
         assert "neutral resolver" in r.json()["note"]
+
+    async def test_dispute_notice_wrong_message_type_rejected(self, test_client, responder_test_client):
+        session_id, record_hash = await _complete_session(test_client, responder_test_client)
+        body = _dispute_notice_body(session_id, record_hash)
+        body["message_type"] = "DISPUTE_NOTICE"
+        r = await test_client.post(
+            f"/sessions/{session_id}/dispute-notice", json=body, headers=_h(body["message_id"])
+        )
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "WRONG_MESSAGE_TYPE"
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +533,7 @@ async def _complete_session(
 async def _setup_disputed_session(
     initiator_client, responder_client
 ) -> tuple[str, str, str]:
-    """Complete a session and open a DISPUTE_NOTICE. Returns (session_id, record_hash, dispute_notice_id)."""
+    """Complete a session and open a dispute_notice. Returns (session_id, record_hash, dispute_notice_id)."""
     session_id, record_hash = await _complete_session(initiator_client, responder_client)
     body = _dispute_notice_body(session_id, record_hash)
     r = await initiator_client.post(
@@ -521,7 +553,7 @@ def _dispute_resolved_body(
 ) -> dict:
     mid = msg_id or str(uuid.uuid4())
     return {
-        "message_type": "DISPUTE_RESOLVED",
+        "message_type": "dispute_resolved",
         "message_id": mid,
         "session_id": session_id,
         "transaction_record_hash": record_hash,
@@ -546,7 +578,7 @@ class TestDisputeResolvedDataclass:
             resolution_outcome="buyer_prevails",
             resolver_did="did:web:resolver.example",
         )
-        assert msg.message_type == "DISPUTE_RESOLVED"
+        assert msg.message_type == "dispute_resolved"
         assert msg.protocol_version == "0.2"
         assert msg.evidence_references == []
         assert msg.resolution_notes is None
@@ -600,7 +632,7 @@ class TestDisputeResolvedDataclass:
         assert d["resolution_outcome"] == "mutual_settlement"
         assert d["resolver_did"] == "did:web:resolver.example"
         assert d["dispute_notice_message_id"] == "msg-3"
-        assert d["message_type"] == "DISPUTE_RESOLVED"
+        assert d["message_type"] == "dispute_resolved"
 
     def test_to_dict_omits_none_resolution_notes(self):
         msg = DisputeResolvedMessage(
@@ -639,7 +671,7 @@ class TestDisputeResolvedSchema:
         import pathlib
         schema_path = pathlib.Path(__file__).parents[3] / "spec" / "schemas" / "dispute_resolved.schema.json"
         schema = json.loads(schema_path.read_text())
-        assert schema["properties"]["message_type"]["const"] == "DISPUTE_RESOLVED"
+        assert schema["properties"]["message_type"]["const"] == "dispute_resolved"
         assert "transaction_record_hash" in schema["required"]
         assert "dispute_notice_message_id" in schema["required"]
         assert "resolver_did" in schema["required"]
@@ -652,7 +684,7 @@ class TestDisputeResolvedSchema:
 
 
 # ---------------------------------------------------------------------------
-# Server endpoint tests: DISPUTE_RESOLVED
+# Server endpoint tests: dispute_resolved
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -816,7 +848,7 @@ class TestDisputeResolvedEndpoint:
             test_client, responder_test_client
         )
         body = _dispute_resolved_body(session_id, record_hash, notice_id)
-        body["message_type"] = "DISPUTE_NOTICE"
+        body["message_type"] = "dispute_notice"
         r = await test_client.post(
             f"/sessions/{session_id}/dispute-resolved", json=body, headers=_h(body["message_id"])
         )

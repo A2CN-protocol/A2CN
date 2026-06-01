@@ -576,6 +576,14 @@ async def post_delivery_notice(session_id: str, request: Request,
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
+    if body.get("message_type") != "delivery_notice":
+        return error_response(
+            "WRONG_MESSAGE_TYPE",
+            "message_type must be 'delivery_notice'",
+            400,
+            session_id=session_id,
+        )
+
     if session.state != SessionState.COMPLETED:
         return error_response(
             "SESSION_WRONG_STATE",
@@ -621,6 +629,14 @@ async def post_delivery_acknowledged(session_id: str, request: Request,
         return error_response("SESSION_ID_MISMATCH",
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
+
+    if body.get("message_type") != "delivery_acknowledged":
+        return error_response(
+            "WRONG_MESSAGE_TYPE",
+            "message_type must be 'delivery_acknowledged'",
+            400,
+            session_id=session_id,
+        )
 
     pc_data = _session_store.get(session_id) or {}
 
@@ -683,6 +699,14 @@ async def post_dispute_notice(session_id: str, request: Request,
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
+    if body.get("message_type") != "dispute_notice":
+        return error_response(
+            "WRONG_MESSAGE_TYPE",
+            "message_type must be 'dispute_notice'",
+            400,
+            session_id=session_id,
+        )
+
     pc_data = _session_store.get(session_id) or {}
 
     if session.state != SessionState.COMPLETED and "delivery_notice" not in pc_data:
@@ -732,10 +756,10 @@ async def post_dispute_resolved(session_id: str, request: Request,
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
-    if body.get("message_type") != "DISPUTE_RESOLVED":
+    if body.get("message_type") != "dispute_resolved":
         return error_response(
             "WRONG_MESSAGE_TYPE",
-            "message_type must be 'DISPUTE_RESOLVED'",
+            "message_type must be 'dispute_resolved'",
             400,
             session_id=session_id,
         )
@@ -745,7 +769,7 @@ async def post_dispute_resolved(session_id: str, request: Request,
     if pc_data.get("post_commitment_status") != "DISPUTED":
         return error_response(
             "NOT_IN_DISPUTED_STATUS",
-            "DISPUTE_RESOLVED requires an open DISPUTE_NOTICE",
+            "dispute_resolved requires an open dispute_notice",
             400,
             session_id=session_id,
             spec_ref="Section 11",
