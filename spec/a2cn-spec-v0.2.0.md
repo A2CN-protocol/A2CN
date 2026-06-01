@@ -2076,6 +2076,37 @@ pre-session handshake that enables adoption by parties without pre-deployed
 endpoints. Once both endpoints are known, the standard A2CN session protocol
 applies unchanged.
 
+### 11.1.1 NegotiationGroup Extension Path *(non-normative)*
+
+A2CN v0.2.0 is deliberately bilateral: one session has one initiator, one
+responder, one turn order, and one independently reproducible transaction
+record. This keeps the base protocol tractable for initial enterprise
+validation.
+
+Multi-party sourcing events can extend the bilateral model without changing the
+base session semantics. The proposed extension is a **NegotiationGroup**: a
+coordination object that binds several independent bilateral A2CN sessions under
+one buyer-side sourcing event.
+
+A NegotiationGroup would let one buyer invite N sellers, typically 3-7, through
+parallel `SessionInvitation` flows. Each seller negotiates in its own bilateral
+session with its own turn order, mandate checks, signatures, timeouts, and
+transaction record. The coordination layer can then express buyer-side award
+logic, such as:
+
+- single award to one seller,
+- split award across multiple sellers,
+- per-party sequencing constraints when the sourcing workflow requires a
+  specific seller order, and
+- group-level status and audit references that point to the underlying
+  bilateral session IDs and transaction record hashes.
+
+This extension path follows the reverse-auction and multi-supplier framing
+raised by Ali Eren Aytekin (Spaceflow): the base protocol stays bilateral, while
+the sourcing platform or neutral coordination layer owns the group-level policy.
+OQ-012 tracks the open design questions for the group object shape, award
+semantics, and cross-session audit model.
+
 ### 11.2 SessionInvitation Message
 
 A `SessionInvitation` is a signed JSON document transmitted to a counterparty
@@ -3068,7 +3099,7 @@ with their resolution version rather than being renumbered.
 | OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
 | OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
 | OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
-| OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
+| OQ-012 | NegotiationGroup multi-party sourcing extension | Open | A2CN v0.2.0 is deliberately bilateral. Multi-party sourcing can extend the base protocol through a NegotiationGroup coordination object: one buyer invites N sellers (typically 3-7) into parallel bilateral sessions, then records group-level award policy such as single award, split award, and per-party sequencing. See Section 11.1.1. |
 | OQ-013 | DID VC mandate for hosted endpoints | Open | When a neutral hosted endpoint provider hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the provider can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
 | OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.0** | Resolved: delivery_notice, delivery_acknowledged, dispute_notice, and dispute_resolved are normative at Level 3 conformance as of v0.2.0; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
 | OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
@@ -3598,6 +3629,13 @@ messages that validate against these schemas.
 
 ## 19. Changelog
 
+### Patch 2026-06-01 — NegotiationGroup extension path
+
+- Section 11.1.1 added: documents the non-normative NegotiationGroup extension
+  path for reverse-auction and multi-supplier sourcing workflows.
+- OQ-012 updated to name NegotiationGroup and scope multi-party sourcing as a
+  coordination layer over parallel bilateral A2CN sessions.
+
 ### Patch 2026-05-20 — DID-key JWS webhook signing
 
 - Section 11.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
@@ -3810,7 +3848,8 @@ Sections substantially rewritten and expanded with concrete integration patterns
 - OQ-010: MESO (Multiple Equivalent Simultaneous Offers) terms extension for
   Pactum-style bundle negotiations
 - OQ-011: A2CN as A2A extension — formal proposal filed, outcome pending
-- OQ-012: Multi-party invitation for reverse auction contexts
+- OQ-012: NegotiationGroup multi-party sourcing extension for reverse-auction
+  contexts
 - OQ-013: DID VC mandate for neutral hosted endpoints
 
 **Introduction updated:**
