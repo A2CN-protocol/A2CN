@@ -85,9 +85,9 @@ The invitation is signed using the inviter's DID key (ES256 by default, EdDSA/Ed
 
 **JAGGAER:** `JaggaerEventParser` translates ASO sourcing events and CHES API event payloads into `goods_procurement` terms, preserving item and lot identifiers for supplier responses.
 
-**Conga:** `CongaQuoteParser` translates CPQ/CLM quote and agreement data into A2CN terms for SaaS renewals or goods procurement, with Salesforce-native write-back shapes.
+**Conga:** `CongaAdapter` translates CPQ/CLM quote and agreement data into A2CN terms for SaaS renewals or goods procurement, with Salesforce-native write-back shapes.
 
-**Ironclad:** `IroncladWebhookVerifier` and workflow translators map signed workflow events into A2CN terms and write agreed metadata back to Ironclad workflows and records.
+**Ironclad:** `IroncladWebhookParser` and workflow translators map signed workflow events into A2CN terms and write agreed metadata back to Ironclad workflows and records.
 
 **Vendr:** Vendr benchmark pricing maps into A2CN `saas_renewal` terms for renewal intelligence and produces audit summaries after agreement.
 
