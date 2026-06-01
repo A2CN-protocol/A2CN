@@ -42,6 +42,6 @@
     "accept_endpoint": { "type": "string", "format": "uri" },
     "decline_endpoint": { "type": "string", "format": "uri" },
     "inviter_verification_method": { "type": "string" },
-    "invitation_signature": { "type": "string", "description": "Base64url ES256 signature over JCS canonical form (excluding this field)" }
+    "invitation_signature": { "type": "string", "description": "Base64url signature over the JCS canonical form (excluding this field), using inviter_verification_method" }
   }
 }

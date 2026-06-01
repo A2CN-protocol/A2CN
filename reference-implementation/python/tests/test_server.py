@@ -383,6 +383,25 @@ async def test_message_idempotency(test_client, initiator_keypair):
 
 
 @pytest.mark.asyncio
+async def test_get_messages_cursor_tolerates_sequence_less_page_item(test_client, initiator_keypair):
+    session_id = await _create_session(test_client)
+    offer = _make_offer_msg(session_id, 1, 1, INITIATOR_DID, initiator_keypair[0])
+    await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=offer,
+        headers=init_headers(offer["message_id"]),
+    )
+
+    r = await test_client.get(
+        f"/sessions/{session_id}/messages",
+        params={"after_sequence": -1, "limit": 1},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["next_cursor"] is None
+
+
+@pytest.mark.asyncio
 async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client, initiator_keypair):
     body = make_session_init()
     body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000

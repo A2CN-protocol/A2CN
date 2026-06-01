@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2cn.dev/schemas/dispute-notice/0.2",
   "title": "A2CN DisputeNoticeMessage",
-  "description": "Formal dispute notice referencing a committed or delivered session. Anchors dispute to the agreed transaction record. Route to a designated neutral resolver. Normative at Level 3 conformance as of v0.2.1 (OQ-017 resolved).",
+  "description": "Formal dispute notice referencing a committed or delivered session. Anchors dispute to the agreed transaction record. Route to a designated neutral resolver. Normative at Level 3 conformance as of v0.2.0 (OQ-017 resolved).",
   "type": "object",
   "required": [
     "message_id",

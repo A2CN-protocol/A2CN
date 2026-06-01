@@ -515,15 +515,15 @@ INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# v0.2.1: Post-commitment lifecycle (OQ-017 resolved; Level 3 conformance)
+# v0.2.0: Post-commitment lifecycle (OQ-017 resolved; Level 3 conformance)
 # ---------------------------------------------------------------------------
 
 @dataclass
 class DeliveryNoticeMessage:
     """
     Sent by the seller to confirm delivery against a completed session.
-    References the transaction record by hash. Optional in v0.3 —
-    required for Level 3 conformance.
+    References the transaction record by hash. Required for Level 3
+    conformance in A2CN v0.2.0.
 
     DELIVERY_NOTICE closes the seller's obligation under the agreed terms
     and triggers the buyer's acknowledgment window.

@@ -1,8 +1,10 @@
 """
 A2CN Transaction Record and Audit Log generation (Sections 9–10).
 
-Both are deterministic — derived only from protocol messages, never from
-local clock reads.
+Transaction records are deterministic: both parties derive them only from
+protocol messages, never from local clock reads. Audit logs are operational
+artifacts and may include local generation metadata such as log_id and
+generated_at.
 """
 
 from __future__ import annotations
@@ -17,6 +19,11 @@ from a2cn.session import Session, SessionState, _now
 
 # A2CN namespace UUID for record_id (UUID v5) — Appendix A
 A2CN_NAMESPACE = uuid.UUID("f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c")
+
+# These identify the transaction-record and audit-log artifact schemas. They
+# are intentionally independent of the Python package release version.
+TRANSACTION_RECORD_VERSION = "0.1"
+AUDIT_LOG_VERSION = "0.1"
 
 
 def generate_transaction_record(session: Session) -> dict:
@@ -60,7 +67,7 @@ def generate_transaction_record(session: Session) -> dict:
 
     record: dict = {
         "record_type": "a2cn_transaction_record",
-        "record_version": "0.1",
+        "record_version": TRANSACTION_RECORD_VERSION,
         "record_id": record_id,
         "session_id": session.session_id,
         "generated_at": generated_at,
@@ -290,7 +297,7 @@ def generate_audit_log(session: Session) -> dict:
 
     return {
         "log_type": "a2cn_audit_log",
-        "log_version": "0.1",
+        "log_version": AUDIT_LOG_VERSION,
         "log_id": str(uuid.uuid4()),
         "session_id": session.session_id,
         "record_id": record_id,

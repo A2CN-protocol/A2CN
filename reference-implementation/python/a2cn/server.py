@@ -502,8 +502,7 @@ async def post_approval_receipt(session_id: str, request: Request,
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions/{session_id}/messages")
-async def get_messages(session_id: str, request: Request,
-                       _jwt: dict = Depends(verify_jwt_auth),
+async def get_messages(session_id: str, _jwt: dict = Depends(verify_jwt_auth),
                        after_sequence: int = 0, limit: int = 50) -> Response:
     session = _get_session_or_404(session_id)
     jwt_iss = _jwt.get("iss", "")
@@ -511,12 +510,10 @@ async def get_messages(session_id: str, request: Request,
         return error_response("NOT_SESSION_PARTY",
                                "JWT issuer is not a party to this session",
                                403, session_id=session_id)
-    params = dict(request.query_params)
-
     all_messages = session._message_log
     filtered = [m for m in all_messages if m.get("sequence_number", 0) > after_sequence]
     page = filtered[:limit]
-    next_cursor = page[-1]["sequence_number"] if len(filtered) > limit else None
+    next_cursor = page[-1].get("sequence_number") if len(filtered) > limit and page else None
 
     return a2cn_response({
         "session_id": session_id,
@@ -564,7 +561,7 @@ async def get_audit(session_id: str, request: Request,
 
 
 # ---------------------------------------------------------------------------
-# v0.2.1: Post-commitment lifecycle endpoints (OQ-017 resolved; Level 3 conformance)
+# v0.2.0: Post-commitment lifecycle endpoints (OQ-017 resolved; Level 3 conformance)
 # ---------------------------------------------------------------------------
 
 @app.post("/sessions/{session_id}/delivery-notice")
