@@ -15,7 +15,7 @@
     "message_type"
   ],
   "properties": {
-    "message_type": { "type": "string", "const": "DISPUTE_NOTICE" },
+    "message_type": { "type": "string", "const": "dispute_notice" },
     "message_id": { "type": "string", "format": "uuid" },
     "session_id": { "type": "string" },
     "transaction_record_hash": {

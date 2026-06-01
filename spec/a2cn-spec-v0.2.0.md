@@ -1929,19 +1929,19 @@ overlay records delivery, closure, dispute, and resolution status.
 ```text
 COMPLETED
     │
-    │ DELIVERY_NOTICE
+    │ delivery_notice
     ▼
 DELIVERY_NOTICE_RECORDED
     │
-    ├─ DELIVERY_ACKNOWLEDGED accepted=true ───────────────▶ CLOSED
+    ├─ delivery_acknowledged accepted=true ───────────────▶ CLOSED
     │
-    ├─ DELIVERY_ACKNOWLEDGED accepted=false ──────────────▶ DISPUTED
+    ├─ delivery_acknowledged accepted=false ──────────────▶ DISPUTED
     │
-    └─ DISPUTE_NOTICE ───────────────────────────────────▶ DISPUTED
+    └─ dispute_notice ───────────────────────────────────▶ DISPUTED
 
-COMPLETED ── DISPUTE_NOTICE ─────────────────────────────▶ DISPUTED
+COMPLETED ── dispute_notice ─────────────────────────────▶ DISPUTED
 
-DISPUTED ── DISPUTE_RESOLVED ────────────────────────────▶ RESOLVED
+DISPUTED ── dispute_resolved ────────────────────────────▶ RESOLVED
 ```
 
 All post-commitment messages MUST reference the `session_id` and
@@ -1949,16 +1949,16 @@ All post-commitment messages MUST reference the `session_id` and
 reject a post-commitment message whose `transaction_record_hash` does not match
 the locally generated transaction record hash for the session.
 
-#### 10.6.1 DELIVERY_NOTICE
+#### 10.6.1 delivery_notice
 
-`DELIVERY_NOTICE` is sent by the seller or obligated delivery party to record
+`delivery_notice` is sent by the seller or obligated delivery party to record
 delivery against a completed session.
 
 Normative fields:
 
 | Field | Requirement |
 | --- | --- |
-| `message_type` | MUST be `DELIVERY_NOTICE` |
+| `message_type` | MUST be `delivery_notice` |
 | `message_id` | Unique message identifier |
 | `session_id` | A2CN session being delivered against |
 | `transaction_record_hash` | Hash of the agreed transaction record |
@@ -1969,40 +1969,40 @@ Normative fields:
 The corresponding JSON Schema is
 `spec/schemas/delivery_notice.schema.json`.
 
-#### 10.6.2 DELIVERY_ACKNOWLEDGED
+#### 10.6.2 delivery_acknowledged
 
-`DELIVERY_ACKNOWLEDGED` is sent by the buyer or delivery recipient in response
-to a `DELIVERY_NOTICE`.
+`delivery_acknowledged` is sent by the buyer or delivery recipient in response
+to a `delivery_notice`.
 
 Normative fields:
 
 | Field | Requirement |
 | --- | --- |
-| `message_type` | MUST be `DELIVERY_ACKNOWLEDGED` |
+| `message_type` | MUST be `delivery_acknowledged` |
 | `message_id` | Unique message identifier |
 | `session_id` | A2CN session being acknowledged |
 | `transaction_record_hash` | Hash of the agreed transaction record |
-| `delivery_notice_message_id` | `message_id` of the `DELIVERY_NOTICE` being acknowledged |
+| `delivery_notice_message_id` | `message_id` of the `delivery_notice` being acknowledged |
 | `acknowledgment_timestamp` | ISO 8601 timestamp of acknowledgment |
 | `accepted` | `true` closes the lifecycle as `CLOSED`; `false` moves the lifecycle to `DISPUTED` |
 | `notes` | Optional human-readable acknowledgment or rejection notes |
 
-An implementation MUST reject `DELIVERY_ACKNOWLEDGED` if the referenced
-`delivery_notice_message_id` does not match a recorded `DELIVERY_NOTICE` for the
+An implementation MUST reject `delivery_acknowledged` if the referenced
+`delivery_notice_message_id` does not match a recorded `delivery_notice` for the
 same session. The corresponding JSON Schema is
 `spec/schemas/delivery_acknowledged.schema.json`.
 
-#### 10.6.3 DISPUTE_NOTICE
+#### 10.6.3 dispute_notice
 
-`DISPUTE_NOTICE` is sent by either party to open a post-commitment dispute. It
-MAY be sent directly after `COMPLETED` or after a `DELIVERY_NOTICE` /
-`DELIVERY_ACKNOWLEDGED accepted=false` path.
+`dispute_notice` is sent by either party to open a post-commitment dispute. It
+MAY be sent directly after `COMPLETED` or after a `delivery_notice` /
+`delivery_acknowledged accepted=false` path.
 
 Normative fields:
 
 | Field | Requirement |
 | --- | --- |
-| `message_type` | MUST be `DISPUTE_NOTICE` |
+| `message_type` | MUST be `dispute_notice` |
 | `message_id` | Unique message identifier |
 | `session_id` | A2CN session being disputed |
 | `transaction_record_hash` | Hash of the agreed transaction record |
@@ -2013,40 +2013,40 @@ Normative fields:
 | `evidence_references` | Optional list of document references, content hashes, or URLs supporting the dispute |
 | `resolution_requested` | Optional requested path: `renegotiate`, `cancel`, or `neutral_review` |
 
-Recording a valid `DISPUTE_NOTICE` moves the post-commitment lifecycle to
+Recording a valid `dispute_notice` moves the post-commitment lifecycle to
 `DISPUTED`. The corresponding JSON Schema is
 `spec/schemas/dispute_notice.schema.json`.
 
-#### 10.6.4 DISPUTE_RESOLVED
+#### 10.6.4 dispute_resolved
 
-`DISPUTE_RESOLVED` is sent by the neutral resolver, or by another resolver
+`dispute_resolved` is sent by the neutral resolver, or by another resolver
 explicitly accepted by both parties, to record the outcome of a dispute opened
-by `DISPUTE_NOTICE`. This message closes the disputed post-commitment lifecycle.
+by `dispute_notice`. This message closes the disputed post-commitment lifecycle.
 
 Normative fields:
 
 | Field | Requirement |
 | --- | --- |
-| `message_type` | MUST be `DISPUTE_RESOLVED` |
+| `message_type` | MUST be `dispute_resolved` |
 | `message_id` | Unique message identifier |
 | `session_id` | A2CN session whose dispute is being resolved |
 | `transaction_record_hash` | Hash of the agreed transaction record |
-| `dispute_notice_message_id` | `message_id` of the `DISPUTE_NOTICE` being closed |
+| `dispute_notice_message_id` | `message_id` of the `dispute_notice` being closed |
 | `resolution_outcome` | MUST be one of `buyer_prevails`, `seller_prevails`, or `mutual_settlement` |
 | `resolver_did` | DID of the neutral resolver |
 | `resolution_timestamp` | ISO 8601 timestamp when the resolution was issued |
 | `resolution_notes` | Optional human-readable explanation from the resolver |
 | `evidence_references` | Optional list of supporting evidence references for the ruling |
 
-An implementation MUST reject `DISPUTE_RESOLVED` unless the session has an open
-`DISPUTE_NOTICE` and the `dispute_notice_message_id` matches the recorded
+An implementation MUST reject `dispute_resolved` unless the session has an open
+`dispute_notice` and the `dispute_notice_message_id` matches the recorded
 dispute notice for the same session. It MUST reject any `resolution_outcome`
 outside the enum above. The corresponding JSON Schema is
 `spec/schemas/dispute_resolved.schema.json`.
 
 #### 10.6.5 Concordia Composition
 
-A2CN's `DISPUTE_RESOLVED` message can compose with a Concordia fulfillment
+A2CN's `dispute_resolved` message can compose with a Concordia fulfillment
 attestation. The A2CN message supplies the commercial dispute outcome and binds
 it to both the transaction record and the original dispute notice. Section 16.2
 documents the cross-protocol `references[]` relationship vocabulary and
@@ -3070,7 +3070,7 @@ with their resolution version rather than being renumbered.
 | OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
 | OQ-012 | Reverse auction / multi-party invitation | Open | Fairmarkit's reverse auction model involves one buyer inviting multiple competing suppliers. Session Invitation (Component 8) covers bilateral invitation. Multi-party sourcing events where multiple supplier sessions run concurrently are out of scope for v0.2. |
 | OQ-013 | DID VC mandate for hosted endpoints | Open | When a neutral hosted endpoint provider hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the provider can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
-| OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.0** | Resolved: DELIVERY_NOTICE, DELIVERY_ACKNOWLEDGED, DISPUTE_NOTICE, and DISPUTE_RESOLVED are normative at Level 3 conformance as of v0.2.0; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
+| OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.0** | Resolved: delivery_notice, delivery_acknowledged, dispute_notice, and dispute_resolved are normative at Level 3 conformance as of v0.2.0; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
 | OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
 | OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
 | OQ-020 | Mandate revocation signal | Open | Decide whether revocation is represented by a dedicated `MANDATE_REVOKED` message type or by absence of a fresh approval/mandate receipt. |
@@ -3203,7 +3203,7 @@ when reading or forwarding `references[]`. Unknown relationship values MUST NOT
 be dropped, rewritten, or treated as authorization grants unless the
 implementation explicitly recognizes their semantics.
 
-**Concordia adapter composition:** A2CN's `DISPUTE_RESOLVED` message can compose
+**Concordia adapter composition:** A2CN's `dispute_resolved` message can compose
 with a Concordia fulfillment attestation. The A2CN message records the dispute
 resolution outcome and binds it to the transaction record; the Concordia artifact
 can then reference the A2CN session, transaction record, and dispute resolution
@@ -3626,13 +3626,13 @@ messages that validate against these schemas.
 ### Patch 2026-05-19 — Post-commitment lifecycle documentation
 
 - Section 10.6 added: documents the Level 3 post-commitment lifecycle from
-  `DELIVERY_NOTICE` through `DELIVERY_ACKNOWLEDGED`, `DISPUTE_NOTICE`, and
-  `DISPUTE_RESOLVED`.
-- `DISPUTE_RESOLVED` fields documented normatively, including
+  `delivery_notice` through `delivery_acknowledged`, `dispute_notice`, and
+  `dispute_resolved`.
+- `dispute_resolved` fields documented normatively, including
   `transaction_record_hash`, `dispute_notice_message_id`, `resolution_outcome`,
   `resolver_did`, and `resolution_timestamp`.
 - OQ-017 updated to point to the normative Section 10.6 lifecycle definition.
-- Concordia composition cross-reference added for `DISPUTE_RESOLVED`.
+- Concordia composition cross-reference added for `dispute_resolved`.
 
 ### Patch 2026-05-19 — EU AI Act Article 14 oversight mapping
 
@@ -3653,7 +3653,7 @@ messages that validate against these schemas.
 - Documented the A2CN / Concordia / BidAngel substrate split.
 - Added starter cross-protocol `references[]` relationship vocabulary and
   forward-compatibility rule for unknown relationship values.
-- Documented `DISPUTE_RESOLVED` composition with Concordia fulfillment
+- Documented `dispute_resolved` composition with Concordia fulfillment
   attestations.
 - Updated OQ-011 status to reflect the scoped URI/profile while governance
   outcome remains pending.

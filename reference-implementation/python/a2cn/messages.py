@@ -525,7 +525,7 @@ class DeliveryNoticeMessage:
     References the transaction record by hash. Required for Level 3
     conformance in A2CN v0.2.0.
 
-    DELIVERY_NOTICE closes the seller's obligation under the agreed terms
+    A `delivery_notice` closes the seller's obligation under the agreed terms
     and triggers the buyer's acknowledgment window.
     """
     message_id: str
@@ -535,7 +535,7 @@ class DeliveryNoticeMessage:
     delivery_reference: str | None = None  # Tracking number, PO ref, etc.
     notes: str | None = None
     protocol_version: str = "0.2"
-    message_type: str = "DELIVERY_NOTICE"
+    message_type: str = "delivery_notice"
 
     def to_dict(self) -> dict:
         return _drop_none({
@@ -553,21 +553,21 @@ class DeliveryNoticeMessage:
 @dataclass
 class DeliveryAcknowledgedMessage:
     """
-    Sent by the buyer to acknowledge receipt of a DELIVERY_NOTICE.
+    Sent by the buyer to acknowledge receipt of a `delivery_notice`.
     Closes the post-commitment lifecycle when accepted=True.
     When accepted=False, triggers DISPUTED status on the session.
 
-    References both the DELIVERY_NOTICE and the transaction record.
+    References both the `delivery_notice` and the transaction record.
     """
     message_id: str
     session_id: str
     transaction_record_hash: str      # Must match agreed transaction record
-    delivery_notice_message_id: str   # References the DELIVERY_NOTICE
+    delivery_notice_message_id: str   # References the delivery_notice
     acknowledgment_timestamp: str     # ISO 8601
     accepted: bool                    # True = delivery accepted, False = disputed
     notes: str | None = None
     protocol_version: str = "0.2"
-    message_type: str = "DELIVERY_ACKNOWLEDGED"
+    message_type: str = "delivery_acknowledged"
 
     def to_dict(self) -> dict:
         return _drop_none({
@@ -605,7 +605,7 @@ class DisputeNoticeMessage:
     resolution_requested: str | None = None  # "renegotiate" | "cancel" | "neutral_review"
     dispute_timestamp: str = None  # ISO 8601, auto-set on creation
     protocol_version: str = "0.2"
-    message_type: str = "DISPUTE_NOTICE"
+    message_type: str = "dispute_notice"
 
     def __post_init__(self):
         if self.evidence_references is None:
@@ -636,11 +636,11 @@ class DisputeNoticeMessage:
 class DisputeResolvedMessage:
     """
     Sent by the neutral resolver (or agreed party) to record the outcome
-    of a dispute opened by DISPUTE_NOTICE. Closes the post-commitment
+    of a dispute opened by `dispute_notice`. Closes the post-commitment
     dispute lifecycle.
 
     Anchored to both the original transaction record hash and the
-    DISPUTE_NOTICE message_id. The resolution_outcome field records
+    `dispute_notice` message_id. The resolution_outcome field records
     who prevailed; resolver_did identifies the neutral party that
     issued the resolution.
 
@@ -654,7 +654,7 @@ class DisputeResolvedMessage:
     message_id: str
     session_id: str
     transaction_record_hash: str  # Must match the agreed transaction record
-    dispute_notice_message_id: str  # References the DISPUTE_NOTICE being resolved
+    dispute_notice_message_id: str  # References the dispute_notice being resolved
     resolution_outcome: str  # "buyer_prevails" | "seller_prevails" |
                               # "mutual_settlement"
     resolver_did: str  # DID of the neutral resolver
@@ -662,7 +662,7 @@ class DisputeResolvedMessage:
     resolution_notes: str | None = None
     evidence_references: list[str] = None  # Supporting evidence for the ruling
     protocol_version: str = "0.2"
-    message_type: str = "DISPUTE_RESOLVED"
+    message_type: str = "dispute_resolved"
 
     def __post_init__(self):
         if self.evidence_references is None:
