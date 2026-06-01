@@ -115,14 +115,12 @@ def _build_fulfillment_attestation(
     session_id: str,
     pc_data: dict[str, Any],
     dispute_resolved_message: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    """Return a signed FulfillmentAttestation, or None if no Ed25519 key is configured."""
     agent_info = _responder_config.get("agent_info", {})
-    private_key = (
-        _responder_config.get("fulfillment_private_key")
-        or _responder_config.get("private_key")
-    )
+    private_key = _responder_config.get("fulfillment_private_key")
     if private_key is None:
-        raise ValueError("Server fulfillment private key not configured")
+        return None
 
     session_record = dict(pc_data)
     session_record["session_id"] = session_id
@@ -703,17 +701,9 @@ async def post_delivery_acknowledged(session_id: str, request: Request,
     if not accepted:
         pc_data["dispute_reason"] = body.get("notes", "")
     else:
-        try:
-            pc_data["fulfillment_attestation"] = _build_fulfillment_attestation(
-                session_id, pc_data
-            )
-        except ValueError as exc:
-            return error_response(
-                "FULFILLMENT_ATTESTATION_ERROR",
-                str(exc),
-                500,
-                session_id=session_id,
-            )
+        attestation = _build_fulfillment_attestation(session_id, pc_data)
+        if attestation is not None:
+            pc_data["fulfillment_attestation"] = attestation
     pc_data["acknowledgment_message_id"] = message_id
     _session_store.save(session_id, pc_data)
 
@@ -867,17 +857,11 @@ async def post_dispute_resolved(session_id: str, request: Request,
     pc_data["dispute_resolution"] = body
     pc_data["post_commitment_status"] = "RESOLVED"
     pc_data["dispute_resolved_message_id"] = message_id
-    try:
-        pc_data["fulfillment_attestation"] = _build_fulfillment_attestation(
-            session_id, pc_data, dispute_resolved_message=body
-        )
-    except ValueError as exc:
-        return error_response(
-            "FULFILLMENT_ATTESTATION_ERROR",
-            str(exc),
-            500,
-            session_id=session_id,
-        )
+    attestation = _build_fulfillment_attestation(
+        session_id, pc_data, dispute_resolved_message=body
+    )
+    if attestation is not None:
+        pc_data["fulfillment_attestation"] = attestation
     _session_store.save(session_id, pc_data)
 
     return a2cn_response({
