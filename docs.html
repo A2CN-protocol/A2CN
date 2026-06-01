@@ -1237,7 +1237,7 @@ assert ok is True</code></pre>
   // Maintainer note: replace SCHEDULING_URL_PLACEHOLDER with a real booking URL.
   // If it is intentionally cleared, these CTAs fall back to email.
   (function schedulingFallback() {
-    const schedulingUrl = 'SCHEDULING_URL_PLACEHOLDER';
+    const schedulingUrl = 'https://calendar.app.google/CuBXFU1ZCKvZCQMP7';
     document.querySelectorAll('[data-scheduling-link]').forEach(link => {
       if (schedulingUrl === 'SCHEDULING_URL_PLACEHOLDER' || !schedulingUrl || !link.getAttribute('href')) {
         link.href = 'mailto:contact@a2cn.io';
