@@ -119,7 +119,7 @@ async def test_turn_taking_enforced(test_client, responder_test_client, responde
 
 
 # ---------------------------------------------------------------------------
-# CONF-003: JWT authentication enforcement (Section 11.1.4)
+# CONF-003: JWT authentication enforcement (Section 12.1.4)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
