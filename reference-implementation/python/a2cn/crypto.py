@@ -6,7 +6,7 @@ Implements:
 - RFC 8785 JCS canonicalization
 - SHA-256 hashing of JCS-canonicalized objects (base64url output)
 - JWS signing/verification of protocol act hashes using ES256 or EdDSA
-- JWT creation and verification for request authentication (Section 11.1.4)
+- JWT creation and verification for request authentication (Section 12.1.4)
 """
 
 import base64
@@ -224,7 +224,7 @@ def create_jwt(
     exp_seconds: int = 60,
 ) -> str:
     """
-    Create a signed JWT per Section 11.1.4.
+    Create a signed JWT per Section 12.1.4.
 
     Fields: iss, aud, iat, exp, jti, purpose (optional), session_id (optional)
     Algorithm: ES256 for P-256 keys, EdDSA for Ed25519 keys

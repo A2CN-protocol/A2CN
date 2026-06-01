@@ -1,5 +1,5 @@
 """
-A2CN Responder — FastAPI server (Section 11.1.1)
+A2CN Responder — FastAPI server (Section 12.1.1)
 
 Endpoints:
   POST   /sessions                              — SessionInit
@@ -15,7 +15,7 @@ Endpoints:
   POST   /invitations/{invitation_id}/decline  — Decline invitation (v0.2.0)
   GET    /invitations/{invitation_id}          — Get invitation status (v0.2.0)
 
-JWT authentication is enforced on all state-modifying endpoints (Section 11.1.4).
+JWT authentication is enforced on all state-modifying endpoints (Section 12.1.4).
 All endpoints return Content-Type: application/a2cn+json.
 """
 
@@ -172,7 +172,7 @@ async def content_type_middleware(request: Request, call_next) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# JWT auth — Section 11.1.4
+# JWT auth — Section 12.1.4
 # ---------------------------------------------------------------------------
 
 # This server's own DID, used as JWT audience.  Override with A2CN_SERVER_DID env var

@@ -972,24 +972,24 @@ class SessionManager:
 # ---------------------------------------------------------------------------
 
 # Error codes used in this implementation and their spec references:
-#   SESSION_NOT_FOUND       — 404  — spec Section 12.2
-#   SESSION_WRONG_STATE     — 409  — spec Section 12.2
-#   NOT_YOUR_TURN           — 409  — spec Section 12.2
-#   SEQUENCE_ERROR          — 422  — spec Section 12.2
-#   OFFER_HASH_MISMATCH     — 400  — spec Section 12.2
-#   OFFER_EXPIRED           — 422  — spec Section 12.2
-#   ROUND_LIMIT_EXCEEDED    — 422  — spec Section 12.2
-#   WRONG_MESSAGE_TYPE      — 422  — spec Section 12.2
-#   INVALID_SIGNATURE       — 400  — spec Section 12.2
-#   DEAL_TYPE_NOT_SUPPORTED — 403  — spec Section 12.2
-#   MANDATE_INVALID         — 403  — spec Section 12.2
+#   SESSION_NOT_FOUND       — 404  — spec Section 12.3
+#   SESSION_WRONG_STATE     — 409  — spec Section 12.3
+#   NOT_YOUR_TURN           — 409  — spec Section 12.3
+#   SEQUENCE_ERROR          — 422  — spec Section 12.3
+#   OFFER_HASH_MISMATCH     — 400  — spec Section 12.3
+#   OFFER_EXPIRED           — 422  — spec Section 12.3
+#   ROUND_LIMIT_EXCEEDED    — 422  — spec Section 12.3
+#   WRONG_MESSAGE_TYPE      — 422  — spec Section 12.3
+#   INVALID_SIGNATURE       — 400  — spec Section 12.3
+#   DEAL_TYPE_NOT_SUPPORTED — 403  — spec Section 12.3
+#   MANDATE_INVALID         — 403  — spec Section 12.3
 #   NOT_IN_AWAITING_HUMAN_APPROVAL — 409 — human approval extension
 #   APPROVAL_RECEIPT_INVALID — 400 — human approval extension
 #   APPROVAL_RECEIPT_EXPIRED — 422 — human approval extension
 #   UNAUTHORIZED_APPROVER   — 403  — human approval extension
-#   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.2
-#   UNAUTHORIZED_SENDER     — 403  — spec Section 12.2
-#   INVALID_REQUEST         — 400  — extension (not in spec Section 12.2 table);
+#   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.3
+#   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
+#   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
 #                                     used for malformed input that fails basic
 #                                     validation before any protocol logic runs
 

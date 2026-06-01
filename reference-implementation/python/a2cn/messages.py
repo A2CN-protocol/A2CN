@@ -500,7 +500,7 @@ class WebhookPayload:
 
 
 # ---------------------------------------------------------------------------
-# v0.2.0: Invitation error codes (Section 12.2 extension)
+# v0.2.0: Invitation error codes (Section 11.7 extension)
 # ---------------------------------------------------------------------------
 
 INVITATION_EXPIRED = "INVITATION_EXPIRED"

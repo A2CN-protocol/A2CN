@@ -2101,11 +2101,11 @@ logic, such as:
 - group-level status and audit references that point to the underlying
   bilateral session IDs and transaction record hashes.
 
-This extension path follows the reverse-auction and multi-supplier framing
-raised by Ali Eren Aytekin (Spaceflow): the base protocol stays bilateral, while
-the sourcing platform or neutral coordination layer owns the group-level policy.
-OQ-012 tracks the open design questions for the group object shape, award
-semantics, and cross-session audit model.
+This extension path follows reverse-auction and multi-supplier sourcing
+workflows: the base protocol stays bilateral, while the sourcing platform or
+neutral coordination layer owns the group-level policy. OQ-012 tracks the open
+design questions for the group object shape, award semantics, and cross-session
+audit model.
 
 ### 11.2 SessionInvitation Message
 
@@ -2332,12 +2332,12 @@ at the protocol level.
 
 ## 12. Transport Binding
 
-### 11.1 HTTP/REST Binding (Normative)
+### 12.1 HTTP/REST Binding (Normative)
 
 A2CN v0.1 defines one normative transport: HTTP/REST. All implementations MUST
 support this binding.
 
-#### 11.1.1 Endpoints
+#### 12.1.1 Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -2348,20 +2348,20 @@ support this binding.
 | GET | `/sessions/{id}/record` | Get transaction record (COMPLETED only) |
 | GET | `/sessions/{id}/audit` | Get audit log (any terminal state) |
 
-#### 11.1.2 Pagination
+#### 12.1.2 Pagination
 
 `GET /sessions/{id}/messages` MUST support cursor-based pagination:
 - `?after_sequence={n}` returns messages with `sequence_number` > n
 - Response MUST include a `next_cursor` field (null if no more messages)
 - Page size SHOULD default to 50 and MUST be configurable via `?limit={n}`
 
-#### 11.1.3 Idempotency Keys
+#### 12.1.3 Idempotency Keys
 
 All `POST` requests MUST include an `Idempotency-Key` header equal to the
 `message_id` of the message being sent. Servers MUST use this header (alongside
 the message body's `message_id`) to implement idempotency per Section 6.1.
 
-#### 11.1.4 Authentication
+#### 12.1.4 Authentication
 
 Every request MUST include `Authorization: Bearer {jwt}`.
 
@@ -2386,7 +2386,7 @@ the JWT against the verification method referenced in the sender's discovery
 document. Receivers MUST NOT verify JWTs using keys embedded in the discovery
 document directly.
 
-#### 11.1.5 HTTP Status Codes
+#### 12.1.5 HTTP Status Codes
 
 | Status | Meaning in A2CN context |
 |--------|------------------------|
@@ -2402,7 +2402,7 @@ document directly.
 | 429 | Rate limited |
 | 503 | DID resolution failure (temporary) |
 
-#### 11.1.6 Webhook Callbacks (RECOMMENDED; REQUIRED at Level 2)
+#### 12.1.6 Webhook Callbacks (RECOMMENDED; REQUIRED at Level 2)
 
 Implementations SHOULD support webhook callbacks to avoid polling overhead.
 Level 2 and Level 3 implementations MUST support webhook callbacks for terminal
@@ -2449,7 +2449,7 @@ also accepted when the sender's verification method uses an Ed25519 key.
 Webhook delivery is best-effort. The polling endpoint remains the authoritative
 source. Implementations MUST NOT rely exclusively on webhooks.
 
-#### 11.1.7 Version Negotiation
+#### 12.1.7 Version Negotiation
 
 The `protocol_version` field in SessionInit declares the initiator's version.
 If the responder does not support the declared version, it MUST reject with
@@ -2459,7 +2459,7 @@ an unsupported version.
 Backward compatibility expectations: minor versions within 0.x are not guaranteed
 compatible. v1.0 and beyond will define compatibility guarantees.
 
-#### 11.1.8 Content Type
+#### 12.1.8 Content Type
 
 All A2CN requests and responses MUST use `Content-Type: application/a2cn+json`.
 Servers MUST return `406 Not Acceptable` if a client requests a different type
@@ -2469,7 +2469,7 @@ via `Accept` header for a content type that is not supported.
 
 ## 12. Error Handling
 
-### 12.1 Error Response Format
+### 12.2 Error Response Format
 
 All A2CN errors use a single format regardless of whether they occur during
 session initiation or message exchange:
@@ -2490,7 +2490,7 @@ session initiation or message exchange:
 SessionReject messages also use this format via the `error_code` and
 `error_message` fields for consistency.
 
-### 12.2 Error Code Reference
+### 12.3 Error Code Reference
 
 | Code | HTTP | Permanent? | Description |
 |------|------|------------|-------------|
@@ -3549,7 +3549,7 @@ Copilot Studio agents without additional adapter code.
 
 A software system is a **conformant A2CN implementation** if it:
 
-1. Implements the HTTP/REST transport binding (Section 11.1)
+1. Implements the HTTP/REST transport binding (Section 12.1)
 2. Implements discovery document publishing and consumption (Section 4)
 3. Correctly implements all state machine transitions (Section 8)
 4. Implements turn-taking enforcement per Section 3.2
@@ -3638,7 +3638,7 @@ messages that validate against these schemas.
 
 ### Patch 2026-05-20 — DID-key JWS webhook signing
 
-- Section 11.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
+- Section 12.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
   instead of HMAC-SHA256/shared-secret signed.
 - Webhook signature headers now include sender DID, sender verification method,
   body hash, and compact JWS over the body hash.
@@ -4006,7 +4006,7 @@ Section 1.4 Scope updated to enumerate v0.2 additions over v0.1.
   (0.1.2) tracks editorial revisions. Wire protocol version (`protocol_version`,
   `a2cn_version`) remains `"0.1"` for all 0.1.x revisions.
 
-- **Fixed webhook JWT authentication (Section 11.1.6).** Added explicit rule:
+- **Fixed webhook JWT authentication (Section 12.1.6).** Added explicit rule:
   webhook JWTs MUST have `iss` = sender's DID and `aud` = receiver's DID.
   Previously the spec said "include Authorization header" without specifying
   the DID routing.
@@ -4018,7 +4018,7 @@ Section 1.4 Scope updated to enumerate v0.2 additions over v0.1.
 - **Fixed `REJECTED_FINAL` terminal notation (Section 8.2).** Changed "No→Yes"
   to "Yes" in the terminal state table.
 
-- **Added 406 to HTTP status code table (Section 11.1.5).**
+- **Added 406 to HTTP status code table (Section 12.1.5).**
 
 **Improvements:**
 
