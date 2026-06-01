@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-390%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-469%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -303,7 +303,7 @@ Fork it, modify it, or build your own from scratch.
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 390 passed
+pytest tests/ -v   # 469 passed
 ```
 
 | Test file | What it covers |

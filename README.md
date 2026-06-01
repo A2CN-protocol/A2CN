@@ -6,7 +6,7 @@ A2CN defines neutral infrastructure for agent-to-agent commercial negotiation.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
-[![Tests](https://img.shields.io/badge/Tests-390%20passing-brightgreen.svg)](reference-implementation/python/tests)
+[![Tests](https://img.shields.io/badge/Tests-469%20passing-brightgreen.svg)](reference-implementation/python/tests)
 [![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
@@ -81,6 +81,18 @@ The invitation is signed using the inviter's DID key (ES256 by default, EdDSA/Ed
 
 **Nue.io:** `NueEventParser` translates Nue pricing and subscription data into A2CN `saas_renewal` terms, and translates agreed terms into Nue order creation (`POST {NUE_BASE_URL}/orders`) with `externalReference: a2cn-session-{id}` for audit linkage.
 
+**SAP Ariba:** `AribaEventParser` translates Event Management and Discovery RFx publication payloads into A2CN `goods_procurement` terms, then builds bid and acknowledgement payloads for write-back.
+
+**JAGGAER:** `JaggaerEventParser` translates ASO sourcing events and CHES API event payloads into `goods_procurement` terms, preserving item and lot identifiers for supplier responses.
+
+**Conga:** `CongaQuoteParser` translates CPQ/CLM quote and agreement data into A2CN terms for SaaS renewals or goods procurement, with Salesforce-native write-back shapes.
+
+**Ironclad:** `IroncladWebhookVerifier` and workflow translators map signed workflow events into A2CN terms and write agreed metadata back to Ironclad workflows and records.
+
+**Vendr:** Vendr benchmark pricing maps into A2CN `saas_renewal` terms for renewal intelligence and produces audit summaries after agreement.
+
+**DocuSign:** DocuSign post-commitment helpers generate envelope payloads from completed A2CN transaction records and verify Connect HMAC callbacks.
+
 ### Deal-type-specific terms schemas
 
 Two registered deal types now have normative JSON schemas:
@@ -116,7 +128,7 @@ negotiation trail while keeping human oversight explicit and auditable.
 | **Session state machine** | Phases, turn-taking, round limits, timeouts, impasse detection, human approval pauses |
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
-| **Post-commitment lifecycle** | DELIVERY_NOTICE (seller confirms delivery), DELIVERY_ACKNOWLEDGED (buyer closes or disputes), DISPUTE_NOTICE (neutral evidence anchoring) — v0.3 |
+| **Post-commitment lifecycle** | `delivery_notice`, `delivery_acknowledged`, `dispute_notice`, and `dispute_resolved` — normative at Level 3 in v0.2.0 |
 
 ### What A2CN is not
 
@@ -182,7 +194,7 @@ python examples/invitation_flow.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 390 passed
+# 469 passed
 ```
 
 ---
@@ -256,9 +268,9 @@ rather than platform-local implementation details.
 
 ## The spec
 
-Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns for Fairmarkit, Salesforce Revenue Cloud, Dynamics 365, Luminance, and A2A, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
+Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns across procurement, revenue, CLM, CPQ, renewal, and eSignature systems, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (390 tests).
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (469 tests).
 
 ---
 
@@ -287,7 +299,13 @@ A2CN/
         │   ├── keelvar_adapter.py       # Keelvar → A2CN translation
         │   ├── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
         │   ├── dealhub_adapter.py       # DealHub → A2CN translation
-        │   └── nue_adapter.py           # Nue.io → A2CN translation
+        │   ├── nue_adapter.py           # Nue.io → A2CN translation
+        │   ├── ariba_adapter.py         # SAP Ariba → A2CN translation
+        │   ├── jaggaer_adapter.py       # JAGGAER ASO → A2CN translation
+        │   ├── conga_adapter.py         # Conga CPQ/CLM → A2CN translation
+        │   ├── ironclad_adapter.py      # Ironclad workflow → A2CN translation
+        │   ├── vendr_adapter.py         # Vendr benchmark → A2CN translation
+        │   └── docusign_adapter.py      # A2CN record → DocuSign envelope
         ├── tests/
         │   ├── test_invitations.py
         │   ├── test_deal_type_terms.py
@@ -309,9 +327,9 @@ A2CN/
 | Milestone | Status |
 |-----------|--------|
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
-| Reference implementation (Python) | ✓ Complete — 390 tests passing |
+| Reference implementation (Python) | ✓ Complete — 469 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
-| Platform adapters | ✓ Complete — Fairmarkit, Salesforce Revenue Cloud, Keelvar, DealHub, Nue.io |
+| Platform adapters | ✓ Complete — 11 adapters: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
@@ -320,7 +338,7 @@ A2CN/
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Neutral third-party record custody | 📋 Planned — v0.3 |
-| Post-commitment lifecycle (DELIVERY_NOTICE / DELIVERY_ACKNOWLEDGED / DISPUTE_NOTICE / DISPUTE_RESOLVED) | ✓ Complete — v0.2.1 |
+| Post-commitment lifecycle (`delivery_notice` / `delivery_acknowledged` / `dispute_notice` / `dispute_resolved`) | ✓ Complete — v0.2.0 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | 📋 Planned — v0.3 |
 | TypeScript reference implementation | 📋 Planned |

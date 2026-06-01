@@ -2,7 +2,7 @@
 
 **Released:** April 2026  
 **Spec:** v0.2.0 (3,300+ lines)  
-**Tests:** 390 passing
+**Tests:** 469 passing
 **License:** Apache 2.0
 
 ## What's new in v0.2.0
@@ -16,6 +16,12 @@ Solves the cold-start problem. A buyer agent can now invite a supplier who has n
 - **Keelvar** — SOURCING_EVENTS_FEED_UPDATED webhook → A2CN session translation.
 - **DealHub** — DealHubEventParser translates quoteReady webhook payloads into A2CN saas_renewal terms and translates agreed terms back into DealHub Actions API calls to mark the quote as externally signed.
 - **Nue.io** — NueEventParser translates Nue pricing and subscription data into A2CN saas_renewal terms and translates agreed terms into Nue order creation with externalReference linkage for audit.
+- **SAP Ariba** — Event Management and Discovery RFx publication payloads → A2CN goods_procurement terms, with bid and acknowledgement write-back helpers.
+- **JAGGAER** — ASO sourcing events and CHES API events → A2CN goods_procurement terms, preserving item and lot IDs for supplier responses.
+- **Conga** — CPQ/CLM quote and agreement data → A2CN saas_renewal or goods_procurement terms, with Salesforce-native write-back payloads.
+- **Ironclad** — Signed workflow events → A2CN terms, plus workflow metadata and record write-back helpers.
+- **Vendr** — Renewal benchmark pricing → A2CN saas_renewal terms and post-agreement audit summaries.
+- **DocuSign** — Completed A2CN transaction records → eSignature envelope payloads, with Connect HMAC verification.
 
 ### Deal-type-specific terms schemas
 - `goods_procurement` — delivery_days, unit_of_measure, manufacturer and internal part numbers
@@ -57,7 +63,7 @@ python examples/keelvar_demo.py
 ```bash
 pip install -r requirements.txt
 pytest tests/ -v
-# 390 passed
+# 469 passed
 ```
 
 ## What's next (v0.3)
