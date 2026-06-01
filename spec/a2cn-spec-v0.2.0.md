@@ -2581,9 +2581,12 @@ the session lifetime unless the parties establish a new session.
 
 ### 13.5 Mandate Scope Enforcement
 
-Implementations SHOULD compare `agreed_terms.total_value` against the mandate's
-`max_commitment_value` before generating a transaction record and SHOULD surface
-mismatches for human review.
+Implementations MUST enforce the sender's declared `max_commitment_value` as a
+hard ceiling for any offer, counteroffer, or acceptance that carries
+`terms.total_value`. A party MUST NOT propose or accept terms whose
+`total_value` exceeds that party's mandate cap in the same currency. Human
+approval thresholds are separate soft controls; they MUST NOT override
+`max_commitment_value`.
 
 ### 13.6 Prompt Injection
 
@@ -3089,18 +3092,21 @@ with their resolution version rather than being renumbered.
 | ID | Question | Status | Resolution / Proposed |
 |----|----------|--------|-----------------------|
 | OQ-001 | Deal type registry vs convention | **RESOLVED v0.2** | Registry published at `a2cn.dev/registry/deal-types`. Core types: `saas_renewal`, `goods_procurement`, `services_engagement`, `logistics_rate`. Community-submitted types via GitHub PR. |
-| OQ-002 | Max value threshold protocol cap | Open | $10K USD equivalent cap under consideration; v0.3 |
-| OQ-003 | DID resolver fallback when temporarily unavailable | Open | 24h cache allowed |
+| OQ-002 | Max value threshold protocol cap | **RESOLVED v0.2.0** | No global protocol cap. A2CN enforces each party's mandate-specific `max_commitment_value` as the hard cap; see Section 13.5. Deployments MAY set local policy caps above or below the mandate cap, but those are not protocol-wide limits. |
+| OQ-003 | DID resolver fallback when temporarily unavailable | Open — v0.3 scoped | Proposed: fail closed if no previously verified DID document is available. If a DID document was resolved and verified before outage, implementations MAY use a cache entry for up to 24 hours, MUST record that fallback in local audit metadata, and MUST refresh before accepting new sessions after cache expiry. |
 | OQ-004 | Deal-type-specific terms schemas | **RESOLVED v0.2** | `goods_procurement` and `saas_renewal` schemas defined in Section 18 and `spec/schemas/terms/`. Additional types via extension pattern. |
 | OQ-005 | Configurable impasse threshold | **RESOLVED v0.2** | `impasse_threshold` field added to `session_params`. Default 3 consecutive rounds with no movement triggers IMPASSE state. Configurable 1–10. |
-| OQ-006 | Neutral transaction record storage | Open | Bilateral for v0.1/v0.2; optional neutral third-party record custodian in v0.3 |
+| OQ-006 | Neutral transaction record storage | Open — v0.3 extension scoped | Bilateral transaction-record generation remains normative for v0.2. A v0.3 neutral custodian MAY store independently generated records from both parties, verify matching `record_hash` values, and provide retrieval/audit endpoints without becoming the source of truth for the record contents. |
 | OQ-007 | Neutral transaction record storage (original) | **RESOLVED v0.1.1** | Bilateral storage correct for v0.1 |
 | OQ-008 | Webhooks alongside polling | **RESOLVED v0.1.1** | Promoted to RECOMMENDED; promoted to REQUIRED at Level 2 in v0.2 |
-| OQ-009 | Platform DID proxy model | Open | Buyer-side platforms (Pactum, Fairmarkit, Zip) negotiate on behalf of enterprise customers whose DID is not the platform's own DID. Proposed: allow `did:web:platform.ai:customers:{customer-id}` pattern; platform serves the DID document; mandate credential scopes to customer organization. v0.3. |
-| OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open | Pactum's negotiation model presents bundled packages where the counterparty chooses between equivalent options (e.g., lower price vs. longer payment terms). Current offer schema is single-option. Proposed: `alternatives` array on Offer model. v0.3. |
+| OQ-009 | Platform DID proxy model | Open — v0.3 scoped | Buyer-side platforms may negotiate on behalf of enterprise customers whose DID is not the platform operator's DID. Proposed pattern: customer-scoped `did:web` identifiers under the platform's DID hosting domain, with mandate credentials explicitly scoped to the represented customer organization and auditable delegation from customer to platform agent. |
+| OQ-010 | MESO (Multiple Equivalent Simultaneous Offers) | Open — v0.3 scoped | Bundle-style negotiations may need equivalent options where the counterparty chooses among price, payment-term, quantity, or delivery tradeoffs. Proposed: an `alternatives` array on Offer with each alternative carrying its own terms hash, equivalence rationale, and acceptance target. Single-option offers remain the v0.2 default. |
 | OQ-011 | A2CN as A2A extension | Open — profile scoped | Extension URI defined as `https://a2cn.io/extensions/commercial-negotiation/v1`. Section 16.2 documents AgentCard declaration, A2CN/Concordia/BidAngel substrate split, and starter `references[]` relationship vocabulary. Formal A2A governance outcome pending. |
 | OQ-012 | NegotiationGroup multi-party sourcing extension | Open | A2CN v0.2.0 is deliberately bilateral. Multi-party sourcing can extend the base protocol through a NegotiationGroup coordination object: one buyer invites N sellers (typically 3-7) into parallel bilateral sessions, then records group-level award policy such as single award, split award, and per-party sequencing. See Section 11.1.1. |
-| OQ-013 | DID VC mandate for hosted endpoints | Open | When a neutral hosted endpoint provider hosts an A2CN endpoint on behalf of a supplier, the mandate is Tier 1 (Declared) by design. Whether the provider can issue a Tier 2 (DID VC) mandate on behalf of a supplier requires further analysis of the trust model. |
+| OQ-013 | DID VC mandate for hosted endpoints | Open — v0.3 scoped | Hosted endpoints may use Tier 1 declared mandates when the hosted agent is session-scoped and bound to supplier-configured limits. A Tier 2 DID VC mandate requires explicit supplier-issued credentialing of the hosted agent; providers MUST NOT self-issue Tier 2 authority for a supplier without supplier DID participation. |
+| OQ-014 | Transaction record to CLM handoff | Open — v0.3 scoped | Contract lifecycle management systems need a stable handoff from A2CN transaction records into legal-document drafting. Proposed: CLM integrations consume the transaction record as the authoritative commercial-terms source, preserving `record_hash`, party DIDs, agreed terms, and acceptance artifacts as external references in the drafting workflow. |
+| OQ-015 | Historical contract intelligence | Open — v0.3 scoped | Contract-intelligence systems can use A2CN transaction records as structured negotiation history. Proposed: expose transaction records and audit logs as read-only inputs for analytics, renewal-risk detection, and precedent retrieval, while preserving signed artifacts verbatim and avoiding post-hoc mutation of the agreed record. |
+| OQ-016 | Mandate delegation chains | Open — v0.3 scoped | A2CN v0.2 mandates are flat. Proposed v0.3 direction: adopt a Concordia-compatible ordered delegation-chain shape so authority can flow from principal organization to department, platform, hosted endpoint, and agent while preserving scope, expiry, and revocation semantics at each hop. |
 | OQ-017 | Post-commitment lifecycle messages | **Resolved — v0.2.0** | Resolved: delivery_notice, delivery_acknowledged, dispute_notice, and dispute_resolved are normative at Level 3 conformance as of v0.2.0; see Section 10.6. Rationale: a non-normative dispute path prevents reputation infrastructure (e.g. Verascore) from distinguishing 'commitment honored' from 'commitment abandoned', breaking reputation accuracy in the procurement vertical. |
 | OQ-018 | ApprovalReceipt expiry handling | Open | Proposed: if an ApprovalReceipt expires before the paused act is sent or accepted, the session remains in or re-enters `AWAITING_HUMAN_APPROVAL`; it does not terminate solely because of receipt expiry. |
 | OQ-019 | Human approval threshold shape | Open | Proposed v0.3: `requires_human_approval_above` remains a global scalar on the mandate. Per-counterparty tiers are a v0.4 extension point. |
@@ -3636,6 +3642,16 @@ messages that validate against these schemas.
 - OQ-012 updated to name NegotiationGroup and scope multi-party sourcing as a
   coordination layer over parallel bilateral A2CN sessions.
 
+### Patch 2026-06-01 — v0.3 open-question planning pass
+
+- OQ-002 resolved: A2CN uses mandate-specific `max_commitment_value`, not a
+  global protocol cap.
+- OQ-003, OQ-006, OQ-009, OQ-010, and OQ-013 updated with concrete v0.3 scoping
+  notes.
+- OQ-014, OQ-015, and OQ-016 added for CLM handoff, historical contract
+  intelligence, and mandate delegation-chain planning.
+- Section 13.5 updated to make mandate cap enforcement a hard requirement.
+
 ### Patch 2026-05-20 — DID-key JWS webhook signing
 
 - Section 12.1.6 updated to make Level 2 webhook callbacks DID-key JWS signed
@@ -3851,6 +3867,9 @@ Sections substantially rewritten and expanded with concrete integration patterns
 - OQ-012: NegotiationGroup multi-party sourcing extension for reverse-auction
   contexts
 - OQ-013: DID VC mandate for neutral hosted endpoints
+- OQ-014: Transaction record to CLM handoff
+- OQ-015: Historical contract intelligence
+- OQ-016: Mandate delegation chains
 
 **Introduction updated:**
 
