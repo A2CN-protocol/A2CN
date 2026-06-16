@@ -6,7 +6,7 @@ A2CN defines neutral infrastructure for agent-to-agent commercial negotiation.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
-[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](reference-implementation/python/tests)
+[![Tests](https://img.shields.io/badge/Tests-476%20passing-brightgreen.svg)](reference-implementation/python/tests)
 [![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
@@ -197,7 +197,7 @@ python examples/invitation_flow.py
 ```bash
 pip install -e '.[dev]'
 pytest tests/ -v
-# 474 passed
+# 476 passed
 ```
 
 ---
@@ -273,7 +273,7 @@ rather than platform-local implementation details.
 
 Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns across procurement, revenue, CLM, CPQ, renewal, and eSignature systems, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (474 tests).
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against reference implementation (476 tests).
 
 ---
 
@@ -330,7 +330,7 @@ A2CN/
 | Milestone | Status |
 |-----------|--------|
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
-| Reference implementation (Python) | ✓ Complete — 474 tests passing |
+| Reference implementation (Python) | ✓ Complete — 476 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
 | Platform adapters | ✓ Complete — 11 adapters: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |

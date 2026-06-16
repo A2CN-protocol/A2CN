@@ -44,11 +44,11 @@ from typing import Any
 import httpx
 try:
     from mcp.server.fastmcp import FastMCP
-except ImportError as exc:  # pragma: no cover - exercised when optional extra is absent.
+except ImportError:  # pragma: no cover - only reachable when the mcp extra is absent.
     raise SystemExit(
         "The A2CN MCP server requires the optional MCP dependencies. "
         "Install them with: pip install -e '.[mcp]'"
-    ) from exc
+    ) from None
 
 from a2cn.client import A2CNClient
 from a2cn.crypto import (
