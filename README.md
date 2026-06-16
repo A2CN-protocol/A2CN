@@ -176,6 +176,9 @@ git clone https://github.com/A2CN-protocol/A2CN.git
 cd A2CN/reference-implementation/python
 pip install -e .
 
+# Optional: install MCP server support
+pip install -e '.[mcp]'
+
 # SaaS renewal demo (4-round bilateral negotiation)
 python examples/saas_renewal.py
 
@@ -192,7 +195,7 @@ python examples/invitation_flow.py
 ### Run the test suite
 
 ```bash
-pip install -r requirements.txt
+pip install -e '.[dev]'
 pytest tests/ -v
 # 474 passed
 ```
