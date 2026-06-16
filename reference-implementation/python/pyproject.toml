@@ -20,7 +20,7 @@ mcp = [
     "mcp==1.12.4",
 ]
 dev = [
-    "mcp==1.12.4",
+    "a2cn[mcp]",
     "pytest==8.3.0",
     "pytest-asyncio==0.24.0",
     "python-multipart==0.0.12",

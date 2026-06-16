@@ -9,6 +9,15 @@ def _project_metadata() -> dict:
     return tomllib.loads(pyproject.read_text())
 
 
+def _requirements() -> list[str]:
+    requirements = Path(__file__).parents[1] / "requirements.txt"
+    return [
+        line.strip()
+        for line in requirements.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+
 def test_mcp_is_optional_not_core_dependency() -> None:
     project = _project_metadata()["project"]
 
@@ -16,5 +25,9 @@ def test_mcp_is_optional_not_core_dependency() -> None:
     optional_dependencies = project["optional-dependencies"]
 
     assert not any(dep.startswith("mcp") for dep in dependencies)
-    assert optional_dependencies["mcp"] == ["mcp==1.12.4"]
-    assert "mcp==1.12.4" in optional_dependencies["dev"]
+    assert any(dep.startswith("mcp") for dep in optional_dependencies["mcp"])
+    assert "a2cn[mcp]" in optional_dependencies["dev"]
+
+
+def test_requirements_txt_does_not_install_mcp_server() -> None:
+    assert not any(dep.startswith("mcp") for dep in _requirements())
