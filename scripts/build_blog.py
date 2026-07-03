@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from html import escape
 from pathlib import Path
+import ast
 import json
 import re
 import shutil
@@ -47,7 +48,10 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, str], str]:
         if not line.strip():
             continue
         key, value = line.split(":", 1)
-        metadata[key.strip()] = value.strip().strip('"')
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            value = ast.literal_eval(value)
+        metadata[key.strip()] = value
     for required in ("title", "description", "date", "slug"):
         if required not in metadata:
             raise ValueError(f"Post frontmatter missing {required!r}")
@@ -57,6 +61,7 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, str], str]:
 def render_inline(text: str) -> str:
     rendered = escape(text)
     rendered = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", rendered)
     rendered = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
         lambda match: (
