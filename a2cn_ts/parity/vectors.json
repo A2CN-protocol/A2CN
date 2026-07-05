@@ -1,0 +1,313 @@
+{
+  "generator": "reference-implementation/python via a2cn_ts/parity/generate_vectors.py",
+  "canonicalization": [
+    {
+      "input": {
+        "b": 2,
+        "a": 1
+      },
+      "canonical": "{\"a\":1,\"b\":2}",
+      "hash": "QyWM_3g_5wNtikMDP4MK38YOwDc4JHNUisdCuIgpJ3c"
+    },
+    {
+      "input": {
+        "z": {
+          "b": 2,
+          "a": 1
+        },
+        "a": 0,
+        "list": [
+          3,
+          {
+            "y": 2,
+            "x": 1
+          },
+          "s"
+        ]
+      },
+      "canonical": "{\"a\":0,\"list\":[3,{\"x\":1,\"y\":2},\"s\"],\"z\":{\"a\":1,\"b\":2}}",
+      "hash": "vK32ONhFxsTmh7ZExKh8OGiz9buXDnutE9I4q3CMiXw"
+    },
+    {
+      "input": {
+        "unicode": "héllo wörld ünïcode ☃",
+        "empty_obj": {},
+        "empty_arr": []
+      },
+      "canonical": "{\"empty_arr\":[],\"empty_obj\":{},\"unicode\":\"héllo wörld ünïcode ☃\"}",
+      "hash": "6dyGnFbutHg1SKt0umysA4YNQkR3AXz3XmQEn98qX2s"
+    },
+    {
+      "input": {
+        "total_value": 10500000,
+        "currency": "USD",
+        "seat_count": 100
+      },
+      "canonical": "{\"currency\":\"USD\",\"seat_count\":100,\"total_value\":10500000}",
+      "hash": "5o7B5AdOjmsDYjBzZaMN7qfCwnXb1MY_j6OiS9ch-hk"
+    },
+    {
+      "input": {
+        "float_half": 1.5,
+        "float_small": 0.25,
+        "big_int": 9007199254740991
+      },
+      "canonical": "{\"big_int\":9007199254740991,\"float_half\":1.5,\"float_small\":0.25}",
+      "hash": "eh5m7mE2-C6KOC9snCw9ebEdmmWaP7CAIcf7jx47Dc8"
+    },
+    {
+      "input": {
+        "nested": {
+          "deep": {
+            "deeper": {
+              "value": true,
+              "other": false,
+              "none": null
+            }
+          }
+        }
+      },
+      "canonical": "{\"nested\":{\"deep\":{\"deeper\":{\"none\":null,\"other\":false,\"value\":true}}}}",
+      "hash": "Hr6uGE28AXPyS9XYnWmUpkaGR1LHLP8848b9VJZ7H5c"
+    },
+    {
+      "input": [
+        "array",
+        "top",
+        1,
+        2,
+        3,
+        {
+          "k": "v"
+        }
+      ],
+      "canonical": "[\"array\",\"top\",1,2,3,{\"k\":\"v\"}]",
+      "hash": "F9cmdQ0Ejh9gh6Ltns2nH7orpEBA0TZVxIXcDeOCjNQ"
+    },
+    {
+      "input": {
+        "escape\"key": "va\\lue with \n newline and \t tab",
+        "slash/": "//"
+      },
+      "canonical": "{\"escape\\\"key\":\"va\\\\lue with \\n newline and \\t tab\",\"slash/\":\"//\"}",
+      "hash": "-PNYOTFZmCsnx4LSHMoolH3Y1oup6N-zXtDr7HJ6cSE"
+    }
+  ],
+  "signatures": {
+    "ed25519_jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6cGFyaXR5LmV4YW1wbGUjZWQyNTUxOS0xIn0.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.3tcN6GyrBnS1HcRVZukyyD3WI20Uq93K62KWwpftT5d8UQ6WCY7ErD1cDP-xuIV1bfRGnAxeoBeFWYUjK5HOCg",
+    "ed25519_public_jwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+    },
+    "es256_jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.VfLhjo4_15RTzEwjM8DxS0cvD0EjFvr-HDiG_OcpQWut6AAEgReg8XVR4A0bJa-gCt8eWnK8sM94yMd_4WC06A",
+    "es256_public_jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "yBqAozmK34lgmawkZJiql8cV8mBdLvmyVH8AHrThJHo",
+      "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4"
+    },
+    "jws_payload": "parity-vector-protocol-act-hash",
+    "es256_jwt": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnRlY2hjb3JwLmV4YW1wbGUiLCJhdWQiOiJkaWQ6d2ViOmFjbWUtY29ycC5jb20iLCJpYXQiOjE3ODMyODY3NDAsImV4cCI6MjA5ODY0Njc0MCwianRpIjoiMzM5ZWRmNTgtNTM1ZC00NTRmLWIxYzYtMTYxMGRmODczZjJkIiwicHVycG9zZSI6InBhcml0eV92ZWN0b3IiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3Npb24ifQ.dyJpuFHa19CYtxdBdyZYODuzPqw01el9t7osc0m9TkX-DiNRdZx12ObjMkQM5FUzyTQGLtmaO0CDIrbyxRPJyg",
+    "jwt_issuer": "did:web:techcorp.example",
+    "jwt_audience": "did:web:acme-corp.com",
+    "ed25519_invitation_signature": "WUdOCD65Uon7uoU6TC7vqJLwJL3xeLCyC8T7UQzdwOmzpsk86PPlfcOKr0ZDkSi_CxLBE6BqzdcnMN8tD19ICQ",
+    "invitation_dict": {
+      "message_type": "session_invitation",
+      "invitation_id": "11111111-2222-3333-4444-555555555555",
+      "a2cn_version": "0.2",
+      "inviter_did": "did:web:parity.example",
+      "proposed_deal_type": "saas_renewal",
+      "invitation_expires_at": "2030-01-01T00:00:00Z",
+      "invitation_signature": "WUdOCD65Uon7uoU6TC7vqJLwJL3xeLCyC8T7UQzdwOmzpsk86PPlfcOKr0ZDkSi_CxLBE6BqzdcnMN8tD19ICQ"
+    }
+  },
+  "session": {
+    "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "buyer_did": "did:web:techcorp.example",
+    "supplier_did": "did:web:acme-corp.com",
+    "buyer_public_jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "yBqAozmK34lgmawkZJiql8cV8mBdLvmyVH8AHrThJHo",
+      "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4"
+    },
+    "supplier_public_jwk": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "6vLBotDYauSe6zbkEWMLxM84MYXIXbsvqRU-yfvdOAM",
+      "y": "iENZCpZVUyC63C9Y7fhtZ6z367TNAm1Iebia49zfGzY"
+    },
+    "session_init": {
+      "message_type": "session_init",
+      "message_id": "parity-init-1",
+      "protocol_version": "0.2",
+      "session_params": {
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Parity Vector Session",
+        "subject_reference": "PARITY-REF-001",
+        "max_rounds": 4,
+        "session_timeout_seconds": 3600,
+        "round_timeout_seconds": 900
+      },
+      "initiator": {
+        "organization_name": "TechCorp Inc",
+        "did": "did:web:techcorp.example",
+        "verification_method": "did:web:techcorp.example#key-1",
+        "agent_id": "parity-buyer-agent",
+        "endpoint": "https://techcorp.example/api/a2cn"
+      },
+      "initiator_mandate": {
+        "mandate_type": "declared"
+      }
+    },
+    "session_ack": {
+      "message_type": "session_ack",
+      "message_id": "parity-ack-1",
+      "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "in_reply_to": "parity-init-1",
+      "protocol_version": "0.2",
+      "session_params_accepted": {
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "max_rounds": 4,
+        "session_timeout_seconds": 3600,
+        "round_timeout_seconds": 900
+      },
+      "responder": {
+        "organization_name": "Acme Corp",
+        "did": "did:web:acme-corp.com",
+        "verification_method": "did:web:acme-corp.com#key-1",
+        "agent_id": "parity-seller-agent",
+        "endpoint": "http://localhost:8000"
+      },
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_created_at": "2026-03-24T10:00:00Z",
+      "current_turn": "initiator"
+    },
+    "messages": [
+      {
+        "message_type": "offer",
+        "message_id": "parity-offer-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "round_number": 1,
+        "sequence_number": 1,
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:01:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "protocol_act_hash": "BQrDVoDsNH_ZE_IUEYBgIS2DzrmPFWadiF7w5zaXzNc",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.Jy2fMBoD-3si_ez0sS8seqCz7lrKbrx1VEdY8wLVFTHX40wicnuqh_kQiGMf05ubVsOTlo3fceZ6AmkkRsVyyw"
+      },
+      {
+        "message_type": "counteroffer",
+        "message_id": "parity-counter-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "round_number": 2,
+        "sequence_number": 2,
+        "sender_did": "did:web:acme-corp.com",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:acme-corp.com#key-1",
+        "timestamp": "2026-03-24T10:02:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {
+          "total_value": 10500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ",
+        "in_reply_to": "parity-offer-1"
+      },
+      {
+        "message_type": "acceptance",
+        "message_id": "parity-acc-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "in_reply_to": "parity-counter-1",
+        "round_number": 2,
+        "sequence_number": 3,
+        "accepted_offer_id": "parity-counter-1",
+        "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:03:00Z",
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+      }
+    ],
+    "expected": {
+      "a2cn_namespace": "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c",
+      "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
+      "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w",
+      "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
+      "generated_at": "2026-03-24T10:03:00Z",
+      "full_record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.1",
+        "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "parity-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "parity-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Parity Vector Session",
+        "subject_reference": "PARITY-REF-001",
+        "agreed_terms": {
+          "total_value": 10500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 2,
+          "total_messages": 3,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:techcorp.example"
+        },
+        "final_offer": {
+          "message_id": "parity-counter-1",
+          "sender_did": "did:web:acme-corp.com",
+          "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ"
+        },
+        "final_acceptance": {
+          "message_id": "parity-acc-1",
+          "sender_did": "did:web:techcorp.example",
+          "round_number": 2,
+          "sequence_number": 3,
+          "accepted_offer_id": "parity-counter-1",
+          "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+        },
+        "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
+        "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w"
+      }
+    }
+  }
+}
