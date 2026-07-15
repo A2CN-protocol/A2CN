@@ -3,11 +3,11 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-77%20passing%2C%201%20skipped-brightgreen.svg)](tests/)
-[![Spec](https://img.shields.io/badge/Spec-v0.1.3-green.svg)](../../spec/v0.1.3.md)
+[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](python/tests/)
+[![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
-This is the reference implementation of the [A2CN protocol](../../spec/v0.1.3.md) — the open protocol for agent-to-agent B2B commercial negotiation. It is the authoritative example of what spec-compliant A2CN behavior looks like in code.
+This is the reference implementation of the [A2CN protocol](../spec/a2cn-spec-v0.2.0.md) — the open protocol for agent-to-agent B2B commercial negotiation. It is the authoritative example of what spec-compliant A2CN behavior looks like in code.
 
 ---
 
@@ -292,9 +292,8 @@ tests/test_session.py::test_offer_expiry_check            PASSED
 tests/test_session.py::test_session_timeout               PASSED
 tests/conformance/test_conformance.py::CONF-001           PASSED
 tests/conformance/test_conformance.py::CONF-002           PASSED
-tests/conformance/test_conformance.py::CONF-003           SKIPPED (JWT auth )
 ...
-77 passed, 1 skipped
+474 passed
 ```
 
 ### Conformance tests
@@ -306,20 +305,6 @@ A2CN_ENDPOINT=http://your-server:8000 pytest tests/conformance/ -v
 ```
 
 A passing conformance suite means your implementation can interoperate with any other conformant A2CN implementation.
-
----
-
-## What is coming soon
-
-The one skipped test (`CONF-003`) is the conformance test for server-side JWT authentication and protocol act signature verification. Week 2 wires these up:
-
-- Every request to the server is verified against the sender's DID document before processing
-- `protocol_act_signature` verification on incoming offers (not just hash recomputation)
-- Full `did:web` resolution in the request handling path
-
-The cryptographic primitives (`crypto.py`) and DID resolution (`did.py`) are already implemented. Week 2 connects them into the server request handlers.
-
----
 
 ## File structure
 
@@ -395,7 +380,7 @@ This is a pre-production reference implementation. Current security status after
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](../../CONTRIBUTING.md) at the repo root.
+See [`CONTRIBUTING.md`](../CONTRIBUTING.md) at the repo root.
 
 If you are building an independent A2CN implementation in another language, open an issue. We want to know — and we will help you pass the conformance tests.
 
@@ -405,4 +390,4 @@ Open issues tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?
 
 ## License
 
-Apache 2.0. See [LICENSE](../../LICENSE).
+Apache 2.0. See [LICENSE](../LICENSE).
