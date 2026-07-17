@@ -215,7 +215,7 @@ Both parties must independently call `generate_transaction_record()` and arrive 
 
 ### `a2cn/server.py` — FastAPI responder
 
-Implements all required endpoints from Section 11.1.1 of the spec.
+Implements all required endpoints from Section 12.1.1 of the spec.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -372,7 +372,7 @@ This is a pre-production reference implementation. Current security status after
 | Input validation | ✅ Correct — type validation on all message fields |
 | Offer expiry check | ✅ Correct — `OFFER_EXPIRED` on stale acceptance |
 | Session timeout | ✅ Correct — `TIMED_OUT` transition on elapsed time |
-| JWT request authentication | 🔄 In progress |
+| JWT request authentication | ✅ Correct — Bearer JWT enforced on all state-mutating endpoints (Section 12.1.4) |
 | Rate limiting | 📋 Planned |
 | Free-text field sanitization | 📋 Planned |
 
