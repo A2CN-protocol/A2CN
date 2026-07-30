@@ -504,22 +504,21 @@ async function main(): Promise<void> {
   // Supplier acceptance message
   const ts = sessionNow();
   const msgId = randomUUID();
-  // Acceptance uses current round (3), not a new round; sequence advances
-  const act = {
-    protocol_version: "0.2",
+  // Acceptance uses current round (3), not a new round; sequence advances.
+  // Signed payload is the 5-field acceptance object (Section 7.4), not a
+  // full protocol act — Acceptance messages carry no terms/expires_at.
+  const acceptancePayload = {
     session_id: sessionId,
     round_number: 3,
     sequence_number: 4,
     accepted_offer_id: r3Offer.message_id,
     accepted_protocol_act_hash: r3Offer.protocol_act_hash,
-    message_type: "acceptance",
-    sender_did: SUPPLIER_DID,
-    timestamp: ts,
-    expires_at: nowFixed(900),
-    terms: termsR3,
   };
-  const pah = hashObject(act);
-  const pas = signJws(pah, supplierPriv, `${SUPPLIER_DID}#key-1`);
+  const acceptanceSignature = signJws(
+    hashObject(acceptancePayload),
+    supplierPriv,
+    `${SUPPLIER_DID}#key-1`,
+  );
   const supplierAcceptance = {
     message_type: "acceptance",
     message_id: msgId,
@@ -533,10 +532,7 @@ async function main(): Promise<void> {
     sender_agent_id: "supply-agent-ts-001",
     sender_verification_method: `${SUPPLIER_DID}#key-1`,
     timestamp: ts,
-    expires_at: nowFixed(900),
-    terms: termsR3,
-    protocol_act_hash: pah,
-    protocol_act_signature: pas,
+    acceptance_signature: acceptanceSignature,
   };
   serverCtx.manager.processMessage(sessionObj, supplierAcceptance);
   client.processIncoming(sessionId, supplierAcceptance);

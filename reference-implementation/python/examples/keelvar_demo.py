@@ -362,7 +362,7 @@ async def main() -> None:
         exp = _now_fixed(900)
         msg_id_r2 = str(uuid.uuid4())
         act_r2 = {
-            "protocol_version": "0.1",
+            "protocol_version": "0.2",
             "session_id": session_id,
             "round_number": 2,
             "sequence_number": 2,
@@ -438,21 +438,18 @@ async def main() -> None:
         r3_offer = client._sessions[session_id]["latest_offer"]
         ts = session_now()
         msg_id_acc = str(uuid.uuid4())
-        act_acc = {
-            "protocol_version": "0.1",
+        # Signed payload is the 5-field acceptance object (Section 7.4), not a
+        # full protocol act — Acceptance messages carry no terms/expires_at.
+        acceptance_payload = {
             "session_id": session_id,
             "round_number": 3,
             "sequence_number": 4,
             "accepted_offer_id": r3_offer["message_id"],
             "accepted_protocol_act_hash": r3_offer["protocol_act_hash"],
-            "message_type": "acceptance",
-            "sender_did": SUPPLIER_DID,
-            "timestamp": ts,
-            "expires_at": _now_fixed(900),
-            "terms": terms_r3,
         }
-        pah_acc = hash_object(act_acc)
-        pas_acc = sign_jws(pah_acc, supplier_priv, kid=f"{SUPPLIER_DID}#key-1")
+        acceptance_signature = sign_jws(
+            hash_object(acceptance_payload), supplier_priv, kid=f"{SUPPLIER_DID}#key-1"
+        )
         supplier_acceptance = {
             "message_type": "acceptance",
             "message_id": msg_id_acc,
@@ -466,10 +463,7 @@ async def main() -> None:
             "sender_agent_id": "supply-agent-ts-001",
             "sender_verification_method": f"{SUPPLIER_DID}#key-1",
             "timestamp": ts,
-            "expires_at": _now_fixed(900),
-            "terms": terms_r3,
-            "protocol_act_hash": pah_acc,
-            "protocol_act_signature": pas_acc,
+            "acceptance_signature": acceptance_signature,
         }
         manager.process_message(session_obj, supplier_acceptance)
         client.process_incoming(session_id, supplier_acceptance)
