@@ -294,7 +294,7 @@ async function main(): Promise<void> {
   const exp = nowFixed(900);
   const msgIdR2 = randomUUID();
   const actR2 = {
-    protocol_version: "0.1",
+    protocol_version: "0.2",
     session_id: sessionId,
     round_number: 2,
     sequence_number: 2,
@@ -366,21 +366,20 @@ async function main(): Promise<void> {
   const r3Offer = client._sessions[sessionId].latest_offer as Dict;
   ts = sessionNow();
   const msgIdAcc = randomUUID();
-  const actAcc = {
-    protocol_version: "0.1",
+  // Signed payload is the 5-field acceptance object (Section 7.4), not a
+  // full protocol act — Acceptance messages carry no terms/expires_at.
+  const acceptancePayload = {
     session_id: sessionId,
     round_number: 3,
     sequence_number: 4,
     accepted_offer_id: r3Offer.message_id,
     accepted_protocol_act_hash: r3Offer.protocol_act_hash,
-    message_type: "acceptance",
-    sender_did: SUPPLIER_DID,
-    timestamp: ts,
-    expires_at: nowFixed(900),
-    terms: termsR3,
   };
-  const pahAcc = hashObject(actAcc);
-  const pasAcc = signJws(pahAcc, supplierPriv, `${SUPPLIER_DID}#key-1`);
+  const acceptanceSignature = signJws(
+    hashObject(acceptancePayload),
+    supplierPriv,
+    `${SUPPLIER_DID}#key-1`,
+  );
   const supplierAcceptance = {
     message_type: "acceptance",
     message_id: msgIdAcc,
@@ -394,10 +393,7 @@ async function main(): Promise<void> {
     sender_agent_id: "supply-agent-ts-001",
     sender_verification_method: `${SUPPLIER_DID}#key-1`,
     timestamp: ts,
-    expires_at: nowFixed(900),
-    terms: termsR3,
-    protocol_act_hash: pahAcc,
-    protocol_act_signature: pasAcc,
+    acceptance_signature: acceptanceSignature,
   };
   serverCtx.manager.processMessage(sessionObj, supplierAcceptance);
   client.processIncoming(sessionId, supplierAcceptance);
