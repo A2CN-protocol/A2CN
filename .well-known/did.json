@@ -1,0 +1,29 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "id": "did:web:a2cn.io",
+  "verificationMethod": [
+    {
+      "id": "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:a2cn.io",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "_ajpFlijBGlQyi9N4XJrgSNGoFjzCkaqWr_X567g5xs",
+        "y": "0R8WmN-u5rKaLVoQkZOfuMNzHXB2IPib0EjsH1cmSxg",
+        "use": "sig",
+        "alg": "ES256",
+        "kid": "a2cn-buyer-agent-mandate-v1"
+      }
+    }
+  ],
+  "authentication": [
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1"
+  ],
+  "assertionMethod": [
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1"
+  ]
+}
