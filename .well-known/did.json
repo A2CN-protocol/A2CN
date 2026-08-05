@@ -18,12 +18,28 @@
         "alg": "ES256",
         "kid": "a2cn-buyer-agent-mandate-v1"
       }
+    },
+    {
+      "id": "did:web:a2cn.io#a2cn-buyer-agent-mandate-av1",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:a2cn.io",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "syk3WFTw3RCir2HmI69iKRLpobbPOOy2gVht8x-xyr8",
+        "y": "tFCu98nAWOInT6-Hr0OlzcoUtwW4xkYLvKA1gpkPrL4",
+        "use": "sig",
+        "alg": "ES256",
+        "kid": "a2cn-buyer-agent-mandate-av1"
+      }
     }
   ],
   "authentication": [
-    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1"
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1",
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-av1"
   ],
   "assertionMethod": [
-    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1"
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1",
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-av1"
   ]
 }
