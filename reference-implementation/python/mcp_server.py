@@ -42,7 +42,13 @@ import uuid
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:  # pragma: no cover - only reachable when the mcp extra is absent.
+    raise SystemExit(
+        "The A2CN MCP server requires the optional MCP dependencies. "
+        "Install them with: pip install -e '.[mcp]'"
+    ) from None
 
 from a2cn.client import A2CNClient
 from a2cn.crypto import (

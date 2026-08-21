@@ -18,8 +18,11 @@ This is the reference implementation of the [A2CN protocol](../spec/a2cn-spec-v0
 git clone https://github.com/A2CN-protocol/A2CN.git
 cd A2CN/reference-implementation/python
 
-# Install
+# Install core A2CN runtime
 python -m pip install -e .
+
+# Optional: install MCP server support
+python -m pip install -e '.[mcp]'
 
 # Run the bilateral negotiation demo
 python examples/saas_renewal.py
@@ -276,7 +279,7 @@ client.process_incoming(response)
 ## Running the tests
 
 ```bash
-pip install -r requirements.txt
+pip install -e '.[dev]'
 pytest tests/ -v
 ```
 
@@ -346,12 +349,13 @@ httpx==0.27.0          # Async HTTP client
 PyJWT==2.9.0           # JWT/JWS signing (ES256)
 cryptography==43.0.0   # P-256 key generation and operations
 jcs==0.2.1             # RFC 8785 JSON Canonicalization Scheme
-mcp==1.12.4            # MCP server and tool registration
 pytest==8.3.0          # Test runner
 pytest-asyncio==0.24.0 # Async test support
 ```
 
-Install: `pip install -r requirements.txt`
+Install the core runtime with `pip install -e .`. Install MCP server support
+only when needed with `pip install -e '.[mcp]'`, or install test tooling with
+`pip install -e '.[dev]'`.
 
 ---
 

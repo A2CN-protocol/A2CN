@@ -13,11 +13,14 @@ dependencies = [
     "PyJWT==2.9.0",
     "cryptography==43.0.0",
     "jcs==0.2.1",
-    "mcp==1.12.4",
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp==1.12.4",
+]
 dev = [
+    "a2cn[mcp]",
     "pytest==8.3.0",
     "pytest-asyncio==0.24.0",
     "python-multipart==0.0.12",
