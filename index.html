@@ -1328,6 +1328,31 @@
       pointer-events: none;
     }
     .founder-left, .founder-right { position: relative; z-index: 2; }
+    .founder-wrap-team {
+      grid-template-columns: 1fr 1fr;
+    }
+    .founder-col { position: relative; z-index: 2; }
+    .founder-linkedin {
+      display: inline-block;
+      margin-top: 1rem;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--amber);
+    }
+    .founder-linkedin:hover { text-decoration: underline; }
+    .founder-mission {
+      max-width: var(--max-narrow);
+      margin: 2.5rem auto 0;
+      position: relative;
+      z-index: 2;
+    }
+    .founder-mission p {
+      color: var(--text-dim);
+      font-size: 1rem;
+      line-height: 1.65;
+      margin-bottom: 1rem;
+    }
+    .founder-mission p:last-child { margin-bottom: 0; }
     .founder-name {
       font-family: var(--display);
       font-size: 2rem;
@@ -1377,6 +1402,7 @@
 
     @media (max-width: 880px) {
       .founder-wrap { grid-template-columns: 1fr; gap: 2rem; padding: 1.75rem; }
+      .founder-wrap-team { grid-template-columns: 1fr; }
     }
 
     /* ── FOOTER ── */
@@ -2089,11 +2115,12 @@
       <div class="status-col done">
         <div class="status-col-head">
           <div class="status-col-title">Shipped</div>
-          <div class="status-col-count count-done">7</div>
+          <div class="status-col-count count-done">8</div>
         </div>
         <ul>
           <li>Protocol spec v0.2.0 <span class="detail">3,700+ lines, 8 components, Apache 2.0</span></li>
           <li>Reference implementation <span class="detail">Python, 474 tests passing</span></li>
+          <li>TypeScript reference implementation <span class="detail">1:1 port, 474 tests ported</span></li>
           <li>Session invitation <span class="detail">cold-start adoption solved</span></li>
           <li>Platform adapters <span class="detail">Fairmarkit, Keelvar, Ariba, JAGGAER, Revenue Cloud, DealHub, Nue.io, Conga, Ironclad, DocuSign, Vendr</span></li>
           <li>MCP server <span class="detail">Claude Desktop, LangChain, LangGraph, Agentforce, Cursor</span></li>
@@ -2115,11 +2142,10 @@
       <div class="status-col plan">
         <div class="status-col-head">
           <div class="status-col-title">Planned</div>
-          <div class="status-col-count count-plan">3</div>
+          <div class="status-col-count count-plan">2</div>
         </div>
         <ul>
           <li>Neutral third-party record custody <span class="detail">optional v0.3 architecture</span></li>
-          <li>TypeScript reference implementation</li>
           <li>SDK <span class="detail">pip + npm</span></li>
         </ul>
       </div>
@@ -2130,34 +2156,41 @@
 <!-- ── FOUNDER ── -->
 <section class="founder-section">
   <div class="container">
-    <div class="section-label">Maintainer note</div>
-    <div class="founder-wrap">
-      <div class="founder-left">
-        <div class="founder-name">Christian</div>
-        <div class="founder-role">A2CN protocol maintainer</div>
+    <div class="section-label">Team</div>
+    <div class="founder-wrap founder-wrap-team">
+      <div class="founder-col">
+        <div class="founder-name">Christian Magorrian</div>
+        <div class="founder-role">Protocol Founder</div>
         <div class="founder-creds">
-          <div class="founder-cred">Protocol specification, reference implementation, platform adapters, and MCP server</div>
-          <div class="founder-cred">Focus on cross-organizational authority, sequencing, and tamper-evident records</div>
-          <div class="founder-cred">Open-source implementation under the Apache 2.0 license</div>
+          <div class="founder-cred">Ecosystem integrations and platform adapters</div>
         </div>
+        <a class="founder-linkedin" href="https://www.linkedin.com/in/christian-magorrian-651362116/" target="_blank" rel="noopener">LinkedIn →</a>
       </div>
-      <div class="founder-right">
-        <p>
-          A2CN exists because autonomous agents need protocol-level guardrails
-          before they can safely commit to commercial terms across organizational
-          boundaries.
-        </p>
-        <p>
-          The protocol focuses on the parts that must be shared across parties:
-          signing, DIDs, mandates, dual-signed records, deterministic hashes, and
-          formally specified state machines.
-        </p>
-        <p>
-          If you are building agent systems that need cross-organizational
-          commitment, feedback on the protocol and reference implementation is
-          welcome.
-        </p>
+      <div class="founder-col">
+        <div class="founder-name">Avinash Saraff</div>
+        <div class="founder-role">Co-founder</div>
+        <div class="founder-creds">
+          <div class="founder-cred">Protocol implementation and reference architecture</div>
+        </div>
+        <a class="founder-linkedin" href="https://www.linkedin.com/in/avinashsaraff/" target="_blank" rel="noopener">LinkedIn →</a>
       </div>
+    </div>
+    <div class="founder-mission">
+      <p>
+        A2CN exists because autonomous agents need protocol-level guardrails
+        before they can safely commit to commercial terms across organizational
+        boundaries.
+      </p>
+      <p>
+        The protocol focuses on the parts that must be shared across parties:
+        signing, DIDs, mandates, dual-signed records, deterministic hashes, and
+        formally specified state machines.
+      </p>
+      <p>
+        Open-source under the Apache 2.0 license. If you are building agent
+        systems that need cross-organizational commitment, feedback on the
+        protocol and reference implementation is welcome.
+      </p>
     </div>
   </div>
 </section>
