@@ -5,6 +5,23 @@ records, and webhook APIs. This adapter connects Ironclad workflow events to
 A2CN negotiations and writes the final A2CN terms back to Ironclad workflow
 metadata or record properties.
 
+## Validation status
+
+**Built from:** Ironclad's published workflow, records and webhook API documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 10 tests in `tests/test_ironclad_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live Ironclad instance. Runtime
+access requires the credentials listed under Environment Variables below. Workflow
+attribute names and record property shapes should be confirmed against a live
+environment before production use.
+
+If you have access to a live Ironclad instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 Public docs used:
 
 - `https://developer.ironcladapp.com/llms.txt` - machine-readable docs index.

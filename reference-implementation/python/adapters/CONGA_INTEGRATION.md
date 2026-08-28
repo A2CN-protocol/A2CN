@@ -6,6 +6,23 @@ maps agreed A2CN terms back into Conga-shaped quote update payloads. It also
 provides a small CLM agreement metadata payload for linking the final contract
 workflow to an A2CN transaction record.
 
+## Validation status
+
+**Built from:** Conga's published CPQ REST API v5 and CLM REST API documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 14 tests in `tests/test_conga_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live Conga org. Runtime access
+requires the credentials listed under Environment Variables below. Field names and
+response shapes should be confirmed against a live environment before production
+use.
+
+If you have access to a live Conga instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 Public docs used:
 
 - Conga Documentation Portal

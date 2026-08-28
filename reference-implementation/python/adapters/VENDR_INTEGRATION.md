@@ -13,6 +13,23 @@ negotiation and produce the dual-signed transaction record.
 
 No Vendr platform changes are required.
 
+## Validation status
+
+**Built from:** Vendr's published MCP server and webhook documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 13 tests in `tests/test_vendr_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live Vendr instance. Vendr MCP/API
+access requires an access key issued by Vendr. Benchmark response and webhook
+payload shapes should be confirmed against a live environment before production
+use.
+
+If you have access to a live Vendr instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 ---
 
 ## Environment Variables
