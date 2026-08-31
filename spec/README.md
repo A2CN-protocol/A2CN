@@ -16,12 +16,13 @@
 | [`a2cn-spec-v0.2.0.md`](a2cn-spec-v0.2.0.md) | **Current spec** — 3,300+ lines, eight protocol components |
 | [`schemas/`](schemas/) | Normative JSON schemas for all message types |
 | [`schemas/terms/`](schemas/terms/) | Deal-type-specific terms extensions |
+| [`test-vectors/`](test-vectors/) | Deterministic cross-language cryptographic vectors |
 
 The specification is the authoritative definition. The [reference implementation](../reference-implementation/python) is the authoritative example of correct behavior. When they disagree, the spec wins.
 
 ---
 
-## The eight protocol components
+## The eight protocol components and terminal artifacts
 
 ### 1 — Discovery
 `GET /.well-known/a2cn-agent` returns a discovery document advertising deal types, mandate methods, conformance level, and the DID for key resolution.
@@ -41,6 +42,9 @@ Strict turn-taking, strict sequence ordering, impasse detection. States: `PENDIN
 ### 6 — Transaction record
 Both parties independently generate an identical record after acceptance. Determinism: `record_id` = UUID v5, `generated_at` = Acceptance timestamp, `record_hash` = SHA-256(JCS(record)).
 
+### 6A — Session evidence record
+Each producer can seal the complete signed and unsigned evidence available for any terminal session. Evidence is classified as `bilateral`, `mixed`, or `unilateral`; sealing an unsigned observation protects bundle integrity but does not attribute that act to the named counterparty.
+
 ### 7 — Audit log
 Structured compliance trace for all terminal states. EU AI Act structured export can compose with a neutral third-party record custodian.
 
@@ -54,7 +58,7 @@ Push-based pre-session handshake. Buyer creates a signed `SessionInvitation`, de
 | Level | What it covers |
 |-------|---------------|
 | **Level 1 — Core** | Discovery, session, offer exchange with signing, state machine, idempotency. Declared mandates only. |
-| **Level 2 — Full** | Level 1 + DID VC mandates, transaction record, audit log, **webhooks (required)**. |
+| **Level 2 — Full** | Level 1 + DID VC mandates, transaction record, Session Evidence Record, audit log, **webhooks (required)**. |
 | **Level 3 — Extended** | Level 2 + Session Invitation, impasse detection, MESO terms, all RECOMMENDED behaviors. |
 
 Protocol act signing is required at **all levels**.

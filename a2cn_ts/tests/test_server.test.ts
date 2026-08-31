@@ -482,6 +482,47 @@ test("record not available for active session", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /sessions/{session_id}/evidence — terminal only
+// ---------------------------------------------------------------------------
+
+test("evidence not available for active session", async () => {
+  const { client } = freshServer();
+  const sessionId = await createSession(client);
+  const r = await client.get(`/sessions/${sessionId}/evidence`);
+  expect(r.statusCode).toBe(409);
+  expect((r.json().error as Dict).code).toBe("SESSION_WRONG_STATE");
+});
+
+test("evidence available after withdrawal", async () => {
+  const { client } = freshServer();
+  const sessionId = await createSession(client);
+  const withdrawal = {
+    message_type: "withdrawal",
+    message_id: randomUUID(),
+    session_id: sessionId,
+    sequence_number: 1,
+    sender_did: INITIATOR_DID,
+    sender_agent_id: "test-agent",
+    timestamp: "2026-03-24T10:02:00Z",
+    reason_code: "STRATEGY_DECISION",
+  };
+  await client.post(`/sessions/${sessionId}/messages`, {
+    json: withdrawal,
+    headers: initHeaders(withdrawal.message_id),
+  });
+
+  const r = await client.get(`/sessions/${sessionId}/evidence`);
+
+  expect(r.statusCode).toBe(200);
+  const data = r.json();
+  expect(data.record_type).toBe("a2cn_session_evidence_record");
+  expect((data.terminal as Dict).outcome).toBe("WITHDRAWN");
+  expect(data.evidence_level).toBe("unilateral");
+  expect((data.producer as Dict).did).toBe(RESPONDER_DID);
+  expect(data.producer_signature).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
 // GET /sessions/{session_id}/audit — terminal only
 // ---------------------------------------------------------------------------
 

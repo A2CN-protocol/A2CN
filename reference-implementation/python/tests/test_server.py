@@ -461,6 +461,48 @@ async def test_record_not_available_for_active_session(test_client):
 
 
 # ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/evidence — terminal only
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_evidence_not_available_for_active_session(test_client):
+    session_id = await _create_session(test_client)
+    r = await test_client.get(f"/sessions/{session_id}/evidence")
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "SESSION_WRONG_STATE"
+
+
+@pytest.mark.asyncio
+async def test_evidence_available_after_withdrawal(test_client):
+    session_id = await _create_session(test_client)
+    withdrawal = {
+        "message_type": "withdrawal",
+        "message_id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "sequence_number": 1,
+        "sender_did": INITIATOR_DID,
+        "sender_agent_id": "test-agent",
+        "timestamp": "2026-03-24T10:02:00Z",
+        "reason_code": "STRATEGY_DECISION",
+    }
+    await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=withdrawal,
+        headers=init_headers(withdrawal["message_id"]),
+    )
+
+    r = await test_client.get(f"/sessions/{session_id}/evidence")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["record_type"] == "a2cn_session_evidence_record"
+    assert data["terminal"]["outcome"] == "WITHDRAWN"
+    assert data["evidence_level"] == "unilateral"
+    assert data["producer"]["did"] == RESPONDER_DID
+    assert data["producer_signature"]
+
+
+# ---------------------------------------------------------------------------
 # GET /sessions/{session_id}/audit — terminal only
 # ---------------------------------------------------------------------------
 

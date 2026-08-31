@@ -8,6 +8,7 @@ Endpoints:
   POST   /sessions/{session_id}/approval-receipt — Release human approval pause
   GET    /sessions/{session_id}/messages       — Message history (paginated)
   GET    /sessions/{session_id}/record         — Transaction record (COMPLETED only)
+  GET    /sessions/{session_id}/evidence       — Session evidence (any terminal state)
   GET    /sessions/{session_id}/audit          — Audit log (any terminal state)
   POST   /invitations                          — Receive inbound invitation (v0.2.0)
   POST   /invitations/create                   — Create outbound invitation (v0.2.0)
@@ -38,6 +39,7 @@ from fastapi.responses import JSONResponse
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError, _now
 from a2cn.record import generate_transaction_record, generate_audit_log
+from a2cn.evidence import generate_session_evidence_record
 from a2cn.invitation import InvitationStore
 from a2cn.fulfillment import build_fulfillment_attestation
 from a2cn.messages import (
@@ -561,6 +563,44 @@ async def get_record(session_id: str, request: Request,
         )
     record = generate_transaction_record(session)
     return a2cn_response(record)
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/evidence — producer-sealed session evidence
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions/{session_id}/evidence")
+async def get_evidence(session_id: str, request: Request,
+                       _jwt: dict = Depends(verify_jwt_auth)) -> Response:
+    session = _get_session_or_404(session_id)
+    if not session.is_terminal():
+        return error_response(
+            "SESSION_WRONG_STATE",
+            "Session evidence is only available for sessions in a terminal state",
+            409,
+            session_id=session_id,
+        )
+
+    agent_info = _responder_config.get("agent_info", {})
+    private_key = _responder_config.get("private_key")
+    producer_did = agent_info.get("did", "")
+    verification_method = agent_info.get("verification_method", "")
+    if private_key is None or not producer_did or not verification_method:
+        return error_response(
+            "INTERNAL_ERROR",
+            "Server evidence signing material is not configured",
+            500,
+            session_id=session_id,
+        )
+
+    evidence = generate_session_evidence_record(
+        session,
+        producer_private_key=private_key,
+        producer_did=producer_did,
+        producer_agent_id=agent_info.get("agent_id", ""),
+        producer_verification_method=verification_method,
+    )
+    return a2cn_response(evidence)
 
 
 # ---------------------------------------------------------------------------

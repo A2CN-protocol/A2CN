@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/session-evidence-record/0.1",
+  "title": "A2CN SessionEvidenceRecord",
+  "description": "Producer-sealed evidence package for any terminal A2CN negotiation outcome.",
+  "type": "object",
+  "required": [
+    "record_type",
+    "record_version",
+    "evidence_id",
+    "session_id",
+    "generated_at",
+    "producer",
+    "parties",
+    "terminal",
+    "transaction_record_hash",
+    "acts",
+    "act_chain_hash",
+    "evidence_level",
+    "record_hash",
+    "producer_signature"
+  ],
+  "properties": {
+    "record_type": {
+      "type": "string",
+      "const": "a2cn_session_evidence_record"
+    },
+    "record_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "evidence_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "parties": {
+      "type": "object",
+      "required": ["initiator", "responder"],
+      "properties": {
+        "initiator": { "$ref": "#/$defs/party" },
+        "responder": { "$ref": "#/$defs/party" }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "required": ["outcome", "reason", "message_id", "timestamp"],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "COMPLETED",
+            "REJECTED_FINAL",
+            "WITHDRAWN",
+            "TIMED_OUT",
+            "IMPASSE",
+            "ERROR"
+          ]
+        },
+        "reason": {
+          "type": ["string", "null"]
+        },
+        "message_id": {
+          "type": ["string", "null"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "transaction_record_hash": {
+      "anyOf": [
+        { "$ref": "#/$defs/hash" },
+        { "type": "null" }
+      ]
+    },
+    "acts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceAct"
+      }
+    },
+    "act_chain_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "evidence_level": {
+      "type": "string",
+      "enum": ["bilateral", "mixed", "unilateral"]
+    },
+    "record_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "producer_signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Compact JWS over record_hash using producer.verification_method."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "properties": {
+              "outcome": { "const": "COMPLETED" }
+            },
+            "required": ["outcome"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "transaction_record_hash": { "$ref": "#/$defs/hash" }
+        }
+      },
+      "else": {
+        "properties": {
+          "transaction_record_hash": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "Base64url-encoded SHA-256 digest without padding."
+    },
+    "producer": {
+      "type": "object",
+      "required": ["did", "agent_id", "verification_method"],
+      "properties": {
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "party": {
+      "type": "object",
+      "required": [
+        "organization_name",
+        "did",
+        "agent_id",
+        "verification_method",
+        "mandate_type"
+      ],
+      "properties": {
+        "organization_name": { "type": "string" },
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": { "type": "string" },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mandate_type": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "evidenceAct": {
+      "type": "object",
+      "required": [
+        "sequence_number",
+        "round_number",
+        "message_type",
+        "message_id",
+        "sender_did",
+        "timestamp",
+        "source_protocol",
+        "act",
+        "act_hash",
+        "sender_verification_method",
+        "signature_type",
+        "signature",
+        "attribution"
+      ],
+      "properties": {
+        "sequence_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "round_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "message_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sender_did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_protocol": {
+          "type": ["string", "null"]
+        },
+        "act": {
+          "type": "object",
+          "description": "Complete normalized observed act protected by act_hash."
+        },
+        "act_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "sender_verification_method": {
+          "type": ["string", "null"]
+        },
+        "signature_type": {
+          "type": ["string", "null"],
+          "enum": ["protocol_act_signature", "acceptance_signature", null]
+        },
+        "signature": {
+          "type": ["string", "null"]
+        },
+        "attribution": {
+          "type": "string",
+          "enum": ["verified_signature", "unsigned_observation"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "attribution": { "const": "verified_signature" },
+            "sender_verification_method": { "type": "string", "minLength": 1 },
+            "signature_type": {
+              "type": "string",
+              "enum": ["protocol_act_signature", "acceptance_signature"]
+            },
+            "signature": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "properties": {
+            "attribution": { "const": "unsigned_observation" },
+            "sender_verification_method": { "type": "null" },
+            "signature_type": { "type": "null" },
+            "signature": { "type": "null" }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
