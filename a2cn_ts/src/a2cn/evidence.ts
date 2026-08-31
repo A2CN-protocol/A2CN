@@ -83,6 +83,8 @@ const ACT_FIELDS = new Set([
   "attribution",
 ]);
 const HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const RFC3339_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|([+-])(\d{2}):(\d{2}))$/;
 
 export interface EvidenceSession extends RecordSession {
   terminal_reason?: string | null;
@@ -309,25 +311,53 @@ export function assessSessionEvidenceRecord(
 function partyMetadata(session: EvidenceSession): Dict {
   const sessionInit = session._session_init ?? {};
   const sessionAck = session._session_ack ?? {};
-  const initiatorInfo = (sessionInit.initiator as Dict) ?? {};
-  const responderInfo = (sessionAck.responder as Dict) ?? {};
+  const initiatorInfo = metadataObject(sessionInit.initiator, "initiator");
+  const responderInfo = metadataObject(sessionAck.responder, "responder");
+  const initiatorMandate = metadataObject(
+    session.initiator_mandate,
+    "initiator_mandate",
+  );
+  const responderMandate = metadataObject(
+    session.responder_mandate,
+    "responder_mandate",
+  );
 
   return {
     initiator: {
-      organization_name: (initiatorInfo.organization_name as string) ?? "",
-      did: (initiatorInfo.did as string) ?? "",
-      agent_id: (initiatorInfo.agent_id as string) ?? "",
-      verification_method: (initiatorInfo.verification_method as string) ?? "",
-      mandate_type: (session.initiator_mandate.mandate_type as string) ?? "",
+      organization_name: metadataString(initiatorInfo, "organization_name"),
+      did: metadataString(initiatorInfo, "did"),
+      agent_id: metadataString(initiatorInfo, "agent_id"),
+      verification_method: metadataString(initiatorInfo, "verification_method"),
+      mandate_type: metadataString(initiatorMandate, "mandate_type"),
     },
     responder: {
-      organization_name: (responderInfo.organization_name as string) ?? "",
-      did: (responderInfo.did as string) ?? "",
-      agent_id: (responderInfo.agent_id as string) ?? "",
-      verification_method: (responderInfo.verification_method as string) ?? "",
-      mandate_type: (session.responder_mandate.mandate_type as string) ?? "",
+      organization_name: metadataString(responderInfo, "organization_name"),
+      did: metadataString(responderInfo, "did"),
+      agent_id: metadataString(responderInfo, "agent_id"),
+      verification_method: metadataString(responderInfo, "verification_method"),
+      mandate_type: metadataString(responderMandate, "mandate_type"),
     },
   };
+}
+
+function metadataObject(value: unknown, fieldName: string): Dict {
+  if (value === undefined) {
+    return {};
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an object`);
+  }
+  return value as Dict;
+}
+
+function metadataString(object: Dict, fieldName: string): string {
+  if (!hasOwn(object, fieldName)) {
+    return "";
+  }
+  if (typeof object[fieldName] !== "string") {
+    throw new Error(`Party ${fieldName} must be a string`);
+  }
+  return object[fieldName] as string;
 }
 
 function hasExactFields(object: Dict, expected: Set<string>): boolean {
@@ -628,23 +658,105 @@ function orderEvidenceActs(acts: Dict[]): Dict[] {
     indexed.sort(
       (left, right) =>
         ((left.entry.sequence_number as number) - (right.entry.sequence_number as number)) ||
-        String(left.entry.timestamp).localeCompare(String(right.entry.timestamp)) ||
+        compareEvidenceTimestamps(left.entry.timestamp, right.entry.timestamp) ||
         left.index - right.index,
     );
   } else {
     indexed.sort(
       (left, right) =>
-        String(left.entry.timestamp).localeCompare(String(right.entry.timestamp)) ||
-        (Number.isInteger(left.entry.sequence_number)
-          ? (left.entry.sequence_number as number)
-          : Number.POSITIVE_INFINITY) -
-          (Number.isInteger(right.entry.sequence_number)
-            ? (right.entry.sequence_number as number)
-            : Number.POSITIVE_INFINITY) ||
+        compareEvidenceTimestamps(left.entry.timestamp, right.entry.timestamp) ||
+        compareOptionalSequence(left.entry.sequence_number, right.entry.sequence_number) ||
         left.index - right.index,
     );
   }
   return indexed.map(({ entry }) => entry);
+}
+
+interface TimestampOrderKey {
+  epochSeconds: number;
+  fraction: string;
+}
+
+function timestampOrderKey(timestamp: unknown): TimestampOrderKey {
+  if (typeof timestamp !== "string") {
+    throw new Error("Evidence act timestamp must be an RFC 3339 string");
+  }
+  const match = RFC3339_PATTERN.exec(timestamp);
+  if (match === null) {
+    throw new Error("Evidence act timestamp must be an RFC 3339 string");
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (year < 1) {
+    throw new Error("Evidence act timestamp must be an RFC 3339 string");
+  }
+  if (second > 59) {
+    throw new Error("Evidence act timestamp leap seconds are not supported");
+  }
+
+  const localTime = new Date(0);
+  localTime.setUTCHours(0, 0, 0, 0);
+  localTime.setUTCFullYear(year, month - 1, day);
+  localTime.setUTCHours(hour, minute, second, 0);
+  if (
+    localTime.getUTCFullYear() !== year ||
+    localTime.getUTCMonth() !== month - 1 ||
+    localTime.getUTCDate() !== day ||
+    localTime.getUTCHours() !== hour ||
+    localTime.getUTCMinutes() !== minute ||
+    localTime.getUTCSeconds() !== second
+  ) {
+    throw new Error("Evidence act timestamp must be an RFC 3339 string");
+  }
+
+  let epochSeconds = localTime.getTime() / 1_000;
+  const offsetSign = match[9];
+  if (offsetSign !== undefined) {
+    const offsetHours = Number(match[10]);
+    const offsetMinutes = Number(match[11]);
+    if (offsetHours > 23 || offsetMinutes > 59) {
+      throw new Error("Evidence act timestamp has an invalid UTC offset");
+    }
+    const offsetSeconds = offsetHours * 3_600 + offsetMinutes * 60;
+    epochSeconds += offsetSign === "+" ? -offsetSeconds : offsetSeconds;
+  }
+
+  return {
+    epochSeconds,
+    fraction: (match[7] ?? "").replace(/0+$/, ""),
+  };
+}
+
+function compareEvidenceTimestamps(left: unknown, right: unknown): number {
+  const leftKey = timestampOrderKey(left);
+  const rightKey = timestampOrderKey(right);
+  if (leftKey.epochSeconds !== rightKey.epochSeconds) {
+    return leftKey.epochSeconds < rightKey.epochSeconds ? -1 : 1;
+  }
+  const fractionLength = Math.max(leftKey.fraction.length, rightKey.fraction.length);
+  const leftFraction = leftKey.fraction.padEnd(fractionLength, "0");
+  const rightFraction = rightKey.fraction.padEnd(fractionLength, "0");
+  if (leftFraction === rightFraction) {
+    return 0;
+  }
+  return leftFraction < rightFraction ? -1 : 1;
+}
+
+function compareOptionalSequence(left: unknown, right: unknown): number {
+  const leftSequence = Number.isInteger(left) ? (left as number) : null;
+  const rightSequence = Number.isInteger(right) ? (right as number) : null;
+  if (leftSequence !== null && rightSequence !== null) {
+    return leftSequence - rightSequence;
+  }
+  if (leftSequence !== null) {
+    return -1;
+  }
+  return rightSequence !== null ? 1 : 0;
 }
 
 function evidenceActsAreOrdered(acts: Dict[]): boolean {
@@ -754,16 +866,37 @@ function signedActPayloadHash(act: Dict, signatureType: string): string | null {
     if (act.message_type !== "offer" && act.message_type !== "counteroffer") {
       return null;
     }
+    if (
+      ![
+        "session_id",
+        "message_type",
+        "sender_did",
+        "timestamp",
+        "expires_at",
+      ].every((fieldName) => isNonemptyString(act[fieldName]))
+    ) {
+      return null;
+    }
+    if (
+      !["round_number", "sequence_number"].every((fieldName) =>
+        isPositiveInteger(act[fieldName]),
+      )
+    ) {
+      return null;
+    }
+    if (typeof act.terms !== "object" || act.terms === null || Array.isArray(act.terms)) {
+      return null;
+    }
     const protocolAct = {
       protocol_version: "0.2",
-      session_id: (act.session_id as string) ?? "",
+      session_id: act.session_id,
       round_number: act.round_number,
       sequence_number: act.sequence_number,
-      message_type: (act.message_type as string) ?? "",
-      sender_did: (act.sender_did as string) ?? "",
-      timestamp: (act.timestamp as string) ?? "",
-      expires_at: (act.expires_at as string) ?? "",
-      terms: (act.terms as Dict) ?? {},
+      message_type: act.message_type,
+      sender_did: act.sender_did,
+      timestamp: act.timestamp,
+      expires_at: act.expires_at,
+      terms: act.terms,
     };
     const expectedHash = hashObject(protocolAct);
     if (act.protocol_act_hash !== expectedHash) {
@@ -776,16 +909,39 @@ function signedActPayloadHash(act: Dict, signatureType: string): string | null {
     if (act.message_type !== "acceptance") {
       return null;
     }
+    if (
+      !["session_id", "accepted_offer_id", "accepted_protocol_act_hash"].every(
+        (fieldName) => isNonemptyString(act[fieldName]),
+      ) ||
+      !HASH_PATTERN.test(act.accepted_protocol_act_hash as string)
+    ) {
+      return null;
+    }
+    if (
+      !["round_number", "sequence_number"].every((fieldName) =>
+        isPositiveInteger(act[fieldName]),
+      )
+    ) {
+      return null;
+    }
     return hashObject({
-      session_id: (act.session_id as string) ?? "",
+      session_id: act.session_id,
       round_number: act.round_number,
       sequence_number: act.sequence_number,
-      accepted_offer_id: (act.accepted_offer_id as string) ?? "",
-      accepted_protocol_act_hash: (act.accepted_protocol_act_hash as string) ?? "",
+      accepted_offer_id: act.accepted_offer_id,
+      accepted_protocol_act_hash: act.accepted_protocol_act_hash,
     });
   }
 
   return null;
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 1;
 }
 
 function verifySignature(
@@ -841,8 +997,10 @@ function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): st
   const unsignedCount = acts.filter(
     (entry) => entry.attribution === EvidenceAttribution.UNSIGNED,
   ).length;
-  const verifiedCount = acts.filter(
-    (entry) => entry.attribution === EvidenceAttribution.VERIFIED,
+  const verifiedPartyCount = acts.filter(
+    (entry) =>
+      entry.attribution === EvidenceAttribution.VERIFIED &&
+      partyDids.has(entry.sender_did as string),
   ).length;
 
   if (
@@ -857,7 +1015,7 @@ function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): st
 
   const localTerminalFact = outcome !== SessionState.COMPLETED;
   if (
-    verifiedCount > 0 &&
+    verifiedPartyCount > 0 &&
     representedDids.size >= 2 &&
     (unsignedCount > 0 || localTerminalFact)
   ) {

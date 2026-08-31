@@ -1871,9 +1871,21 @@ corresponding signature from the complete `act`, and `attribution` MUST be
 `"verified_signature"`. The record verifies only if that claimed signature
 successfully verifies; an invalid claim cannot be downgraded.
 
+A signed act MUST contain every message-carried field required to reconstruct its
+signed payload. For an Offer or Counteroffer, these are `session_id`,
+`round_number`, `sequence_number`, `message_type`, `sender_did`, `timestamp`,
+`expires_at`, and `terms` as defined in Section 7.3. For an Acceptance, these are
+`session_id`, `round_number`, `sequence_number`, `accepted_offer_id`, and
+`accepted_protocol_act_hash` as defined in Section 7.4. A required field that is
+absent, `null`, or has the wrong JSON type MUST cause verification to fail.
+Entry-level metadata MUST NOT be substituted for a field missing from the
+complete `act`.
+
 Acts MUST be ordered by the negotiated session sequence when all acts carry
 sequence numbers. If external acts have no session sequence, producers MUST use
-chronological timestamp order and preserve input order to break ties.
+chronological timestamp order after normalizing RFC 3339 UTC offsets. Timestamps
+that denote the same instant compare equal. Producers MUST preserve input order
+to break remaining ties.
 
 ### 9A.4 Hashing and Producer Seal
 
@@ -1925,7 +1937,9 @@ MUST NOT cause bilateral classification.
 
 **`mixed`** means the package combines at least one verified per-act signature
 with an unsigned observation or locally observed terminal fact, and the included
-acts represent both session parties. Examples include:
+acts represent both session parties. At least one verified per-act signature
+MUST belong to a session party; a signature from an unrelated third-party DID
+does not satisfy this condition. Examples include:
 
 - a signed local A2CN Offer plus an unsigned external counterparty Counteroffer;
 - signed acts from both parties followed by a locally detected impasse; or

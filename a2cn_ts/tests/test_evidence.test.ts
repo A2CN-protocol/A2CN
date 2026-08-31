@@ -25,9 +25,13 @@ import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const { privateKey: INITIATOR_PRIVATE_KEY, publicKey: INITIATOR_PUBLIC_KEY } = generateKeypair();
 const { privateKey: RESPONDER_PRIVATE_KEY, publicKey: RESPONDER_PUBLIC_KEY } = generateKeypair();
+const { privateKey: THIRD_PARTY_PRIVATE_KEY, publicKey: THIRD_PARTY_PUBLIC_KEY } =
+  generateKeypair();
 
 const INITIATOR_VM = `${INITIATOR_DID}#key-1`;
 const RESPONDER_VM = `${RESPONDER_DID}#key-2026-01`;
+const THIRD_PARTY_DID = "did:example:payment-processor";
+const THIRD_PARTY_VM = `${THIRD_PARTY_DID}#key-1`;
 
 function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionId = randomUUID();
@@ -220,6 +224,84 @@ function externalCounteroffer(): Dict {
   };
 }
 
+function thirdPartyOffer(sessionId: string): Dict {
+  const protocolAct = {
+    protocol_version: "0.2",
+    session_id: sessionId,
+    round_number: 1,
+    sequence_number: 3,
+    message_type: "offer",
+    sender_did: THIRD_PARTY_DID,
+    timestamp: "2026-03-24T10:03:00Z",
+    expires_at: "2030-01-01T00:00:00Z",
+    terms: { total_value: 1, currency: "USD" },
+  };
+  const protocolActHash = hashObject(protocolAct);
+  return {
+    ...protocolAct,
+    message_id: "third-party-offer-1",
+    sender_verification_method: THIRD_PARTY_VM,
+    source_protocol: "commerce_api",
+    protocol_act_hash: protocolActHash,
+    protocol_act_signature: signJws(
+      protocolActHash,
+      THIRD_PARTY_PRIVATE_KEY,
+      THIRD_PARTY_VM,
+    ),
+  };
+}
+
+function malformedSignedObservation(
+  sessionId: string,
+  options: { omitRoundFields?: boolean; nullField?: string } = {},
+): Dict {
+  const act = makeOffer(sessionId, {
+    senderDid: RESPONDER_DID,
+    sequenceNumber: 2,
+    roundNumber: 2,
+    messageType: "counteroffer",
+    messageId: "malformed-counteroffer",
+    timestamp: "2026-03-24T10:02:00Z",
+    inReplyTo: "offer-1",
+  });
+  if (options.omitRoundFields) {
+    delete act.round_number;
+    delete act.sequence_number;
+  }
+  if (options.nullField !== undefined) {
+    act[options.nullField] = null;
+  }
+
+  const protocolAct = {
+    protocol_version: "0.2",
+    session_id: (act.session_id as string) ?? "",
+    round_number: act.round_number,
+    sequence_number: act.sequence_number,
+    message_type: (act.message_type as string) ?? "",
+    sender_did: (act.sender_did as string) ?? "",
+    timestamp: (act.timestamp as string) ?? "",
+    expires_at: (act.expires_at as string) ?? "",
+    terms: (act.terms as Dict) ?? {},
+  };
+  const protocolActHash = hashObject(protocolAct);
+  act.protocol_act_hash = protocolActHash;
+  act.protocol_act_signature = signJws(
+    protocolActHash,
+    RESPONDER_PRIVATE_KEY,
+    RESPONDER_VM,
+  );
+  return {
+    sequence_number: 2,
+    round_number: 2,
+    message_type: "counteroffer",
+    message_id: "malformed-counteroffer",
+    sender_did: RESPONDER_DID,
+    timestamp: "2026-03-24T10:02:00Z",
+    source_protocol: "commerce_api",
+    act,
+  };
+}
+
 function mixedRecord(): [Dict, Record<string, Dict>] {
   const [manager, session, didDocuments] = makeSession();
   manager.processMessage(session, makeOffer(session.session_id));
@@ -258,6 +340,40 @@ test("external unsigned counteroffer produces valid mixed evidence", () => {
   expect(acts[1].attribution).toBe("unsigned_observation");
   expect(acts[1].signature).toBeNull();
   expect(((acts[1].act as Dict).terms as Dict).total_value).toBe(90_300);
+});
+
+test("verified nonparty act does not make unsigned party acts mixed", () => {
+  const [, session, didDocuments] = makeSession();
+  session._message_log = [
+    {
+      message_type: "rejection",
+      message_id: "unsigned-initiator-rejection",
+      session_id: session.session_id,
+      round_number: 1,
+      sequence_number: 1,
+      sender_did: INITIATOR_DID,
+      timestamp: "2026-03-24T10:01:00Z",
+    },
+    {
+      message_type: "withdrawal",
+      message_id: "unsigned-responder-withdrawal",
+      session_id: session.session_id,
+      sequence_number: 2,
+      sender_did: RESPONDER_DID,
+      timestamp: "2026-03-24T10:02:00Z",
+    },
+  ];
+  markTimedOut(session);
+  didDocuments[THIRD_PARTY_DID] = makeDidDocument(
+    THIRD_PARTY_DID,
+    "key-1",
+    publicKeyToJwk(THIRD_PARTY_PUBLIC_KEY),
+  );
+
+  const evidence = generateEvidence(session, [thirdPartyOffer(session.session_id)]);
+
+  expect(evidence.evidence_level).toBe("unilateral");
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
 });
 
 test("tampering with unsigned counterparty act invalidates record", () => {
@@ -326,6 +442,33 @@ test("present but invalid counterparty signature fails instead of downgrading", 
   expect(assessment.invalid_acts).toBe(1);
 });
 
+test("signed observed act requires round and sequence in complete act", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+  const observed = malformedSignedObservation(session.session_id, {
+    omitRoundFields: true,
+  });
+
+  const evidence = generateEvidence(session, [observed]);
+
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
+});
+
+test.each(["session_id", "expires_at", "terms"])(
+  "signed observed act rejects null %s",
+  (nullField) => {
+    const [manager, session, didDocuments] = makeSession();
+    manager.processMessage(session, makeOffer(session.session_id));
+    markTimedOut(session);
+    const observed = malformedSignedObservation(session.session_id, { nullField });
+
+    const evidence = generateEvidence(session, [observed]);
+
+    expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
+  },
+);
+
 test("generator rejects a present signature without a supported type", () => {
   const [manager, session] = makeSession();
   manager.processMessage(session, makeOffer(session.session_id));
@@ -345,6 +488,69 @@ test("removing or reordering an act invalidates chain and record", () => {
 
   expect(verifySessionEvidenceRecord(removed, didDocuments)).toBe(false);
   expect(verifySessionEvidenceRecord(reordered, didDocuments)).toBe(false);
+});
+
+test("unsequenced acts are ordered by RFC 3339 instant", () => {
+  const [, session, didDocuments] = makeSession();
+  markTimedOut(session);
+  const observed: Dict[] = [
+    {
+      message_type: "counteroffer",
+      message_id: "middle",
+      sender_did: RESPONDER_DID,
+      timestamp: "2026-03-24T09:30:00Z",
+      source_protocol: "commerce_api",
+      act: {
+        message_type: "counteroffer",
+        message_id: "middle",
+        sender_did: RESPONDER_DID,
+        timestamp: "2026-03-24T09:30:00Z",
+      },
+    },
+    {
+      message_type: "offer",
+      message_id: "earliest",
+      sender_did: INITIATOR_DID,
+      timestamp: "2026-03-24T10:00:00+01:00",
+      source_protocol: "commerce_api",
+      act: {
+        message_type: "offer",
+        message_id: "earliest",
+        sender_did: INITIATOR_DID,
+        timestamp: "2026-03-24T10:00:00+01:00",
+      },
+    },
+    {
+      message_type: "counteroffer",
+      message_id: "latest",
+      sender_did: RESPONDER_DID,
+      timestamp: "2026-03-24T10:00:00-01:00",
+      source_protocol: "commerce_api",
+      act: {
+        message_type: "counteroffer",
+        message_id: "latest",
+        sender_did: RESPONDER_DID,
+        timestamp: "2026-03-24T10:00:00-01:00",
+      },
+    },
+  ];
+
+  const evidence = generateEvidence(session, observed);
+
+  expect((evidence.acts as Dict[]).map((entry) => entry.message_id)).toEqual([
+    "earliest",
+    "middle",
+    "latest",
+  ]);
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+test("generator rejects null party metadata", () => {
+  const [, session] = makeSession();
+  markTimedOut(session);
+  (session._session_init!.initiator as Dict).organization_name = null;
+
+  expect(() => generateEvidence(session)).toThrow(/organization_name/);
 });
 
 test("evidence level must match verified content even with a fresh seal", () => {

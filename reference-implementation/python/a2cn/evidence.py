@@ -11,6 +11,8 @@ import copy
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
+from fractions import Fraction
 from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
@@ -73,6 +75,11 @@ _ACT_FIELDS = frozenset(
     }
 )
 _HASH_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_RFC3339_PATTERN = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})"
+    r"(?:\.(\d+))?([Zz]|([+-])(\d{2}):(\d{2}))$"
+)
+_UNIX_EPOCH = datetime(1970, 1, 1)
 
 DidResolver = Mapping[str, dict] | Callable[[str], dict]
 
@@ -281,23 +288,41 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
 def _party_metadata(session: Session) -> dict:
     session_init = session._session_init or {}
     session_ack = session._session_ack or {}
+    if not isinstance(session_init, Mapping) or not isinstance(session_ack, Mapping):
+        raise ValueError("Session initialization metadata must be objects")
     initiator_info = session_init.get("initiator", {})
     responder_info = session_ack.get("responder", {})
+    initiator_mandate = session.initiator_mandate
+    responder_mandate = session.responder_mandate
+    for field_name, value in (
+        ("initiator", initiator_info),
+        ("responder", responder_info),
+        ("initiator_mandate", initiator_mandate),
+        ("responder_mandate", responder_mandate),
+    ):
+        if not isinstance(value, Mapping):
+            raise ValueError(f"{field_name} must be an object")
+
+    def party_string(info: Mapping[str, Any], field_name: str) -> str:
+        value = info.get(field_name, "")
+        if not isinstance(value, str):
+            raise ValueError(f"Party {field_name} must be a string")
+        return value
 
     return {
         "initiator": {
-            "organization_name": initiator_info.get("organization_name", ""),
-            "did": initiator_info.get("did", ""),
-            "agent_id": initiator_info.get("agent_id", ""),
-            "verification_method": initiator_info.get("verification_method", ""),
-            "mandate_type": session.initiator_mandate.get("mandate_type", ""),
+            "organization_name": party_string(initiator_info, "organization_name"),
+            "did": party_string(initiator_info, "did"),
+            "agent_id": party_string(initiator_info, "agent_id"),
+            "verification_method": party_string(initiator_info, "verification_method"),
+            "mandate_type": party_string(initiator_mandate, "mandate_type"),
         },
         "responder": {
-            "organization_name": responder_info.get("organization_name", ""),
-            "did": responder_info.get("did", ""),
-            "agent_id": responder_info.get("agent_id", ""),
-            "verification_method": responder_info.get("verification_method", ""),
-            "mandate_type": session.responder_mandate.get("mandate_type", ""),
+            "organization_name": party_string(responder_info, "organization_name"),
+            "did": party_string(responder_info, "did"),
+            "agent_id": party_string(responder_info, "agent_id"),
+            "verification_method": party_string(responder_info, "verification_method"),
+            "mandate_type": party_string(responder_mandate, "mandate_type"),
         },
     }
 
@@ -556,14 +581,14 @@ def _order_evidence_acts(acts: list[dict]) -> list[dict]:
         indexed.sort(
             key=lambda pair: (
                 pair[1]["sequence_number"],
-                pair[1].get("timestamp", ""),
+                _timestamp_order_key(pair[1].get("timestamp")),
                 pair[0],
             )
         )
     else:
         indexed.sort(
             key=lambda pair: (
-                pair[1].get("timestamp", ""),
+                _timestamp_order_key(pair[1].get("timestamp")),
                 pair[1].get("sequence_number")
                 if isinstance(pair[1].get("sequence_number"), int)
                 else float("inf"),
@@ -571,6 +596,40 @@ def _order_evidence_acts(acts: list[dict]) -> list[dict]:
             )
         )
     return [entry for _, entry in indexed]
+
+
+def _timestamp_order_key(timestamp: Any) -> tuple[int, Fraction]:
+    if not isinstance(timestamp, str):
+        raise ValueError("Evidence act timestamp must be an RFC 3339 string")
+    match = _RFC3339_PATTERN.fullmatch(timestamp)
+    if match is None:
+        raise ValueError("Evidence act timestamp must be an RFC 3339 string")
+
+    year, month, day, hour, minute, second = (
+        int(match.group(index)) for index in range(1, 7)
+    )
+    if second > 59:
+        raise ValueError("Evidence act timestamp leap seconds are not supported")
+    local_time = datetime(year, month, day, hour, minute, second)
+    delta = local_time - _UNIX_EPOCH
+    epoch_seconds = delta.days * 86_400 + delta.seconds
+
+    offset_sign = match.group(9)
+    if offset_sign is not None:
+        offset_hours = int(match.group(10))
+        offset_minutes = int(match.group(11))
+        if offset_hours > 23 or offset_minutes > 59:
+            raise ValueError("Evidence act timestamp has an invalid UTC offset")
+        offset_seconds = offset_hours * 3_600 + offset_minutes * 60
+        epoch_seconds += -offset_seconds if offset_sign == "+" else offset_seconds
+
+    fraction_text = match.group(7) or ""
+    fraction = (
+        Fraction(int(fraction_text), 10 ** len(fraction_text))
+        if fraction_text
+        else Fraction(0, 1)
+    )
+    return epoch_seconds, fraction
 
 
 def _evidence_acts_are_ordered(acts: list[dict]) -> bool:
@@ -659,16 +718,36 @@ def _signed_act_payload_hash(act: dict, signature_type: str) -> str | None:
     if signature_type == SIGNATURE_PROTOCOL_ACT:
         if act.get("message_type") not in ("offer", "counteroffer"):
             return None
+        if not all(
+            isinstance(act.get(field_name), str) and bool(act[field_name])
+            for field_name in (
+                "session_id",
+                "message_type",
+                "sender_did",
+                "timestamp",
+                "expires_at",
+            )
+        ):
+            return None
+        if not all(
+            isinstance(act.get(field_name), int)
+            and not isinstance(act[field_name], bool)
+            and act[field_name] >= 1
+            for field_name in ("round_number", "sequence_number")
+        ):
+            return None
+        if not isinstance(act.get("terms"), dict):
+            return None
         protocol_act = {
             "protocol_version": "0.2",
-            "session_id": act.get("session_id", ""),
-            "round_number": act.get("round_number"),
-            "sequence_number": act.get("sequence_number"),
-            "message_type": act.get("message_type", ""),
-            "sender_did": act.get("sender_did", ""),
-            "timestamp": act.get("timestamp", ""),
-            "expires_at": act.get("expires_at", ""),
-            "terms": act.get("terms", {}),
+            "session_id": act["session_id"],
+            "round_number": act["round_number"],
+            "sequence_number": act["sequence_number"],
+            "message_type": act["message_type"],
+            "sender_did": act["sender_did"],
+            "timestamp": act["timestamp"],
+            "expires_at": act["expires_at"],
+            "terms": act["terms"],
         }
         expected_hash = hash_object(protocol_act)
         if act.get("protocol_act_hash") != expected_hash:
@@ -678,13 +757,31 @@ def _signed_act_payload_hash(act: dict, signature_type: str) -> str | None:
     if signature_type == SIGNATURE_ACCEPTANCE:
         if act.get("message_type") != "acceptance":
             return None
+        if not all(
+            isinstance(act.get(field_name), str) and bool(act[field_name])
+            for field_name in (
+                "session_id",
+                "accepted_offer_id",
+                "accepted_protocol_act_hash",
+            )
+        ):
+            return None
+        if not _HASH_PATTERN.fullmatch(act["accepted_protocol_act_hash"]):
+            return None
+        if not all(
+            isinstance(act.get(field_name), int)
+            and not isinstance(act[field_name], bool)
+            and act[field_name] >= 1
+            for field_name in ("round_number", "sequence_number")
+        ):
+            return None
         return hash_object(
             {
-                "session_id": act.get("session_id", ""),
-                "round_number": act.get("round_number"),
-                "sequence_number": act.get("sequence_number"),
-                "accepted_offer_id": act.get("accepted_offer_id", ""),
-                "accepted_protocol_act_hash": act.get("accepted_protocol_act_hash", ""),
+                "session_id": act["session_id"],
+                "round_number": act["round_number"],
+                "sequence_number": act["sequence_number"],
+                "accepted_offer_id": act["accepted_offer_id"],
+                "accepted_protocol_act_hash": act["accepted_protocol_act_hash"],
             }
         )
 
@@ -739,8 +836,10 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
     unsigned_count = sum(
         entry.get("attribution") == ATTRIBUTION_UNSIGNED for entry in acts
     )
-    verified_count = sum(
-        entry.get("attribution") == ATTRIBUTION_VERIFIED for entry in acts
+    verified_party_count = sum(
+        entry.get("attribution") == ATTRIBUTION_VERIFIED
+        and entry.get("sender_did") in party_dids
+        for entry in acts
     )
 
     if (
@@ -754,7 +853,7 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
 
     local_terminal_fact = outcome != SessionState.COMPLETED
     if (
-        verified_count > 0
+        verified_party_count > 0
         and len(represented_dids) >= 2
         and (unsigned_count > 0 or local_terminal_fact)
     ):

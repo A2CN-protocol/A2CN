@@ -26,9 +26,12 @@ from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
 
 INITIATOR_PRIVATE_KEY, INITIATOR_PUBLIC_KEY = generate_keypair()
 RESPONDER_PRIVATE_KEY, RESPONDER_PUBLIC_KEY = generate_keypair()
+THIRD_PARTY_PRIVATE_KEY, THIRD_PARTY_PUBLIC_KEY = generate_keypair()
 
 INITIATOR_VM = f"{INITIATOR_DID}#key-1"
 RESPONDER_VM = f"{RESPONDER_DID}#key-2026-01"
+THIRD_PARTY_DID = "did:example:payment-processor"
+THIRD_PARTY_VM = f"{THIRD_PARTY_DID}#key-1"
 
 
 def _make_session():
@@ -225,6 +228,85 @@ def _external_counteroffer() -> dict:
     }
 
 
+def _third_party_offer(session_id: str) -> dict:
+    protocol_act = {
+        "protocol_version": "0.2",
+        "session_id": session_id,
+        "round_number": 1,
+        "sequence_number": 3,
+        "message_type": "offer",
+        "sender_did": THIRD_PARTY_DID,
+        "timestamp": "2026-03-24T10:03:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {"total_value": 1, "currency": "USD"},
+    }
+    protocol_act_hash = hash_object(protocol_act)
+    return {
+        **protocol_act,
+        "message_id": "third-party-offer-1",
+        "sender_verification_method": THIRD_PARTY_VM,
+        "source_protocol": "commerce_api",
+        "protocol_act_hash": protocol_act_hash,
+        "protocol_act_signature": sign_jws(
+            protocol_act_hash,
+            THIRD_PARTY_PRIVATE_KEY,
+            kid=THIRD_PARTY_VM,
+        ),
+    }
+
+
+def _malformed_signed_observation(
+    session_id: str,
+    *,
+    omit_round_fields: bool = False,
+    null_field: str | None = None,
+) -> dict:
+    act = _offer(
+        session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="counteroffer",
+        message_id="malformed-counteroffer",
+        timestamp="2026-03-24T10:02:00Z",
+        in_reply_to="offer-1",
+    )
+    if omit_round_fields:
+        del act["round_number"]
+        del act["sequence_number"]
+    if null_field is not None:
+        act[null_field] = None
+
+    protocol_act = {
+        "protocol_version": "0.2",
+        "session_id": act.get("session_id", ""),
+        "round_number": act.get("round_number"),
+        "sequence_number": act.get("sequence_number"),
+        "message_type": act.get("message_type", ""),
+        "sender_did": act.get("sender_did", ""),
+        "timestamp": act.get("timestamp", ""),
+        "expires_at": act.get("expires_at", ""),
+        "terms": act.get("terms", {}),
+    }
+    protocol_act_hash = hash_object(protocol_act)
+    act["protocol_act_hash"] = protocol_act_hash
+    act["protocol_act_signature"] = sign_jws(
+        protocol_act_hash,
+        RESPONDER_PRIVATE_KEY,
+        kid=RESPONDER_VM,
+    )
+    return {
+        "sequence_number": 2,
+        "round_number": 2,
+        "message_type": "counteroffer",
+        "message_id": "malformed-counteroffer",
+        "sender_did": RESPONDER_DID,
+        "timestamp": "2026-03-24T10:02:00Z",
+        "source_protocol": "commerce_api",
+        "act": act,
+    }
+
+
 def _mixed_record():
     manager, session, did_documents = _make_session()
     manager.process_message(session, _offer(session.session_id))
@@ -262,6 +344,40 @@ def test_external_unsigned_counteroffer_produces_valid_mixed_evidence():
     assert evidence["acts"][1]["attribution"] == "unsigned_observation"
     assert evidence["acts"][1]["signature"] is None
     assert evidence["acts"][1]["act"]["terms"]["total_value"] == 90_300
+
+
+def test_verified_nonparty_act_does_not_make_unsigned_party_acts_mixed():
+    _, session, did_documents = _make_session()
+    session._message_log = [
+        {
+            "message_type": "rejection",
+            "message_id": "unsigned-initiator-rejection",
+            "session_id": session.session_id,
+            "round_number": 1,
+            "sequence_number": 1,
+            "sender_did": INITIATOR_DID,
+            "timestamp": "2026-03-24T10:01:00Z",
+        },
+        {
+            "message_type": "withdrawal",
+            "message_id": "unsigned-responder-withdrawal",
+            "session_id": session.session_id,
+            "sequence_number": 2,
+            "sender_did": RESPONDER_DID,
+            "timestamp": "2026-03-24T10:02:00Z",
+        },
+    ]
+    _mark_timed_out(session)
+    did_documents[THIRD_PARTY_DID] = make_did_document(
+        THIRD_PARTY_DID,
+        "key-1",
+        public_key_to_jwk(THIRD_PARTY_PUBLIC_KEY),
+    )
+
+    evidence = _generate(session, [_third_party_offer(session.session_id)])
+
+    assert evidence["evidence_level"] == "unilateral"
+    assert verify_session_evidence_record(evidence, did_documents)
 
 
 def test_tampering_with_unsigned_counterparty_act_invalidates_record():
@@ -329,6 +445,35 @@ def test_present_but_invalid_counterparty_signature_fails_instead_of_downgrading
     assert assessment["invalid_acts"] == 1
 
 
+def test_signed_observed_act_requires_round_and_sequence_in_complete_act():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    observed = _malformed_signed_observation(
+        session.session_id,
+        omit_round_fields=True,
+    )
+
+    evidence = _generate(session, [observed])
+
+    assert not verify_session_evidence_record(evidence, did_documents)
+
+
+@pytest.mark.parametrize("null_field", ["session_id", "expires_at", "terms"])
+def test_signed_observed_act_rejects_null_protocol_fields(null_field):
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    observed = _malformed_signed_observation(
+        session.session_id,
+        null_field=null_field,
+    )
+
+    evidence = _generate(session, [observed])
+
+    assert not verify_session_evidence_record(evidence, did_documents)
+
+
 def test_generator_rejects_a_present_signature_without_a_supported_type():
     manager, session, _ = _make_session()
     manager.process_message(session, _offer(session.session_id))
@@ -349,6 +494,70 @@ def test_removing_or_reordering_an_act_invalidates_chain_and_record():
 
     assert not verify_session_evidence_record(removed, did_documents)
     assert not verify_session_evidence_record(reordered, did_documents)
+
+
+def test_unsequenced_acts_are_ordered_by_rfc3339_instant():
+    _, session, did_documents = _make_session()
+    _mark_timed_out(session)
+    observed = [
+        {
+            "message_type": "counteroffer",
+            "message_id": "middle",
+            "sender_did": RESPONDER_DID,
+            "timestamp": "2026-03-24T09:30:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+                "message_type": "counteroffer",
+                "message_id": "middle",
+                "sender_did": RESPONDER_DID,
+                "timestamp": "2026-03-24T09:30:00Z",
+            },
+        },
+        {
+            "message_type": "offer",
+            "message_id": "earliest",
+            "sender_did": INITIATOR_DID,
+            "timestamp": "2026-03-24T10:00:00+01:00",
+            "source_protocol": "commerce_api",
+            "act": {
+                "message_type": "offer",
+                "message_id": "earliest",
+                "sender_did": INITIATOR_DID,
+                "timestamp": "2026-03-24T10:00:00+01:00",
+            },
+        },
+        {
+            "message_type": "counteroffer",
+            "message_id": "latest",
+            "sender_did": RESPONDER_DID,
+            "timestamp": "2026-03-24T10:00:00-01:00",
+            "source_protocol": "commerce_api",
+            "act": {
+                "message_type": "counteroffer",
+                "message_id": "latest",
+                "sender_did": RESPONDER_DID,
+                "timestamp": "2026-03-24T10:00:00-01:00",
+            },
+        },
+    ]
+
+    evidence = _generate(session, observed)
+
+    assert [entry["message_id"] for entry in evidence["acts"]] == [
+        "earliest",
+        "middle",
+        "latest",
+    ]
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_generator_rejects_null_party_metadata():
+    _, session, _ = _make_session()
+    _mark_timed_out(session)
+    session._session_init["initiator"]["organization_name"] = None
+
+    with pytest.raises(ValueError, match="organization_name"):
+        _generate(session)
 
 
 def test_evidence_level_must_match_verified_content_even_with_a_fresh_seal():
