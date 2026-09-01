@@ -5,6 +5,26 @@ SAP Ariba Sourcing / Discovery RFx events into A2CN `goods_procurement` terms
 and maps agreed A2CN terms back into Ariba-shaped bid or acknowledgement
 payloads.
 
+## Validation status
+
+**Built from:** SAP's published Event Management API for SAP Ariba Sourcing and the
+Discovery RFx Publication to External Marketplace API.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 13 tests in `tests/test_ariba_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live SAP Ariba tenant. Runtime
+access requires SAP Ariba Developer Portal registration, an application with the
+relevant API package entitlement, environment-specific runtime URLs, OAuth
+credentials and an application key — none of which we currently hold. Field names
+and response shapes should be confirmed against a live environment before
+production use.
+
+If you have access to a live SAP Ariba instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 Public docs used:
 
 - Event Management API for SAP Ariba Sourcing

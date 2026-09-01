@@ -5,6 +5,23 @@ neutral, dual-signed transaction record; DocuSign executes the signature package
 and can notify A2CN middleware when the envelope is completed, declined, or
 voided.
 
+## Validation status
+
+**Built from:** DocuSign's published eSignature REST API, Connect and OAuth documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 13 tests in `tests/test_docusign_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live DocuSign account. Runtime
+access requires the credentials listed under Environment Variables below. Envelope
+and webhook payload shapes should be confirmed against a live environment before
+production use.
+
+If you have access to a live DocuSign instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 Public docs used:
 
 - DocuSign eSignature REST API

@@ -4,6 +4,23 @@ DealHub is a seller-side CPQ platform. This adapter translates DealHub
 quoteReady webhook events and API responses into A2CN session terms, and
 translates A2CN agreed terms back into DealHub Actions API calls.
 
+## Validation status
+
+**Built from:** DealHub's published API and webhook documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 26 tests in `tests/test_dealhub_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live DealHub instance. Runtime
+access requires the credentials listed under Environment Variables below. Quote
+field names and the Headless Simulate Playbook response shape must be verified
+against a live instance — see Limitations — before production use.
+
+If you have access to a live DealHub instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 ---
 
 ## Prerequisites

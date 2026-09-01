@@ -5,6 +5,24 @@ Salesforce-native with a REST API layer. This adapter translates Nue
 pricing and subscription data into A2CN session terms, and translates
 A2CN agreed terms back into Nue order creation.
 
+## Validation status
+
+**Built from:** Nue.io's published REST API documentation and API conventions.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 26 tests in `tests/test_nue_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live Nue.io sandbox or production
+org. Runtime access requires the credentials listed under Environment Variables
+below. Some response shapes are auto-detected rather than confirmed — see
+Limitations — and should be verified against a live environment before production
+use.
+
+If you have access to a live Nue.io instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 ---
 
 ## Prerequisites

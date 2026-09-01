@@ -329,7 +329,7 @@ A2CN/
 | Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
 | Reference implementation (Python) | ✓ Complete — 474 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
-| Platform adapters | ✓ Complete — 11 adapters: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign |
+| Platform adapters | 11 implemented: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign. Each is built against the platform's published API surface and tested against those schemas; see each adapter's **Validation status** section for what has and has not been exercised against a live instance. |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |

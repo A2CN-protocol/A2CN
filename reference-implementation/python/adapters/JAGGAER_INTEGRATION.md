@@ -5,6 +5,23 @@ Advanced Sourcing Optimizer (ASO) customer-host / sourcing events into A2CN
 `goods_procurement` terms and maps agreed A2CN terms back into
 JAGGAER-shaped bid response payloads.
 
+## Validation status
+
+**Built from:** JAGGAER's published Advanced Sourcing Optimizer (ASO) API documentation.
+
+**Verified:** Payload translation in both directions against those published
+schemas — 12 tests in `tests/test_jaggaer_adapter.py`.
+
+**Not verified:** This adapter has not been exercised against a live JAGGAER instance. Runtime
+access requires the credentials listed under Environment Variables below. Event and
+bid payload shapes should be confirmed against a live environment before production
+use.
+
+If you have access to a live JAGGAER instance and are willing to validate this
+adapter against it, please open an issue — that is the help we most need.
+
+---
+
 Public docs used:
 
 - ASO API documentation
