@@ -157,7 +157,7 @@ export function generateSessionEvidenceRecord(
     terminal: {
       outcome: session.state,
       reason: session.terminal_reason ?? null,
-      message_id: session.terminal_message_id ?? null,
+      message_id: session.terminal_message_id || null,
       timestamp: terminalTimestamp,
     },
     transaction_record_hash: transactionRecordHash,
@@ -216,6 +216,8 @@ export function assessSessionEvidenceRecord(
     if (record.generated_at !== terminal.timestamp) {
       return assessment;
     }
+    timestampOrderKey(record.generated_at);
+    timestampOrderKey(terminal.timestamp);
     if (outcome === SessionState.COMPLETED) {
       if (typeof record.transaction_record_hash !== "string" || !record.transaction_record_hash) {
         return assessment;
@@ -483,9 +485,7 @@ function evidenceActShapeValid(entry: Dict): boolean {
   }
   for (const field of [
     "message_type",
-    "message_id",
     "sender_did",
-    "timestamp",
     "act_hash",
   ]) {
     if (typeof entry[field] !== "string" || !(entry[field] as string)) {
@@ -494,6 +494,12 @@ function evidenceActShapeValid(entry: Dict): boolean {
   }
   if (!(entry.sender_did as string).startsWith("did:")) {
     return false;
+  }
+  for (const field of ["message_id", "timestamp"]) {
+    const value = entry[field];
+    if (value !== null && (typeof value !== "string" || !value)) {
+      return false;
+    }
   }
   if (!HASH_PATTERN.test(entry.act_hash as string)) {
     return false;
@@ -626,13 +632,17 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
 
   const sourceProtocol =
     defaultSourceProtocol !== null ? defaultSourceProtocol : field("source_protocol", null);
+  const optionalString = (name: string): string | null => {
+    const value = field(name, null);
+    return typeof value === "string" && value.length > 0 ? value : null;
+  };
   const entry: Dict = {
     sequence_number: field("sequence_number", null),
     round_number: field("round_number", null),
     message_type: field("message_type", ""),
-    message_id: field("message_id", ""),
+    message_id: optionalString("message_id"),
     sender_did: field("sender_did", ""),
-    timestamp: field("timestamp", ""),
+    timestamp: optionalString("timestamp"),
     source_protocol: sourceProtocol,
     act,
     act_hash: hashObject(act),
@@ -642,29 +652,32 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
     signature,
     attribution,
   };
-  if (!entry.message_type || !entry.message_id || !entry.sender_did) {
-    throw new Error("Evidence acts require message_type, message_id, and sender_did");
+  if (typeof entry.message_type !== "string" || !entry.message_type) {
+    throw new Error("Evidence acts require message_type");
   }
-  if (!entry.timestamp) {
-    throw new Error("Evidence acts require a timestamp");
+  if (typeof entry.sender_did !== "string" || !entry.sender_did) {
+    throw new Error("Evidence acts require sender_did");
   }
   return entry;
 }
 
 function orderEvidenceActs(acts: Dict[]): Dict[] {
-  const indexed = acts.map((entry, index) => ({ entry, index }));
+  const indexed = acts.map((entry, index) => ({
+    entry,
+    index,
+    timestampKey: entry.timestamp === null ? null : timestampOrderKey(entry.timestamp),
+  }));
   const allSequenced = acts.every((entry) => Number.isInteger(entry.sequence_number));
   if (allSequenced) {
     indexed.sort(
       (left, right) =>
         ((left.entry.sequence_number as number) - (right.entry.sequence_number as number)) ||
-        compareEvidenceTimestamps(left.entry.timestamp, right.entry.timestamp) ||
         left.index - right.index,
     );
-  } else {
+  } else if (indexed.every(({ timestampKey }) => timestampKey !== null)) {
     indexed.sort(
       (left, right) =>
-        compareEvidenceTimestamps(left.entry.timestamp, right.entry.timestamp) ||
+        compareTimestampOrderKeys(left.timestampKey!, right.timestampKey!) ||
         compareOptionalSequence(left.entry.sequence_number, right.entry.sequence_number) ||
         left.index - right.index,
     );
@@ -732,9 +745,10 @@ function timestampOrderKey(timestamp: unknown): TimestampOrderKey {
   };
 }
 
-function compareEvidenceTimestamps(left: unknown, right: unknown): number {
-  const leftKey = timestampOrderKey(left);
-  const rightKey = timestampOrderKey(right);
+function compareTimestampOrderKeys(
+  leftKey: TimestampOrderKey,
+  rightKey: TimestampOrderKey,
+): number {
   if (leftKey.epochSeconds !== rightKey.epochSeconds) {
     return leftKey.epochSeconds < rightKey.epochSeconds ? -1 : 1;
   }
@@ -790,16 +804,16 @@ function verifyEvidenceAct(
       "sender_did",
       "timestamp",
     ]) {
-      if (hasOwn(act, fieldName) && act[fieldName] !== entry[fieldName]) {
+      let actValue = hasOwn(act, fieldName) ? act[fieldName] : null;
+      if (
+        ["message_id", "timestamp"].includes(fieldName) &&
+        (typeof actValue !== "string" || !actValue)
+      ) {
+        actValue = null;
+      }
+      if (hasOwn(act, fieldName) && actValue !== entry[fieldName]) {
         return { valid: false, attribution };
       }
-    }
-    if (
-      entry.source_protocol === "a2cn" &&
-      hasOwn(act, "session_id") &&
-      act.session_id !== sessionId
-    ) {
-      return { valid: false, attribution };
     }
 
     const signatureType = entry.signature_type;
@@ -820,6 +834,9 @@ function verifyEvidenceAct(
       return { valid: false, attribution };
     }
     if (typeof signatureType !== "string" || !(signatureType in SIGNED_MESSAGE_FIELDS)) {
+      return { valid: false, attribution };
+    }
+    if (act.session_id !== sessionId) {
       return { valid: false, attribution };
     }
     if (typeof signature !== "string" || !signature) {

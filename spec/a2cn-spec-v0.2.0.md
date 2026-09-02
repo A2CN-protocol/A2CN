@@ -1792,9 +1792,9 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
       "sequence_number": "integer | null",
       "round_number": "integer | null",
       "message_type": "string",
-      "message_id": "string",
+      "message_id": "string | null",
       "sender_did": "string",
-      "timestamp": "string",
+      "timestamp": "string | null",
       "source_protocol": "string | null",
       "act": {},
       "act_hash": "string",
@@ -1810,6 +1810,15 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
   "producer_signature": "string"
 }
 ```
+
+`record_version` is the version of the SessionEvidenceRecord artifact and is
+independent of the TransactionRecord version. A verifier MUST reject an
+unrecognized SessionEvidenceRecord version rather than attempt best-effort
+parsing. After a version is published, any incompatible shape or canonical
+meaning change MUST increment `record_version` and the version in the schema
+`$id`; the schema, specification, Python implementation, and TypeScript
+implementation MUST use the same value. Version `"0.1"` is the initial
+SessionEvidenceRecord version.
 
 `evidence_id` MUST be UUID v5 using the A2CN namespace from Appendix A and the
 UTF-8 name `session-evidence:{session_id}:{producer.did}`. This namespace input
@@ -1851,6 +1860,13 @@ contains an envelope field also present on the evidence entry, including
 MAY identify `a2cn`, another protocol, or be `null`; it does not change signature
 semantics.
 
+For an incomplete unsigned observation, entry-level `message_id` or `timestamp`
+MAY be `null` when the corresponding source value is absent or not a valid value
+of the required type. The producer MUST preserve the complete observed `act`
+unchanged and MUST NOT fabricate either field. Every non-null entry timestamp
+MUST be valid RFC 3339. Missing or malformed fields do not permit a claimed
+signed act to bypass the signed-payload requirements below.
+
 An implementation MUST NOT fabricate `protocol_act_hash`,
 `protocol_act_signature`, or `acceptance_signature` for an external observation.
 An unsigned observation MUST use:
@@ -1871,6 +1887,11 @@ corresponding signature from the complete `act`, and `attribution` MUST be
 `"verified_signature"`. The record verifies only if that claimed signature
 successfully verifies; an invalid claim cannot be downgraded.
 
+Every act claimed as carrying an A2CN signature MUST contain a `session_id` equal
+to the SessionEvidenceRecord `session_id`. A verifier MUST enforce this binding
+from the signed act regardless of `source_protocol`; that informational label
+MUST NOT influence act-to-session binding or evidence-level classification.
+
 A signed act MUST contain every message-carried field required to reconstruct its
 signed payload. For an Offer or Counteroffer, these are `session_id`,
 `round_number`, `sequence_number`, `message_type`, `sender_did`, `timestamp`,
@@ -1881,11 +1902,15 @@ absent, `null`, or has the wrong JSON type MUST cause verification to fail.
 Entry-level metadata MUST NOT be substituted for a field missing from the
 complete `act`.
 
-Acts MUST be ordered by the negotiated session sequence when all acts carry
-sequence numbers. If external acts have no session sequence, producers MUST use
+Before ordering, producers and verifiers MUST validate every non-null timestamp
+as RFC 3339, even when sequence numbers alone determine positions. Acts MUST be
+ordered by the negotiated session sequence when all acts carry sequence numbers.
+Otherwise, when every act has a non-null timestamp, producers MUST use
 chronological timestamp order after normalizing RFC 3339 UTC offsets. Timestamps
-that denote the same instant compare equal. Producers MUST preserve input order
-to break remaining ties.
+that denote the same instant compare equal; a present sequence number MAY break
+that tie. When neither complete sequence nor complete timestamp ordering is
+available, producers MUST preserve input order rather than fabricate chronology.
+Producers MUST preserve input order to break all remaining ties.
 
 ### 9A.4 Hashing and Producer Seal
 
@@ -1958,18 +1983,20 @@ per-message signing coverage requires a separate protocol change.
 
 ### 9A.6 Verification
 
-A verifier MUST:
+A verifier MUST reject an unrecognized `record_version` and then:
 
 1. Validate the record structure and terminal outcome.
 2. Recompute every `act_hash` from the complete `act`.
 3. Confirm entry metadata matches corresponding fields present in `act`.
-4. Confirm chronological ordering and recompute `act_chain_hash`.
+4. Validate every non-null timestamp as RFC 3339, confirm ordering under Section
+   9A.3, and recompute `act_chain_hash`.
 5. Recompute `record_hash` with both placeholder fields set to `""`.
 6. Resolve `producer.did`, verify `producer.verification_method` is controlled by
    that DID, and verify `producer_signature` over `record_hash`.
 7. Verify every signature the record claims is present. Offer and Counteroffer
    signatures MUST use the protocol-act payload rules in Section 7.3; Acceptance
-   signatures MUST use the Acceptance payload rules in Section 7.4.
+   signatures MUST use the Acceptance payload rules in Section 7.4. Every such
+   signed act MUST bind to the record's `session_id`.
 8. Recompute the evidence level from the verified and unsigned acts and compare
    it with `evidence_level`.
 9. Enforce a non-null `transaction_record_hash` only for `COMPLETED`, and `null`
@@ -2652,6 +2679,10 @@ support this binding.
 | GET | `/sessions/{id}/evidence` | Get producer-sealed session evidence (any terminal state) |
 | GET | `/sessions/{id}/audit` | Get audit log (any terminal state) |
 | GET | `/sessions/{id}/fulfillment-attestation` | Get Concordia fulfillment attestation after clean delivery or dispute resolution |
+
+`GET /sessions/{id}/evidence` exposes complete commercial acts and MUST authorize
+only the session initiator or responder. An authenticated non-party MUST receive
+HTTP `403` with error code `NOT_SESSION_PARTY`.
 
 #### 12.1.2 Pagination
 
@@ -3956,6 +3987,11 @@ messages that validate against these schemas.
   `session-evidence-record.schema.json`, and a cross-language hash vector.
 - Clarified that sealing an unsigned observed counterparty act protects bundle
   integrity but does not establish counterparty authorship.
+- Required party authorization for the evidence endpoint, cryptographic
+  act-to-session binding independent of `source_protocol`, unconditional RFC
+  3339 validation, and faithful nullable metadata for incomplete unsigned acts.
+- Clarified the independent SessionEvidenceRecord version line and mandatory
+  rejection of unknown versions.
 
 ### Patch 2026-06-01 — Concordia fulfillment attestation emission
 

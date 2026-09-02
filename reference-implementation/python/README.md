@@ -186,7 +186,7 @@ acceptance = store.accept_invitation(
 | `POST /sessions` | Session initiation |
 | `POST /sessions/{id}/messages` | Offer / counteroffer / acceptance / rejection / withdrawal |
 | `GET /sessions/{id}/record` | Transaction record (COMPLETED only) |
-| `GET /sessions/{id}/evidence` | Producer-sealed Session Evidence Record (any terminal state) |
+| `GET /sessions/{id}/evidence` | Producer-sealed Session Evidence Record (any terminal state; session parties only) |
 | `GET /sessions/{id}/audit` | Audit log (any terminal state) |
 | `GET /sessions/{id}/fulfillment-attestation` | Concordia FulfillmentAttestation after clean delivery or dispute resolution |
 | `POST /invitations` | Receive inbound invitation |

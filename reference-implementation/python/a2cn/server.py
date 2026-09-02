@@ -573,6 +573,14 @@ async def get_record(session_id: str, request: Request,
 async def get_evidence(session_id: str, request: Request,
                        _jwt: dict = Depends(verify_jwt_auth)) -> Response:
     session = _get_session_or_404(session_id)
+    jwt_iss = _jwt.get("iss", "")
+    if jwt_iss not in (session.initiator_info.get("did"), session.responder_info.get("did")):
+        return error_response(
+            "NOT_SESSION_PARTY",
+            "JWT issuer is not a party to this session",
+            403,
+            session_id=session_id,
+        )
     if not session.is_terminal():
         return error_response(
             "SESSION_WRONG_STATE",

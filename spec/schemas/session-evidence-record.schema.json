@@ -212,7 +212,7 @@
           "minLength": 1
         },
         "message_id": {
-          "type": "string",
+          "type": ["string", "null"],
           "minLength": 1
         },
         "sender_did": {
@@ -220,7 +220,7 @@
           "pattern": "^did:"
         },
         "timestamp": {
-          "type": "string",
+          "type": ["string", "null"],
           "format": "date-time"
         },
         "source_protocol": {

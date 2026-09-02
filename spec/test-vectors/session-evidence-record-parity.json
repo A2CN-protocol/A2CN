@@ -1,5 +1,8 @@
 {
   "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only.",
+  "invalid_cases": {
+    "non_rfc3339_timestamp": "not-a-timestamp"
+  },
   "did_documents": {
     "did:example:buyer": {
       "assertionMethod": [
@@ -32,6 +35,7 @@
     "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
     "evidence_level": "mixed",
     "generated_at": "2026-08-31T12:10:00Z",
+    "invalid_non_rfc3339_record_hash": "_AxaV_QL3OLUQCGQIhdSUIa1MFu378u00adbq_Z4Jkk",
     "record_hash": "-HGVb076fiUv0-Z-Xmjx_XM4bfglT6_vud0I2i0runM"
   },
   "observed_acts": [

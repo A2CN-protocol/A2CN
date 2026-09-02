@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 import {
+  canonicalize,
   generateKeypair,
+  hashBytes,
   hashObject,
   privateKeyFromJwk,
   publicKeyToJwk,
@@ -403,6 +405,27 @@ test("signed local offer and timeout are unilateral", () => {
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
 });
 
+test("timestamp and message id are nullable for incomplete unsigned terminal act", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, {
+    message_type: "withdrawal",
+    sender_did: INITIATOR_DID,
+  });
+
+  const evidence = generateEvidence(session);
+  const terminal = evidence.terminal as Dict;
+  const entry = (evidence.acts as Dict[])[0];
+  const act = entry.act as Dict;
+
+  expect(terminal.outcome).toBe(SessionState.WITHDRAWN);
+  expect(terminal.message_id).toBeNull();
+  expect(entry.message_id).toBeNull();
+  expect(entry.timestamp).toBeNull();
+  expect("message_id" in act).toBe(false);
+  expect("timestamp" in act).toBe(false);
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
 test("tampered producer seal or record hash fails verification", () => {
   const [evidence, didDocuments] = mixedRecord();
   const tamperedSignature = structuredClone(evidence);
@@ -468,6 +491,27 @@ test.each(["session_id", "expires_at", "terms"])(
     expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
   },
 );
+
+test("signed observed act from another session fails even if relabelled", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+  const foreignAct = makeOffer(randomUUID(), {
+    senderDid: RESPONDER_DID,
+    sequenceNumber: 2,
+    roundNumber: 2,
+    messageType: "counteroffer",
+    messageId: "foreign-counteroffer",
+    timestamp: "2026-03-24T10:02:00Z",
+    inReplyTo: "offer-1",
+  });
+  foreignAct.source_protocol = "commerce_api";
+
+  const evidence = generateEvidence(session, [foreignAct]);
+
+  expect(evidence.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
+});
 
 test("generator rejects a present signature without a supported type", () => {
   const [manager, session] = makeSession();
@@ -568,6 +612,21 @@ test("evidence level must match verified content even with a fresh seal", () => 
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
 });
 
+test("unknown record version is rejected even with a fresh seal", () => {
+  const [evidence, didDocuments] = mixedRecord();
+  evidence.record_version = "999";
+  evidence.record_hash = "";
+  evidence.producer_signature = "";
+  evidence.record_hash = hashObject(evidence);
+  evidence.producer_signature = signJws(
+    evidence.record_hash as string,
+    INITIATOR_PRIVATE_KEY,
+    INITIATOR_VM,
+  );
+
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(false);
+});
+
 test("generator rejects nonterminal sessions", () => {
   const [, session] = makeSession();
 
@@ -642,4 +701,30 @@ test("shared session evidence vector has Python/TypeScript hash parity", () => {
   expect(
     verifySessionEvidenceRecord(record, fixture.did_documents as Record<string, Dict>),
   ).toBe(true);
+
+  const invalidRecord = structuredClone(record);
+  const invalidTimestamp = (fixture.invalid_cases as Dict).non_rfc3339_timestamp;
+  const invalidEntry = (invalidRecord.acts as Dict[])[1];
+  invalidEntry.timestamp = invalidTimestamp;
+  (invalidEntry.act as Dict).timestamp = invalidTimestamp;
+  invalidEntry.act_hash = hashObject(invalidEntry.act);
+  invalidRecord.act_chain_hash = hashBytes(
+    canonicalize((invalidRecord.acts as Dict[]).map((entry) => entry.act_hash)),
+  );
+  invalidRecord.record_hash = "";
+  invalidRecord.producer_signature = "";
+  invalidRecord.record_hash = hashObject(invalidRecord);
+  invalidRecord.producer_signature = signJws(
+    invalidRecord.record_hash as string,
+    privateKey,
+    producer.verification_method as string,
+  );
+
+  expect(invalidRecord.record_hash).toBe(expected.invalid_non_rfc3339_record_hash);
+  expect(
+    verifySessionEvidenceRecord(
+      invalidRecord,
+      fixture.did_documents as Record<string, Dict>,
+    ),
+  ).toBe(false);
 });

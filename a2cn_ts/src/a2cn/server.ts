@@ -877,9 +877,15 @@ function installRoutes(ctx: ServerContext): void {
   // -------------------------------------------------------------------
 
   app.get("/sessions/:session_id/evidence", async (request, reply) => {
-    await verifyJwtAuth(ctx, request);
+    const jwtClaims = await verifyJwtAuth(ctx, request);
     const { session_id: sessionId } = request.params as { session_id: string };
     const session = getSessionOr404(sessionId);
+    const jwtIss = (jwtClaims.iss as string) ?? "";
+    if (jwtIss !== session.initiator_info.did && jwtIss !== session.responder_info.did) {
+      return sendError(reply, "NOT_SESSION_PARTY", "JWT issuer is not a party to this session", 403, {
+        sessionId,
+      });
+    }
     if (!session.isTerminal()) {
       return sendError(
         reply,

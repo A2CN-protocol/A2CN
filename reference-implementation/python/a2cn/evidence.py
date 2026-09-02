@@ -149,7 +149,7 @@ def generate_session_evidence_record(
         "terminal": {
             "outcome": session.state,
             "reason": session.terminal_reason,
-            "message_id": session.terminal_message_id,
+            "message_id": session.terminal_message_id or None,
             "timestamp": terminal_timestamp,
         },
         "transaction_record_hash": transaction_record_hash,
@@ -201,6 +201,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if record["generated_at"] != terminal["timestamp"]:
             return assessment
+        _timestamp_order_key(record["generated_at"])
+        _timestamp_order_key(terminal["timestamp"])
         if outcome == SessionState.COMPLETED:
             if not isinstance(record.get("transaction_record_hash"), str) or not record.get(
                 "transaction_record_hash"
@@ -429,9 +431,13 @@ def _evidence_act_shape_valid(entry: dict) -> bool:
             return False
     if not all(
         isinstance(entry.get(field), str) and entry[field]
-        for field in ("message_type", "message_id", "sender_did", "timestamp", "act_hash")
+        for field in ("message_type", "sender_did", "act_hash")
     ):
         return False
+    for field in ("message_id", "timestamp"):
+        value = entry.get(field)
+        if value is not None and (not isinstance(value, str) or not value):
+            return False
     if not entry["sender_did"].startswith("did:"):
         return False
     if not _HASH_PATTERN.fullmatch(entry["act_hash"]):
@@ -549,17 +555,23 @@ def _normalize_evidence_act(item: dict, *, default_source_protocol: str | None) 
     sender_verification_method = (
         field("sender_verification_method") if signature_type is not None else None
     )
-    source_protocol = field("source_protocol", default_source_protocol)
-    if default_source_protocol is not None:
-        source_protocol = default_source_protocol
+    source_protocol = (
+        default_source_protocol
+        if default_source_protocol is not None
+        else field("source_protocol")
+    )
+
+    def optional_string(name: str) -> str | None:
+        value = field(name)
+        return value if isinstance(value, str) and value else None
 
     entry = {
         "sequence_number": field("sequence_number"),
         "round_number": field("round_number"),
         "message_type": field("message_type", ""),
-        "message_id": field("message_id", ""),
+        "message_id": optional_string("message_id"),
         "sender_did": field("sender_did", ""),
-        "timestamp": field("timestamp", ""),
+        "timestamp": optional_string("timestamp"),
         "source_protocol": source_protocol,
         "act": act,
         "act_hash": hash_object(act),
@@ -568,27 +580,32 @@ def _normalize_evidence_act(item: dict, *, default_source_protocol: str | None) 
         "signature": signature,
         "attribution": attribution,
     }
-    if not entry["message_type"] or not entry["message_id"] or not entry["sender_did"]:
-        raise ValueError("Evidence acts require message_type, message_id, and sender_did")
-    if not entry["timestamp"]:
-        raise ValueError("Evidence acts require a timestamp")
+    if not isinstance(entry["message_type"], str) or not entry["message_type"]:
+        raise ValueError("Evidence acts require message_type")
+    if not isinstance(entry["sender_did"], str) or not entry["sender_did"]:
+        raise ValueError("Evidence acts require sender_did")
     return entry
 
 
 def _order_evidence_acts(acts: list[dict]) -> list[dict]:
     indexed = list(enumerate(acts))
+    timestamp_keys = [
+        _timestamp_order_key(entry.get("timestamp"))
+        if entry.get("timestamp") is not None
+        else None
+        for entry in acts
+    ]
     if all(isinstance(entry.get("sequence_number"), int) for entry in acts):
         indexed.sort(
             key=lambda pair: (
                 pair[1]["sequence_number"],
-                _timestamp_order_key(pair[1].get("timestamp")),
                 pair[0],
             )
         )
-    else:
+    elif all(timestamp_key is not None for timestamp_key in timestamp_keys):
         indexed.sort(
             key=lambda pair: (
-                _timestamp_order_key(pair[1].get("timestamp")),
+                timestamp_keys[pair[0]],
                 pair[1].get("sequence_number")
                 if isinstance(pair[1].get("sequence_number"), int)
                 else float("inf"),
@@ -633,7 +650,7 @@ def _timestamp_order_key(timestamp: Any) -> tuple[int, Fraction]:
 
 
 def _evidence_acts_are_ordered(acts: list[dict]) -> bool:
-    return acts == _order_evidence_acts(copy.deepcopy(acts))
+    return acts == _order_evidence_acts(acts)
 
 
 def _verify_evidence_act(
@@ -660,14 +677,13 @@ def _verify_evidence_act(
             "sender_did",
             "timestamp",
         ):
-            if field_name in act and act[field_name] != entry.get(field_name):
+            act_value = act[field_name] if field_name in act else None
+            if field_name in ("message_id", "timestamp") and (
+                not isinstance(act_value, str) or not act_value
+            ):
+                act_value = None
+            if field_name in act and act_value != entry.get(field_name):
                 return False, attribution
-        if (
-            entry.get("source_protocol") == "a2cn"
-            and "session_id" in act
-            and act["session_id"] != session_id
-        ):
-            return False, attribution
 
         signature_type = entry.get("signature_type")
         signature = entry.get("signature")
@@ -683,6 +699,8 @@ def _verify_evidence_act(
         if attribution != ATTRIBUTION_VERIFIED:
             return False, attribution
         if signature_type not in _SIGNED_MESSAGE_FIELDS:
+            return False, attribution
+        if act.get("session_id") != session_id:
             return False, attribution
         if not isinstance(signature, str) or not signature:
             return False, attribution

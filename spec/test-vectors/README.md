@@ -8,3 +8,9 @@ outside tests.
 external Counteroffer observation, a local timeout, and a producer seal. The
 Python and TypeScript suites independently assert the same evidence ID, per-act
 hashes, chain hash, evidence level, and record hash.
+
+The vector also supplies `invalid_cases.non_rfc3339_timestamp`. Both suites place
+that value in a fully resealed record whose acts otherwise carry unique numeric
+sequence numbers, assert the same invalid-record hash, and assert rejection. This
+ensures timestamp validation cannot be skipped merely because sequence ordering
+determines every act position.

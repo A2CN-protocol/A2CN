@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 from a2cn.crypto import (
+    canonicalize,
     generate_keypair,
+    hash_bytes,
     hash_object,
     private_key_from_jwk,
     public_key_to_jwk,
@@ -405,6 +407,27 @@ def test_signed_local_offer_and_timeout_are_unilateral():
     assert verify_session_evidence_record(evidence, did_documents)
 
 
+def test_timestamp_and_message_id_are_nullable_for_incomplete_unsigned_terminal_act():
+    manager, session, did_documents = _make_session()
+    manager.process_message(
+        session,
+        {
+            "message_type": "withdrawal",
+            "sender_did": INITIATOR_DID,
+        },
+    )
+
+    evidence = _generate(session)
+
+    assert evidence["terminal"]["outcome"] == SessionState.WITHDRAWN
+    assert evidence["terminal"]["message_id"] is None
+    assert evidence["acts"][0]["message_id"] is None
+    assert evidence["acts"][0]["timestamp"] is None
+    assert "message_id" not in evidence["acts"][0]["act"]
+    assert "timestamp" not in evidence["acts"][0]["act"]
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
 def test_tampered_producer_seal_or_record_hash_fails_verification():
     evidence, did_documents = _mixed_record()
     tampered_signature = copy.deepcopy(evidence)
@@ -471,6 +494,28 @@ def test_signed_observed_act_rejects_null_protocol_fields(null_field):
 
     evidence = _generate(session, [observed])
 
+    assert not verify_session_evidence_record(evidence, did_documents)
+
+
+def test_signed_observed_act_from_another_session_fails_even_if_relabelled():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    foreign_act = _offer(
+        str(uuid.uuid4()),
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="counteroffer",
+        message_id="foreign-counteroffer",
+        timestamp="2026-03-24T10:02:00Z",
+        in_reply_to="offer-1",
+    )
+    foreign_act["source_protocol"] = "commerce_api"
+
+    evidence = _generate(session, [foreign_act])
+
+    assert evidence["evidence_level"] == "mixed"
     assert not verify_session_evidence_record(evidence, did_documents)
 
 
@@ -575,6 +620,21 @@ def test_evidence_level_must_match_verified_content_even_with_a_fresh_seal():
     assert not verify_session_evidence_record(evidence, did_documents)
 
 
+def test_unknown_record_version_is_rejected_even_with_a_fresh_seal():
+    evidence, did_documents = _mixed_record()
+    evidence["record_version"] = "999"
+    evidence["record_hash"] = ""
+    evidence["producer_signature"] = ""
+    evidence["record_hash"] = hash_object(evidence)
+    evidence["producer_signature"] = sign_jws(
+        evidence["record_hash"],
+        INITIATOR_PRIVATE_KEY,
+        kid=INITIATOR_VM,
+    )
+
+    assert not verify_session_evidence_record(evidence, did_documents)
+
+
 def test_generator_rejects_nonterminal_sessions():
     _, session, _ = _make_session()
 
@@ -655,3 +715,31 @@ def test_shared_session_evidence_vector_has_python_typescript_hash_parity():
     assert record["act_chain_hash"] == expected["act_chain_hash"]
     assert record["record_hash"] == expected["record_hash"]
     assert verify_session_evidence_record(record, fixture["did_documents"])
+
+    invalid_record = copy.deepcopy(record)
+    invalid_timestamp = fixture["invalid_cases"]["non_rfc3339_timestamp"]
+    invalid_record["acts"][1]["timestamp"] = invalid_timestamp
+    invalid_record["acts"][1]["act"]["timestamp"] = invalid_timestamp
+    invalid_record["acts"][1]["act_hash"] = hash_object(
+        invalid_record["acts"][1]["act"]
+    )
+    invalid_record["act_chain_hash"] = hash_bytes(
+        canonicalize([entry["act_hash"] for entry in invalid_record["acts"]])
+    )
+    invalid_record["record_hash"] = ""
+    invalid_record["producer_signature"] = ""
+    invalid_record["record_hash"] = hash_object(invalid_record)
+    invalid_record["producer_signature"] = sign_jws(
+        invalid_record["record_hash"],
+        private_key,
+        kid=producer["verification_method"],
+    )
+
+    assert (
+        invalid_record["record_hash"]
+        == expected["invalid_non_rfc3339_record_hash"]
+    )
+    assert not verify_session_evidence_record(
+        invalid_record,
+        fixture["did_documents"],
+    )
