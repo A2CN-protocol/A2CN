@@ -2,10 +2,34 @@
 
 **The formal definition of the A2CN protocol.**
 
-[![Spec Version](https://img.shields.io/badge/Version-0.2.0-green.svg)](a2cn-spec-v0.2.0.md)
+[![Release](https://img.shields.io/badge/Release-0.3.0-green.svg)](../CHANGELOG.md)
+[![Spec](https://img.shields.io/badge/Spec-v0.2.0-blue.svg)](a2cn-spec-v0.2.0.md)
+[![Wire protocol](https://img.shields.io/badge/Wire%20protocol-0.2-blue.svg)](a2cn-spec-v0.2.0.md#status-of-this-document)
 [![Status](https://img.shields.io/badge/Status-Draft%20%E2%80%94%20Feedback%20Welcome-yellow.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](../LICENSE)
 [![Schemas](https://img.shields.io/badge/JSON%20Schemas-Normative-brightgreen.svg)](schemas/)
+
+---
+
+## Three version axes
+
+A2CN versions three different things independently. Reading one as another is the
+most common source of confusion, so they are named separately here.
+
+| Axis | Current | What it is | When it moves |
+|------|---------|------------|---------------|
+| **Release** | `0.3.0` | The published package and repository release (`pyproject.toml`, `package.json`, git tag). | Any shipped change, additive or not. See [CHANGELOG](../CHANGELOG.md). |
+| **Spec / wire protocol** | `0.2` | The on-the-wire contract: the `protocol_version` and `a2cn_version` fields, and the `$id` of every message schema. | Only on a **wire-incompatible** change. See [Status of This Document](a2cn-spec-v0.2.0.md#status-of-this-document). |
+| **`record_version`** | TransactionRecord `0.1`<br>AuditLog `0.1`<br>SessionEvidenceRecord `0.1` | The version of each terminal artifact, carried inside its own hashed bytes. Each artifact has its **own** line. | Only when that artifact's shape or canonical meaning changes (Section 9A.1). |
+
+A schema's `$id` version is the version of the **thing the schema describes** — the
+wire version for wire messages, the `record_version` for record artifacts. This is
+why `session-evidence-record/0.1` sits alongside `session-invitation/0.2`: both are
+correct, because they version different things.
+
+Release `0.3.0` is additive and fully wire-compatible with `0.2`: a `0.2` peer and a
+`0.3.0` peer interoperate, and every signature, hash, and test vector produced under
+`0.2` remains valid.
 
 ---
 
@@ -95,6 +119,8 @@ Protocol act signing is required at **all levels**.
 ---
 
 ## Spec history
+
+Spec document versions, which track the wire protocol — not the release version. For release history (including `0.3.0`), see the [CHANGELOG](../CHANGELOG.md).
 
 | Version | Summary |
 |---------|---------|
