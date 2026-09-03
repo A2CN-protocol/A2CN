@@ -57,6 +57,7 @@ per RFC 8615. Registration will be submitted concurrent with the v0.2 release.
 7. Component 4: Offer Exchange
 8. Component 5: Session State Machine
 9. Component 6: Transaction Record
+9A. Session Evidence Record
 10. Component 7: Audit Log
 11. Component 8: Session Invitation *(new in v0.2)*
 12. Transport Binding and Error Handling
@@ -176,6 +177,7 @@ of the negotiation, without additional instrumentation.
   (OQ-004, now resolved)
 - Deal type registry (OQ-001, now resolved)
 - Configurable impasse threshold (OQ-005, now resolved)
+- Producer-sealed Session Evidence Records for every terminal outcome
 - Platform integration guidance: Salesforce Revenue Cloud, Microsoft Dynamics 365,
   Fairmarkit, and A2A extension pattern (Section 15)
 - MESO (Multiple Equivalent Simultaneous Offers) terms extension
@@ -262,8 +264,14 @@ offer signatures, JWT authentication, and VC proofs.
 **Transaction Record:** An immutable, content-addressed document recording the
 agreed terms, signed by both parties, produced upon acceptance.
 
+**Session Evidence Record:** A producer-sealed, tamper-evident package of the
+signed and unsigned acts actually available for any terminal session. It records
+whether the available evidence is bilateral, mixed, or unilateral without
+attributing unsigned observations to the named counterparty.
+
 **Audit Log (Compliance Trace):** A structured log of the negotiation session,
-produced at session termination for all outcomes.
+produced at session termination for all outcomes. It is operational and
+compliance-oriented; self-declared fields are not protocol-verified facts.
 
 **Deal Type:** A categorization of the commercial interaction. Declared in the
 discovery document.
@@ -346,8 +354,15 @@ Initiator Agent                                    Responder Agent
      |------------------------------------------------->|
      |                                                  |
      |  N+1. Both parties independently generate       |
-     |        TransactionRecord and AuditLog            |
+     |        TransactionRecord; each may also seal     |
+     |        a SessionEvidenceRecord and AuditLog      |
 ```
+
+`TransactionRecord` generation in this flow applies only to `COMPLETED` sessions.
+Every terminal outcome (`COMPLETED`, `REJECTED_FINAL`, `WITHDRAWN`, `TIMED_OUT`,
+`IMPASSE`, or `ERROR`) can produce a `SessionEvidenceRecord` and an `AuditLog`.
+For a completed session, the three artifacts serve different purposes and MAY
+coexist: agreement evidence, session evidence packaging, and operational trace.
 
 ### 3.2 Turn-Taking Rule
 
@@ -1702,6 +1717,312 @@ Any party verifying a transaction record MUST:
 
 ---
 
+## 9A. Session Evidence Record
+
+### 9A.1 Purpose and Artifact Boundaries
+
+A `SessionEvidenceRecord` is a producer-sealed evidence package for any terminal
+A2CN session. It preserves the complete acts observed by the producer, identifies
+which acts have verifiable A2CN signatures, and protects the package against
+post-sealing modification. Its wire artifact type is
+`"a2cn_session_evidence_record"`; the initial artifact version is `"0.1"`.
+
+The three terminal-session artifacts are distinct:
+
+- `TransactionRecord` remains the authoritative, deterministic record of agreed
+  terms after a valid Acceptance. It is agreement-only and is not generalized by
+  this section.
+- `SessionEvidenceRecord` packages the evidence available for `COMPLETED`,
+  `REJECTED_FINAL`, `WITHDRAWN`, `TIMED_OUT`, `IMPASSE`, and `ERROR` sessions.
+- `AuditLog` remains an operational and compliance-oriented trace. It can contain
+  self-declared metadata and intentionally minimizes retained commercial content.
+
+`AWAITING_HUMAN_APPROVAL` is not terminal and MUST NOT permit Session Evidence
+Record generation. A completed session SHOULD produce both its unchanged
+`TransactionRecord` and a `SessionEvidenceRecord`; it MAY also produce the
+operational `AuditLog` defined in Section 10.
+
+A producer signature over a SessionEvidenceRecord attests to the producer's
+record of the session and protects the bundle against tampering. It does not
+cryptographically attribute an unsigned observed act to the counterparty named
+in that act. Per-act signatures remain the mechanism for cryptographic
+attribution of an individual party's protocol act and are the preferred evidence.
+
+### 9A.2 Record Structure
+
+Schema: `spec/schemas/session-evidence-record.schema.json`
+
+```json
+{
+  "record_type": "a2cn_session_evidence_record",
+  "record_version": "0.1",
+  "evidence_id": "string",
+  "session_id": "string",
+  "generated_at": "string",
+  "producer": {
+    "did": "string",
+    "agent_id": "string",
+    "verification_method": "string"
+  },
+  "parties": {
+    "initiator": {
+      "organization_name": "string",
+      "did": "string",
+      "agent_id": "string",
+      "verification_method": "string",
+      "mandate_type": "string"
+    },
+    "responder": {
+      "organization_name": "string",
+      "did": "string",
+      "agent_id": "string",
+      "verification_method": "string",
+      "mandate_type": "string"
+    }
+  },
+  "terminal": {
+    "outcome": "COMPLETED | REJECTED_FINAL | WITHDRAWN | TIMED_OUT | IMPASSE | ERROR",
+    "reason": "string | null",
+    "message_id": "string | null",
+    "timestamp": "string"
+  },
+  "transaction_record_hash": "string | null",
+  "acts": [
+    {
+      "sequence_number": "integer | null",
+      "round_number": "integer | null",
+      "message_type": "string",
+      "message_id": "string | null",
+      "sender_did": "string",
+      "timestamp": "string | null",
+      "source_protocol": "string | null",
+      "act": {},
+      "act_hash": "string",
+      "sender_verification_method": "string | null",
+      "signature_type": "protocol_act_signature | acceptance_signature | null",
+      "signature": "string | null",
+      "attribution": "verified_signature | unsigned_observation"
+    }
+  ],
+  "act_chain_hash": "string",
+  "evidence_level": "bilateral | mixed | unilateral",
+  "record_hash": "string",
+  "producer_signature": "string"
+}
+```
+
+`record_version` is the version of the SessionEvidenceRecord artifact and is
+independent of the TransactionRecord version. A verifier MUST reject an
+unrecognized SessionEvidenceRecord version rather than attempt best-effort
+parsing. After a version is published, any incompatible shape or canonical
+meaning change MUST increment `record_version` and the version in the schema
+`$id`; the schema, specification, Python implementation, and TypeScript
+implementation MUST use the same value. Version `"0.1"` is the initial
+SessionEvidenceRecord version.
+
+`evidence_id` MUST be UUID v5 using the A2CN namespace from Appendix A and the
+UTF-8 name `session-evidence:{session_id}:{producer.did}`. This namespace input
+is intentionally different from the TransactionRecord input and prevents ID
+collision between the artifacts. Evidence records are producer-sealed and are
+not required to be identical when produced by different parties.
+
+`producer.did` identifies the party sealing the package.
+`producer.verification_method` MUST be controlled by `producer.did` and MUST
+resolve through that DID document to the key used for `producer_signature`.
+
+`parties` uses the same SessionInit and SessionAck metadata sources as the
+TransactionRecord. Informational names and agent identifiers do not acquire
+cryptographic attribution merely by appearing in this object.
+
+`terminal.timestamp` and `generated_at` MUST use the reliable terminal protocol
+message timestamp when one exists. For a locally detected timeout or error with
+no terminal protocol message, they MAY use the producer's `state_updated_at` or
+generation timestamp. Such a timestamp is a producer observation, not a
+counterparty-attested fact.
+
+`transaction_record_hash` MUST equal the unchanged TransactionRecord
+`record_hash` for a `COMPLETED` session. It MUST be `null` for every other
+terminal outcome.
+
+### 9A.3 Evidence Acts and External Observations
+
+The default evidence input MUST be the Session's chronological message log. A
+library implementation MUST also permit the caller to augment that log with a
+chronological list of observed acts received through another protocol, commerce
+API, or adjacent channel. Server endpoint generation MAY use only the native log;
+external observations are primarily a library integration surface.
+
+Each `acts[]` entry MUST contain the complete normalized observed act in `act`.
+It MUST NOT retain only selected commercial fields or a total value. If the act
+contains an envelope field also present on the evidence entry, including
+`message_type`, `message_id`, `sender_did`, `timestamp`, `round_number`, or
+`sequence_number`, the values MUST match. `source_protocol` is informational and
+MAY identify `a2cn`, another protocol, or be `null`; it does not change signature
+semantics.
+
+For an incomplete unsigned observation, entry-level `message_id` or `timestamp`
+MAY be `null` when the corresponding source value is absent or not a valid value
+of the required type. The producer MUST preserve the complete observed `act`
+unchanged and MUST NOT fabricate either field. Every non-null entry timestamp
+MUST be valid RFC 3339. Missing or malformed fields do not permit a claimed
+signed act to bypass the signed-payload requirements below.
+
+An implementation MUST NOT fabricate `protocol_act_hash`,
+`protocol_act_signature`, or `acceptance_signature` for an external observation.
+An unsigned observation MUST use:
+
+```json
+{
+  "sender_verification_method": null,
+  "signature_type": null,
+  "signature": null,
+  "attribution": "unsigned_observation"
+}
+```
+
+A signed A2CN Offer or Counteroffer uses `signature_type` =
+`"protocol_act_signature"`. A signed Acceptance uses `signature_type` =
+`"acceptance_signature"`. In either case, `signature` MUST reproduce the
+corresponding signature from the complete `act`, and `attribution` MUST be
+`"verified_signature"`. The record verifies only if that claimed signature
+successfully verifies; an invalid claim cannot be downgraded.
+
+Every act claimed as carrying an A2CN signature MUST contain a `session_id` equal
+to the SessionEvidenceRecord `session_id`. A verifier MUST enforce this binding
+from the signed act regardless of `source_protocol`; that informational label
+MUST NOT influence act-to-session binding or evidence-level classification.
+
+A signed act MUST contain every message-carried field required to reconstruct its
+signed payload. For an Offer or Counteroffer, these are `session_id`,
+`round_number`, `sequence_number`, `message_type`, `sender_did`, `timestamp`,
+`expires_at`, and `terms` as defined in Section 7.3. For an Acceptance, these are
+`session_id`, `round_number`, `sequence_number`, `accepted_offer_id`, and
+`accepted_protocol_act_hash` as defined in Section 7.4. A required field that is
+absent, `null`, or has the wrong JSON type MUST cause verification to fail.
+Entry-level metadata MUST NOT be substituted for a field missing from the
+complete `act`.
+
+Before ordering, producers and verifiers MUST validate every non-null timestamp
+as RFC 3339, even when sequence numbers alone determine positions. Acts MUST be
+ordered by the negotiated session sequence when all acts carry sequence numbers.
+Otherwise, when every act has a non-null timestamp, producers MUST use
+chronological timestamp order after normalizing RFC 3339 UTC offsets. Timestamps
+that denote the same instant compare equal; a present sequence number MAY break
+that tie. When neither complete sequence nor complete timestamp ordering is
+available, producers MUST preserve input order rather than fabricate chronology.
+Producers MUST preserve input order to break all remaining ties.
+
+### 9A.4 Hashing and Producer Seal
+
+All hashes use RFC 8785 JCS, SHA-256, and the base64url representation defined by
+the existing A2CN `hash_object` / `hashObject` primitive.
+
+For each entry, compute:
+
+```
+act_hash = SHA-256(JCS(act))
+```
+
+Then compute the chain over the ordered list:
+
+```
+act_chain_hash = SHA-256(JCS([act_hash_1, act_hash_2, ..., act_hash_n]))
+```
+
+To compute `record_hash`, set both `record_hash` and `producer_signature` to the
+empty string `""`, then compute:
+
+```
+record_hash = SHA-256(JCS(session_evidence_record))
+```
+
+The producer MUST create a compact JWS whose payload is `record_hash`, using the
+existing A2CN signing suite and key named by `producer.verification_method`:
+
+```
+producer_signature = JWS(record_hash)
+```
+
+The producer signature covers the identity metadata, terminal observation,
+complete acts, act hashes, chain hash, evidence level, and TransactionRecord
+cross-link through `record_hash`. It proves who sealed those bytes. It does not
+convert an `unsigned_observation` into a counterparty-authenticated act.
+
+### 9A.5 Evidence Levels
+
+`mixed` and `unilateral` are truthful, first-class evidence states. Their
+presence does not by itself make a record invalid.
+
+**`bilateral`** means all material acts needed to substantiate the represented
+terminal outcome are cryptographically attributable to the claimed parties. In
+the v0.2 signing model, a normal fully signed Offer/Counteroffer/Acceptance path
+ending in `COMPLETED` is bilateral when both session party DIDs have at least one
+verified material act and no included act is unsigned. The producer seal alone
+MUST NOT cause bilateral classification.
+
+**`mixed`** means the package combines at least one verified per-act signature
+with an unsigned observation or locally observed terminal fact, and the included
+acts represent both session parties. At least one verified per-act signature
+MUST belong to a session party; a signature from an unrelated third-party DID
+does not satisfy this condition. Examples include:
+
+- a signed local A2CN Offer plus an unsigned external counterparty Counteroffer;
+- signed acts from both parties followed by a locally detected impasse; or
+- a signed Offer followed by an unsigned Rejection or Withdrawal from the other
+  party under the current v0.2 message-signing coverage.
+
+**`unilateral`** means the evidence has no verified counterparty perspective
+sufficient for mixed or bilateral classification. A signed local Offer followed
+by a local timeout is unilateral. A package containing only unsigned observations
+also remains unilateral even though the producer seals the package.
+
+Because v0.2 does not define protocol-act signatures for Rejection or Withdrawal,
+implementations MUST preserve those messages as unsigned observations. They MUST
+NOT classify those terminal messages as bilaterally attributable. Expanding
+per-message signing coverage requires a separate protocol change.
+
+### 9A.6 Verification
+
+A verifier MUST reject an unrecognized `record_version` and then:
+
+1. Validate the record structure and terminal outcome.
+2. Recompute every `act_hash` from the complete `act`.
+3. Confirm entry metadata matches corresponding fields present in `act`.
+4. Validate every non-null timestamp as RFC 3339, confirm ordering under Section
+   9A.3, and recompute `act_chain_hash`.
+5. Recompute `record_hash` with both placeholder fields set to `""`.
+6. Resolve `producer.did`, verify `producer.verification_method` is controlled by
+   that DID, and verify `producer_signature` over `record_hash`.
+7. Verify every signature the record claims is present. Offer and Counteroffer
+   signatures MUST use the protocol-act payload rules in Section 7.3; Acceptance
+   signatures MUST use the Acceptance payload rules in Section 7.4. Every such
+   signed act MUST bind to the record's `session_id`.
+8. Recompute the evidence level from the verified and unsigned acts and compare
+   it with `evidence_level`.
+9. Enforce a non-null `transaction_record_hash` only for `COMPLETED`, and `null`
+   for all other outcomes.
+
+A signature that is present but invalid, references the wrong key, signs the
+wrong payload, or conflicts with the complete `act` MUST cause verification to
+fail. A verifier MUST NOT silently downgrade it to `unsigned_observation`.
+
+A successful `verify_session_evidence_record()` or
+`verifySessionEvidenceRecord()` result means: the producer seal, hashes, ordering,
+classification, and all signatures actually claimed by the record verify. It
+does not mean every party named in the record cryptographically attested to every
+act. Implementations SHOULD expose verified, unsigned, and invalid act counts in
+a richer assessment result where practical.
+
+### 9A.7 Evidence-Level Examples
+
+| Level | Example | What is established |
+| --- | --- | --- |
+| `bilateral` | Signed Offer, signed Counteroffer(s), signed Acceptance, `COMPLETED` | Material agreement acts are attributable to both parties; TransactionRecord remains the authoritative agreement artifact |
+| `mixed` | Signed producer Offer plus unsigned observed counterparty Counteroffer | Producer seal protects the complete bundle; only the signed Offer has cryptographic party attribution |
+| `unilateral` | Signed producer Offer followed by local `TIMED_OUT` | Producer's signed act and local terminal observation are protected; no counterparty response is attributed |
+
+---
+
 ## 10. Component 7: Audit Log
 
 ### 10.1 Purpose
@@ -1710,6 +2031,12 @@ The audit log provides a structured record of the negotiation session. It is
 generated upon entering any terminal state, for all outcomes including failures,
 withdrawals, and timeouts. It supports implementation-level audit logging and
 evidence collection relevant to compliance programs.
+
+The AuditLog is not the cryptographic SessionEvidenceRecord defined in Section
+9A. It need not contain complete commercial acts or a producer seal, and its
+self-declared metadata MUST NOT be treated as protocol-verified fact. The two
+artifacts MAY be retained under different operational and data-minimization
+policies.
 
 Note: Producing an A2CN audit log does not constitute legal compliance with any
 specific regulation. Organizations should consult their compliance and legal
@@ -1839,7 +2166,7 @@ support an Article 14 oversight program:
 | --- | --- |
 | Human oversight can be assigned and exercised during use | `AWAITING_HUMAN_APPROVAL` is a non-terminal pause state that prevents the threshold-crossing act from completing autonomously |
 | Oversight measures are tied to autonomy and context | `requires_human_approval_above` expresses a mandate-level threshold for autonomous Offers, Counteroffers, and Acceptances |
-| Human operators can monitor the system's conduct | `/sessions/{id}`, `/sessions/{id}/messages`, `/sessions/{id}/record`, and `/sessions/{id}/audit` expose session state, message history, transaction record hashes, and terminal audit logs |
+| Human operators can monitor the system's conduct | `/sessions/{id}`, `/sessions/{id}/messages`, `/sessions/{id}/record`, `/sessions/{id}/evidence`, and `/sessions/{id}/audit` expose session state, message history, agreement records, sealed session evidence, and terminal audit logs |
 | Human intervention is recorded | ApprovalReceipt references bind the approving operator, the session id, the paused offer hash, the threshold crossed, and approval timestamp |
 | The system can produce logs suitable for interpretation | `negotiation_log` entries retain sequence number, message type, sender DID, timestamp, offered value, and `protocol_act_hash` without duplicating full commercial terms |
 
@@ -2349,8 +2676,13 @@ support this binding.
 | POST | `/sessions/{id}/messages` | Send any session message |
 | GET | `/sessions/{id}/messages` | Get message history (paginated) |
 | GET | `/sessions/{id}/record` | Get transaction record (COMPLETED only) |
+| GET | `/sessions/{id}/evidence` | Get producer-sealed session evidence (any terminal state) |
 | GET | `/sessions/{id}/audit` | Get audit log (any terminal state) |
 | GET | `/sessions/{id}/fulfillment-attestation` | Get Concordia fulfillment attestation after clean delivery or dispute resolution |
+
+`GET /sessions/{id}/evidence` exposes complete commercial acts and MUST authorize
+only the session initiator or responder. An authenticated non-party MUST receive
+HTTP `403` with error code `NOT_SESSION_PARTY`.
 
 #### 12.1.2 Pagination
 
@@ -3566,11 +3898,12 @@ A software system is a **conformant A2CN implementation** if it:
 5. Implements idempotency per Section 6.1
 6. Generates protocol act signatures per Section 7.3 using RFC 8785 JCS
 7. Generates transaction records per Section 9
-8. Generates audit logs per Section 10
-9. Implements `AWAITING_HUMAN_APPROVAL` when mandate thresholds require human approval (Section 14)
-10. Implements all error codes from Section 12
-11. Passes the A2CN conformance test suite at `spec/conformance-tests/`
-12. Produces messages that validate against the normative JSON Schemas at
+8. Generates and verifies Session Evidence Records per Section 9A
+9. Generates audit logs per Section 10
+10. Implements `AWAITING_HUMAN_APPROVAL` when mandate thresholds require human approval (Section 14)
+11. Implements all error codes from Section 12
+12. Passes the A2CN conformance test suite at `spec/conformance-tests/`
+13. Produces messages that validate against the normative JSON Schemas at
     `spec/schemas/`
 
 ### 16.2 Conformance Levels
@@ -3585,9 +3918,10 @@ compliance with all MUST requirements in Sections 3–14. Declared mandates only
 DID VC mandate verification is not required at Level 1.
 
 **Level 2 — Full:** All Level 1 requirements, plus DID VC mandate verification
-(Section 5.4–5.5), transaction record generation (Section 9), audit log
-generation (Section 10), and webhook callbacks (Section 12.1.6). Webhooks are
-promoted from RECOMMENDED to REQUIRED at Level 2 in v0.2.
+(Section 5.4–5.5), transaction record generation (Section 9), Session Evidence
+Record generation and verification (Section 9A), audit log generation (Section
+10), and webhook callbacks (Section 12.1.6). Webhooks are promoted from
+RECOMMENDED to REQUIRED at Level 2 in v0.2.
 
 **Level 3 — Extended:** All Level 2 requirements, plus Session Invitation support
 (Component 8, Section 11), impasse detection (Section 8.7), MESO terms support
@@ -3628,6 +3962,7 @@ schemas. The following schema files are defined:
 | `withdrawal.schema.json` | Withdrawal |
 | `timeout-notification.schema.json` | Timeout notification |
 | `transaction-record.schema.json` | Transaction record |
+| `session-evidence-record.schema.json` | Session Evidence Record |
 | `audit-log.schema.json` | Audit log |
 | `session-object.schema.json` | Session state object |
 | `error.schema.json` | Error response |
@@ -3638,6 +3973,25 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+### Patch 2026-08-31 — Session Evidence Record
+
+- Section 9A added the additive `SessionEvidenceRecord` artifact for every
+  terminal session outcome without changing TransactionRecord or AuditLog
+  semantics.
+- Defined bilateral, mixed, and unilateral evidence levels; complete observed-act
+  hashing; chronological act chaining; producer sealing; and strict verification
+  of every claimed signature.
+- Added optional external observed-act input, the terminal-only
+  `GET /sessions/{id}/evidence` endpoint, the normative
+  `session-evidence-record.schema.json`, and a cross-language hash vector.
+- Clarified that sealing an unsigned observed counterparty act protects bundle
+  integrity but does not establish counterparty authorship.
+- Required party authorization for the evidence endpoint, cryptographic
+  act-to-session binding independent of `source_protocol`, unconditional RFC
+  3339 validation, and faithful nullable metadata for incomplete unsigned acts.
+- Clarified the independent SessionEvidenceRecord version line and mandatory
+  rejection of unknown versions.
 
 ### Patch 2026-06-01 — Concordia fulfillment attestation emission
 

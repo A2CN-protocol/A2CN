@@ -23,6 +23,7 @@ import {
   SERVER_DID,
   makeDidDocument,
   makeSessionInit,
+  makeTestClient,
   freshServer,
   type TestClient,
 } from "./conftest.js";
@@ -479,6 +480,105 @@ test("record not available for active session", async () => {
   const r = await client.get(`/sessions/${sessionId}/record`);
   expect(r.statusCode).toBe(409);
   expect((r.json().error as Dict).code).toBe("SESSION_WRONG_STATE");
+});
+
+// ---------------------------------------------------------------------------
+// GET /sessions/{session_id}/evidence — terminal only
+// ---------------------------------------------------------------------------
+
+test("evidence not available for active session", async () => {
+  const { client } = freshServer();
+  const sessionId = await createSession(client);
+  const r = await client.get(`/sessions/${sessionId}/evidence`);
+  expect(r.statusCode).toBe(409);
+  expect((r.json().error as Dict).code).toBe("SESSION_WRONG_STATE");
+});
+
+test("evidence available after withdrawal", async () => {
+  const { client } = freshServer();
+  const sessionId = await createSession(client);
+  const withdrawal = {
+    message_type: "withdrawal",
+    message_id: randomUUID(),
+    session_id: sessionId,
+    sequence_number: 1,
+    sender_did: INITIATOR_DID,
+    sender_agent_id: "test-agent",
+    timestamp: "2026-03-24T10:02:00Z",
+    reason_code: "STRATEGY_DECISION",
+  };
+  await client.post(`/sessions/${sessionId}/messages`, {
+    json: withdrawal,
+    headers: initHeaders(withdrawal.message_id),
+  });
+
+  const r = await client.get(`/sessions/${sessionId}/evidence`);
+
+  expect(r.statusCode).toBe(200);
+  const data = r.json();
+  expect(data.record_type).toBe("a2cn_session_evidence_record");
+  expect((data.terminal as Dict).outcome).toBe("WITHDRAWN");
+  expect(data.evidence_level).toBe("unilateral");
+  expect((data.producer as Dict).did).toBe(RESPONDER_DID);
+  expect(data.producer_signature).toBeTruthy();
+});
+
+test("evidence rejects authenticated nonparty", async () => {
+  const { ctx, client } = freshServer();
+  const sessionId = await createSession(client);
+  const withdrawal = {
+    message_type: "withdrawal",
+    message_id: randomUUID(),
+    session_id: sessionId,
+    sequence_number: 1,
+    sender_did: INITIATOR_DID,
+    timestamp: "2026-03-24T10:02:00Z",
+  };
+  await client.post(`/sessions/${sessionId}/messages`, {
+    json: withdrawal,
+    headers: initHeaders(withdrawal.message_id),
+  });
+
+  const outsiderDid = "did:web:observer.example";
+  const outsiderKeypair = generateKeypair();
+  ctx.registerDidDocument(
+    outsiderDid,
+    makeDidDocument(outsiderDid, "key-1", publicKeyToJwk(outsiderKeypair.publicKey)),
+  );
+  const outsider = makeTestClient(ctx, {
+    issuerDid: outsiderDid,
+    audienceDid: SERVER_DID,
+    privateKey: outsiderKeypair.privateKey,
+    kid: `${outsiderDid}#key-1`,
+  });
+
+  const response = await outsider.get(`/sessions/${sessionId}/evidence`);
+
+  expect(response.statusCode).toBe(403);
+  expect((response.json().error as Dict).code).toBe("NOT_SESSION_PARTY");
+});
+
+test("evidence available after incomplete withdrawal", async () => {
+  const { client } = freshServer();
+  const sessionId = await createSession(client);
+  const withdrawal = {
+    message_type: "withdrawal",
+    sender_did: INITIATOR_DID,
+  };
+  const response = await client.post(`/sessions/${sessionId}/messages`, {
+    json: withdrawal,
+    headers: initHeaders("incomplete-withdrawal"),
+  });
+  expect(response.statusCode).toBe(200);
+
+  const evidenceResponse = await client.get(`/sessions/${sessionId}/evidence`);
+
+  expect(evidenceResponse.statusCode).toBe(200);
+  const evidence = evidenceResponse.json();
+  expect((evidence.terminal as Dict).outcome).toBe("WITHDRAWN");
+  expect((evidence.terminal as Dict).message_id).toBeNull();
+  expect((evidence.acts as Dict[])[0].message_id).toBeNull();
+  expect((evidence.acts as Dict[])[0].timestamp).toBeNull();
 });
 
 // ---------------------------------------------------------------------------

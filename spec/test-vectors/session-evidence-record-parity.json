@@ -1,0 +1,160 @@
+{
+  "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only.",
+  "invalid_cases": {
+    "non_rfc3339_timestamp": "not-a-timestamp"
+  },
+  "did_documents": {
+    "did:example:buyer": {
+      "assertionMethod": [
+        "did:example:buyer#key-1"
+      ],
+      "authentication": [
+        "did:example:buyer#key-1"
+      ],
+      "id": "did:example:buyer",
+      "verificationMethod": [
+        {
+          "controller": "did:example:buyer",
+          "id": "did:example:buyer#key-1",
+          "publicKeyJwk": {
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": "7pGHEzTRKFR0l2BepF9bfS1mpTmods6vjiyYk2Z5TMY"
+          },
+          "type": "JsonWebKey2020"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "act_chain_hash": "H--tV6D3bPU1QqOqgd220gXB3bMCihpdET0Ge6h9BBs",
+    "act_hashes": [
+      "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+      "nTHqlXDMBXdHQ1jFK-KHGbM23dPFqAGS8ZkflA5YfQ4"
+    ],
+    "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+    "evidence_level": "mixed",
+    "generated_at": "2026-08-31T12:10:00Z",
+    "invalid_non_rfc3339_record_hash": "_AxaV_QL3OLUQCGQIhdSUIa1MFu378u00adbq_Z4Jkk",
+    "record_hash": "-HGVb076fiUv0-Z-Xmjx_XM4bfglT6_vud0I2i0runM"
+  },
+  "observed_acts": [
+    {
+      "act": {
+        "external_session_id": "commerce-7",
+        "message_id": "parity-external-1",
+        "message_type": "counteroffer",
+        "sender_did": "did:example:seller",
+        "terms": {
+          "currency": "USD",
+          "total_value": 90300
+        },
+        "timestamp": "2026-08-31T12:02:00Z"
+      },
+      "message_id": "parity-external-1",
+      "message_type": "counteroffer",
+      "round_number": 2,
+      "sender_did": "did:example:seller",
+      "sequence_number": 2,
+      "source_protocol": "commerce_api",
+      "timestamp": "2026-08-31T12:02:00Z"
+    }
+  ],
+  "producer": {
+    "agent_id": "buyer-agent",
+    "did": "did:example:buyer",
+    "verification_method": "did:example:buyer#key-1"
+  },
+  "producer_private_jwk": {
+    "crv": "Ed25519",
+    "d": "3ndUDUReD8pTMS_ty6tX309ky0OFzz9-6ArUZ5P3bpg",
+    "kty": "OKP",
+    "x": "7pGHEzTRKFR0l2BepF9bfS1mpTmods6vjiyYk2Z5TMY"
+  },
+  "session": {
+    "initiator_mandate": {
+      "mandate_type": "declared"
+    },
+    "message_log": [
+      {
+        "expires_at": "2026-08-31T12:16:00Z",
+        "message_id": "parity-offer-1",
+        "message_type": "offer",
+        "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+        "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+        "round_number": 1,
+        "sender_agent_id": "buyer-agent",
+        "sender_did": "did:example:buyer",
+        "sender_verification_method": "did:example:buyer#key-1",
+        "sequence_number": 1,
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "terms": {
+          "currency": "USD",
+          "total_value": 95000
+        },
+        "timestamp": "2026-08-31T12:01:00Z"
+      }
+    ],
+    "responder_mandate": {
+      "mandate_type": "declared"
+    },
+    "session_ack": {
+      "current_turn": "initiator",
+      "message_id": "parity-ack-1",
+      "message_type": "session_ack",
+      "protocol_version": "0.2",
+      "responder": {
+        "agent_id": "seller-agent",
+        "did": "did:example:seller",
+        "organization_name": "Parity Seller",
+        "verification_method": "did:example:seller#key-1"
+      },
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_created_at": "2026-08-31T12:00:00Z",
+      "session_id": "00000000-0000-4000-8000-000000000125",
+      "session_params_accepted": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      }
+    },
+    "session_created_at": "2026-08-31T12:00:00Z",
+    "session_id": "00000000-0000-4000-8000-000000000125",
+    "session_init": {
+      "initiator": {
+        "agent_id": "buyer-agent",
+        "did": "did:example:buyer",
+        "organization_name": "Parity Buyer",
+        "verification_method": "did:example:buyer#key-1"
+      },
+      "initiator_mandate": {
+        "mandate_type": "declared"
+      },
+      "message_id": "parity-init-1",
+      "message_type": "session_init",
+      "protocol_version": "0.2",
+      "session_params": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      }
+    },
+    "session_params": {
+      "currency": "USD",
+      "deal_type": "goods_procurement",
+      "max_rounds": 4,
+      "round_timeout_seconds": 900,
+      "session_timeout_seconds": 3600
+    },
+    "state": "TIMED_OUT",
+    "state_updated_at": "2026-08-31T12:10:00Z",
+    "terminal_message_id": null,
+    "terminal_reason": "session_timeout"
+  }
+}

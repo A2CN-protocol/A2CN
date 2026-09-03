@@ -461,6 +461,119 @@ async def test_record_not_available_for_active_session(test_client):
 
 
 # ---------------------------------------------------------------------------
+# GET /sessions/{session_id}/evidence — terminal only
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_evidence_not_available_for_active_session(test_client):
+    session_id = await _create_session(test_client)
+    r = await test_client.get(f"/sessions/{session_id}/evidence")
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "SESSION_WRONG_STATE"
+
+
+@pytest.mark.asyncio
+async def test_evidence_available_after_withdrawal(test_client):
+    session_id = await _create_session(test_client)
+    withdrawal = {
+        "message_type": "withdrawal",
+        "message_id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "sequence_number": 1,
+        "sender_did": INITIATOR_DID,
+        "sender_agent_id": "test-agent",
+        "timestamp": "2026-03-24T10:02:00Z",
+        "reason_code": "STRATEGY_DECISION",
+    }
+    await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=withdrawal,
+        headers=init_headers(withdrawal["message_id"]),
+    )
+
+    r = await test_client.get(f"/sessions/{session_id}/evidence")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["record_type"] == "a2cn_session_evidence_record"
+    assert data["terminal"]["outcome"] == "WITHDRAWN"
+    assert data["evidence_level"] == "unilateral"
+    assert data["producer"]["did"] == RESPONDER_DID
+    assert data["producer_signature"]
+
+
+@pytest.mark.asyncio
+async def test_evidence_rejects_authenticated_nonparty(test_client):
+    import a2cn.server as server_module
+
+    session_id = await _create_session(test_client)
+    withdrawal = {
+        "message_type": "withdrawal",
+        "message_id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "sequence_number": 1,
+        "sender_did": INITIATOR_DID,
+        "timestamp": "2026-03-24T10:02:00Z",
+    }
+    await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=withdrawal,
+        headers=init_headers(withdrawal["message_id"]),
+    )
+
+    outsider_did = "did:web:observer.example"
+    outsider_private_key, outsider_public_key = generate_keypair()
+    server_module.register_did_document(
+        outsider_did,
+        make_did_document(
+            outsider_did,
+            "key-1",
+            public_key_to_jwk(outsider_public_key),
+        ),
+    )
+    token = create_jwt(
+        outsider_did,
+        SERVER_DID,
+        outsider_private_key,
+        kid=f"{outsider_did}#key-1",
+        exp_seconds=3600,
+    )
+    transport = httpx.ASGITransport(app=server_module.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as outsider:
+        response = await outsider.get(
+            f"/sessions/{session_id}/evidence",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "NOT_SESSION_PARTY"
+
+
+@pytest.mark.asyncio
+async def test_evidence_available_after_incomplete_withdrawal(test_client):
+    session_id = await _create_session(test_client)
+    withdrawal = {
+        "message_type": "withdrawal",
+        "sender_did": INITIATOR_DID,
+    }
+    response = await test_client.post(
+        f"/sessions/{session_id}/messages",
+        json=withdrawal,
+        headers=init_headers("incomplete-withdrawal"),
+    )
+    assert response.status_code == 200
+
+    evidence_response = await test_client.get(f"/sessions/{session_id}/evidence")
+
+    assert evidence_response.status_code == 200
+    evidence = evidence_response.json()
+    assert evidence["terminal"]["outcome"] == "WITHDRAWN"
+    assert evidence["terminal"]["message_id"] is None
+    assert evidence["acts"][0]["message_id"] is None
+    assert evidence["acts"][0]["timestamp"] is None
+
+
+# ---------------------------------------------------------------------------
 # GET /sessions/{session_id}/audit — terminal only
 # ---------------------------------------------------------------------------
 

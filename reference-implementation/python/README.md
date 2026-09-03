@@ -106,9 +106,9 @@ other process on that port before running it.
 │                             │        │  /invitations/{id}/decline   │
 └─────────────────────────────┘        └──────────────────────────────┘
          ↓                                          ↓
-    crypto.py                                  record.py
-    JCS + SHA-256 + ES256/Ed25519             Deterministic
-    invitation signing                         transaction record
+    crypto.py                             record.py + evidence.py
+    JCS + SHA-256 + ES256/Ed25519        Agreement record, audit log,
+    invitation signing                    sealed session evidence
     did.py
     did:web resolution
 ```
@@ -186,6 +186,7 @@ acceptance = store.accept_invitation(
 | `POST /sessions` | Session initiation |
 | `POST /sessions/{id}/messages` | Offer / counteroffer / acceptance / rejection / withdrawal |
 | `GET /sessions/{id}/record` | Transaction record (COMPLETED only) |
+| `GET /sessions/{id}/evidence` | Producer-sealed Session Evidence Record (any terminal state; session parties only) |
 | `GET /sessions/{id}/audit` | Audit log (any terminal state) |
 | `GET /sessions/{id}/fulfillment-attestation` | Concordia FulfillmentAttestation after clean delivery or dispute resolution |
 | `POST /invitations` | Receive inbound invitation |
@@ -316,6 +317,7 @@ pytest tests/ -v   # 474 passed
 |-----------|---------------|
 | `test_crypto.py` | JCS, ES256, Ed25519, invitation signing |
 | `test_session.py` | State machine, turn-taking, impasse |
+| `test_evidence.py` | Bilateral, mixed, unilateral, tamper, and cross-language evidence vectors |
 | `test_server.py` | All HTTP endpoints, error codes |
 | `test_mcp_server.py` | MCP tool server and session orchestration |
 | `test_invitations.py` | Invitation lifecycle, signature, expiry |
@@ -339,6 +341,7 @@ python/
 ├── messages.py          # Wire-format dataclasses, validation, error codes
 ├── session.py           # State machine, impasse detection
 ├── record.py            # Deterministic transaction record + audit log
+├── evidence.py          # Producer-sealed terminal Session Evidence Record
 ├── invitation.py        # Component 8: SessionInvitation lifecycle
 ├── session_store.py     # In-memory, Redis, PostgreSQL stores
 ├── server.py            # FastAPI, all endpoints, async webhook delivery
@@ -350,6 +353,7 @@ python/
 ├── tests/
 │   ├── test_crypto.py
 │   ├── test_session.py
+│   ├── test_evidence.py
 │   ├── test_server.py
 │   ├── test_invitations.py
 │   ├── test_deal_type_terms.py
