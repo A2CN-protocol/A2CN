@@ -30,10 +30,30 @@ This is a **draft specification** published to solicit feedback from implementer
 procurement platform developers, and the agent framework community. It is not
 suitable for production use.
 
-**Version note:** The specification document version (0.1.3) tracks editorial
-revisions. The wire protocol version (`protocol_version` and `a2cn_version` fields)
-remains `"0.1"` for all 0.1.x specification revisions. A change to `"0.2"` will
-indicate a wire-incompatible protocol change.
+**Version note:** A2CN versions three things independently. Reading one as another
+is the most common source of confusion, so they are stated separately here.
+
+1. **Release version** — currently `0.3.0`. Covers the published packages and the
+   repository as a whole. It moves for any shipped change, additive or not. See
+   `CHANGELOG.md`.
+2. **Wire protocol version** — currently `"0.2"`. This is the value of the
+   `protocol_version` and `a2cn_version` fields, and the version in the `$id` of
+   every message schema. It moves **only** on a wire-incompatible protocol change,
+   never for an editorial revision and never for an additive release. Because
+   `protocol_version` is the first field of the signed protocol act (Section 7.3.1),
+   moving it invalidates every existing signature and hash chain.
+3. **`record_version`** — one per terminal artifact, each independent of the others
+   and of the two versions above: TransactionRecord `"0.1"`, AuditLog `"0.1"`,
+   SessionEvidenceRecord `"0.1"`. Each moves only when that artifact's own shape or
+   canonical meaning changes; see Section 9A.1.
+
+A schema's `$id` version is the version of the thing that schema describes — the
+wire version for wire messages, the artifact's `record_version` for record
+artifacts.
+
+This document is specification version 0.2.0 and specifies wire protocol `"0.2"`.
+The specification document version tracks editorial revisions to the wire contract
+and is not the release version.
 
 Normative JSON Schemas for all message types are published alongside this specification
 at `spec/schemas/` in the repository. The schemas are **normative** as of v0.1.2.
@@ -3973,6 +3993,23 @@ messages that validate against these schemas.
 ---
 
 ## 19. Changelog
+
+Entries below are changes to this specification document. For the repository and
+package release history, see `CHANGELOG.md`.
+
+### Release 0.3.0 (2026-09-02)
+
+Release `0.3.0` ships the terminal Session Evidence Record described in the
+2026-08-31 patch below. The release is additive and fully wire-compatible with
+`0.2`:
+
+- Wire protocol version unchanged at `"0.2"` — no wire message changed.
+- No `record_version` changed. TransactionRecord and AuditLog generation was
+  untouched and their bytes are identical to release `0.2.0`; SessionEvidenceRecord
+  is new at its initial version `"0.1"`.
+- No schema `$id` changed.
+- This document keeps the filename `a2cn-spec-v0.2.0.md`, because the wire protocol
+  it specifies is still `0.2` and published links resolve against that name.
 
 ### Patch 2026-08-31 — Session Evidence Record
 

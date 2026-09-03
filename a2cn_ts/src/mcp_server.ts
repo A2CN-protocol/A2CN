@@ -735,7 +735,7 @@ export async function runStdioServer(ctx: McpContext): Promise<void> {
   const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
   const { z } = await import("zod");
 
-  const server = new McpServer({ name: "a2cn", version: "0.2.0" });
+  const server = new McpServer({ name: "a2cn", version: "0.3.0" });
 
   const asResult = (data: Dict) => ({
     content: [{ type: "text" as const, text: JSON.stringify(data) }],
