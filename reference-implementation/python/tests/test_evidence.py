@@ -199,7 +199,7 @@ def _mark_timed_out(session) -> None:
     session.state_updated_at = "2026-03-24T10:10:00Z"
 
 
-def _generate(session, observed_acts=None):
+def _generate(session, observed_acts=None, **kwargs):
     return generate_session_evidence_record(
         session,
         producer_private_key=INITIATOR_PRIVATE_KEY,
@@ -207,6 +207,7 @@ def _generate(session, observed_acts=None):
         producer_agent_id="buyer-agent",
         producer_verification_method=INITIATOR_VM,
         observed_acts=observed_acts,
+        **kwargs,
     )
 
 
@@ -743,3 +744,758 @@ def test_shared_session_evidence_vector_has_python_typescript_hash_parity():
         invalid_record,
         fixture["did_documents"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Conformance fixtures for the three additive Section 9A extensions:
+# identity-light responder, recomputable money basis, controls-halt outcome.
+# ---------------------------------------------------------------------------
+
+OBSERVED_RESPONDER = {
+    "identity_source": "supplier_ordering_portal",
+    "organization_name": "Northwind Supply",
+    "observed_credential": {
+        "type": "vat_number",
+        "digest": hash_bytes(b"GB123456789"),
+    },
+}
+
+MONEY_BASIS = {
+    "raw_amounts": ["70000.00", "25000.00"],
+    "currency": "USD",
+    "minor_unit_exponent": 2,
+    "basis": "net",
+    "normalized_total_minor": 9_500_000,
+}
+
+
+def _make_identity_light_session():
+    """The same session, except the responder holds no A2CN identity at all."""
+    manager, session, did_documents = _make_session()
+    session._session_ack["responder"] = {"organization_name": "Northwind Supply"}
+    session._session_ack["responder_mandate"] = {}
+    session.responder_mandate = {}
+    del did_documents[RESPONDER_DID]
+    return manager, session, did_documents
+
+
+def _observed_quote(
+    *,
+    sender_did: str | None = RESPONDER_DID,
+    total_value: int = 9_500_000,
+    money_basis: dict | None = None,
+    message_id: str = "portal-quote-1",
+) -> dict:
+    entry = {
+        "sequence_number": 2,
+        "round_number": 2,
+        "message_type": "counteroffer",
+        "message_id": message_id,
+        "sender_did": sender_did,
+        "timestamp": "2026-03-24T10:02:00Z",
+        "source_protocol": "supplier_portal",
+        "act": {
+            "message_type": "counteroffer",
+            "message_id": message_id,
+            "timestamp": "2026-03-24T10:02:00Z",
+            "terms": {"total_value": total_value, "currency": "USD"},
+        },
+    }
+    if money_basis is not None:
+        entry["money_basis"] = copy.deepcopy(money_basis)
+    return entry
+
+
+def _reseal(evidence: dict) -> dict:
+    """Re-derive the chain hash and producer seal after editing a record."""
+    evidence["act_chain_hash"] = hash_bytes(
+        canonicalize([entry["act_hash"] for entry in evidence["acts"]])
+    )
+    evidence["record_hash"] = ""
+    evidence["producer_signature"] = ""
+    evidence["record_hash"] = hash_object(evidence)
+    evidence["producer_signature"] = sign_jws(
+        evidence["record_hash"],
+        INITIATOR_PRIVATE_KEY,
+        kid=INITIATOR_VM,
+    )
+    return evidence
+
+
+def _priced_record():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    evidence = _generate(session, [_observed_quote(money_basis=MONEY_BASIS)])
+    return evidence, did_documents
+
+
+def _halted_record():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    session.state = SessionState.WITHDRAWN
+    session.current_turn = "none"
+    session.terminal_message_id = None
+    session.state_updated_at = "2026-03-24T10:10:00Z"
+    evidence = _generate(
+        session,
+        terminal_outcome="HALTED_BY_CONTROLS",
+        terminal_reason="buyer_spend_control:max_session_commitment",
+    )
+    return evidence, did_documents
+
+
+# --- Fixture (i) -----------------------------------------------------------
+
+
+def test_observed_party_responder_with_unsigned_acts_is_valid_unilateral():
+    manager, session, did_documents = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    evidence = _generate(
+        session,
+        [_observed_quote(sender_did=None)],
+        observed_responder=OBSERVED_RESPONDER,
+    )
+
+    assert evidence["parties"]["responder"] == {
+        "identity_source": "supplier_ordering_portal",
+        "organization_name": "Northwind Supply",
+        "observed_credential": {
+            "type": "vat_number",
+            "digest": hash_bytes(b"GB123456789"),
+        },
+        "did_declared": False,
+        "a2cn_endpoint_declared": False,
+        "mandate_declared": False,
+    }
+    assert "did" not in evidence["parties"]["responder"]
+    assert evidence["acts"][1]["sender_did"] is None
+    assert evidence["acts"][1]["attribution"] == "unsigned_observation"
+    assert assess_session_evidence_record(evidence, did_documents) == {
+        "valid": True,
+        "evidence_level": "unilateral",
+        "verified_acts": 1,
+        "unsigned_acts": 1,
+        "invalid_acts": 0,
+    }
+
+
+def test_verifier_never_resolves_the_observed_identity():
+    manager, session, did_documents = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    evidence = _generate(
+        session,
+        [_observed_quote(sender_did=None)],
+        observed_responder=OBSERVED_RESPONDER,
+    )
+    requested: list[str] = []
+
+    def recording_resolver(did: str) -> dict:
+        requested.append(did)
+        return did_documents[did]
+
+    assert verify_session_evidence_record(evidence, recording_resolver)
+    assert set(requested) == {INITIATOR_DID}
+
+
+# --- Fixture (ii) ----------------------------------------------------------
+
+
+def test_observed_responder_claiming_a_verified_signature_is_rejected():
+    manager, session, did_documents = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    # The counterparty's key IS resolvable here, so the refusal below cannot be
+    # blamed on a signature that failed to check out.
+    did_documents[RESPONDER_DID] = make_did_document(
+        RESPONDER_DID,
+        "key-2026-01",
+        public_key_to_jwk(RESPONDER_PUBLIC_KEY),
+    )
+
+    healthy = _generate(
+        session,
+        [_observed_quote(sender_did=None)],
+        observed_responder=OBSERVED_RESPONDER,
+    )
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    signed_act = _offer(
+        session.session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="counteroffer",
+        message_id="portal-quote-1",
+        timestamp="2026-03-24T10:02:00Z",
+    )
+    attack = copy.deepcopy(healthy)
+    attack["acts"][1] = {
+        "sequence_number": 2,
+        "round_number": 2,
+        "message_type": "counteroffer",
+        "message_id": "portal-quote-1",
+        "sender_did": RESPONDER_DID,
+        "timestamp": "2026-03-24T10:02:00Z",
+        "source_protocol": "supplier_portal",
+        "act": signed_act,
+        "act_hash": hash_object(signed_act),
+        "sender_verification_method": RESPONDER_VM,
+        "signature_type": "protocol_act_signature",
+        "signature": signed_act["protocol_act_signature"],
+        "attribution": "verified_signature",
+    }
+    _reseal(attack)
+
+    assessment = assess_session_evidence_record(attack, did_documents)
+
+    # Assert the reason before the verdict: the signature really does verify, so
+    # the rejection is the identity-light coupling and not a broken act.
+    assert assessment["invalid_acts"] == 0
+    assert assessment["verified_acts"] == 2
+    assert assessment["evidence_level"] == "unilateral"
+    assert not assessment["valid"]
+
+
+def test_generator_refuses_an_observed_party_for_a_responder_that_declared_identity():
+    manager, session, _ = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    with pytest.raises(ValueError, match="declared a DID"):
+        _generate(session, observed_responder=OBSERVED_RESPONDER)
+
+
+def test_generator_never_fabricates_a_did_for_a_signed_identity_light_act():
+    manager, session, _ = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    unattributable = _observed_quote(sender_did=None)
+    unattributable["act"]["protocol_act_signature"] = "present-but-unattributable"
+
+    with pytest.raises(ValueError, match="sender_did"):
+        _generate(session, [unattributable], observed_responder=OBSERVED_RESPONDER)
+
+
+# --- Fixture (iii) ---------------------------------------------------------
+
+
+def test_money_basis_recomputing_to_the_signed_total_is_valid():
+    evidence, did_documents = _priced_record()
+
+    assert evidence["acts"][1]["money_basis"] == MONEY_BASIS
+    # The basis is a producer annotation about the act, never inside the act the
+    # act_hash protects.
+    assert "money_basis" not in evidence["acts"][1]["act"]
+    assert evidence["acts"][1]["act"]["terms"]["total_value"] == 9_500_000
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_money_basis_on_the_terminal_quote_binds_to_the_named_act():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    session.state = SessionState.IMPASSE
+    session.current_turn = "none"
+    session.terminal_reason = "no_movement"
+    session.terminal_message_id = "portal-quote-1"
+    session.state_updated_at = "2026-03-24T10:10:00Z"
+
+    evidence = _generate(
+        session,
+        [_observed_quote()],
+        terminal_money_basis=MONEY_BASIS,
+    )
+    assert verify_session_evidence_record(evidence, did_documents)
+
+    # A terminal basis that names no act is refused, not ignored.
+    unresolvable = copy.deepcopy(evidence)
+    unresolvable["terminal"]["message_id"] = "no-such-act"
+    _reseal(unresolvable)
+    assert not verify_session_evidence_record(unresolvable, did_documents)
+
+    # And it must bind to the total actually inside the act it names.
+    with pytest.raises(ValueError, match="money_basis"):
+        _generate(
+            session,
+            [_observed_quote(total_value=9_400_000)],
+            terminal_money_basis=MONEY_BASIS,
+        )
+
+
+# --- Fixture (iv) ----------------------------------------------------------
+
+
+def test_money_basis_that_does_not_recompute_is_rejected():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+    # Re-sealing must itself produce verifiable records, or every red below would
+    # prove only that the reseal helper is broken.
+    assert verify_session_evidence_record(_reseal(copy.deepcopy(healthy)), did_documents)
+
+    tampered_raw = copy.deepcopy(healthy)
+    tampered_raw["acts"][1]["money_basis"]["raw_amounts"] = ["70000.00", "25000.01"]
+    _reseal(tampered_raw)
+
+    tampered_total = copy.deepcopy(healthy)
+    tampered_total["acts"][1]["money_basis"]["normalized_total_minor"] = 9_500_001
+    _reseal(tampered_total)
+
+    assert not verify_session_evidence_record(tampered_raw, did_documents)
+    assert not verify_session_evidence_record(tampered_total, did_documents)
+
+
+def test_money_basis_is_never_converted_between_net_and_gross():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    # Relabelling net as gross must not make the arithmetic move: the label is
+    # checked, never applied. Same raw amounts, same total, still valid.
+    relabelled = copy.deepcopy(healthy)
+    relabelled["acts"][1]["money_basis"]["basis"] = "gross"
+    _reseal(relabelled)
+    assert verify_session_evidence_record(relabelled, did_documents)
+
+    # A gross total that only balances if a tax rate were applied stays rejected.
+    grossed_up = copy.deepcopy(healthy)
+    grossed_up["acts"][1]["money_basis"]["basis"] = "gross"
+    grossed_up["acts"][1]["money_basis"]["normalized_total_minor"] = 11_400_000
+    _reseal(grossed_up)
+    assert not verify_session_evidence_record(grossed_up, did_documents)
+
+    unknown_label = copy.deepcopy(healthy)
+    unknown_label["acts"][1]["money_basis"]["basis"] = "vat_exclusive_maybe"
+    _reseal(unknown_label)
+    assert not verify_session_evidence_record(unknown_label, did_documents)
+
+
+def test_money_basis_refuses_amounts_finer_than_the_stated_minor_unit():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    sub_minor = copy.deepcopy(healthy)
+    sub_minor["acts"][1]["money_basis"]["raw_amounts"] = ["70000.001", "25000.00"]
+    _reseal(sub_minor)
+
+    # These are chosen so that DISCARDING the sub-minor digit lands exactly on the
+    # signed total: rounding to fit is the failure mode, and it would read as a
+    # clean recompute. The tenth of a cent must make the record fail instead.
+    assert not verify_session_evidence_record(sub_minor, did_documents)
+
+
+def test_money_basis_currency_must_match_the_act_it_describes():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    wrong_currency = copy.deepcopy(healthy)
+    wrong_currency["acts"][1]["money_basis"]["currency"] = "EUR"
+    _reseal(wrong_currency)
+
+    assert not verify_session_evidence_record(wrong_currency, did_documents)
+
+
+# --- Fixture (v) -----------------------------------------------------------
+
+
+def test_money_basis_claiming_a_total_with_no_raw_amounts_fails_closed():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    absent = copy.deepcopy(healthy)
+    del absent["acts"][1]["money_basis"]["raw_amounts"]
+    _reseal(absent)
+
+    empty = copy.deepcopy(healthy)
+    empty["acts"][1]["money_basis"]["raw_amounts"] = []
+    _reseal(empty)
+
+    assert not verify_session_evidence_record(absent, did_documents)
+    assert not verify_session_evidence_record(empty, did_documents)
+
+
+# --- Fixture (vi) ----------------------------------------------------------
+
+
+def test_controls_halt_outcome_is_accepted():
+    evidence, did_documents = _halted_record()
+
+    assert evidence["terminal"]["outcome"] == "HALTED_BY_CONTROLS"
+    assert evidence["terminal"]["reason"] == (
+        "buyer_spend_control:max_session_commitment"
+    )
+    assert evidence["transaction_record_hash"] is None
+    assert evidence["evidence_level"] == "unilateral"
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_a_completed_session_cannot_be_relabelled_as_halted():
+    manager, session, _ = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    manager.process_message(session, _acceptance(session.session_id, offer))
+
+    with pytest.raises(ValueError, match="COMPLETED"):
+        _generate(session, terminal_outcome="HALTED_BY_CONTROLS")
+
+
+# --- Fixture (vii) ---------------------------------------------------------
+
+
+def test_an_unrecognized_terminal_outcome_is_still_rejected():
+    healthy, did_documents = _halted_record()
+    # The control proves the outcome gate is not simply refusing everything: the
+    # newly recognized member passes through it.
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    unknown = copy.deepcopy(healthy)
+    unknown["terminal"]["outcome"] = "HALTED_BY_VIBES"
+    _reseal(unknown)
+
+    assert not verify_session_evidence_record(unknown, did_documents)
+
+
+def test_awaiting_counterparty_signature_is_not_a_terminal_outcome():
+    healthy, did_documents = _halted_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    paused = copy.deepcopy(healthy)
+    paused["terminal"]["outcome"] = "AWAITING_COUNTERPARTY_SIGNATURE"
+    _reseal(paused)
+
+    assert not verify_session_evidence_record(paused, did_documents)
+
+
+# --- extensions ------------------------------------------------------------
+
+
+def test_namespaced_extensions_are_sealed_and_never_interpreted():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    evidence = _generate(
+        session,
+        extensions={"acme.procurement": {"requisition_id": "REQ-42", "arbitrary": [1, 2]}},
+    )
+
+    assert evidence["extensions"] == {
+        "acme.procurement": {"requisition_id": "REQ-42", "arbitrary": [1, 2]}
+    }
+    assert verify_session_evidence_record(evidence, did_documents)
+
+    # The seal covers them: editing an extension without re-sealing invalidates.
+    edited = copy.deepcopy(evidence)
+    edited["extensions"]["acme.procurement"]["requisition_id"] = "REQ-43"
+    assert not verify_session_evidence_record(edited, did_documents)
+
+
+def test_unnamespaced_extension_keys_are_refused_by_generator_and_verifier():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    with pytest.raises(ValueError, match="namespaced"):
+        _generate(session, extensions={"requisition_id": "REQ-42"})
+
+    healthy = _generate(session, extensions={"acme.procurement": {"ok": True}})
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    bare = copy.deepcopy(healthy)
+    bare["extensions"] = {"requisition_id": "REQ-42"}
+    _reseal(bare)
+    assert not verify_session_evidence_record(bare, did_documents)
+
+
+def test_unnamespaced_top_level_fields_remain_closed():
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    widened = copy.deepcopy(healthy)
+    widened["acme_procurement"] = {"requisition_id": "REQ-42"}
+    _reseal(widened)
+
+    assert not verify_session_evidence_record(widened, did_documents)
+
+
+# --- inputs that would silently pass if a guard were absent -----------------
+
+
+def test_an_observed_responder_cannot_ride_a_completed_record_to_bilateral():
+    manager, session, did_documents = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    manager.process_message(session, _acceptance(session.session_id, offer))
+
+    bilateral = _generate(session)
+    assert bilateral["evidence_level"] == "bilateral"
+    assert verify_session_evidence_record(bilateral, did_documents)
+
+    # Strip the counterparty's identity and its signed acceptance. What remains
+    # is one party whose every act is signed, which the classifier still calls
+    # bilateral -- so the explicit unilateral coupling is the only thing that
+    # refuses a COMPLETED record with an unidentified counterparty.
+    forged = copy.deepcopy(bilateral)
+    forged["parties"]["responder"] = {
+        "identity_source": "supplier_ordering_portal",
+        "did_declared": False,
+        "a2cn_endpoint_declared": False,
+        "mandate_declared": False,
+    }
+    forged["acts"] = [forged["acts"][0]]
+    _reseal(forged)
+
+    assessment = assess_session_evidence_record(forged, did_documents)
+
+    assert assessment["invalid_acts"] == 0
+    assert assessment["evidence_level"] == "bilateral"
+    assert not assessment["valid"]
+
+
+def test_a_zero_total_money_basis_still_requires_its_raw_amounts():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    zero_basis = {
+        "raw_amounts": ["0.00"],
+        "currency": "USD",
+        "minor_unit_exponent": 2,
+        "basis": "line_total",
+        "normalized_total_minor": 0,
+    }
+
+    healthy = _generate(
+        session,
+        [_observed_quote(total_value=0, money_basis=zero_basis)],
+    )
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    # Zero is the one total that absent raw amounts would sum to by themselves,
+    # so it separates a fail-closed rule from an arithmetic accident.
+    absent = copy.deepcopy(healthy)
+    del absent["acts"][1]["money_basis"]["raw_amounts"]
+    _reseal(absent)
+
+    assert not verify_session_evidence_record(absent, did_documents)
+
+
+def test_a_verified_act_can_never_carry_a_null_sender_did():
+    """Nullable sender_did must not open a hole in signed attribution.
+
+    Measured, not assumed: both constructions below are already rejected at the
+    act level by guards that predate this change -- the entry/act field
+    comparison when the act keeps its own sender_did, and the signed-payload
+    requirement when it does not. The shape check added alongside observed_party
+    makes the invariant local; it is defence in depth, not the sole defence.
+    """
+    healthy, did_documents = _priced_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+    assert healthy["acts"][0]["attribution"] == "verified_signature"
+
+    entry_only = copy.deepcopy(healthy)
+    entry_only["acts"][0]["sender_did"] = None
+    _reseal(entry_only)
+
+    entry_and_act = copy.deepcopy(healthy)
+    entry_and_act["acts"][0]["sender_did"] = None
+    del entry_and_act["acts"][0]["act"]["sender_did"]
+    entry_and_act["acts"][0]["act_hash"] = hash_object(entry_and_act["acts"][0]["act"])
+    _reseal(entry_and_act)
+
+    for record in (entry_only, entry_and_act):
+        assessment = assess_session_evidence_record(record, did_documents)
+        assert assessment["invalid_acts"] == 1
+        assert not assessment["valid"]
+
+
+def test_extension_vectors_have_python_typescript_hash_parity():
+    fixture_path = (
+        Path(__file__).parents[3]
+        / "spec"
+        / "test-vectors"
+        / "session-evidence-record-extensions.json"
+    )
+    fixture = json.loads(fixture_path.read_text())
+    producer = fixture["producer"]
+    private_key = private_key_from_jwk(fixture["producer_private_jwk"])
+
+    assert set(fixture["vectors"]) == {
+        "observed_party_responder",
+        "money_basis",
+        "halted_by_controls",
+    }
+
+    for name, vector in fixture["vectors"].items():
+        session_ack = fixture["session_acks"][vector["session_ack"]]
+        session = Session(
+            session_id=fixture["session_id"],
+            state=vector["state"],
+            current_turn="none",
+            terminal_reason=vector["terminal_reason"],
+            terminal_message_id=vector["terminal_message_id"],
+            session_created_at=fixture["session_created_at"],
+            state_updated_at=vector["state_updated_at"],
+            session_params=fixture["session_params"],
+            initiator_mandate=fixture["session_init"]["initiator_mandate"],
+            responder_mandate=session_ack["responder_mandate"],
+        )
+        session._session_init = fixture["session_init"]
+        session._session_ack = session_ack
+        session._message_log = vector["message_log"]
+
+        record = generate_session_evidence_record(
+            session,
+            producer_private_key=private_key,
+            producer_did=producer["did"],
+            producer_agent_id=producer["agent_id"],
+            producer_verification_method=producer["verification_method"],
+            observed_acts=vector["observed_acts"],
+            **vector["options"],
+        )
+        expected = vector["expected"]
+
+        assert record["evidence_id"] == expected["evidence_id"], name
+        assert record["generated_at"] == expected["generated_at"], name
+        assert record["evidence_level"] == expected["evidence_level"], name
+        assert record["terminal"]["outcome"] == expected["terminal_outcome"], name
+        assert [
+            entry["act_hash"] for entry in record["acts"]
+        ] == expected["act_hashes"], name
+        assert record["act_chain_hash"] == expected["act_chain_hash"], name
+        assert record["record_hash"] == expected["record_hash"], name
+        assert verify_session_evidence_record(record, fixture["did_documents"]), name
+
+
+def test_every_extension_vector_validates_against_the_published_schema():
+    jsonschema = pytest.importorskip("jsonschema")
+    root = Path(__file__).parents[3]
+    schema = json.loads(
+        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+    )
+    fixture = json.loads(
+        (
+            root / "spec" / "test-vectors" / "session-evidence-record-extensions.json"
+        ).read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    private_key = private_key_from_jwk(fixture["producer_private_jwk"])
+    producer = fixture["producer"]
+
+    for name, vector in fixture["vectors"].items():
+        session_ack = fixture["session_acks"][vector["session_ack"]]
+        session = Session(
+            session_id=fixture["session_id"],
+            state=vector["state"],
+            current_turn="none",
+            terminal_reason=vector["terminal_reason"],
+            terminal_message_id=vector["terminal_message_id"],
+            session_created_at=fixture["session_created_at"],
+            state_updated_at=vector["state_updated_at"],
+            session_params=fixture["session_params"],
+            initiator_mandate=fixture["session_init"]["initiator_mandate"],
+            responder_mandate=session_ack["responder_mandate"],
+        )
+        session._session_init = fixture["session_init"]
+        session._session_ack = session_ack
+        session._message_log = vector["message_log"]
+        record = generate_session_evidence_record(
+            session,
+            producer_private_key=private_key,
+            producer_did=producer["did"],
+            producer_agent_id=producer["agent_id"],
+            producer_verification_method=producer["verification_method"],
+            observed_acts=vector["observed_acts"],
+            **vector["options"],
+        )
+
+        assert list(validator.iter_errors(record)) == [], name
+
+
+def test_the_schema_rejects_what_the_verifier_rejects():
+    """The schema is not merely permissive: it refuses the same shapes.
+
+    The healthy record goes first. A schema that rejected everything would make
+    every refusal below look like a passing guard.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+    root = Path(__file__).parents[3]
+    schema = json.loads(
+        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    healthy, _ = _priced_record()
+    assert list(validator.iter_errors(healthy)) == []
+
+    hybrid_party = copy.deepcopy(healthy)
+    hybrid_party["parties"]["responder"] = {
+        "organization_name": "Northwind Supply",
+        "did": RESPONDER_DID,
+        "agent_id": "seller-agent",
+        "verification_method": RESPONDER_VM,
+        "mandate_type": "declared",
+        "identity_source": "supplier_ordering_portal",
+    }
+
+    positive_marker = copy.deepcopy(healthy)
+    positive_marker["parties"]["responder"] = {
+        "identity_source": "supplier_ordering_portal",
+        "did_declared": True,
+        "a2cn_endpoint_declared": False,
+        "mandate_declared": False,
+    }
+
+    float_amount = copy.deepcopy(healthy)
+    float_amount["acts"][1]["money_basis"]["raw_amounts"] = [70000.00, 25000.00]
+
+    bare_extension = copy.deepcopy(healthy)
+    bare_extension["extensions"] = {"requisition_id": "REQ-42"}
+
+    for name, record in (
+        ("a party may not be both DID-bearing and identity-light", hybrid_party),
+        ("did_declared: true contradicts the descriptor", positive_marker),
+        ("raw amounts may not be JSON floats", float_amount),
+        ("extensions keys must be namespaced", bare_extension),
+    ):
+        assert list(validator.iter_errors(record)) != [], name
+
+
+def test_the_pre_extension_parity_record_still_validates_against_the_schema():
+    """The additive claim, checked against a record built before these changes."""
+    jsonschema = pytest.importorskip("jsonschema")
+    root = Path(__file__).parents[3]
+    schema = json.loads(
+        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+    )
+    fixture = json.loads(
+        (
+            root / "spec" / "test-vectors" / "session-evidence-record-parity.json"
+        ).read_text()
+    )
+    source = fixture["session"]
+    session = Session(
+        session_id=source["session_id"],
+        state=source["state"],
+        current_turn="none",
+        terminal_reason=source["terminal_reason"],
+        terminal_message_id=source["terminal_message_id"],
+        session_created_at=source["session_created_at"],
+        state_updated_at=source["state_updated_at"],
+        session_params=source["session_params"],
+        initiator_mandate=source["initiator_mandate"],
+        responder_mandate=source["responder_mandate"],
+    )
+    session._session_init = source["session_init"]
+    session._session_ack = source["session_ack"]
+    session._message_log = source["message_log"]
+    record = generate_session_evidence_record(
+        session,
+        producer_private_key=private_key_from_jwk(fixture["producer_private_jwk"]),
+        producer_did=fixture["producer"]["did"],
+        producer_agent_id=fixture["producer"]["agent_id"],
+        producer_verification_method=fixture["producer"]["verification_method"],
+        observed_acts=fixture["observed_acts"],
+    )
+
+    assert record["record_hash"] == fixture["expected"]["record_hash"]
+    assert list(jsonschema.Draft202012Validator(schema).iter_errors(record)) == []

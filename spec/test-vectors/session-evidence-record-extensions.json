@@ -1,0 +1,315 @@
+{
+  "description": "Cross-language vectors for the three additive Section 9A extensions: an identity-light observed_party responder, a recomputable money_basis, and the HALTED_BY_CONTROLS terminal outcome. The private JWK is test-only.",
+  "did_documents": {
+    "did:example:buyer": {
+      "@context": [
+        "https://www.w3.org/ns/did/v1"
+      ],
+      "assertionMethod": [
+        "did:example:buyer#key-1"
+      ],
+      "authentication": [
+        "did:example:buyer#key-1"
+      ],
+      "id": "did:example:buyer",
+      "verificationMethod": [
+        {
+          "controller": "did:example:buyer",
+          "id": "did:example:buyer#key-1",
+          "publicKeyJwk": {
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": "7pGHEzTRKFR0l2BepF9bfS1mpTmods6vjiyYk2Z5TMY"
+          },
+          "type": "JsonWebKey2020"
+        }
+      ]
+    }
+  },
+  "producer": {
+    "agent_id": "buyer-agent",
+    "did": "did:example:buyer",
+    "verification_method": "did:example:buyer#key-1"
+  },
+  "producer_private_jwk": {
+    "crv": "Ed25519",
+    "d": "3ndUDUReD8pTMS_ty6tX309ky0OFzz9-6ArUZ5P3bpg",
+    "kty": "OKP",
+    "x": "7pGHEzTRKFR0l2BepF9bfS1mpTmods6vjiyYk2Z5TMY"
+  },
+  "session_acks": {
+    "full": {
+      "current_turn": "initiator",
+      "message_id": "ext-ack-1",
+      "message_type": "session_ack",
+      "protocol_version": "0.2",
+      "responder": {
+        "agent_id": "seller-agent",
+        "did": "did:example:seller",
+        "organization_name": "Parity Seller",
+        "verification_method": "did:example:seller#key-1"
+      },
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_created_at": "2026-08-31T12:00:00Z",
+      "session_id": "00000000-0000-4000-8000-000000000126",
+      "session_params_accepted": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      }
+    },
+    "identity_light": {
+      "current_turn": "initiator",
+      "message_id": "ext-ack-1",
+      "message_type": "session_ack",
+      "protocol_version": "0.2",
+      "responder": {
+        "organization_name": "Northwind Supply"
+      },
+      "responder_mandate": {},
+      "session_created_at": "2026-08-31T12:00:00Z",
+      "session_id": "00000000-0000-4000-8000-000000000126",
+      "session_params_accepted": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      }
+    }
+  },
+  "session_created_at": "2026-08-31T12:00:00Z",
+  "session_id": "00000000-0000-4000-8000-000000000126",
+  "session_init": {
+    "initiator": {
+      "agent_id": "buyer-agent",
+      "did": "did:example:buyer",
+      "organization_name": "Parity Buyer",
+      "verification_method": "did:example:buyer#key-1"
+    },
+    "initiator_mandate": {
+      "mandate_type": "declared"
+    },
+    "message_id": "ext-init-1",
+    "message_type": "session_init",
+    "protocol_version": "0.2",
+    "session_params": {
+      "currency": "USD",
+      "deal_type": "goods_procurement",
+      "max_rounds": 4,
+      "round_timeout_seconds": 900,
+      "session_timeout_seconds": 3600
+    }
+  },
+  "session_params": {
+    "currency": "USD",
+    "deal_type": "goods_procurement",
+    "max_rounds": 4,
+    "round_timeout_seconds": 900,
+    "session_timeout_seconds": 3600
+  },
+  "vectors": {
+    "halted_by_controls": {
+      "expected": {
+        "act_chain_hash": "GIYgsUZmx_JmMhJ8vLJE7WHjs0F-ZPf_HQQjWHLJ0TE",
+        "act_hashes": [
+          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4"
+        ],
+        "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
+        "evidence_level": "unilateral",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "record_hash": "gS5D11P3MmCq4EHbjabtGuwdL2-AGD_g8uaKR7iqR-4",
+        "terminal_outcome": "HALTED_BY_CONTROLS"
+      },
+      "message_log": [
+        {
+          "expires_at": "2026-08-31T12:16:00Z",
+          "message_id": "ext-offer-1",
+          "message_type": "offer",
+          "protocol_act_hash": "aKvvZcgdzstB3Q0UEb3gXhsAQxNasJ_Wb_X4v0ypepU",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.YUt2dlpjZ2R6c3RCM1EwVUViM2dYaHNBUXhOYXNKX1diX1g0djB5cGVwVQ.haFDWtOfztr8aTVz5ouF7xPuvMkYn5-yEv7Iyqzsr5e4Wh01zjdQb8AMVMcGkxoWfRR8L64iQt6cCGTVCwaJDQ",
+          "round_number": 1,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000126",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9500000
+          },
+          "timestamp": "2026-08-31T12:01:00Z"
+        }
+      ],
+      "observed_acts": [],
+      "options": {
+        "extensions": {
+          "acme.procurement": {
+            "requisition_id": "REQ-42"
+          }
+        },
+        "terminal_outcome": "HALTED_BY_CONTROLS",
+        "terminal_reason": "buyer_spend_control:max_session_commitment"
+      },
+      "session_ack": "full",
+      "state": "WITHDRAWN",
+      "state_updated_at": "2026-08-31T12:10:00Z",
+      "terminal_message_id": null,
+      "terminal_reason": "withdrawn_locally"
+    },
+    "money_basis": {
+      "expected": {
+        "act_chain_hash": "g7QcFlWIgGlrqkysaQdRIZ51J9Wmgexd8_q8k236ZCM",
+        "act_hashes": [
+          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4",
+          "YiDf_8vArq9h17yKylf28N11UkkMC7xINbmvqxZsaIo"
+        ],
+        "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
+        "evidence_level": "mixed",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "record_hash": "mdiZgsSN39BLoU0ichNHHw15FBdcFz8pVbWIVTpGoZw",
+        "terminal_outcome": "IMPASSE"
+      },
+      "message_log": [
+        {
+          "expires_at": "2026-08-31T12:16:00Z",
+          "message_id": "ext-offer-1",
+          "message_type": "offer",
+          "protocol_act_hash": "aKvvZcgdzstB3Q0UEb3gXhsAQxNasJ_Wb_X4v0ypepU",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.YUt2dlpjZ2R6c3RCM1EwVUViM2dYaHNBUXhOYXNKX1diX1g0djB5cGVwVQ.haFDWtOfztr8aTVz5ouF7xPuvMkYn5-yEv7Iyqzsr5e4Wh01zjdQb8AMVMcGkxoWfRR8L64iQt6cCGTVCwaJDQ",
+          "round_number": 1,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000126",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9500000
+          },
+          "timestamp": "2026-08-31T12:01:00Z"
+        }
+      ],
+      "observed_acts": [
+        {
+          "act": {
+            "message_id": "ext-portal-quote-1",
+            "message_type": "counteroffer",
+            "terms": {
+              "currency": "USD",
+              "total_value": 9500000
+            },
+            "timestamp": "2026-08-31T12:02:00Z"
+          },
+          "message_id": "ext-portal-quote-1",
+          "message_type": "counteroffer",
+          "money_basis": {
+            "basis": "net",
+            "currency": "USD",
+            "minor_unit_exponent": 2,
+            "normalized_total_minor": 9500000,
+            "raw_amounts": [
+              "70000.00",
+              "25000.00"
+            ]
+          },
+          "round_number": 2,
+          "sender_did": "did:example:seller",
+          "sequence_number": 2,
+          "source_protocol": "supplier_portal",
+          "timestamp": "2026-08-31T12:02:00Z"
+        }
+      ],
+      "options": {
+        "terminal_money_basis": {
+          "basis": "net",
+          "currency": "USD",
+          "minor_unit_exponent": 2,
+          "normalized_total_minor": 9500000,
+          "raw_amounts": [
+            "70000.00",
+            "25000.00"
+          ]
+        }
+      },
+      "session_ack": "full",
+      "state": "IMPASSE",
+      "state_updated_at": "2026-08-31T12:10:00Z",
+      "terminal_message_id": "ext-portal-quote-1",
+      "terminal_reason": "no_movement"
+    },
+    "observed_party_responder": {
+      "expected": {
+        "act_chain_hash": "g7QcFlWIgGlrqkysaQdRIZ51J9Wmgexd8_q8k236ZCM",
+        "act_hashes": [
+          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4",
+          "YiDf_8vArq9h17yKylf28N11UkkMC7xINbmvqxZsaIo"
+        ],
+        "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
+        "evidence_level": "unilateral",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "record_hash": "DhN9xOwSts9EiQjdB76a9WkvGiVpYflzsToXgJKxMnw",
+        "terminal_outcome": "TIMED_OUT"
+      },
+      "message_log": [
+        {
+          "expires_at": "2026-08-31T12:16:00Z",
+          "message_id": "ext-offer-1",
+          "message_type": "offer",
+          "protocol_act_hash": "aKvvZcgdzstB3Q0UEb3gXhsAQxNasJ_Wb_X4v0ypepU",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.YUt2dlpjZ2R6c3RCM1EwVUViM2dYaHNBUXhOYXNKX1diX1g0djB5cGVwVQ.haFDWtOfztr8aTVz5ouF7xPuvMkYn5-yEv7Iyqzsr5e4Wh01zjdQb8AMVMcGkxoWfRR8L64iQt6cCGTVCwaJDQ",
+          "round_number": 1,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000126",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9500000
+          },
+          "timestamp": "2026-08-31T12:01:00Z"
+        }
+      ],
+      "observed_acts": [
+        {
+          "act": {
+            "message_id": "ext-portal-quote-1",
+            "message_type": "counteroffer",
+            "terms": {
+              "currency": "USD",
+              "total_value": 9500000
+            },
+            "timestamp": "2026-08-31T12:02:00Z"
+          },
+          "message_id": "ext-portal-quote-1",
+          "message_type": "counteroffer",
+          "round_number": 2,
+          "sender_did": null,
+          "sequence_number": 2,
+          "source_protocol": "supplier_portal",
+          "timestamp": "2026-08-31T12:02:00Z"
+        }
+      ],
+      "options": {
+        "observed_responder": {
+          "identity_source": "supplier_ordering_portal",
+          "observed_credential": {
+            "digest": "B4lT9Yr8w_3lLZAGUfVbvLR3r1V4OIZ9ekr9WSPvRok",
+            "type": "vat_number"
+          },
+          "organization_name": "Northwind Supply"
+        }
+      },
+      "session_ack": "identity_light",
+      "state": "TIMED_OUT",
+      "state_updated_at": "2026-08-31T12:10:00Z",
+      "terminal_message_id": null,
+      "terminal_reason": "session_timeout"
+    }
+  }
+}

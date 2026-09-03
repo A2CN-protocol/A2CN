@@ -1753,7 +1753,9 @@ The three terminal-session artifacts are distinct:
   terms after a valid Acceptance. It is agreement-only and is not generalized by
   this section.
 - `SessionEvidenceRecord` packages the evidence available for `COMPLETED`,
-  `REJECTED_FINAL`, `WITHDRAWN`, `TIMED_OUT`, `IMPASSE`, and `ERROR` sessions.
+  `REJECTED_FINAL`, `WITHDRAWN`, `TIMED_OUT`, `IMPASSE`, `ERROR`, and
+  `HALTED_BY_CONTROLS` sessions. The last of these is an evidence-record outcome
+  only and is defined in Section 9A.10.
 - `AuditLog` remains an operational and compliance-oriented trace. It can contain
   self-declared metadata and intentionally minimizes retained commercial content.
 
@@ -1801,10 +1803,11 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
     }
   },
   "terminal": {
-    "outcome": "COMPLETED | REJECTED_FINAL | WITHDRAWN | TIMED_OUT | IMPASSE | ERROR",
+    "outcome": "COMPLETED | REJECTED_FINAL | WITHDRAWN | TIMED_OUT | IMPASSE | ERROR | HALTED_BY_CONTROLS",
     "reason": "string | null",
     "message_id": "string | null",
-    "timestamp": "string"
+    "timestamp": "string",
+    "money_basis": {}
   },
   "transaction_record_hash": "string | null",
   "acts": [
@@ -1813,11 +1816,12 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
       "round_number": "integer | null",
       "message_type": "string",
       "message_id": "string | null",
-      "sender_did": "string",
+      "sender_did": "string | null",
       "timestamp": "string | null",
       "source_protocol": "string | null",
       "act": {},
       "act_hash": "string",
+      "money_basis": {},
       "sender_verification_method": "string | null",
       "signature_type": "protocol_act_signature | acceptance_signature | null",
       "signature": "string | null",
@@ -1827,9 +1831,19 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
   "act_chain_hash": "string",
   "evidence_level": "bilateral | mixed | unilateral",
   "record_hash": "string",
-  "producer_signature": "string"
+  "producer_signature": "string",
+  "extensions": {}
 }
 ```
+
+`parties.responder` is either the DID-bearing party shown above or the
+identity-light `observed_party` descriptor defined in Section 9A.8. The two are
+mutually exclusive. `parties.initiator` MUST always be a DID-bearing party.
+
+`terminal.money_basis` and `acts[].money_basis` are OPTIONAL and are defined in
+Section 9A.9. `extensions` is OPTIONAL and is defined in Section 9A.11. Apart
+from these named optional members, the record and every object inside it remain
+closed to additional properties.
 
 `record_version` is the version of the SessionEvidenceRecord artifact and is
 independent of the TransactionRecord version. A verifier MUST reject an
@@ -1849,6 +1863,13 @@ not required to be identical when produced by different parties.
 `producer.did` identifies the party sealing the package.
 `producer.verification_method` MUST be controlled by `producer.did` and MUST
 resolve through that DID document to the key used for `producer_signature`.
+
+Sections 9A.8, 9A.9, 9A.10, and 9A.11 were added to `record_version` `"0.1"` in
+place rather than by incrementing it. They are relaxations: a verifier predating
+them rejects records that use them, while every record valid before them remains
+valid. Amending in place is defensible only because no external consumer of this
+artifact existed at the time; a later relaxation MUST increment `record_version`
+and the schema `$id` together instead.
 
 `parties` uses the same SessionInit and SessionAck metadata sources as the
 TransactionRecord. Informational names and agent identifiers do not acquire
@@ -1879,6 +1900,16 @@ contains an envelope field also present on the evidence entry, including
 `sequence_number`, the values MUST match. `source_protocol` is informational and
 MAY identify `a2cn`, another protocol, or be `null`; it does not change signature
 semantics.
+
+Entry-level `sender_did` MAY be `null`, and only when `attribution` is
+`"unsigned_observation"`. It records that the producer observed an act whose
+sender holds no DID. A producer MUST NOT fabricate a DID to fill it, and an act
+claiming `"verified_signature"` MUST carry a non-null `sender_did`. A `null`
+sender contributes to no party's representation for the purposes of Section 9A.5.
+
+Each `acts[]` entry MAY carry a `money_basis` per Section 9A.9. It sits on the
+entry and never inside `act`, because it is the producer's own annotation about
+the act rather than counterparty-authored content that `act_hash` protects.
 
 For an incomplete unsigned observation, entry-level `message_id` or `timestamp`
 MAY be `null` when the corresponding source value is absent or not a valid value
@@ -1994,7 +2025,13 @@ does not satisfy this condition. Examples include:
 **`unilateral`** means the evidence has no verified counterparty perspective
 sufficient for mixed or bilateral classification. A signed local Offer followed
 by a local timeout is unilateral. A package containing only unsigned observations
-also remains unilateral even though the producer seals the package.
+also remains unilateral even though the producer seals the package. A record
+whose responder is an `observed_party` is always unilateral, asserted explicitly
+rather than derived from the rules above; see Section 9A.8.
+
+The classification counts only DID-bearing parties. An act whose `sender_did` is
+`null`, or whose sender is not a session party, contributes to no party's
+representation.
 
 Because v0.2 does not define protocol-act signatures for Rejection or Withdrawal,
 implementations MUST preserve those messages as unsigned observations. They MUST
@@ -2021,6 +2058,14 @@ A verifier MUST reject an unrecognized `record_version` and then:
    it with `evidence_level`.
 9. Enforce a non-null `transaction_record_hash` only for `COMPLETED`, and `null`
    for all other outcomes.
+10. When `parties.responder` is an `observed_party`, enforce Section 9A.8: no act
+    other than the initiator's may claim `verified_signature`, and
+    `evidence_level` MUST be `unilateral`. Do not resolve the observed identity.
+11. Recompute every `money_basis` present under Section 9A.9 and reject the
+    record if any of them does not reproduce both the claimed
+    `normalized_total_minor` and the total inside the act it describes.
+12. Confirm every key of `extensions` is namespaced per Section 9A.11. Do not
+    interpret their values.
 
 A signature that is present but invalid, references the wrong key, signs the
 wrong payload, or conflicts with the complete `act` MUST cause verification to
@@ -2040,6 +2085,169 @@ a richer assessment result where practical.
 | `bilateral` | Signed Offer, signed Counteroffer(s), signed Acceptance, `COMPLETED` | Material agreement acts are attributable to both parties; TransactionRecord remains the authoritative agreement artifact |
 | `mixed` | Signed producer Offer plus unsigned observed counterparty Counteroffer | Producer seal protects the complete bundle; only the signed Offer has cryptographic party attribution |
 | `unilateral` | Signed producer Offer followed by local `TIMED_OUT` | Producer's signed act and local terminal observation are protected; no counterparty response is attributed |
+
+### 9A.8 Identity-Light Responders
+
+A producer frequently negotiates against a counterparty that has no A2CN
+identity at all: an ordering portal, a mailbox, a commerce API with no DID and no
+mandate. Before this section such a session could not be described honestly. A
+producer either withheld the record or invented identity metadata to fill the
+required fields.
+
+`parties.responder` MAY therefore be an `observed_party` instead of a party:
+
+```json
+{
+  "identity_source": "string",
+  "organization_name": "string",
+  "observed_credential": { "type": "string", "digest": "string" },
+  "did_declared": false,
+  "a2cn_endpoint_declared": false,
+  "mandate_declared": false
+}
+```
+
+**This is the authentication boundary, and it is the entire point of the
+construct.** A2CN authenticates DID-bearing parties. Every field of an
+`observed_party` is a PRODUCER-ASSERTED, UNVERIFIED descriptor. A verifier MUST
+NOT resolve `identity_source`, MUST NOT authenticate it, MUST NOT look it up in
+any registry or allow-list, and MUST NOT apply per-type validation to it. A
+verifier that did any of these would imply an authentication that did not occur.
+`identity_source` is opaque: it exists so a human reader knows where the producer
+got the name, not so software can act on it.
+
+`did_declared`, `a2cn_endpoint_declared`, and `mandate_declared` are REQUIRED and
+MUST each be `false`. They are stated positively so that the absence of identity
+is a recorded assertion rather than an inference from missing fields.
+`observed_credential.digest` is a base64url SHA-256 digest, so a producer can
+record that it saw a credential without retaining the credential itself; a digest
+is not evidence of authentication.
+
+A record whose responder is an `observed_party` MUST satisfy both of the
+following, and a verifier MUST reject it otherwise:
+
+1. No act may claim `attribution: "verified_signature"` unless its `sender_did`
+   equals `parties.initiator.did`. With no responder DID there is no key against
+   which a counterparty act could be checked, so a claimed counterparty signature
+   is rejected outright and MUST NOT be downgraded to an unsigned observation.
+   This also excludes verified third-party acts from such a record: an act that
+   cannot be placed in a known role is refused rather than admitted.
+2. `evidence_level` MUST be `unilateral`. This is asserted explicitly and MUST
+   NOT be left to fall out of the classification rules in Section 9A.5. Those
+   rules count only DID-bearing parties, so a `COMPLETED` record with an
+   identity-light responder and fully signed producer acts would otherwise
+   classify as `bilateral` -- a counterparty that was never identified appearing
+   to have cryptographically agreed.
+
+A producer MUST NOT fabricate a DID, endpoint, or mandate for such a
+counterparty, and MUST NOT record an `observed_party` for a responder that
+declared any of them. The producer's own signature over the record is verified
+exactly as for any other record; it attests to the producer's account of the
+session and attributes nothing to the observed counterparty.
+
+### 9A.9 Recomputable Money Basis
+
+An evidence record states a total. `money_basis` lets a reader recompute that
+total from the amounts as they were observed, rather than trusting the producer's
+arithmetic:
+
+```json
+{
+  "raw_amounts": ["70000.00", "25000.00"],
+  "currency": "USD",
+  "minor_unit_exponent": 2,
+  "basis": "net | gross | per_unit | line_total | unspecified",
+  "normalized_total_minor": 9500000
+}
+```
+
+`money_basis` is OPTIONAL. It MAY appear on any priced `acts[]` entry, and on
+`terminal` for the terminal quote. It is absent for terminal outcomes that carry
+no price. A `terminal.money_basis` describes the act named by
+`terminal.message_id`; if that names no act, or names more than one, a verifier
+MUST reject the record rather than ignore the basis.
+
+`raw_amounts` are MAJOR-unit amounts as exact decimal strings. They are strings
+because a JSON number cannot carry a decimal amount exactly, and money that
+passes through a binary float is money that has already been altered.
+
+**The recompute is a unit normalization and nothing else.** A verifier MUST:
+
+- scale each `raw_amounts` entry from major to minor units using
+  `minor_unit_exponent`, exactly;
+- reject any amount with more decimal places than `minor_unit_exponent`, because
+  normalizing it would require rounding, and rounding money silently is the
+  failure this section exists to prevent;
+- sum the results and require that sum to equal both `normalized_total_minor` and
+  the `terms.total_value` of the act being described;
+- require `currency` to equal that act's `terms.currency`.
+
+**A verifier MUST NOT convert between `net` and `gross`.** That is a tax
+calculation, not a normalization; performing it silently corrupts money, and
+performing it wrongly corrupts it invisibly. `basis` is a CHECKED LABEL: a
+verifier confirms it is a recognized value and otherwise does not act on it. The
+arithmetic above is identical for every label. Relabelling `net` as `gross`
+therefore changes no total, which is the intended behaviour: the label describes
+what the producer observed, and never instructs a computation.
+
+**Absence of raw data MUST fail closed.** If `normalized_total_minor` is claimed
+and `raw_amounts` is absent or empty, a verifier MUST reject the record. An
+unverifiable claim must never read as a verified one, and the zero total is
+exactly the case where an empty sum would otherwise appear to agree.
+
+A2CN maintains no currency exponent registry. `minor_unit_exponent` is a producer
+assertion checked for arithmetic consistency, not for correctness against the
+currency it names. `normalized_total_minor` and every act total it is compared
+against are bounded to the exact-integer range shared by both reference
+implementations, so the recompute cannot differ between them.
+
+### 9A.10 The `HALTED_BY_CONTROLS` Terminal Outcome
+
+`terminal.outcome` MAY be `HALTED_BY_CONTROLS`, meaning an agent's own controls
+or governance terminated the negotiation. `reason` SHOULD name the specific
+control that fired, for example `"buyer_spend_control:max_session_commitment"`.
+
+It is distinct from the outcomes it is most easily confused with:
+
+- `ERROR` is a fault: something went wrong.
+- `IMPASSE` is a deadlock: the parties could not converge.
+- `WITHDRAWN` is a voluntary walk-away: the agent chose, within its authority, to
+  stop negotiating.
+- `HALTED_BY_CONTROLS` is none of these. Nothing failed, no deadlock was reached,
+  and no negotiating judgement was exercised. A control the agent operates under
+  stopped the run. Recording that as `ERROR` misreports a working safeguard as a
+  malfunction, and recording it as `WITHDRAWN` misreports a constraint as a
+  choice.
+
+The outcome is GENERAL to either party. A seller's credit or inventory controls
+halt a run for the same reason a buyer's spend controls do.
+
+`HALTED_BY_CONTROLS` is an evidence-record outcome, not a session state: no wire
+message or state transition is added, and `protocol_version` remains `0.2`. A
+producer MUST NOT relabel a `COMPLETED` session as halted, since that would erase
+an agreement and drop the required `transaction_record_hash`. Verification adds
+nothing beyond enum membership: the outcome is a producer observation, exactly as
+`TIMED_OUT` already is. Evidence-level classification is unaffected, because it
+keys on signatures rather than on the outcome.
+
+Widening this enum MUST NOT widen the rule that an unrecognized outcome is
+rejected. A verifier MUST continue to reject any outcome it does not recognize.
+`AWAITING_COUNTERPARTY_SIGNATURE` is NOT a terminal outcome; like
+`AWAITING_HUMAN_APPROVAL` it denotes a paused session, and a paused session MUST
+NOT produce a Session Evidence Record.
+
+### 9A.11 Namespaced Extensions
+
+The record MAY carry an OPTIONAL top-level `extensions` object. Its keys MUST be
+namespaced, matching `^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$`; a bare key
+MUST be rejected, so that a producer extension can never collide with a future
+member of this specification. Values are arbitrary JSON.
+
+`extensions` is the ONLY place additional properties are permitted. The record
+and every other object within it remain closed. Extension content is covered by
+`record_hash` and therefore by the producer seal, so it cannot be altered after
+sealing. A verifier MUST NOT interpret it, and MUST NOT let it influence
+attribution, evidence level, or any other verification outcome.
 
 ---
 
