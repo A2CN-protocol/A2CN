@@ -47,6 +47,23 @@ export const EvidenceSignatureType = {
   ACCEPTANCE: "acceptance_signature",
 } as const;
 
+export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
+
+export const MONEY_BASIS_LABELS = new Set<string>([
+  "net",
+  "gross",
+  "per_unit",
+  "line_total",
+  "unspecified",
+]);
+
+// HALTED_BY_CONTROLS is an evidence-record outcome only. It is deliberately not a
+// SessionState: adding one would be a wire change, and 0.2 is frozen.
+const EVIDENCE_TERMINAL_OUTCOMES = new Set<string>([
+  ...SessionState.TERMINAL,
+  OUTCOME_HALTED_BY_CONTROLS,
+]);
+
 const SIGNED_MESSAGE_FIELDS: Record<string, string> = {
   [EvidenceSignatureType.PROTOCOL_ACT]: "protocol_act_signature",
   [EvidenceSignatureType.ACCEPTANCE]: "acceptance_signature",
@@ -82,7 +99,46 @@ const ACT_FIELDS = new Set([
   "signature",
   "attribution",
 ]);
+const RECORD_OPTIONAL_FIELDS = new Set(["extensions"]);
+const ACT_OPTIONAL_FIELDS = new Set(["money_basis"]);
+const TERMINAL_FIELDS = new Set(["outcome", "reason", "message_id", "timestamp"]);
+const TERMINAL_OPTIONAL_FIELDS = new Set(["money_basis"]);
+const PARTY_FIELDS = new Set([
+  "organization_name",
+  "did",
+  "agent_id",
+  "verification_method",
+  "mandate_type",
+]);
+const OBSERVED_PARTY_FIELDS = new Set([
+  "identity_source",
+  "did_declared",
+  "a2cn_endpoint_declared",
+  "mandate_declared",
+]);
+const OBSERVED_PARTY_OPTIONAL_FIELDS = new Set([
+  "organization_name",
+  "observed_credential",
+]);
+const OBSERVED_PARTY_MARKERS = [
+  "did_declared",
+  "a2cn_endpoint_declared",
+  "mandate_declared",
+];
+// raw_amounts is deliberately absent from the required set so the fail-closed rule
+// owns it by name: a total claimed with no raw data behind it is rejected by a
+// branch that says so, not incidentally by a field-set check.
+const MONEY_BASIS_FIELDS = new Set([
+  "currency",
+  "minor_unit_exponent",
+  "basis",
+  "normalized_total_minor",
+]);
+const MONEY_BASIS_OPTIONAL_FIELDS = new Set(["raw_amounts"]);
 const HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const EXTENSION_NAMESPACE_PATTERN = /^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$/;
+const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+const DECIMAL_AMOUNT_PATTERN = /^(-?)(0|[1-9][0-9]*)(?:\.([0-9]+))?$/;
 const RFC3339_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|([+-])(\d{2}):(\d{2}))$/;
 
@@ -97,6 +153,13 @@ export interface GenerateSessionEvidenceOptions {
   producerDid?: string | null;
   producerAgentId?: string | null;
   observedActs?: Dict[] | null;
+  /** A counterparty with no A2CN identity. A producer assertion; no DID is fabricated. */
+  observedResponder?: Dict | null;
+  /** May only assert HALTED_BY_CONTROLS, for a run the producer's own controls stopped. */
+  terminalOutcome?: string | null;
+  terminalReason?: string | null;
+  terminalMoneyBasis?: Dict | null;
+  extensions?: Dict | null;
 }
 
 export interface EvidenceAssessment {
@@ -116,7 +179,30 @@ export function generateSessionEvidenceRecord(
     throw new Error("Session evidence is only available for terminal sessions");
   }
 
-  const parties = partyMetadata(session);
+  let outcome = session.state;
+  let reason = session.terminal_reason ?? null;
+  const terminalOutcome = options.terminalOutcome ?? null;
+  if (terminalOutcome !== null) {
+    if (terminalOutcome !== OUTCOME_HALTED_BY_CONTROLS) {
+      throw new Error(`terminalOutcome may only assert ${OUTCOME_HALTED_BY_CONTROLS}`);
+    }
+    if (session.state === SessionState.COMPLETED) {
+      throw new Error("A COMPLETED session cannot be relabelled as halted");
+    }
+    outcome = terminalOutcome;
+  }
+  const terminalReason = options.terminalReason ?? null;
+  if (terminalReason !== null) {
+    if (terminalOutcome === null) {
+      throw new Error("terminalReason requires terminalOutcome");
+    }
+    if (typeof terminalReason !== "string" || !terminalReason) {
+      throw new Error("terminalReason must be a non-empty string");
+    }
+    reason = terminalReason;
+  }
+
+  const parties = partyMetadata(session, options.observedResponder ?? null);
   const producer = producerMetadata(parties, {
     producerVerificationMethod: options.producerVerificationMethod,
     producerDid: options.producerDid ?? null,
@@ -140,7 +226,7 @@ export function generateSessionEvidenceRecord(
   const actChainHash = hashBytes(
     canonicalize(orderedActs.map((entry) => entry.act_hash as string)),
   );
-  const evidenceLevel = classifyEvidenceLevel(orderedActs, session.state, parties);
+  const evidenceLevel = classifyEvidenceLevel(orderedActs, outcome, parties);
   const producerDid = producer.did as string;
 
   const record: Dict = {
@@ -155,8 +241,8 @@ export function generateSessionEvidenceRecord(
     producer,
     parties,
     terminal: {
-      outcome: session.state,
-      reason: session.terminal_reason ?? null,
+      outcome,
+      reason,
       message_id: session.terminal_message_id || null,
       timestamp: terminalTimestamp,
     },
@@ -167,6 +253,25 @@ export function generateSessionEvidenceRecord(
     record_hash: "",
     producer_signature: "",
   };
+  if (options.terminalMoneyBasis != null) {
+    (record.terminal as Dict).money_basis = structuredClone(options.terminalMoneyBasis);
+  }
+  if (options.extensions != null) {
+    record.extensions = validatedExtensions(options.extensions);
+  }
+
+  // Refuse to seal a claim the verifier would reject. The generator and the
+  // verifier run the same two rules so a producer cannot emit a record that only
+  // fails once it is somebody else's problem.
+  if (!moneyBasisClaimsVerify(record)) {
+    throw new Error("money_basis does not recompute to the claimed and signed totals");
+  }
+  if (!observedResponderRulesHold(record)) {
+    throw new Error(
+      "An observed responder requires unsigned counterparty acts and unilateral evidence",
+    );
+  }
+
   record.record_hash = hashObject(record);
   record.producer_signature = signJws(
     record.record_hash as string,
@@ -210,7 +315,7 @@ export function assessSessionEvidenceRecord(
 
     const terminal = record.terminal as Dict;
     const outcome = terminal.outcome as string;
-    if (!SessionState.TERMINAL.has(outcome)) {
+    if (!EVIDENCE_TERMINAL_OUTCOMES.has(outcome)) {
       return assessment;
     }
     if (record.generated_at !== terminal.timestamp) {
@@ -276,6 +381,12 @@ export function assessSessionEvidenceRecord(
     if (assessment.invalid_acts > 0) {
       return assessment;
     }
+    if (!moneyBasisClaimsVerify(record)) {
+      return assessment;
+    }
+    if (!observedResponderRulesHold(record)) {
+      return assessment;
+    }
     if (record.act_chain_hash !== hashBytes(canonicalize(computedActHashes))) {
       return assessment;
     }
@@ -310,7 +421,7 @@ export function assessSessionEvidenceRecord(
   }
 }
 
-function partyMetadata(session: EvidenceSession): Dict {
+function partyMetadata(session: EvidenceSession, observedResponder: Dict | null): Dict {
   const sessionInit = session._session_init ?? {};
   const sessionAck = session._session_ack ?? {};
   const initiatorInfo = metadataObject(sessionInit.initiator, "initiator");
@@ -332,14 +443,103 @@ function partyMetadata(session: EvidenceSession): Dict {
       verification_method: metadataString(initiatorInfo, "verification_method"),
       mandate_type: metadataString(initiatorMandate, "mandate_type"),
     },
-    responder: {
-      organization_name: metadataString(responderInfo, "organization_name"),
-      did: metadataString(responderInfo, "did"),
-      agent_id: metadataString(responderInfo, "agent_id"),
-      verification_method: metadataString(responderInfo, "verification_method"),
-      mandate_type: metadataString(responderMandate, "mandate_type"),
-    },
+    responder:
+      observedResponder !== null
+        ? observedPartyMetadata(responderInfo, responderMandate, observedResponder)
+        : {
+            organization_name: metadataString(responderInfo, "organization_name"),
+            did: metadataString(responderInfo, "did"),
+            agent_id: metadataString(responderInfo, "agent_id"),
+            verification_method: metadataString(responderInfo, "verification_method"),
+            mandate_type: metadataString(responderMandate, "mandate_type"),
+          },
   };
+}
+
+/**
+ * Assemble an identity-light responder from what the caller supplies.
+ *
+ * Every field is a producer assertion. No DID is derived, defaulted, or
+ * fabricated here, and the session must not already carry the A2CN identity this
+ * descriptor claims is absent.
+ */
+function observedPartyMetadata(
+  responderInfo: Dict,
+  responderMandate: Dict,
+  observedResponder: Dict,
+): Dict {
+  if (
+    typeof observedResponder !== "object" ||
+    observedResponder === null ||
+    Array.isArray(observedResponder)
+  ) {
+    throw new Error("observedResponder must be an object");
+  }
+  for (const [fieldName, marker] of [
+    ["did", "a DID"],
+    ["endpoint", "an A2CN endpoint"],
+    ["verification_method", "a verification method"],
+  ]) {
+    const declared = responderInfo[fieldName];
+    if (typeof declared === "string" && declared) {
+      throw new Error(`Responder declared ${marker}; it is not an observed party`);
+    }
+  }
+  if (responderMandate.mandate_type) {
+    throw new Error("Responder declared a mandate; it is not an observed party");
+  }
+
+  const identitySource = observedResponder.identity_source;
+  if (typeof identitySource !== "string" || !identitySource) {
+    throw new Error("observedResponder requires a non-empty identity_source");
+  }
+
+  const party: Dict = {
+    identity_source: identitySource,
+    did_declared: false,
+    a2cn_endpoint_declared: false,
+    mandate_declared: false,
+  };
+  const organizationName = observedResponder.organization_name;
+  if (organizationName != null) {
+    if (typeof organizationName !== "string") {
+      throw new Error("observedResponder organization_name must be a string");
+    }
+    party.organization_name = organizationName;
+  }
+  const credential = observedResponder.observed_credential;
+  if (credential != null) {
+    if (
+      typeof credential !== "object" ||
+      Array.isArray(credential) ||
+      !hasFields(credential as Dict, new Set(["type", "digest"]))
+    ) {
+      throw new Error("observed_credential requires exactly type and digest");
+    }
+    const credentialType = (credential as Dict).type;
+    const digest = (credential as Dict).digest;
+    if (typeof credentialType !== "string" || !credentialType) {
+      throw new Error("observed_credential type must be a non-empty string");
+    }
+    if (typeof digest !== "string" || !HASH_PATTERN.test(digest)) {
+      throw new Error("observed_credential digest must be a base64url SHA-256");
+    }
+    party.observed_credential = { type: credentialType, digest };
+  }
+  return party;
+}
+
+/** Namespaced producer extensions. Never interpreted, only namespaced. */
+function validatedExtensions(extensions: Dict): Dict {
+  if (typeof extensions !== "object" || extensions === null || Array.isArray(extensions)) {
+    throw new Error("extensions must be an object");
+  }
+  for (const name of Object.keys(extensions)) {
+    if (!EXTENSION_NAMESPACE_PATTERN.test(name)) {
+      throw new Error(`extensions keys must be namespaced: ${JSON.stringify(name)}`);
+    }
+  }
+  return structuredClone(extensions);
 }
 
 function metadataObject(value: unknown, fieldName: string): Dict {
@@ -362,14 +562,29 @@ function metadataString(object: Dict, fieldName: string): string {
   return object[fieldName] as string;
 }
 
-function hasExactFields(object: Dict, expected: Set<string>): boolean {
+function hasFields(object: Dict, required: Set<string>, optional?: Set<string>): boolean {
+  if (typeof object !== "object" || object === null || Array.isArray(object)) {
+    return false;
+  }
   const fields = Object.keys(object);
-  return fields.length === expected.size && fields.every((field) => expected.has(field));
+  if (!fields.every((field) => required.has(field) || optional?.has(field) === true)) {
+    return false;
+  }
+  return [...required].every((field) => fields.includes(field));
 }
 
 function evidenceRecordShapeValid(record: Dict): boolean {
-  if (typeof record !== "object" || record === null || !hasExactFields(record, RECORD_FIELDS)) {
+  if (!hasFields(record, RECORD_FIELDS, RECORD_OPTIONAL_FIELDS)) {
     return false;
+  }
+  if (hasOwn(record, "extensions")) {
+    const extensions = record.extensions;
+    if (typeof extensions !== "object" || extensions === null || Array.isArray(extensions)) {
+      return false;
+    }
+    if (!Object.keys(extensions).every((name) => EXTENSION_NAMESPACE_PATTERN.test(name))) {
+      return false;
+    }
   }
   for (const field of [
     "record_type",
@@ -397,11 +612,7 @@ function evidenceRecordShapeValid(record: Dict): boolean {
   }
 
   const producer = record.producer as Dict;
-  if (
-    typeof producer !== "object" ||
-    producer === null ||
-    !hasExactFields(producer, new Set(["did", "agent_id", "verification_method"]))
-  ) {
+  if (!hasFields(producer, new Set(["did", "agent_id", "verification_method"]))) {
     return false;
   }
   if (typeof producer.did !== "string" || !producer.did.startsWith("did:")) {
@@ -415,39 +626,23 @@ function evidenceRecordShapeValid(record: Dict): boolean {
   }
 
   const parties = record.parties as Dict;
+  if (!hasFields(parties, new Set(["initiator", "responder"]))) {
+    return false;
+  }
+  // The producer is a DID-bearing party, so the initiator side stays strict.
+  // Only the responder may be identity-light.
+  if (!fullPartyShapeValid(parties.initiator)) {
+    return false;
+  }
   if (
-    typeof parties !== "object" ||
-    parties === null ||
-    !hasExactFields(parties, new Set(["initiator", "responder"]))
+    !fullPartyShapeValid(parties.responder) &&
+    !observedPartyShapeValid(parties.responder)
   ) {
     return false;
   }
-  const partyFields = new Set([
-    "organization_name",
-    "did",
-    "agent_id",
-    "verification_method",
-    "mandate_type",
-  ]);
-  for (const value of Object.values(parties)) {
-    const party = value as Dict;
-    if (typeof party !== "object" || party === null || !hasExactFields(party, partyFields)) {
-      return false;
-    }
-    if ([...partyFields].some((field) => typeof party[field] !== "string")) {
-      return false;
-    }
-    if (!(party.did as string).startsWith("did:") || !party.verification_method) {
-      return false;
-    }
-  }
 
   const terminal = record.terminal as Dict;
-  if (
-    typeof terminal !== "object" ||
-    terminal === null ||
-    !hasExactFields(terminal, new Set(["outcome", "reason", "message_id", "timestamp"]))
-  ) {
+  if (!hasFields(terminal, TERMINAL_FIELDS, TERMINAL_OPTIONAL_FIELDS)) {
     return false;
   }
   if (typeof terminal.outcome !== "string") {
@@ -473,8 +668,229 @@ function evidenceRecordShapeValid(record: Dict): boolean {
   return Array.isArray(record.acts);
 }
 
+function fullPartyShapeValid(party: unknown): boolean {
+  if (!hasFields(party as Dict, PARTY_FIELDS)) {
+    return false;
+  }
+  const value = party as Dict;
+  if ([...PARTY_FIELDS].some((field) => typeof value[field] !== "string")) {
+    return false;
+  }
+  return (value.did as string).startsWith("did:") && Boolean(value.verification_method);
+}
+
+/**
+ * Shape of an identity-light counterparty descriptor.
+ *
+ * This checks structure and the explicit negative markers, and nothing else. A
+ * verifier MUST NOT resolve `identity_source`, look it up in any registry, or
+ * apply per-type validation to it: doing so would imply an authentication A2CN
+ * did not perform. There is no whitelist here by design.
+ */
+function observedPartyShapeValid(party: unknown): boolean {
+  if (!hasFields(party as Dict, OBSERVED_PARTY_FIELDS, OBSERVED_PARTY_OPTIONAL_FIELDS)) {
+    return false;
+  }
+  const value = party as Dict;
+  if (typeof value.identity_source !== "string" || !value.identity_source) {
+    return false;
+  }
+  if (OBSERVED_PARTY_MARKERS.some((marker) => value[marker] !== false)) {
+    return false;
+  }
+  if (hasOwn(value, "organization_name") && typeof value.organization_name !== "string") {
+    return false;
+  }
+  if (hasOwn(value, "observed_credential")) {
+    const credential = value.observed_credential as Dict;
+    if (!hasFields(credential, new Set(["type", "digest"]))) {
+      return false;
+    }
+    if (typeof credential.type !== "string" || !credential.type) {
+      return false;
+    }
+    if (typeof credential.digest !== "string" || !HASH_PATTERN.test(credential.digest)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Couple an identity-light responder to unsigned acts and unilateral evidence.
+ *
+ * A2CN authenticates DID-bearing parties. When the responder holds no DID there
+ * is no key any counterparty act could be checked against, so the initiator is
+ * the only party that may carry a verified signature in such a record. A
+ * responder claiming `verified_signature` is rejected outright, not downgraded.
+ */
+function observedResponderRulesHold(record: Dict): boolean {
+  const parties = record.parties as Dict;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  if (!observedPartyShapeValid(parties.responder)) {
+    return true;
+  }
+
+  const initiator = parties.initiator as Dict;
+  if (typeof initiator !== "object" || initiator === null) {
+    return false;
+  }
+  const initiatorDid = initiator.did;
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  for (const entry of acts as Dict[]) {
+    if (typeof entry !== "object" || entry === null) {
+      return false;
+    }
+    if (entry.attribution !== EvidenceAttribution.VERIFIED) {
+      continue;
+    }
+    if (entry.sender_did !== initiatorDid) {
+      return false;
+    }
+  }
+  // Asserted explicitly rather than inherited from the classifier, so that a
+  // future change to classification cannot quietly promote these records.
+  return record.evidence_level === EvidenceLevel.UNILATERAL;
+}
+
+/**
+ * Scale one major-unit decimal string to minor units, exactly.
+ *
+ * Returns null for anything finer than the stated exponent. Rounding here would
+ * silently alter money, so a sub-minor amount is refused instead.
+ */
+function decimalToMinor(amount: unknown, exponent: number): bigint | null {
+  if (typeof amount !== "string") {
+    return null;
+  }
+  const match = DECIMAL_AMOUNT_PATTERN.exec(amount);
+  if (match === null) {
+    return null;
+  }
+  const fraction = match[3] ?? "";
+  if (fraction.length > exponent) {
+    return null;
+  }
+  const value = BigInt(match[2] + fraction.padEnd(exponent, "0"));
+  return match[1] === "-" ? -value : value;
+}
+
+/**
+ * Recompute the unit normalization only, and compare it with both totals.
+ *
+ * `basis` is a CHECKED LABEL. A verifier MUST NOT convert between net and gross:
+ * that is a tax calculation, not a normalization, and performing it silently
+ * corrupts money. The arithmetic below is identical for every label.
+ */
+function moneyBasisRecomputes(
+  moneyBasis: unknown,
+  expectedTotalMinor: number,
+  expectedCurrency: string,
+): boolean {
+  if (!hasFields(moneyBasis as Dict, MONEY_BASIS_FIELDS, MONEY_BASIS_OPTIONAL_FIELDS)) {
+    return false;
+  }
+  const value = moneyBasis as Dict;
+  if (typeof value.basis !== "string" || !MONEY_BASIS_LABELS.has(value.basis)) {
+    return false;
+  }
+  if (typeof value.currency !== "string" || !CURRENCY_PATTERN.test(value.currency)) {
+    return false;
+  }
+  if (value.currency !== expectedCurrency) {
+    return false;
+  }
+  const exponent = value.minor_unit_exponent;
+  if (!Number.isInteger(exponent) || (exponent as number) < 0 || (exponent as number) > 4) {
+    return false;
+  }
+  const claimed = value.normalized_total_minor;
+  if (!Number.isSafeInteger(claimed)) {
+    return false;
+  }
+
+  // FAIL-CLOSED: a total claimed with no raw amounts behind it is unverifiable,
+  // and an unverifiable claim must never read as a verified one.
+  const rawAmounts = value.raw_amounts;
+  if (!Array.isArray(rawAmounts) || rawAmounts.length === 0) {
+    return false;
+  }
+
+  let total = 0n;
+  for (const amount of rawAmounts) {
+    const minor = decimalToMinor(amount, exponent as number);
+    if (minor === null) {
+      return false;
+    }
+    total += minor;
+  }
+  return total === BigInt(claimed as number) && total === BigInt(expectedTotalMinor);
+}
+
+/** Bind a money_basis to the total inside the act it describes. */
+function moneyBasisBindsToAct(entry: unknown, moneyBasis: unknown): boolean {
+  if (typeof entry !== "object" || entry === null) {
+    return false;
+  }
+  const act = (entry as Dict).act;
+  if (typeof act !== "object" || act === null || Array.isArray(act)) {
+    return false;
+  }
+  const terms = (act as Dict).terms;
+  if (typeof terms !== "object" || terms === null || Array.isArray(terms)) {
+    return false;
+  }
+  const total = (terms as Dict).total_value;
+  if (!Number.isSafeInteger(total)) {
+    return false;
+  }
+  const currency = (terms as Dict).currency;
+  if (typeof currency !== "string") {
+    return false;
+  }
+  return moneyBasisRecomputes(moneyBasis, total as number, currency);
+}
+
+/** Every money_basis in the record recomputes, or the record is rejected. */
+function moneyBasisClaimsVerify(record: Dict): boolean {
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  for (const entry of acts as Dict[]) {
+    if (typeof entry === "object" && entry !== null && hasOwn(entry, "money_basis")) {
+      if (!moneyBasisBindsToAct(entry, entry.money_basis)) {
+        return false;
+      }
+    }
+  }
+
+  const terminal = record.terminal as Dict;
+  if (typeof terminal !== "object" || terminal === null || !hasOwn(terminal, "money_basis")) {
+    return true;
+  }
+  // A terminal money_basis describes the terminal quote, so it must name the act
+  // that carries it. An unresolvable reference is refused, not ignored.
+  const messageId = terminal.message_id;
+  if (typeof messageId !== "string" || !messageId) {
+    return false;
+  }
+  const quoted = (acts as Dict[]).filter(
+    (entry) => typeof entry === "object" && entry !== null && entry.message_id === messageId,
+  );
+  if (quoted.length !== 1) {
+    return false;
+  }
+  return moneyBasisBindsToAct(quoted[0], terminal.money_basis);
+}
+
 function evidenceActShapeValid(entry: Dict): boolean {
-  if (typeof entry !== "object" || entry === null || !hasExactFields(entry, ACT_FIELDS)) {
+  if (!hasFields(entry, ACT_FIELDS, ACT_OPTIONAL_FIELDS)) {
     return false;
   }
   for (const field of ["sequence_number", "round_number"]) {
@@ -483,16 +899,18 @@ function evidenceActShapeValid(entry: Dict): boolean {
       return false;
     }
   }
-  for (const field of [
-    "message_type",
-    "sender_did",
-    "act_hash",
-  ]) {
+  for (const field of ["message_type", "act_hash"]) {
     if (typeof entry[field] !== "string" || !(entry[field] as string)) {
       return false;
     }
   }
-  if (!(entry.sender_did as string).startsWith("did:")) {
+  const senderDid = entry.sender_did;
+  if (senderDid === null) {
+    // A sender with no DID is only representable as an unsigned observation.
+    if (entry.attribution !== EvidenceAttribution.UNSIGNED) {
+      return false;
+    }
+  } else if (typeof senderDid !== "string" || !senderDid.startsWith("did:")) {
     return false;
   }
   for (const field of ["message_id", "timestamp"]) {
@@ -652,10 +1070,21 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
     signature,
     attribution,
   };
+  if (isWrapper && metadata.money_basis != null) {
+    // A producer annotation ABOUT the act, never inside it: `act` stays the
+    // verbatim observed bytes that act_hash protects.
+    entry.money_basis = structuredClone(metadata.money_basis);
+  }
   if (typeof entry.message_type !== "string" || !entry.message_type) {
     throw new Error("Evidence acts require message_type");
   }
-  if (typeof entry.sender_did !== "string" || !entry.sender_did) {
+  if (entry.sender_did === null) {
+    // An identity-light sender is representable, but only unsigned. A DID is
+    // never invented to fill this in.
+    if (signatureType !== null) {
+      throw new Error("A signed act requires sender_did");
+    }
+  } else if (typeof entry.sender_did !== "string" || !entry.sender_did) {
     throw new Error("Evidence acts require sender_did");
   }
   return entry;
@@ -847,6 +1276,9 @@ function verifyEvidenceAct(
     }
 
     const senderDid = entry.sender_did as string;
+    if (typeof senderDid !== "string" || !senderDid) {
+      return { valid: false, attribution };
+    }
     if (!verificationMethodControlledBy(verificationMethod, senderDid)) {
       return { valid: false, attribution };
     }

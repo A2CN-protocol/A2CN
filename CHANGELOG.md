@@ -18,6 +18,40 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ---
 
+## [Unreleased]
+
+**Three additive Session Evidence Record extensions (wire-compatible with 0.2;
+no signature changes).**
+
+`record_version` stays `"0.1"` and the schema `$id` stays at `/0.1`. Changes 1
+and 3 are relaxations, so a verifier predating them rejects the new records.
+Amending in place is defensible only because the artifact has no external
+consumers yet; see Section 9A.2. **This choice requires confirmation before
+release.** The alternative is to bump `record_version` and `$id` to `0.2`
+together, with verifiers accepting `{0.1, 0.2}`.
+
+### Added
+
+- **Section 9A.8 — identity-light responders.** `parties.responder` may be an
+  `observed_party`: a producer-asserted, unverified descriptor for a counterparty
+  with no A2CN identity. A verifier never resolves or authenticates it. Such a
+  record must be `unilateral` and no act other than the initiator's may claim a
+  verified signature. `acts[].sender_did` may be `null`, and only for an unsigned
+  observation, so that no DID is ever fabricated.
+- **Section 9A.9 — recomputable `money_basis`.** An optional per-act or terminal
+  basis carrying the amounts as observed, so a reader can recompute the total.
+  The recompute is unit normalization only: `basis` is a checked label and a
+  verifier never converts between net and gross. A claimed total with absent raw
+  amounts fails closed.
+- **Section 9A.10 — `HALTED_BY_CONTROLS` terminal outcome.** An agent's own
+  controls or governance stopped the run, distinct from `ERROR`, `IMPASSE`, and
+  `WITHDRAWN`. An evidence-record outcome only; no session state is added.
+  Unrecognized outcomes are still rejected.
+- **Section 9A.11 — namespaced `extensions`.** The only place additional
+  properties are permitted. Sealed by `record_hash`, never interpreted.
+- `spec/test-vectors/session-evidence-record-extensions.json` — cross-language
+  parity vectors covering all three extensions.
+
 ## [0.3.0] — 2026-09-02
 
 **Terminal Session Evidence Record (additive; wire-compatible with 0.2; no
