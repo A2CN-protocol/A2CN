@@ -17,6 +17,8 @@ import pytest
 import pytest_asyncio
 import respx
 
+pytest.importorskip("mcp")
+
 # mcp_server lives at reference-implementation/python/mcp_server.py (one level up)
 _REPO_PY = Path(__file__).parent.parent
 if str(_REPO_PY) not in sys.path:
