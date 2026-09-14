@@ -23,7 +23,7 @@ from a2cn.crypto import (
     create_jwt,
 )
 from a2cn.record import generate_transaction_record, A2CN_NAMESPACE
-from a2cn.session import Session, SessionState
+from a2cn.session import A2CNError, Session, SessionState, check_fixed_money_params
 
 A2CN_CONTENT_TYPE = "application/a2cn+json"
 
@@ -108,6 +108,11 @@ class A2CNClient:
         )
         resp.raise_for_status()
         ack = resp.json()
+        if not isinstance(ack, dict):
+            raise A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400)
+
+        # The responder must echo currency, and any basis it carries, unchanged (Section 6.4.1)
+        check_fixed_money_params(session_params, ack.get("session_params_accepted"))
 
         # Cache session state
         session_id = ack["session_id"]

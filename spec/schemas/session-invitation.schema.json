@@ -24,6 +24,11 @@
       "required": ["currency", "max_rounds", "session_timeout_seconds", "round_timeout_seconds"],
       "properties": {
         "currency": { "type": "string" },
+        "basis": {
+          "type": "string",
+          "enum": ["net", "gross"],
+          "description": "Money basis of every amount in the session (Section 6.3.1). Optional; absent means unstated, and a consumer MUST NOT assume a default."
+        },
         "max_rounds": { "type": "integer", "minimum": 1 },
         "session_timeout_seconds": { "type": "integer", "minimum": 1 },
         "round_timeout_seconds": { "type": "integer", "minimum": 1 }

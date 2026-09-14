@@ -30,6 +30,11 @@ consumers yet; see Section 9A.2. **This choice requires confirmation before
 release.** The alternative is to bump `record_version` and `$id` to `0.2`
 together, with verifiers accepting `{0.1, 0.2}`.
 
+**Session money basis, `session_params.basis` (additive; wire-compatible with
+0.2).** Wire `protocol_version` stays `"0.2"`. TransactionRecord, AuditLog, and
+SessionEvidenceRecord generation are untouched, so no `record_version` or schema
+`$id` changes.
+
 ### Added
 
 - **Section 9A.8 — identity-light responders.** `parties.responder` may be an
@@ -51,6 +56,41 @@ together, with verifiers accepting `{0.1, 0.2}`.
   properties are permitted. Sealed by `record_hash`, never interpreted.
 - `spec/test-vectors/session-evidence-record-extensions.json` — cross-language
   parity vectors covering all three extensions.
+- **Section 6.3.1 — `session_params.basis`** (`net` | `gross`). The money basis
+  of every amount in a session, fixed at initiation like
+  `session_params.currency`. A SessionAck that carries it must carry it
+  unchanged; one that omits it, from a responder that predates `basis`, leaves
+  the basis unstated rather than failing, so a pre-change responder still
+  interoperates (Section 6.4.1). RECOMMENDED for priced sessions now; a later
+  version is expected to require it. An absent basis is unstated, and a
+  consumer must not assume a default. It is a label: no party converts between
+  net and gross. `session-invitation.schema.json` accepts it in
+  `proposed_session_params`.
+- **Section 7.2 — single-figure offers.** When the session fixed a basis, an
+  offer states `terms.total_value` on that basis only, as a single figure.
+- **Section 9A.9 — basis cross-reference.** A `money_basis` describing an
+  on-basis total SHOULD carry the session basis. This is a producer obligation,
+  not a verifier check; the verifier is unchanged.
+- **Section 12.3 — `INVALID_BASIS` and `SESSION_PARAM_CHANGED`.** Dedicated error
+  codes for a `basis` outside `net` | `gross`, and for a message that changes a
+  parameter fixed at session initiation; the error's `message` names the
+  parameter.
+- `spec/test-vectors/session-params-basis.json` — cross-language vectors for the
+  basis enum and for SessionAcks that keep or change `currency` or `basis`.
+
+### Fixed
+
+- The Python and TypeScript reference implementations now reject a SessionAck
+  that changes `currency` or `basis` with `SESSION_PARAM_CHANGED`, naming the
+  parameter, both when the responder creates the session and when the initiator
+  client receives the ack. Section 6.4.1 already forbade changing `currency` in
+  the SessionAck, but nothing enforced it. §7.2's requirement that each offer's
+  `terms.currency` match the session currency is still not enforced. A `basis`
+  outside `net` | `gross` is rejected with `INVALID_BASIS`. Malformed input is
+  `INVALID_REQUEST`: a missing, empty, or non-string `session_params.currency`,
+  and a `session_params` or `session_params_accepted` that is not an object. The
+  initiator client also rejects a SessionAck whose body is not an object or that
+  omits `session_params_accepted`.
 
 ## [0.3.0] — 2026-09-02
 

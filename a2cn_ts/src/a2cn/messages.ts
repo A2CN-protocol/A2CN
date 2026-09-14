@@ -42,6 +42,7 @@ export class SessionParams {
   subject_reference: string | null;
   estimated_value: number | null;
   impasse_threshold: number | null;
+  basis: string | null; // "net" | "gross"; null (absent) means unstated
 
   constructor(props: {
     deal_type: string;
@@ -53,6 +54,7 @@ export class SessionParams {
     subject_reference?: string | null;
     estimated_value?: number | null;
     impasse_threshold?: number | null;
+    basis?: string | null;
   }) {
     this.deal_type = props.deal_type;
     this.currency = props.currency;
@@ -63,12 +65,14 @@ export class SessionParams {
     this.subject_reference = props.subject_reference ?? null;
     this.estimated_value = props.estimated_value ?? null;
     this.impasse_threshold = props.impasse_threshold ?? null;
+    this.basis = props.basis ?? null;
   }
 
   toDict(): Dict {
     return dropNone({
       deal_type: this.deal_type,
       currency: this.currency,
+      basis: this.basis,
       subject: this.subject,
       subject_reference: this.subject_reference,
       estimated_value: this.estimated_value,

@@ -12,7 +12,7 @@ import { randomUUID, type KeyObject } from "node:crypto";
 
 import { hashObject, signJws } from "./crypto.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
-import { SessionState } from "./session.js";
+import { A2CNError, SessionState, checkFixedMoneyParams } from "./session.js";
 import type { Dict } from "./messages.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
@@ -135,6 +135,13 @@ export class A2CNClient {
       headers,
       body: JSON.stringify(sessionInit),
     });
+
+    if (ack === null || typeof ack !== "object" || Array.isArray(ack)) {
+      throw new A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400);
+    }
+
+    // The responder must echo currency, and any basis it carries, unchanged (Section 6.4.1)
+    checkFixedMoneyParams(sessionParams, ack.session_params_accepted);
 
     // Cache session state
     const sessionId = ack.session_id as string;

@@ -1,0 +1,75 @@
+{
+  "description": "Cross-language vectors for session_params.basis (Section 6.3.1) and the rule that a SessionAck echoes currency, and any basis it carries, unchanged (Section 6.4.1). The Python and TypeScript suites assert the same verdict for every case. basis is a label: no case converts net and gross, and an absent basis means unstated, never a default. A SessionAck that omits basis (from a responder that predates it) leaves the basis unstated rather than changed. invalid_bases are rejected with INVALID_BASIS; each rejected ack case gives its error code and the parameter the error message names. invalid_currencies are rejected because currency is a REQUIRED ISO 4217 string. malformed_accepted, malformed_session_params, and malformed_ack_bodies are values that are not a JSON object.",
+  "valid_bases": ["net", "gross"],
+  "invalid_bases": ["vat", "GROSS", "Net", "", "unspecified", "per_unit", null, 1, true, ["gross"]],
+  "invalid_currencies": [["USD"], 1, true, null, { "code": "USD" }, ""],
+  "malformed_accepted": [null, [], "USD"],
+  "malformed_session_params": [null, [], "USD", 5],
+  "malformed_ack_bodies": [null, [], "USD", 5],
+  "ack_cases": [
+    {
+      "name": "gross-unchanged",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "valid": true
+    },
+    {
+      "name": "net-unchanged",
+      "proposed": { "currency": "EUR", "basis": "net" },
+      "accepted": { "currency": "EUR", "basis": "net" },
+      "valid": true
+    },
+    {
+      "name": "absent-both-no-signal",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "gross-to-net",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "net" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "gross-omitted-unstated",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "gross-added",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "null-added",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD", "basis": null },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "currency-changed-basis-pinned",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "EUR", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "currency-changed-no-basis",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "EUR" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    }
+  ]
+}

@@ -424,7 +424,7 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
         "protocol_version": "0.2",
         "session_params_accepted": {
             "deal_type": session_params["deal_type"],
-            "currency": session_params["currency"],
+            "currency": session_params.get("currency"),  # create_session rejects a missing one
             "max_rounds": min(
                 session_params.get("max_rounds", 10),
                 cfg.get("max_rounds_by_deal_type", {}).get(session_params["deal_type"], 10),
@@ -440,6 +440,11 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
 
     if "impasse_threshold" in session_params:
         session_ack["session_params_accepted"]["impasse_threshold"] = session_params["impasse_threshold"]
+
+    # Echo basis only if the initiator set it, so an absent basis stays absent.
+    # create_session rejects a value outside SESSION_BASES (Section 6.3.1).
+    if "basis" in session_params:
+        session_ack["session_params_accepted"]["basis"] = session_params["basis"]
 
     # Create session
     session = manager.create_session(session_id, body, session_ack, now)

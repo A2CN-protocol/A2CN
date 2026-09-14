@@ -144,6 +144,67 @@ export class Session {
 }
 
 // ---------------------------------------------------------------------------
+// Money parameters fixed at initiation (Sections 6.3.1, 6.4.1)
+// ---------------------------------------------------------------------------
+
+/** session_params.basis values. A label only: nothing here converts net and gross. */
+export const SESSION_BASES: readonly string[] = ["net", "gross"];
+
+// Section 6.4.1 also fixes deal_type and both timeouts; only the money
+// parameters are checked here.
+const FIXED_MONEY_PARAMS = ["currency", "basis"] as const;
+
+function isJsonObject(value: unknown): value is Dict {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Reject malformed money parameters, or a SessionAck that changed currency or basis.
+ *
+ * `proposed` is the SessionInit's session_params and `accepted` the SessionAck's
+ * session_params_accepted; both must be objects, and currency is REQUIRED. basis
+ * is optional with no default: adding or altering it counts as a change, while a
+ * SessionAck that omits it (from a responder that predates basis) leaves the
+ * session's basis unstated. An unrecognized basis is INVALID_BASIS and a change is
+ * SESSION_PARAM_CHANGED, naming the parameter (Section 12.3); malformed input is
+ * INVALID_REQUEST.
+ */
+export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
+  if (!isJsonObject(proposed)) {
+    throw new A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400);
+  }
+  if (typeof proposed.currency !== "string" || proposed.currency === "") {
+    throw new A2CNError(
+      "INVALID_REQUEST",
+      `session_params.currency must be a non-empty string, got ${JSON.stringify(proposed.currency)}`,
+      400,
+    );
+  }
+  if (proposed.basis !== undefined && !SESSION_BASES.includes(proposed.basis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `session_params.basis must be 'net' or 'gross', got ${JSON.stringify(proposed.basis)}`,
+      400,
+    );
+  }
+  if (!isJsonObject(accepted)) {
+    throw new A2CNError("INVALID_REQUEST", "SessionAck session_params_accepted must be an object", 400);
+  }
+  for (const key of FIXED_MONEY_PARAMS) {
+    if (key === "basis" && accepted.basis === undefined) {
+      continue; // unechoed: the session's basis is unstated (Section 6.4.1)
+    }
+    if (accepted[key] !== proposed[key]) {
+      throw new A2CNError(
+        "SESSION_PARAM_CHANGED",
+        `SessionAck changed ${key}, which is fixed at session initiation`,
+        400,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Session manager / state machine
 // ---------------------------------------------------------------------------
 
@@ -185,9 +246,10 @@ export class SessionManager {
 
   createSession(sessionId: string, sessionInit: Dict, sessionAck: Dict, now: string): Session {
     // Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
-    const accepted = (sessionAck.session_params_accepted ??
-      (sessionInit.session_params as Dict) ??
-      {}) as Dict;
+    const proposed = sessionInit.session_params === undefined ? {} : sessionInit.session_params;
+    const accepted =
+      sessionAck.session_params_accepted === undefined ? proposed : sessionAck.session_params_accepted;
+    checkFixedMoneyParams(proposed, accepted);
     const session = new Session({
       session_id: sessionId,
       state: SessionState.ACTIVE,
@@ -961,6 +1023,8 @@ export class SessionManager {
 //   UNAUTHORIZED_APPROVER   — 403  — human approval extension
 //   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.3
 //   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
+//   INVALID_BASIS           — 400  — spec Section 12.3
+//   SESSION_PARAM_CHANGED   — 400  — spec Section 12.3
 //   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
 //                                     used for malformed input that fails basic
 //                                     validation before any protocol logic runs

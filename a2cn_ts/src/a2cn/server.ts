@@ -704,6 +704,12 @@ function installRoutes(ctx: ServerContext): void {
         sessionParams.impasse_threshold;
     }
 
+    // Echo basis only if the initiator set it, so an absent basis stays absent.
+    // createSession rejects a value outside SESSION_BASES (Section 6.3.1).
+    if ("basis" in sessionParams) {
+      (sessionAck.session_params_accepted as Dict).basis = sessionParams.basis;
+    }
+
     // Create session
     manager.createSession(sessionId, body, sessionAck, nowTs);
 
