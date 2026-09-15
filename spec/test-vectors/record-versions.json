@@ -1,13 +1,28 @@
 {
-  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, step 1) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit; the AuditLog carries its version in log_version. Both suites take a valid record of each kind, set record_version to each value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict: every accepted value verifies, and every rejected value fails verification instead of being parsed best-effort. The TransactionRecord is the record transaction-record-basis.json replays to. The SessionEvidenceRecord is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk.",
+  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, steps 1 and 7) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit. The TransactionRecord version follows the record's shape: a producer emits \"0.1\" for a session that fixed no basis and \"0.2\" for a session that fixed one, so a \"0.2\" record carries a top-level basis and a \"0.1\" record carries none. The AuditLog carries its version in log_version. Both suites take a valid record, set record_version to a value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict. The TransactionRecord of each shape is the record transaction-record-basis.json replays to: session_with_basis is its basis session and session_without_basis its without_basis session. Each accepted TransactionRecord version verifies on the record of the shape that emits it, and each transaction_record_cross_shape case puts a recognized version on the other shape and fails verification. Every rejected value fails verification on both TransactionRecord shapes and on the SessionEvidenceRecord, instead of being parsed best-effort. Every accepted value verifies on the SessionEvidenceRecord, whose verification does not depend on the version. The SessionEvidenceRecord is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk.",
   "producers_emit": {
-    "transaction_record": "0.2",
+    "transaction_record": {
+      "session_without_basis": "0.1",
+      "session_with_basis": "0.2"
+    },
     "session_evidence_record": "0.2",
     "audit_log": "0.1"
   },
   "accepted": [
     "0.1",
     "0.2"
+  ],
+  "transaction_record_cross_shape": [
+    {
+      "name": "0.2-without-basis",
+      "shape": "session_without_basis",
+      "record_version": "0.2"
+    },
+    {
+      "name": "0.1-with-basis",
+      "shape": "session_with_basis",
+      "record_version": "0.1"
+    }
   ],
   "rejected": [
     {

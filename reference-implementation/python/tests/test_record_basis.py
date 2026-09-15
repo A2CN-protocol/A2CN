@@ -3,9 +3,10 @@
 spec/test-vectors/transaction-record-basis.json is a session that fixed basis
 "gross"; each of its offers restates the basis in terms.basis (Section 7.2).
 The TypeScript suite replays the same signed messages and must reach the same
-record_hash. A session that fixed no basis gets a record without the key, which
-differs from the record_version "0.1" record for the same session only in
-record_version and record_hash.
+record_hash. The record_version follows the basis: a record that carries basis
+is "0.2", and a session that fixed no basis gets a "0.1" record without the
+key, byte-identical to the record an implementation that predates basis produced
+for it (Sections 9.3 and 9.5).
 """
 
 from __future__ import annotations
@@ -30,7 +31,8 @@ VECTOR = json.loads(
     (REPO_ROOT / "spec" / "test-vectors" / "transaction-record-basis.json").read_text()
 )
 # A session that fixed no basis, with the record_version "0.1" record an
-# implementation that predates basis produced for it.
+# implementation that predates basis produced for it. This implementation
+# produces the same record.
 WITHOUT_BASIS = VECTOR["without_basis"]
 _ABSENT = object()
 
@@ -60,6 +62,16 @@ def _replay_vector():
     )
 
 
+def _replay_without_basis():
+    return _replay(
+        WITHOUT_BASIS["session_id"],
+        WITHOUT_BASIS["session_init"],
+        WITHOUT_BASIS["session_ack"],
+        WITHOUT_BASIS["did_documents"],
+        WITHOUT_BASIS["messages"],
+    )
+
+
 def _offer_hashes(messages) -> list[str]:
     return [
         message["protocol_act_hash"]
@@ -79,6 +91,39 @@ def _verifies(record: dict) -> bool:
     return verify_transaction_record(
         record, VECTOR["did_documents"], _offer_hashes(VECTOR["messages"])
     )
+
+
+def _verifies_without_basis(record: dict) -> bool:
+    return verify_transaction_record(
+        record, WITHOUT_BASIS["did_documents"], _offer_hashes(WITHOUT_BASIS["messages"])
+    )
+
+
+def _client_side_record(vector: dict) -> dict:
+    """The record the initiator's client builds from the vector's messages."""
+    client = A2CNClient(
+        agent_info=vector["session_init"]["initiator"],
+        private_key=generate_keypair()[0],
+        mandate=vector["session_init"]["initiator_mandate"],
+        http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(503))
+        ),
+    )
+    session_id = vector["session_id"]
+    # The state initiate_session caches, then every message as the client records it.
+    client._sessions[session_id] = {
+        "session_init": vector["session_init"],
+        "session_ack": vector["session_ack"],
+        "sequence_number": 0,
+        "round_number": 0,
+        "current_turn": "initiator",
+        "offer_chain": [],
+        "message_log": [],
+        "latest_offer": None,
+    }
+    for message in copy.deepcopy(vector["messages"]):
+        client.process_incoming(session_id, message)
+    return client.build_client_side_record(session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -125,30 +170,23 @@ def test_client_side_record_matches_the_vector():
     assert client.build_client_side_record(session_id) == VECTOR["expected"]["full_record"]
 
 
-def test_a_session_without_basis_differs_from_its_0_1_record_only_in_version():
-    vector = WITHOUT_BASIS
-    session = _replay(
-        vector["session_id"],
-        vector["session_init"],
-        vector["session_ack"],
-        vector["did_documents"],
-        vector["messages"],
-    )
-    record = generate_transaction_record(session)
-    earlier = vector["record_version_0_1"]["full_record"]
+def test_a_session_without_basis_replays_to_its_0_1_record():
+    """A session that fixed no basis gets exactly the record it got before basis existed."""
+    record = generate_transaction_record(_replay_without_basis())
+    earlier = WITHOUT_BASIS["record_version_0_1"]
 
     assert "basis" not in record
-    assert record["record_version"] == "0.2"
-    assert earlier["record_version"] == "0.1"
-    # Setting the version on the earlier record and resealing it gives exactly
-    # today's record: the version is the only difference, and the hash follows it.
-    assert _resealed({**earlier, "record_version": "0.2"}) == record
-    assert record["record_hash"] == vector["expected"]["record_hash"]
-    assert earlier["record_hash"] == vector["record_version_0_1"]["record_hash"]
-    # Neither the record nor agreed_terms carries basis, so the "0.2" record verifies.
-    assert verify_transaction_record(
-        record, vector["did_documents"], _offer_hashes(vector["messages"])
-    )
+    assert record["record_version"] == "0.1"
+    # The same fields in the same order: the same bytes, so the same hash (Section 9.2).
+    assert json.dumps(record) == json.dumps(earlier["full_record"])
+    assert record["record_hash"] == earlier["record_hash"]
+    assert _verifies_without_basis(record)
+
+
+def test_client_side_record_for_a_session_without_basis_is_its_0_1_record():
+    record = _client_side_record(WITHOUT_BASIS)
+
+    assert json.dumps(record) == json.dumps(WITHOUT_BASIS["record_version_0_1"]["full_record"])
 
 
 def test_a_record_version_0_1_record_still_verifies():
@@ -158,6 +196,72 @@ def test_a_record_version_0_1_record_still_verifies():
     assert verify_transaction_record(
         earlier, vector["did_documents"], _offer_hashes(vector["messages"])
     )
+
+
+def test_a_session_without_basis_record_relabelled_0_2_fails_verification():
+    """Section 9.5 step 7: a "0.2" record carries basis, and this one has none to carry."""
+    relabelled = _resealed(
+        {**WITHOUT_BASIS["record_version_0_1"]["full_record"], "record_version": "0.2"}
+    )
+
+    assert "basis" not in relabelled["agreed_terms"]
+    assert relabelled["record_hash"] == WITHOUT_BASIS["relabelled_0_2_record_hash"]
+    assert not _verifies_without_basis(relabelled)
+
+
+def _server_side_record(vector: dict) -> dict:
+    """The record the responder's state machine generates from the vector's messages."""
+    return generate_transaction_record(
+        _replay(
+            vector["session_id"],
+            vector["session_init"],
+            vector["session_ack"],
+            vector["did_documents"],
+            vector["messages"],
+        )
+    )
+
+
+def _without_basis_proposing(basis: str) -> dict:
+    """without_basis with a SessionInit that proposed ``basis`` and a SessionAck that omits it.
+
+    The SessionAck is the one a responder that predates basis sends, so the
+    session's basis is unstated whatever the SessionInit proposed (Section 6.4.1).
+    Neither the SessionInit nor its session_params is inside a signed act, so the
+    recorded offers and acceptance still verify.
+    """
+    vector = copy.deepcopy(WITHOUT_BASIS)
+    vector["session_init"]["session_params"]["basis"] = basis
+    assert "basis" not in vector["session_ack"]["session_params_accepted"]
+    return vector
+
+
+RECORD_BUILDERS = {"server": _server_side_record, "client": _client_side_record}
+
+
+@pytest.mark.parametrize("builder", sorted(RECORD_BUILDERS))
+@pytest.mark.parametrize("basis", WITHOUT_BASIS["unechoed_proposed_bases"])
+def test_a_proposed_basis_the_session_ack_omits_is_not_recorded(basis, builder):
+    """Section 9.3: the record's basis, and so its version, follows the SessionAck."""
+    record = RECORD_BUILDERS[builder](_without_basis_proposing(basis))
+    earlier = WITHOUT_BASIS["record_version_0_1"]
+
+    assert "basis" not in record
+    assert json.dumps(record) == json.dumps(earlier["full_record"])
+    assert record["record_hash"] == earlier["record_hash"]
+    assert _verifies_without_basis(record)
+
+
+@pytest.mark.parametrize("builder", sorted(RECORD_BUILDERS))
+@pytest.mark.parametrize("basis", WITHOUT_BASIS["unechoed_proposed_bases"])
+def test_a_proposed_basis_the_session_ack_omits_leaves_a_0_1_schema_record(basis, builder):
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads(
+        (REPO_ROOT / "spec" / "schemas" / "transaction-record.schema.json").read_text()
+    )
+    record = RECORD_BUILDERS[builder](_without_basis_proposing(basis))
+
+    assert list(jsonschema.Draft202012Validator(schema).iter_errors(record)) == []
 
 
 @pytest.mark.asyncio
@@ -275,8 +379,8 @@ def test_record_basis_with_non_object_agreed_terms_fails_verification():
     assert not _verifies(_resealed(record))
 
 
-def test_a_0_2_record_without_basis_must_not_carry_agreed_terms_basis():
-    """Section 9.5 step 7: a "0.2" producer records basis whenever agreed_terms has it."""
+def test_a_0_2_record_without_basis_fails_verification():
+    """Section 9.5 step 7: a "0.2" record carries basis, whatever agreed_terms holds."""
     dropped = copy.deepcopy(VECTOR["expected"]["full_record"])
     del dropped["basis"]
     resealed = _resealed(dropped)
@@ -289,6 +393,9 @@ def test_a_0_2_record_without_basis_must_not_carry_agreed_terms_basis():
     # Key presence: a null agreed_terms.basis counts as carried.
     dropped["agreed_terms"]["basis"] = None
     assert not _verifies(_resealed(dropped))
+    # Nor does it verify once agreed_terms carries no basis either.
+    del dropped["agreed_terms"]["basis"]
+    assert not _verifies(_resealed(dropped))
 
 
 def test_a_0_1_record_without_basis_gets_no_basis_check():
@@ -300,6 +407,18 @@ def test_a_0_1_record_without_basis_gets_no_basis_check():
 
     assert resealed["record_hash"] == VECTOR["expected"]["basis_dropped_0_1_record_hash"]
     assert _verifies(resealed)
+
+
+def test_a_0_1_record_must_not_carry_basis():
+    """Section 9.5 step 7: a "0.1" record has no top-level basis, even one equal to agreed_terms.basis."""
+    relabelled = _resealed({**VECTOR["expected"]["full_record"], "record_version": "0.1"})
+
+    assert relabelled["basis"] == relabelled["agreed_terms"]["basis"]
+    assert relabelled["record_hash"] == VECTOR["expected"]["relabelled_0_1_record_hash"]
+    assert not _verifies(relabelled)
+
+    # Key presence: a null basis counts as carried.
+    assert not _verifies(_resealed({**relabelled, "basis": None}))
 
 
 # ---------------------------------------------------------------------------

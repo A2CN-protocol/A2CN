@@ -4,9 +4,10 @@
  * spec/test-vectors/transaction-record-basis.json is a session that fixed basis
  * "gross"; each of its offers restates the basis in terms.basis (Section 7.2).
  * The Python suite replays the same signed messages and must reach the same
- * record_hash. A session that fixed no basis gets a record without the key, which
- * differs from the record_version "0.1" record for the same session only in
- * record_version and record_hash.
+ * record_hash. The record_version follows the basis: a record that carries basis
+ * is "0.2", and a session that fixed no basis gets a "0.1" record without the
+ * key, byte-identical to the record an implementation that predates basis
+ * produced for it (Sections 9.3 and 9.5).
  */
 
 import { randomUUID } from "node:crypto";
@@ -37,7 +38,8 @@ const VECTOR = JSON.parse(
   readFileSync(join(REPO_ROOT, "spec", "test-vectors", "transaction-record-basis.json"), "utf-8"),
 ) as Dict;
 // A session that fixed no basis, with the record_version "0.1" record an
-// implementation that predates basis produced for it.
+// implementation that predates basis produced for it. This implementation
+// produces the same record.
 const WITHOUT_BASIS = VECTOR.without_basis as Dict;
 const EXPECTED = VECTOR.expected as Dict;
 const DID_DOCUMENTS = VECTOR.did_documents as Record<string, Dict>;
@@ -80,6 +82,16 @@ function replayVector(): Session {
   );
 }
 
+function replayWithoutBasis(): Session {
+  return replay(
+    WITHOUT_BASIS.session_id as string,
+    WITHOUT_BASIS.session_init as Dict,
+    WITHOUT_BASIS.session_ack as Dict,
+    WITHOUT_BASIS.did_documents as Record<string, Dict>,
+    WITHOUT_BASIS.messages as Dict[],
+  );
+}
+
 function offerHashes(messages: Dict[]): string[] {
   return messages
     .filter((message) => message.message_type === "offer" || message.message_type === "counteroffer")
@@ -95,6 +107,41 @@ function resealed(record: Dict): Dict {
 
 function verifies(record: Dict): boolean {
   return verifyTransactionRecord(record, DID_DOCUMENTS, offerHashes(MESSAGES));
+}
+
+function verifiesWithoutBasis(record: Dict): boolean {
+  return verifyTransactionRecord(
+    record,
+    WITHOUT_BASIS.did_documents as Record<string, Dict>,
+    offerHashes(WITHOUT_BASIS.messages as Dict[]),
+  );
+}
+
+/** The record the initiator's client builds from the vector's messages. */
+function clientSideRecord(vector: Dict): Dict {
+  const sessionInit = vector.session_init as Dict;
+  const client = new A2CNClient({
+    agentInfo: sessionInit.initiator as Dict,
+    privateKey: generateKeypair().privateKey,
+    mandate: sessionInit.initiator_mandate as Dict,
+    fetchFn: async () => new Response(null, { status: 503 }),
+  });
+  const sessionId = vector.session_id as string;
+  // The state initiateSession caches, then every message as the client records it.
+  client._sessions[sessionId] = {
+    session_init: sessionInit,
+    session_ack: vector.session_ack as Dict,
+    sequence_number: 0,
+    round_number: 0,
+    current_turn: "initiator",
+    offer_chain: [],
+    message_log: [],
+    latest_offer: null,
+  };
+  for (const message of structuredClone(vector.messages as Dict[])) {
+    client.processIncoming(sessionId, message);
+  }
+  return client.buildClientSideRecord(sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,34 +187,25 @@ test("client side record matches the vector", () => {
   expect(client.buildClientSideRecord(sessionId)).toStrictEqual(EXPECTED.full_record);
 });
 
-test("a session without basis differs from its 0.1 record only in version", () => {
-  const vector = WITHOUT_BASIS;
-  const session = replay(
-    vector.session_id as string,
-    vector.session_init as Dict,
-    vector.session_ack as Dict,
-    vector.did_documents as Record<string, Dict>,
-    vector.messages as Dict[],
-  );
-  const record = generateTransactionRecord(session);
-  const earlier = (vector.record_version_0_1 as Dict).full_record as Dict;
+test("a session without basis replays to its 0.1 record", () => {
+  // A session that fixed no basis gets exactly the record it got before basis existed.
+  const record = generateTransactionRecord(replayWithoutBasis());
+  const earlier = WITHOUT_BASIS.record_version_0_1 as Dict;
 
   expect("basis" in record).toBe(false);
-  expect(record.record_version).toBe("0.2");
-  expect(earlier.record_version).toBe("0.1");
-  // Setting the version on the earlier record and resealing it gives exactly
-  // today's record: the version is the only difference, and the hash follows it.
-  expect(resealed({ ...earlier, record_version: "0.2" })).toStrictEqual(record);
-  expect(record.record_hash).toBe((vector.expected as Dict).record_hash);
-  expect(earlier.record_hash).toBe((vector.record_version_0_1 as Dict).record_hash);
-  // Neither the record nor agreed_terms carries basis, so the "0.2" record verifies.
-  expect(
-    verifyTransactionRecord(
-      record,
-      vector.did_documents as Record<string, Dict>,
-      offerHashes(vector.messages as Dict[]),
-    ),
-  ).toBe(true);
+  expect(record.record_version).toBe("0.1");
+  // The same fields in the same order: the same bytes, so the same hash (Section 9.2).
+  expect(JSON.stringify(record)).toBe(JSON.stringify(earlier.full_record));
+  expect(record.record_hash).toBe(earlier.record_hash);
+  expect(verifiesWithoutBasis(record)).toBe(true);
+});
+
+test("client side record for a session without basis is its 0.1 record", () => {
+  const record = clientSideRecord(WITHOUT_BASIS);
+
+  expect(JSON.stringify(record)).toBe(
+    JSON.stringify((WITHOUT_BASIS.record_version_0_1 as Dict).full_record),
+  );
 });
 
 test("a record_version 0.1 record still verifies", () => {
@@ -182,6 +220,72 @@ test("a record_version 0.1 record still verifies", () => {
     ),
   ).toBe(true);
 });
+
+test("a session without basis record relabelled 0.2 fails verification", () => {
+  // Section 9.5 step 7: a "0.2" record carries basis, and this one has none to carry.
+  const relabelled = resealed({
+    ...((WITHOUT_BASIS.record_version_0_1 as Dict).full_record as Dict),
+    record_version: "0.2",
+  });
+
+  expect("basis" in (relabelled.agreed_terms as Dict)).toBe(false);
+  expect(relabelled.record_hash).toBe(WITHOUT_BASIS.relabelled_0_2_record_hash);
+  expect(verifiesWithoutBasis(relabelled)).toBe(false);
+});
+
+/** The record the responder's state machine generates from the vector's messages. */
+function serverSideRecord(vector: Dict): Dict {
+  return generateTransactionRecord(
+    replay(
+      vector.session_id as string,
+      vector.session_init as Dict,
+      vector.session_ack as Dict,
+      vector.did_documents as Record<string, Dict>,
+      vector.messages as Dict[],
+    ),
+  );
+}
+
+/**
+ * without_basis with a SessionInit that proposed `basis` and a SessionAck that omits it.
+ *
+ * The SessionAck is the one a responder that predates basis sends, so the
+ * session's basis is unstated whatever the SessionInit proposed (Section 6.4.1).
+ * Neither the SessionInit nor its session_params is inside a signed act, so the
+ * recorded offers and acceptance still verify.
+ */
+function withoutBasisProposing(basis: string): Dict {
+  const vector = structuredClone(WITHOUT_BASIS);
+  ((vector.session_init as Dict).session_params as Dict).basis = basis;
+  expect("basis" in ((vector.session_ack as Dict).session_params_accepted as Dict)).toBe(false);
+  return vector;
+}
+
+const RECORD_BUILDERS: Record<string, (vector: Dict) => Dict> = {
+  client: clientSideRecord,
+  server: serverSideRecord,
+};
+const UNECHOED_CASES: [string, string][] = (
+  WITHOUT_BASIS.unechoed_proposed_bases as string[]
+).flatMap((basis) =>
+  Object.keys(RECORD_BUILDERS)
+    .sort()
+    .map((builder): [string, string] => [basis, builder]),
+);
+
+test.each(UNECHOED_CASES)(
+  "a proposed basis the session ack omits is not recorded: %s, %s side",
+  (basis, builder) => {
+    // Section 9.3: the record's basis, and so its version, follows the SessionAck.
+    const record = RECORD_BUILDERS[builder](withoutBasisProposing(basis));
+    const earlier = WITHOUT_BASIS.record_version_0_1 as Dict;
+
+    expect("basis" in record).toBe(false);
+    expect(JSON.stringify(record)).toBe(JSON.stringify(earlier.full_record));
+    expect(record.record_hash).toBe(earlier.record_hash);
+    expect(verifiesWithoutBasis(record)).toBe(true);
+  },
+);
 
 /** Route the client's requests to the in-process server through `client`. */
 function fetchVia(client: TestClient): typeof fetch {
@@ -314,8 +418,8 @@ test("record basis with non-object agreed_terms fails verification", () => {
   expect(verifies(resealed(record))).toBe(false);
 });
 
-test("a 0.2 record without basis must not carry agreed_terms.basis", () => {
-  // Section 9.5 step 7: a "0.2" producer records basis whenever agreed_terms has it.
+test("a 0.2 record without basis fails verification", () => {
+  // Section 9.5 step 7: a "0.2" record carries basis, whatever agreed_terms holds.
   const dropped = structuredClone(EXPECTED.full_record as Dict);
   delete dropped.basis;
   const resealedRecord = resealed(dropped);
@@ -328,6 +432,9 @@ test("a 0.2 record without basis must not carry agreed_terms.basis", () => {
   // Key presence: a null agreed_terms.basis counts as carried.
   (dropped.agreed_terms as Dict).basis = null;
   expect(verifies(resealed(dropped))).toBe(false);
+  // Nor does it verify once agreed_terms carries no basis either.
+  delete (dropped.agreed_terms as Dict).basis;
+  expect(verifies(resealed(dropped))).toBe(false);
 });
 
 test("a 0.1 record without basis gets no basis check", () => {
@@ -339,6 +446,18 @@ test("a 0.1 record without basis gets no basis check", () => {
 
   expect(resealedRecord.record_hash).toBe(EXPECTED.basis_dropped_0_1_record_hash);
   expect(verifies(resealedRecord)).toBe(true);
+});
+
+test("a 0.1 record must not carry basis", () => {
+  // Section 9.5 step 7: a "0.1" record has no top-level basis, even one equal to agreed_terms.basis.
+  const relabelled = resealed({ ...(EXPECTED.full_record as Dict), record_version: "0.1" });
+
+  expect(relabelled.basis).toBe((relabelled.agreed_terms as Dict).basis);
+  expect(relabelled.record_hash).toBe(EXPECTED.relabelled_0_1_record_hash);
+  expect(verifies(relabelled)).toBe(false);
+
+  // Key presence: a null basis counts as carried.
+  expect(verifies(resealed({ ...relabelled, basis: null }))).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

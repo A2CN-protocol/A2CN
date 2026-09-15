@@ -43,9 +43,11 @@ is the most common source of confusion, so they are stated separately here.
    `protocol_version` is the first field of the signed protocol act (Section 7.3.1),
    moving it invalidates every existing signature and hash chain.
 3. **`record_version`** — one per terminal artifact, each independent of the others
-   and of the two versions above: TransactionRecord `"0.2"`, AuditLog `"0.1"`,
-   SessionEvidenceRecord `"0.2"`. Each moves only when that artifact's own shape or
-   canonical meaning changes; see Section 9A.1.
+   and of the two versions above: TransactionRecord `"0.2"` for a record that
+   carries a basis and `"0.1"` for one that does not, from a session that fixed no
+   basis or from an implementation that predates basis (Section 9.3), AuditLog
+   `"0.1"`, SessionEvidenceRecord `"0.2"`. Each moves only when that artifact's own
+   shape or canonical meaning changes; see Section 9A.1.
 
 A schema's `$id` version is the version of the thing that schema describes — the
 wire version for wire messages, the artifact's `record_version` for record
@@ -998,6 +1000,19 @@ predates it) leaves the session's basis unstated, whatever the SessionInit
 proposed: the initiator MUST then treat the basis as unstated (Section 6.3.1)
 and MUST NOT assume the value it proposed.
 
+Before it compares `session_params_accepted` with the SessionInit's
+`session_params`, a receiver validates both, `session_params` first, checking
+each in this order (Section 12.3):
+
+1. It MUST be an object, otherwise `INVALID_REQUEST`.
+2. Its `currency` MUST be a non-empty string, otherwise `INVALID_REQUEST`.
+3. Its `basis`, when present, MUST be `net` or `gross`, and `null` is neither;
+   otherwise `INVALID_BASIS`.
+
+Only then does the receiver compare the two. `SESSION_PARAM_CHANGED` is
+reserved for a well-formed value that differs, so a malformed value is never
+reported as a change.
+
 **`current_turn`** (string, REQUIRED)  
 MUST be `"initiator"` in the SessionAck. Tracks whose turn it is to send the
 next offer. Valid values: `"initiator"` | `"responder"`.
@@ -1675,12 +1690,13 @@ reads or local state that could differ between parties.
 
 ### 9.3 Transaction Record Structure
 
-Schema: `spec/schemas/transaction-record.schema.json`
+Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`)
+and `spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`)
 
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.2",
+  "record_version": "0.1 | 0.2",
   "record_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -1704,7 +1720,7 @@ Schema: `spec/schemas/transaction-record.schema.json`
   "currency": "string",
   "basis": "net | gross",
   "subject": "string",
-  "subject_reference": "string",
+  "subject_reference": "string | null",
   "agreed_terms": {},
   "negotiation_summary": {
     "total_rounds": "integer",
@@ -1724,6 +1740,9 @@ Schema: `spec/schemas/transaction-record.schema.json`
   "final_acceptance": {
     "message_id": "string",
     "sender_did": "string",
+    "round_number": "integer",
+    "sequence_number": "integer",
+    "accepted_offer_id": "string",
     "accepted_protocol_act_hash": "string",
     "acceptance_signature": "string"
   },
@@ -1732,13 +1751,19 @@ Schema: `spec/schemas/transaction-record.schema.json`
 }
 ```
 
-**`record_version`** — `"0.2"`. A producer MUST emit `"0.2"`. Version `"0.2"`
-adds the top-level `basis` below; a `"0.1"` record comes from an implementation
-that predates it. Without the version, a session in which only one party's
-implementation predates `basis` could yield two TransactionRecords that differ
-yet both verify; the version makes that difference explicit. A verifier accepts
-both versions (Section 9.5). The TransactionRecord version is independent of the
-SessionEvidenceRecord and AuditLog versions.
+**`record_version`** — `"0.1"` or `"0.2"`, following the record's content. A
+producer MUST emit `"0.2"` exactly when the record carries the top-level `basis`
+below, that is, when the session fixed a basis, and `"0.1"` otherwise. The
+record of a session that fixed no basis is therefore byte-identical to the
+`"0.1"` record an implementation that predates `basis` generates, so every
+party derives the same record for it whichever version its implementation is
+(Section 9.2). In a session that fixed a basis, a party whose implementation
+predates `basis` and passes it through generates a `"0.1"` record without the
+top-level `basis`, and a current party generates a `"0.2"` record with it, so
+the difference between the two records is explicit in `record_version`. A
+verifier accepts both versions and holds each to its shape (Section 9.5). The
+TransactionRecord version is independent of the SessionEvidenceRecord and
+AuditLog versions.
 
 **`parties`** (object, REQUIRED)  
 Contains initiator and responder sub-objects. Fields `organization_name` and
@@ -1763,14 +1788,14 @@ parties derive this from the same protocol message, ensuring identical values.
 
 **`negotiation_summary.accepted_at`** — The `timestamp` field of the Acceptance message.
 
-**`basis`** — Present exactly when the session fixed a basis, that is, when the
-SessionAck's `session_params_accepted` carries `basis` (Sections 6.3.1 and
-6.4.1), and then equal to it; absent otherwise. It MUST equal
-`agreed_terms.basis`, which the final offer carried inside its signed terms
-(Section 7.2), so a `"0.2"` record carries `basis` exactly when `agreed_terms`
-does (Section 9.5). The record of a session that fixed no basis has no `basis`
-key; it differs from the `"0.1"` record of the same session only in
-`record_version` and `record_hash`.
+**`basis`** — A producer MUST include `basis` exactly when the session fixed a
+basis, that is, when the SessionAck's `session_params_accepted` carries `basis`
+(Sections 6.3.1 and 6.4.1), and MUST set it to that value; otherwise it MUST
+omit the key. A record that carries `basis` is a `"0.2"` record, and a `"0.2"`
+record always carries it. It MUST equal `agreed_terms.basis`, which the final
+offer carried inside its signed terms (Section 7.2). A record without `basis`
+is a `"0.1"` record: the record of a session that fixed no basis, or the record
+an implementation that predates `basis` produces (see `record_version` above).
 
 **`final_offer`** — Contains fields from the accepted Offer message, regardless of
 which party sent it. This replaces the v0.1-draft's party-role-specific
@@ -1795,21 +1820,21 @@ Any party verifying a transaction record MUST:
 1. Verify that `record_version` is `"0.1"` or `"0.2"`, and reject the record
    otherwise, including when `record_version` is absent or not a string. A
    verifier MUST NOT attempt best-effort parsing of any other version. Steps 2
-   to 6 are the same for both versions; step 7 differs only for a record
-   without `basis`.
+   to 6 are the same for both versions; step 7 holds each version to its shape.
 2. Compute `record_hash` independently and compare
 3. Verify `final_offer.protocol_act_signature` against the offering party's key
 4. Verify `final_acceptance.acceptance_signature` against the accepting party's key
 5. Verify `final_acceptance.accepted_protocol_act_hash` matches
    `final_offer.protocol_act_hash`
 6. Recompute `offer_chain_hash` from the session message history and compare
-7. If the record carries `basis`, verify that it is `net` or `gross` and that
-   `agreed_terms.basis` is present and equal to it, whichever version the record
-   carries. If a `"0.2"` record carries no `basis`, verify that `agreed_terms`
-   has no `basis` key either, not even one whose value is `null`: a `"0.2"`
-   producer records `basis` whenever the final offer's terms carried it. A
-   `"0.1"` record without `basis` gets no basis check, because an implementation
-   that predates the field records `agreed_terms.basis` alone.
+7. Verify that the record carries a top-level `basis` exactly when its
+   `record_version` is `"0.2"`; presence is by key, so a `basis` whose value is
+   `null` counts as carried. For a `"0.2"` record, verify that `basis` is `net`
+   or `gross` and that `agreed_terms` is an object whose `basis` is present and
+   equal to it; a `"0.2"` record without `basis` is rejected, whatever
+   `agreed_terms` holds. For a `"0.1"` record, verify that it has no top-level
+   `basis` key. A `"0.1"` record's `agreed_terms.basis` is not checked, because
+   an implementation that predates the field records it there alone.
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
@@ -1855,7 +1880,9 @@ attribution of an individual party's protocol act and are the preferred evidence
 
 ### 9A.2 Record Structure
 
-Schema: `spec/schemas/session-evidence-record.schema.json`
+Schema: `spec/schemas/session-evidence-record.schema.json` (`record_version`
+`"0.1"`, as published in release 0.3.0) and
+`spec/schemas/session-evidence-record-0.2.schema.json` (`"0.2"`)
 
 ```json
 {
@@ -1954,8 +1981,11 @@ Sections 9A.8 to 9A.11 are relaxations, so a verifier that predates them
 rejects records that use them, and the basis rule adds a rejection. A verifier
 recognizes `"0.1"` and `"0.2"` and MUST reject any other value. Verification
 does not depend on the version: Section 9A.6, with Sections 9A.8 to 9A.11 and
-the basis rule, applies to a `"0.1"` record exactly as to a `"0.2"` record, so a
-`"0.1"` record that uses those sections is valid when it satisfies them.
+the basis rule, applies to a `"0.1"` record exactly as to a `"0.2"` record. A
+verifier therefore also accepts a `"0.1"` record that uses those sections when
+it satisfies them. No released implementation produces one, and such a record
+does not validate against the `"0.1"` schema, which describes the record as
+release 0.3.0 produces it.
 
 `parties` uses the same SessionInit and SessionAck metadata sources as the
 TransactionRecord. Informational names and agent identifiers do not acquire
@@ -3164,7 +3194,8 @@ SessionReject messages also use this format via the `error_code` and
 |------|------|------------|-------------|
 | `PROTOCOL_VERSION_MISMATCH` | 400 | Yes | Version not supported |
 | `DEAL_TYPE_NOT_SUPPORTED` | 403 | Yes | Deal type not in discovery |
-| `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis` or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 7.2) |
+| `INVALID_REQUEST` | 400 | Yes | A message, or a required part of it, is malformed before any protocol check runs: a SessionAck body, `session_params`, or `session_params_accepted` that is not a JSON object; a `currency` in either that is absent, empty, or not a string (Section 6.4.1); a `sender_did` that is not a DID; or, on an offer, counteroffer, acceptance, or rejection, a `sequence_number` or `round_number` that is not a positive integer (Section 7.1) |
+| `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis`, `session_params_accepted.basis`, or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 6.4.1, 7.2) |
 | `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck, or a later message such as an offer, changed a parameter fixed at session initiation (Sections 6.4.1, 7.2); `message` names the parameter |
 | `MANDATE_INVALID` | 403 | Yes | Mandate expired, missing, or VC proof failed |
 | `MANDATE_INSUFFICIENT` | 403 | Yes | Mandate scope doesn't cover proposed terms |
@@ -4295,11 +4326,19 @@ schemas. The following schema files are defined:
 | `rejection.schema.json` | Rejection |
 | `withdrawal.schema.json` | Withdrawal |
 | `timeout-notification.schema.json` | Timeout notification |
-| `transaction-record.schema.json` | Transaction record |
-| `session-evidence-record.schema.json` | Session Evidence Record |
+| `transaction-record.schema.json` | Transaction record, `record_version` `"0.1"` |
+| `transaction-record-0.2.schema.json` | Transaction record, `record_version` `"0.2"` |
+| `session-evidence-record.schema.json` | Session Evidence Record, `record_version` `"0.1"` |
+| `session-evidence-record-0.2.schema.json` | Session Evidence Record, `record_version` `"0.2"` |
 | `audit-log.schema.json` | Audit log |
 | `session-object.schema.json` | Session state object |
 | `error.schema.json` | Error response |
+
+A record artifact's unversioned schema file describes its `"0.1"` version. Each
+later version is published beside it as `<name>-<version>.schema.json`, and a
+published schema file is never rewritten, so a verifier that accepts several
+versions finds the schema of each. A record schema's `$id` ends in the
+`record_version` it describes.
 
 Schemas are **normative** as of v0.1.2. Conformant implementations MUST produce
 messages that validate against these schemas.
@@ -5211,7 +5250,7 @@ Both parties independently generate the transaction record. Key fields:
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.2",
+  "record_version": "0.1",
   "record_id": "{uuid5(A2CN_NAMESPACE, 'c3d4e5f6-a7b8-9012-cdef-123456789012')}",
   "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
   "generated_at": "2026-03-24T10:08:45Z",

@@ -254,6 +254,70 @@ test.each(VECTORS.malformed_session_params.map((p) => [JSON.stringify(p), p]))(
 );
 
 // ---------------------------------------------------------------------------
+// SessionAck money parameters are validated before they are compared (Section 6.4.1)
+// ---------------------------------------------------------------------------
+
+const ABSENT = Symbol("absent");
+
+/**
+ * Every invalid basis and malformed currency as a SessionAck's session_params_accepted.
+ *
+ * Each case has the shape of an ack_cases entry. A receiver validates
+ * session_params_accepted before comparing it with session_params, so each is
+ * refused with its own error code, naming the accepted parameter, whatever the
+ * SessionInit proposed; never with SESSION_PARAM_CHANGED.
+ */
+function malformedAcceptedMoneyCases(): [string, Dict][] {
+  const cases: [string, Dict][] = [];
+  for (const proposedBasis of [...VECTORS.valid_bases, ABSENT]) {
+    const proposed: Dict = { currency: "USD" };
+    if (proposedBasis !== ABSENT) {
+      proposed.basis = proposedBasis;
+    }
+    const label = proposedBasis === ABSENT ? "no-basis" : String(proposedBasis);
+    for (const basis of VECTORS.invalid_bases) {
+      cases.push([
+        `basis ${JSON.stringify(basis)}, proposed ${label}`,
+        {
+          proposed,
+          accepted: { currency: "USD", basis },
+          error: "INVALID_BASIS",
+          changed: "session_params_accepted.basis",
+        },
+      ]);
+    }
+  }
+  for (const currency of [...VECTORS.invalid_currencies, ABSENT]) {
+    cases.push([
+      currency === ABSENT ? "currency absent" : `currency ${JSON.stringify(currency)}`,
+      {
+        proposed: { currency: "USD" },
+        accepted: currency === ABSENT ? {} : { currency },
+        error: "INVALID_REQUEST",
+        changed: "session_params_accepted.currency",
+      },
+    ]);
+  }
+  return cases;
+}
+
+const MALFORMED_ACCEPTED_MONEY = malformedAcceptedMoneyCases();
+
+test.each(MALFORMED_ACCEPTED_MONEY)(
+  "session ack money params validated before comparison: %s",
+  (_name, c) => {
+    const [sessionInit, sessionAck] = initAndAck(c.proposed as Dict, c.accepted as Dict);
+    const manager = new SessionManager();
+    const err = expectA2CNError(() =>
+      manager.createSession("sess-basis", sessionInit, sessionAck, NOW),
+    );
+    expect(err.code).toBe(c.error);
+    expect(err.message).toContain(c.changed as string);
+    expect(manager.getSession("sess-basis")).toBeNull();
+  },
+);
+
+// ---------------------------------------------------------------------------
 // POST /sessions (responder)
 // ---------------------------------------------------------------------------
 
@@ -581,6 +645,21 @@ test.each(VECTORS.ack_cases.map((c) => [c.name as string, c]))(
       expect((err as A2CNError).message).toContain(c.changed as string);
       expect(client._sessions).toEqual({});
     }
+  },
+);
+
+test.each(MALFORMED_ACCEPTED_MONEY)(
+  "client validates session ack money params before comparison: %s",
+  async (_name, c) => {
+    const [sessionInit, sessionAck] = initAndAck(c.proposed as Dict, c.accepted as Dict);
+    const client = clientAnsweringWith(sessionAck.session_params_accepted);
+    const err = await client
+      .initiateSession("https://acme.example", RESPONDER_DID, sessionInit.session_params as Dict)
+      .catch((exc: unknown) => exc);
+    expect(err).toBeInstanceOf(A2CNError);
+    expect((err as A2CNError).code).toBe(c.error);
+    expect((err as A2CNError).message).toContain(c.changed as string);
+    expect(client._sessions).toEqual({});
   },
 );
 

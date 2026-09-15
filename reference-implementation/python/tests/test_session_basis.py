@@ -194,6 +194,64 @@ def test_create_session_rejects_malformed_session_params(params):
 
 
 # ---------------------------------------------------------------------------
+# SessionAck money parameters are validated before they are compared (Section 6.4.1)
+# ---------------------------------------------------------------------------
+
+_ABSENT = object()
+
+
+def _malformed_accepted_money_cases() -> list:
+    """Every invalid basis and malformed currency as a SessionAck's session_params_accepted.
+
+    Each case has the shape of an ack_cases entry. A receiver validates
+    session_params_accepted before comparing it with session_params, so each is
+    refused with its own error code, naming the accepted parameter, whatever the
+    SessionInit proposed; never with SESSION_PARAM_CHANGED.
+    """
+    cases = []
+    for proposed_basis in [*VECTORS["valid_bases"], _ABSENT]:
+        proposed = {"currency": "USD"}
+        if proposed_basis is not _ABSENT:
+            proposed["basis"] = proposed_basis
+        label = "no-basis" if proposed_basis is _ABSENT else proposed_basis
+        for basis in VECTORS["invalid_bases"]:
+            cases.append(pytest.param(
+                {
+                    "proposed": proposed,
+                    "accepted": {"currency": "USD", "basis": basis},
+                    "error": "INVALID_BASIS",
+                    "changed": "session_params_accepted.basis",
+                },
+                id=f"basis-{basis!r}-proposed-{label}",
+            ))
+    for currency in [*VECTORS["invalid_currencies"], _ABSENT]:
+        cases.append(pytest.param(
+            {
+                "proposed": {"currency": "USD"},
+                "accepted": {} if currency is _ABSENT else {"currency": currency},
+                "error": "INVALID_REQUEST",
+                "changed": "session_params_accepted.currency",
+            },
+            id="currency-absent" if currency is _ABSENT else f"currency-{currency!r}",
+        ))
+    return cases
+
+
+MALFORMED_ACCEPTED_MONEY = _malformed_accepted_money_cases()
+
+
+@pytest.mark.parametrize("case", MALFORMED_ACCEPTED_MONEY)
+def test_session_ack_money_params_validated_before_comparison(case):
+    session_init, session_ack = _init_and_ack(case["proposed"], case["accepted"])
+    manager = SessionManager()
+    with pytest.raises(A2CNError) as exc_info:
+        manager.create_session("sess-basis", session_init, session_ack, NOW)
+    assert exc_info.value.code == case["error"]
+    assert case["changed"] in exc_info.value.message
+    assert manager.get_session("sess-basis") is None
+
+
+# ---------------------------------------------------------------------------
 # POST /sessions (responder)
 # ---------------------------------------------------------------------------
 
@@ -481,6 +539,20 @@ async def test_client_checks_session_ack_money_params(case):
         assert exc_info.value.code == case["error"]
         assert case["changed"] in exc_info.value.message
         assert client._sessions == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", MALFORMED_ACCEPTED_MONEY)
+async def test_client_validates_session_ack_money_params_before_comparison(case):
+    session_init, session_ack = _init_and_ack(case["proposed"], case["accepted"])
+    client = _client_answering_with(session_ack["session_params_accepted"])
+    with pytest.raises(A2CNError) as exc_info:
+        await client.initiate_session(
+            "https://acme.example", RESPONDER_DID, session_init["session_params"]
+        )
+    assert exc_info.value.code == case["error"]
+    assert case["changed"] in exc_info.value.message
+    assert client._sessions == {}
 
 
 @pytest.mark.asyncio

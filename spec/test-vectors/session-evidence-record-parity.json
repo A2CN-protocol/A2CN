@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only.",
+  "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only. release_0_3_0_record is the record that release 0.3.0 produced for this session with this producer key (record_version \"0.1\"). It must validate against spec/schemas/session-evidence-record.schema.json and verify under the current verifiers, and this implementation's record for the session, relabelled \"0.1\" and resealed, must have its record_hash. release_0_3_0_schema_sha256 is the sha256 of spec/schemas/session-evidence-record.schema.json as release 0.3.0 published it; a published schema file is never rewritten.",
   "invalid_cases": {
     "non_rfc3339_timestamp": "not-a-timestamp"
   },
@@ -156,5 +156,104 @@
     "state_updated_at": "2026-08-31T12:10:00Z",
     "terminal_message_id": null,
     "terminal_reason": "session_timeout"
-  }
+  },
+  "release_0_3_0_record": {
+    "record_type": "a2cn_session_evidence_record",
+    "record_version": "0.1",
+    "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+    "session_id": "00000000-0000-4000-8000-000000000125",
+    "generated_at": "2026-08-31T12:10:00Z",
+    "producer": {
+      "did": "did:example:buyer",
+      "agent_id": "buyer-agent",
+      "verification_method": "did:example:buyer#key-1"
+    },
+    "parties": {
+      "initiator": {
+        "organization_name": "Parity Buyer",
+        "did": "did:example:buyer",
+        "agent_id": "buyer-agent",
+        "verification_method": "did:example:buyer#key-1",
+        "mandate_type": "declared"
+      },
+      "responder": {
+        "organization_name": "Parity Seller",
+        "did": "did:example:seller",
+        "agent_id": "seller-agent",
+        "verification_method": "did:example:seller#key-1",
+        "mandate_type": "declared"
+      }
+    },
+    "terminal": {
+      "outcome": "TIMED_OUT",
+      "reason": "session_timeout",
+      "message_id": null,
+      "timestamp": "2026-08-31T12:10:00Z"
+    },
+    "transaction_record_hash": null,
+    "acts": [
+      {
+        "sequence_number": 1,
+        "round_number": 1,
+        "message_type": "offer",
+        "message_id": "parity-offer-1",
+        "sender_did": "did:example:buyer",
+        "timestamp": "2026-08-31T12:01:00Z",
+        "source_protocol": "a2cn",
+        "act": {
+          "expires_at": "2026-08-31T12:16:00Z",
+          "message_id": "parity-offer-1",
+          "message_type": "offer",
+          "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+          "round_number": 1,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000125",
+          "terms": {
+            "currency": "USD",
+            "total_value": 95000
+          },
+          "timestamp": "2026-08-31T12:01:00Z"
+        },
+        "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+        "sender_verification_method": "did:example:buyer#key-1",
+        "signature_type": "protocol_act_signature",
+        "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+        "attribution": "verified_signature"
+      },
+      {
+        "sequence_number": 2,
+        "round_number": 2,
+        "message_type": "counteroffer",
+        "message_id": "parity-external-1",
+        "sender_did": "did:example:seller",
+        "timestamp": "2026-08-31T12:02:00Z",
+        "source_protocol": "commerce_api",
+        "act": {
+          "external_session_id": "commerce-7",
+          "message_id": "parity-external-1",
+          "message_type": "counteroffer",
+          "sender_did": "did:example:seller",
+          "terms": {
+            "currency": "USD",
+            "total_value": 90300
+          },
+          "timestamp": "2026-08-31T12:02:00Z"
+        },
+        "act_hash": "nTHqlXDMBXdHQ1jFK-KHGbM23dPFqAGS8ZkflA5YfQ4",
+        "sender_verification_method": null,
+        "signature_type": null,
+        "signature": null,
+        "attribution": "unsigned_observation"
+      }
+    ],
+    "act_chain_hash": "H--tV6D3bPU1QqOqgd220gXB3bMCihpdET0Ge6h9BBs",
+    "evidence_level": "mixed",
+    "record_hash": "-HGVb076fiUv0-Z-Xmjx_XM4bfglT6_vud0I2i0runM",
+    "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.LUhHVmIwNzZmaVV2MC1aLVhtanhfWE00YmZnbFQ2X3Z1ZDBJMmkwcnVuTQ.VqNfRpXJhxxXbFBvYKGKBadjlDMPbiQI5pGIbkvVIxjfKFn1lT-3HB0WKFOK5fwaxxCeqlrbY7TTUj2qUMm8Cg"
+  },
+  "release_0_3_0_schema_sha256": "3b68f56902c524192de7147d155eb5d4fdc463662adce3d37ecda22a309f3844"
 }

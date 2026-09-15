@@ -153,12 +153,15 @@ def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
     """Reject malformed money parameters, or a SessionAck that changed currency or basis.
 
     ``proposed`` is the SessionInit's session_params and ``accepted`` the
-    SessionAck's session_params_accepted; both must be objects, and currency is
-    REQUIRED. basis is optional with no default: adding or altering it counts as
-    a change, while a SessionAck that omits it (from a responder that predates
-    basis) leaves the session's basis unstated. An unrecognized basis is
-    INVALID_BASIS and a change is SESSION_PARAM_CHANGED, naming the parameter
-    (Section 12.3); malformed input is INVALID_REQUEST.
+    SessionAck's session_params_accepted; both must be objects, and each must
+    carry currency, which is REQUIRED. basis is optional with no default: adding
+    or altering it counts as a change, while a SessionAck that omits it (from a
+    responder that predates basis) leaves the session's basis unstated. Both
+    sides are validated before they are compared (Section 6.4.1), so a malformed
+    value is reported as malformed, never as a change: an unrecognized basis is
+    INVALID_BASIS, and a malformed currency or a part that is not an object is
+    INVALID_REQUEST. SESSION_PARAM_CHANGED, naming the parameter, is left for a
+    well-formed value that differs (Section 12.3).
     """
     if not isinstance(proposed, dict):
         raise A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400)
@@ -178,6 +181,20 @@ def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
     if not isinstance(accepted, dict):
         raise A2CNError(
             "INVALID_REQUEST", "SessionAck session_params_accepted must be an object", 400
+        )
+    accepted_currency = accepted.get("currency")
+    if not isinstance(accepted_currency, str) or not accepted_currency:
+        raise A2CNError(
+            "INVALID_REQUEST",
+            "session_params_accepted.currency must be a non-empty string, "
+            f"got {accepted_currency!r}",
+            400,
+        )
+    if "basis" in accepted and accepted["basis"] not in SESSION_BASES:
+        raise A2CNError(
+            "INVALID_BASIS",
+            f"session_params_accepted.basis must be 'net' or 'gross', got {accepted['basis']!r}",
+            400,
         )
     for key in _FIXED_MONEY_PARAMS:
         if key == "basis" and key not in accepted:
@@ -1135,9 +1152,8 @@ class SessionManager:
 #   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
 #   INVALID_BASIS           — 400  — spec Section 12.3
 #   SESSION_PARAM_CHANGED   — 400  — spec Section 12.3
-#   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
-#                                     used for malformed input that fails basic
-#                                     validation before any protocol logic runs
+#   INVALID_REQUEST         — 400  — spec Section 12.3; malformed input that fails
+#                                     basic validation before any protocol logic runs
 
 
 class A2CNError(Exception):

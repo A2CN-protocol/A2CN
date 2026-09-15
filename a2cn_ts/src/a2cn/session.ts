@@ -162,12 +162,15 @@ function isJsonObject(value: unknown): value is Dict {
  * Reject malformed money parameters, or a SessionAck that changed currency or basis.
  *
  * `proposed` is the SessionInit's session_params and `accepted` the SessionAck's
- * session_params_accepted; both must be objects, and currency is REQUIRED. basis
- * is optional with no default: adding or altering it counts as a change, while a
- * SessionAck that omits it (from a responder that predates basis) leaves the
- * session's basis unstated. An unrecognized basis is INVALID_BASIS and a change is
- * SESSION_PARAM_CHANGED, naming the parameter (Section 12.3); malformed input is
- * INVALID_REQUEST.
+ * session_params_accepted; both must be objects, and each must carry currency,
+ * which is REQUIRED. basis is optional with no default: adding or altering it
+ * counts as a change, while a SessionAck that omits it (from a responder that
+ * predates basis) leaves the session's basis unstated. Both sides are validated
+ * before they are compared (Section 6.4.1), so a malformed value is reported as
+ * malformed, never as a change: an unrecognized basis is INVALID_BASIS, and a
+ * malformed currency or a part that is not an object is INVALID_REQUEST.
+ * SESSION_PARAM_CHANGED, naming the parameter, is left for a well-formed value
+ * that differs (Section 12.3).
  */
 export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
   if (!isJsonObject(proposed)) {
@@ -189,6 +192,21 @@ export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): ass
   }
   if (!isJsonObject(accepted)) {
     throw new A2CNError("INVALID_REQUEST", "SessionAck session_params_accepted must be an object", 400);
+  }
+  if (typeof accepted.currency !== "string" || accepted.currency === "") {
+    throw new A2CNError(
+      "INVALID_REQUEST",
+      "session_params_accepted.currency must be a non-empty string, " +
+        `got ${JSON.stringify(accepted.currency)}`,
+      400,
+    );
+  }
+  if (accepted.basis !== undefined && !SESSION_BASES.includes(accepted.basis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `session_params_accepted.basis must be 'net' or 'gross', got ${JSON.stringify(accepted.basis)}`,
+      400,
+    );
   }
   for (const key of FIXED_MONEY_PARAMS) {
     if (key === "basis" && accepted.basis === undefined) {
@@ -1112,9 +1130,8 @@ export class SessionManager {
 //   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
 //   INVALID_BASIS           — 400  — spec Section 12.3
 //   SESSION_PARAM_CHANGED   — 400  — spec Section 12.3
-//   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
-//                                     used for malformed input that fails basic
-//                                     validation before any protocol logic runs
+//   INVALID_REQUEST         — 400  — spec Section 12.3; malformed input that fails
+//                                     basic validation before any protocol logic runs
 
 /** Protocol error with A2CN error code, HTTP status, and context. */
 export class A2CNError extends Error {

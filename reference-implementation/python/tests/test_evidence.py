@@ -1451,7 +1451,7 @@ def test_every_extension_vector_validates_against_the_published_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1501,7 +1501,7 @@ def test_the_schema_rejects_what_the_verifier_rejects():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     validator = jsonschema.Draft202012Validator(schema)
     healthy, _ = _priced_record()
@@ -1545,7 +1545,7 @@ def test_the_pre_extension_parity_record_still_validates_against_the_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     fixture = json.loads(
         (

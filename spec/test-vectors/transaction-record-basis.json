@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vector for the TransactionRecord basis (Section 9.3). The session fixed session_params.basis \"gross\" and every offer restates it in terms.basis (Section 7.2). Replaying the signed messages through either reference implementation, or building the record on the client side from the same messages, must produce expected.full_record, a record_version \"0.2\" record, and expected.record_hash, and the record must verify (Section 9.5). expected.tampered_record_hash is the hash after setting the top-level basis to expected.tampered_basis and recomputing record_hash; that record must fail verification because its basis no longer equals agreed_terms.basis. expected.basis_dropped_record_hash is the hash after removing the top-level basis and recomputing record_hash; that record_version \"0.2\" record still carries agreed_terms.basis, so it must fail verification. expected.basis_dropped_0_1_record_hash is the same record with record_version \"0.1\", which verifies. The evidence record for the completed session, sealed with producer_private_jwk, must have expected.evidence_record_hash and verify. Keys are test-only public fixtures and MUST NOT be used outside tests. ES256 signatures are randomized, so they are recorded here rather than recomputed. without_basis is a session that fixed no basis, with the record_version \"0.1\" record an earlier implementation produced for it.",
+  "description": "Cross-language vector for the TransactionRecord basis (Section 9.3). The session fixed session_params.basis \"gross\" and every offer restates it in terms.basis (Section 7.2). Replaying the signed messages through either reference implementation, or building the record on the client side from the same messages, must produce expected.full_record, a record_version \"0.2\" record because it carries basis, and expected.record_hash, and the record must verify (Section 9.5). expected.tampered_record_hash is the hash after setting the top-level basis to expected.tampered_basis and recomputing record_hash; that record must fail verification because its basis no longer equals agreed_terms.basis. expected.basis_dropped_record_hash is the hash after removing the top-level basis and recomputing record_hash; a record_version \"0.2\" record must carry basis, so that record must fail verification. expected.basis_dropped_0_1_record_hash is the same record with record_version \"0.1\": what an implementation that predates basis records for this session, agreed_terms.basis alone, which verifies. expected.relabelled_0_1_record_hash is expected.full_record with record_version set to \"0.1\" and record_hash recomputed, its top-level basis kept; a record_version \"0.1\" record must not carry basis, so that record must fail verification. The evidence record for the completed session, sealed with producer_private_jwk, must have expected.evidence_record_hash and verify. Keys are test-only public fixtures and MUST NOT be used outside tests. ES256 signatures are randomized, so they are recorded here rather than recomputed. without_basis is a session that fixed no basis, whose TransactionRecord is record_version \"0.1\".",
   "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
   "did_documents": {
     "did:web:techcorp.example": {
@@ -246,10 +246,11 @@
     "tampered_record_hash": "uPbDPK-GJCCvqxvz9qL_-bCSKAc8tWl9cu95Q4AUXpk",
     "evidence_record_hash": "lPVP0qqtGxOqZ2m2XPqtvOb1pgtPz4C43cBpUzjSY_s",
     "basis_dropped_record_hash": "HtzGwaQD_5pm_CPYxmQxPqUGpF2N6s61OlqfOJm6Pow",
-    "basis_dropped_0_1_record_hash": "kXjlH2VO_ZWRsj52HRF1j_kv6hEHEWem7P84drB_wy8"
+    "basis_dropped_0_1_record_hash": "kXjlH2VO_ZWRsj52HRF1j_kv6hEHEWem7P84drB_wy8",
+    "relabelled_0_1_record_hash": "KOh1n9E3uJPzmcCy8sjrnY_fWc3XBhAtxW2y7ueguNM"
   },
   "without_basis": {
-    "description": "A completed session that fixed no basis, recorded with the TransactionRecord that a record_version \"0.1\" implementation, one that predates basis, produced for it (record_version_0_1). Replaying the messages through either reference implementation yields a record without basis that is record_version_0_1.full_record with record_version set to \"0.2\" and record_hash recomputed, which is expected.record_hash. The \"0.1\" record still verifies (Section 9.5).",
+    "description": "A completed session that fixed no basis, recorded with the TransactionRecord that a record_version \"0.1\" implementation, one that predates basis, produced for it (record_version_0_1). A session that fixed no basis still gets a record_version \"0.1\" record, so replaying the messages through either reference implementation, or building the record on the client side from the same messages, must produce exactly record_version_0_1.full_record, with its record_hash, and the record verifies (Section 9.5). relabelled_0_2_record_hash is that record with record_version set to \"0.2\" and record_hash recomputed; a record_version \"0.2\" record must carry basis, so that record must fail verification. unechoed_proposed_bases are bases a SessionInit may propose that a SessionAck from a responder that predates basis omits, leaving the session's basis unstated (Section 6.4.1). Replaying the messages with session_init.session_params.basis set to each, and the SessionAck unchanged, through either reference implementation or on the client side, must still produce exactly record_version_0_1.full_record, because a record's basis, and so its version, follows the SessionAck (Section 9.3). No signed act contains the SessionInit, so the recorded signatures still verify.",
     "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
     "did_documents": {
       "did:web:techcorp.example": {
@@ -472,8 +473,10 @@
         "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w"
       }
     },
-    "expected": {
-      "record_hash": "NF4Kenti4HHgEOZhF5UiW9CQVU-qKBQrwWgwQvsIqus"
-    }
+    "relabelled_0_2_record_hash": "NF4Kenti4HHgEOZhF5UiW9CQVU-qKBQrwWgwQvsIqus",
+    "unechoed_proposed_bases": [
+      "net",
+      "gross"
+    ]
   }
 }

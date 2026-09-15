@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/transaction-record/0.1",
+  "title": "A2CN TransactionRecord",
+  "description": "The deterministic record of agreed terms that both parties generate from the protocol messages (Section 9). Version \"0.1\" is the record of a session that fixed no basis, and the record an implementation that predates basis generates for any session: it carries no top-level basis (Sections 9.3 and 9.5). Version \"0.2\" is published beside this file as transaction-record-0.2.schema.json.",
+  "type": "object",
+  "required": [
+    "record_type",
+    "record_version",
+    "record_id",
+    "session_id",
+    "generated_at",
+    "parties",
+    "deal_type",
+    "currency",
+    "subject",
+    "subject_reference",
+    "agreed_terms",
+    "negotiation_summary",
+    "final_offer",
+    "final_acceptance",
+    "offer_chain_hash",
+    "record_hash"
+  ],
+  "properties": {
+    "record_type": {
+      "type": "string",
+      "const": "a2cn_transaction_record"
+    },
+    "record_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "record_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID v5 of session_id in the A2CN namespace (Appendix A)."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The Acceptance message's timestamp."
+    },
+    "parties": {
+      "type": "object",
+      "required": ["initiator", "responder"],
+      "properties": {
+        "initiator": { "$ref": "#/$defs/party" },
+        "responder": { "$ref": "#/$defs/party" }
+      },
+      "additionalProperties": false
+    },
+    "deal_type": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The session currency (Section 6.3.1)."
+    },
+    "subject": {
+      "type": "string"
+    },
+    "subject_reference": {
+      "type": ["string", "null"],
+      "description": "The SessionInit's subject_reference, or null when it carried none."
+    },
+    "agreed_terms": {
+      "type": "object",
+      "description": "The accepted offer's terms, verbatim (Section 7.2). A record from an implementation that predates basis may carry agreed_terms.basis alone; it is not checked against the record (Section 9.5, step 7)."
+    },
+    "negotiation_summary": {
+      "type": "object",
+      "required": [
+        "total_rounds",
+        "total_messages",
+        "session_created_at",
+        "first_offer_at",
+        "accepted_at",
+        "initiating_party_did",
+        "accepting_party_did"
+      ],
+      "properties": {
+        "total_rounds": { "type": "integer", "minimum": 0 },
+        "total_messages": { "type": "integer", "minimum": 0 },
+        "session_created_at": { "type": "string", "format": "date-time" },
+        "first_offer_at": { "type": "string", "format": "date-time" },
+        "accepted_at": { "type": "string", "format": "date-time" },
+        "initiating_party_did": { "type": "string", "pattern": "^did:" },
+        "accepting_party_did": { "type": "string", "pattern": "^did:" }
+      },
+      "additionalProperties": false
+    },
+    "final_offer": {
+      "type": "object",
+      "required": ["message_id", "sender_did", "protocol_act_hash", "protocol_act_signature"],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1 },
+        "sender_did": { "type": "string", "pattern": "^did:" },
+        "protocol_act_hash": { "$ref": "#/$defs/hash" },
+        "protocol_act_signature": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "final_acceptance": {
+      "type": "object",
+      "required": [
+        "message_id",
+        "sender_did",
+        "round_number",
+        "sequence_number",
+        "accepted_offer_id",
+        "accepted_protocol_act_hash",
+        "acceptance_signature"
+      ],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1 },
+        "sender_did": { "type": "string", "pattern": "^did:" },
+        "round_number": { "type": "integer", "minimum": 1 },
+        "sequence_number": { "type": "integer", "minimum": 1 },
+        "accepted_offer_id": { "type": "string", "minLength": 1 },
+        "accepted_protocol_act_hash": { "$ref": "#/$defs/hash" },
+        "acceptance_signature": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "offer_chain_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "SHA-256 of the JCS array of every protocol_act_hash, in order."
+    },
+    "record_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "SHA-256 of the JCS record with record_hash set to the empty string."
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "Base64url-encoded SHA-256 digest without padding."
+    },
+    "party": {
+      "type": "object",
+      "required": [
+        "organization_name",
+        "did",
+        "agent_id",
+        "verification_method",
+        "mandate_type"
+      ],
+      "properties": {
+        "organization_name": { "type": "string" },
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": { "type": "string" },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mandate_type": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,8 +1,10 @@
 """record_version: the values each record verifier accepts, and what producers emit.
 
 spec/test-vectors/record-versions.json lists the values. Both suites reseal a
-valid TransactionRecord and a valid SessionEvidenceRecord with each one and must
-reach the same verdict. A value outside the accepted set is rejected, never
+valid TransactionRecord of each shape and a valid SessionEvidenceRecord with
+each one and must reach the same verdict. A TransactionRecord's version follows
+its shape: a "0.2" record carries a top-level basis and a "0.1" record does not
+(Section 9.5, step 7). A value outside the accepted set is rejected, never
 parsed best-effort (Sections 9.5 and 9A.6).
 """
 
@@ -21,15 +23,40 @@ from a2cn.session import Session, SessionManager, SessionState
 
 REPO_ROOT = Path(__file__).parents[3]
 VECTORS = REPO_ROOT / "spec" / "test-vectors"
+SCHEMAS = REPO_ROOT / "spec" / "schemas"
 RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
 TR_VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 SER_VECTOR = json.loads((VECTORS / "session-evidence-record-parity.json").read_text())
 SER_KEY = private_key_from_jwk(SER_VECTOR["producer_private_jwk"])
-SCHEMA = json.loads(
-    (REPO_ROOT / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
-)
 
-CASES = [
+# The recorded session behind each TransactionRecord shape, and the version a
+# producer emits for that shape (Section 9.3).
+TR_SHAPES = {
+    "session_with_basis": TR_VECTOR,
+    "session_without_basis": TR_VECTOR["without_basis"],
+}
+TR_EMITTED = RECORD_VERSIONS["producers_emit"]["transaction_record"]
+TR_SHAPE_FOR_VERSION = {version: shape for shape, version in TR_EMITTED.items()}
+
+TR_CASES = (
+    [
+        pytest.param(
+            TR_SHAPE_FOR_VERSION[version], {"record_version": version}, True,
+            id=f"accepted-{version}",
+        )
+        for version in RECORD_VERSIONS["accepted"]
+    ]
+    + [
+        pytest.param(case["shape"], case, False, id=case["name"])
+        for case in RECORD_VERSIONS["transaction_record_cross_shape"]
+    ]
+    + [
+        pytest.param(shape, case, False, id=f"{case['name']}-{shape}")
+        for case in RECORD_VERSIONS["rejected"]
+        for shape in TR_SHAPES
+    ]
+)
+SER_CASES = [
     pytest.param({"record_version": version}, True, id=f"accepted-{version}")
     for version in RECORD_VERSIONS["accepted"]
 ] + [
@@ -47,29 +74,29 @@ def _with_version(record: dict, case: dict) -> dict:
     return record
 
 
-def _transaction_record_session():
-    """Replay transaction-record-basis.json through the state machine to COMPLETED."""
+def _transaction_record_session(vector: dict):
+    """Replay a session transaction-record-basis.json records to COMPLETED."""
     manager = SessionManager()
-    for did, did_document in TR_VECTOR["did_documents"].items():
+    for did, did_document in vector["did_documents"].items():
         manager.register_did_document(did, did_document)
-    session_ack = TR_VECTOR["session_ack"]
+    session_ack = vector["session_ack"]
     session = manager.create_session(
-        TR_VECTOR["session_id"],
-        TR_VECTOR["session_init"],
+        vector["session_id"],
+        vector["session_init"],
         session_ack,
         session_ack["session_created_at"],
     )
     session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
-    for message in copy.deepcopy(TR_VECTOR["messages"]):
+    for message in copy.deepcopy(vector["messages"]):
         manager.process_message(session, message)
     assert session.state == SessionState.COMPLETED
     return session
 
 
-def _transaction_record_offer_hashes() -> list[str]:
+def _offer_hashes(vector: dict) -> list[str]:
     return [
         message["protocol_act_hash"]
-        for message in TR_VECTOR["messages"]
+        for message in vector["messages"]
         if message["message_type"] in ("offer", "counteroffer")
     ]
 
@@ -103,21 +130,27 @@ def _session_evidence_record() -> dict:
     )
 
 
-@pytest.mark.parametrize(("case", "accepted"), CASES)
-def test_transaction_record_verifier_accepts_only_recognized_versions(case, accepted):
-    record = _with_version(generate_transaction_record(_transaction_record_session()), case)
+def _schema(artifact: str, version: str) -> dict:
+    """An artifact's unversioned schema file is its "0.1" schema; each later
+    version is published beside it as <artifact>-<version>.schema.json."""
+    name = f"{artifact}.schema.json" if version == "0.1" else f"{artifact}-{version}.schema.json"
+    return json.loads((SCHEMAS / name).read_text())
+
+
+@pytest.mark.parametrize(("shape", "case", "accepted"), TR_CASES)
+def test_transaction_record_verifier_accepts_only_recognized_versions(shape, case, accepted):
+    vector = TR_SHAPES[shape]
+    record = _with_version(generate_transaction_record(_transaction_record_session(vector)), case)
     record["record_hash"] = ""
     record["record_hash"] = hash_object(record)
 
     assert (
-        verify_transaction_record(
-            record, TR_VECTOR["did_documents"], _transaction_record_offer_hashes()
-        )
+        verify_transaction_record(record, vector["did_documents"], _offer_hashes(vector))
         is accepted
     )
 
 
-@pytest.mark.parametrize(("case", "accepted"), CASES)
+@pytest.mark.parametrize(("case", "accepted"), SER_CASES)
 def test_session_evidence_record_verifier_accepts_only_recognized_versions(case, accepted):
     record = _with_version(_session_evidence_record(), case)
     record["record_hash"] = ""
@@ -132,19 +165,35 @@ def test_session_evidence_record_verifier_accepts_only_recognized_versions(case,
 
 def test_producers_emit_the_current_versions():
     emitted = RECORD_VERSIONS["producers_emit"]
-    session = _transaction_record_session()
 
-    assert generate_transaction_record(session)["record_version"] == emitted["transaction_record"]
+    # Each accepted TransactionRecord version is the one producers emit for one shape.
+    assert sorted(emitted["transaction_record"].values()) == sorted(RECORD_VERSIONS["accepted"])
+    for shape, version in emitted["transaction_record"].items():
+        session = _transaction_record_session(TR_SHAPES[shape])
+        assert generate_transaction_record(session)["record_version"] == version, shape
     assert _session_evidence_record()["record_version"] == emitted["session_evidence_record"]
     # The AuditLog's content did not change, so its version did not move.
     assert generate_audit_log(session)["log_version"] == emitted["audit_log"]
-    assert emitted["transaction_record"] in RECORD_VERSIONS["accepted"]
     assert emitted["session_evidence_record"] in RECORD_VERSIONS["accepted"]
 
 
-def test_the_evidence_schema_names_the_version_producers_emit():
-    """The schema, the specification, and both implementations use the same value."""
-    version = RECORD_VERSIONS["producers_emit"]["session_evidence_record"]
+@pytest.mark.parametrize("version", RECORD_VERSIONS["accepted"])
+@pytest.mark.parametrize("artifact", ["transaction-record", "session-evidence-record"])
+def test_every_accepted_version_has_a_schema_that_names_it(artifact, version):
+    """A verifier that accepts a version has that version's schema beside the others."""
+    schema = _schema(artifact, version)
 
-    assert SCHEMA["$id"] == f"https://a2cn.dev/schemas/session-evidence-record/{version}"
-    assert SCHEMA["properties"]["record_version"]["const"] == version
+    assert schema["$id"] == f"https://a2cn.dev/schemas/{artifact}/{version}"
+    assert schema["properties"]["record_version"]["const"] == version
+
+
+def test_the_schemas_name_the_versions_producers_emit():
+    """The schema, the specification, and both implementations use the same value."""
+    emitted = RECORD_VERSIONS["producers_emit"]
+
+    for version in emitted["transaction_record"].values():
+        schema = _schema("transaction-record", version)
+        assert schema["properties"]["record_version"]["const"] == version
+    version = emitted["session_evidence_record"]
+    schema = _schema("session-evidence-record", version)
+    assert schema["properties"]["record_version"]["const"] == version
