@@ -204,6 +204,88 @@ export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): ass
   }
 }
 
+/**
+ * Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+ *
+ * `sessionParams` are the parameters the session fixed, as the SessionAck's
+ * session_params_accepted carries them. A receiver runs this on every offer and
+ * counteroffer, and the reference client also runs it on each offer before
+ * sending it. The checks are presence-aware, so an absent field is not the same
+ * as null, and run in this order:
+ *
+ * 1. A terms.basis that is present must be 'net' or 'gross' (INVALID_BASIS).
+ * 2. terms.currency must equal the session currency; absent, a different
+ *    string, or a non-string is SESSION_PARAM_CHANGED.
+ * 3. When the session fixed a basis, terms.basis must be present and equal to
+ *    it; when the session fixed none, terms.basis must be absent, because an
+ *    offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+ *
+ * A terms value that is not an object carries neither field. Nothing here
+ * converts between currencies or between net and gross. The state machine does
+ * not check an acceptance again, since the offer it accepts was checked on
+ * receipt; the reference client checks the offer it is about to accept, because
+ * the offer it is handed may never have been checked.
+ */
+export function checkOfferMoneyParams(
+  sessionParams: Dict,
+  terms: unknown,
+  context: { sessionId?: string | null; messageId?: string | null } = {},
+): void {
+  const fields: Dict = isJsonObject(terms) ? terms : {};
+  const offeredBasis = fields.basis;
+  const offeredCurrency = fields.currency;
+
+  if (offeredBasis !== undefined && !SESSION_BASES.includes(offeredBasis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `terms.basis must be 'net' or 'gross', got ${JSON.stringify(offeredBasis)}`,
+      400,
+      context,
+    );
+  }
+
+  const sessionCurrency = sessionParams.currency;
+  if (offeredCurrency === undefined || offeredCurrency !== sessionCurrency) {
+    const stated =
+      offeredCurrency === undefined
+        ? "omits terms.currency"
+        : `has terms.currency ${JSON.stringify(offeredCurrency)}`;
+    throw new A2CNError(
+      "SESSION_PARAM_CHANGED",
+      `Offer ${stated}, but the session fixed currency ${JSON.stringify(sessionCurrency)} ` +
+        "at initiation",
+      400,
+      context,
+    );
+  }
+
+  const sessionBasis = sessionParams.basis;
+  if (sessionBasis === undefined) {
+    if (offeredBasis !== undefined) {
+      throw new A2CNError(
+        "SESSION_PARAM_CHANGED",
+        `terms.basis ${JSON.stringify(offeredBasis)} adds a basis the session did not fix ` +
+          "at initiation",
+        400,
+        context,
+      );
+    }
+    return;
+  }
+  if (offeredBasis === undefined || offeredBasis !== sessionBasis) {
+    const stated =
+      offeredBasis === undefined
+        ? "omits terms.basis"
+        : `has terms.basis ${JSON.stringify(offeredBasis)}`;
+    throw new A2CNError(
+      "SESSION_PARAM_CHANGED",
+      `Offer ${stated}, but the session fixed basis ${JSON.stringify(sessionBasis)} at initiation`,
+      400,
+      context,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Session manager / state machine
 // ---------------------------------------------------------------------------
@@ -550,6 +632,11 @@ export class SessionManager {
       });
     }
     this.verifySenderSignature(session, message, expectedHash, "protocol_act_signature");
+    // After the signature, before the mandate check and any state change (Section 7.2)
+    checkOfferMoneyParams(session.session_params, terms, {
+      sessionId: session.session_id,
+      messageId: message.message_id as string | undefined,
+    });
     this.enforceMaxCommitment(session, senderRole, terms, message);
 
     // Message type check: round 1 must be "offer", round 2+ must be "counteroffer"

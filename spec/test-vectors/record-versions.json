@@ -1,0 +1,63 @@
+{
+  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, step 1) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit; the AuditLog carries its version in log_version. Both suites take a valid record of each kind, set record_version to each value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict: every accepted value verifies, and every rejected value fails verification instead of being parsed best-effort. The TransactionRecord is the record transaction-record-basis.json replays to. The SessionEvidenceRecord is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk.",
+  "producers_emit": {
+    "transaction_record": "0.2",
+    "session_evidence_record": "0.2",
+    "audit_log": "0.1"
+  },
+  "accepted": [
+    "0.1",
+    "0.2"
+  ],
+  "rejected": [
+    {
+      "name": "next-minor",
+      "record_version": "0.3"
+    },
+    {
+      "name": "next-major",
+      "record_version": "1.0"
+    },
+    {
+      "name": "three-part",
+      "record_version": "0.2.0"
+    },
+    {
+      "name": "empty-string",
+      "record_version": ""
+    },
+    {
+      "name": "trailing-space",
+      "record_version": "0.2 "
+    },
+    {
+      "name": "leading-space",
+      "record_version": " 0.2"
+    },
+    {
+      "name": "v-prefix",
+      "record_version": "v0.2"
+    },
+    {
+      "name": "number-0.2",
+      "record_version": 0.2
+    },
+    {
+      "name": "number-0.1",
+      "record_version": 0.1
+    },
+    {
+      "name": "array",
+      "record_version": [
+        "0.2"
+      ]
+    },
+    {
+      "name": "null",
+      "record_version": null
+    },
+    {
+      "name": "absent"
+    }
+  ]
+}

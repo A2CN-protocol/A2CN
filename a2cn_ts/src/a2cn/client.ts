@@ -12,7 +12,7 @@ import { randomUUID, type KeyObject } from "node:crypto";
 
 import { hashObject, signJws } from "./crypto.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
-import { A2CNError, SessionState, checkFixedMoneyParams } from "./session.js";
+import { A2CNError, SessionState, checkFixedMoneyParams, checkOfferMoneyParams } from "./session.js";
 import type { Dict } from "./messages.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
@@ -171,6 +171,9 @@ export class A2CNClient {
     inReplyTo: string | null = null,
   ): Promise<Dict> {
     const state = this._sessions[sessionId];
+    // Check the terms before the counters move, so a refused offer leaves
+    // nothing to undo and the corrected one goes out in the same round (Section 7.2)
+    checkOfferMoneyParams(state.session_ack.session_params_accepted as Dict, terms, { sessionId });
     state.sequence_number += 1;
     state.round_number += 1;
 
@@ -252,6 +255,14 @@ export class A2CNClient {
     offer: Dict,
   ): Promise<Dict> {
     const state = this._sessions[sessionId];
+    // The offer may never have passed the receive check: a caller can hand over
+    // any object, and a message whose message_type is not exactly offer or
+    // counteroffer is recorded unchecked. Hold its terms to the session before
+    // the counters move, so a refused acceptance leaves nothing to undo (Section 7.2)
+    checkOfferMoneyParams(state.session_ack.session_params_accepted as Dict, offer.terms, {
+      sessionId,
+      messageId: offer.message_id as string | undefined,
+    });
     state.sequence_number += 1;
     const sequenceNumber = state.sequence_number;
     const roundNumber = state.round_number;
@@ -352,6 +363,15 @@ export class A2CNClient {
     }
     const state = this._sessions[sessionId];
     const msgType = (message.message_type as string) ?? "";
+
+    if (msgType === "offer" || msgType === "counteroffer") {
+      // The initiator is a receiver too: before recording an offer, refuse it
+      // if its terms break the session's currency or basis (Section 7.2)
+      checkOfferMoneyParams(state.session_ack.session_params_accepted as Dict, message.terms, {
+        sessionId,
+        messageId: message.message_id as string | undefined,
+      });
+    }
 
     state.message_log.push(message);
 

@@ -100,7 +100,7 @@
       "crv": "Ed25519",
       "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
     },
-    "es256_jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.VfLhjo4_15RTzEwjM8DxS0cvD0EjFvr-HDiG_OcpQWut6AAEgReg8XVR4A0bJa-gCt8eWnK8sM94yMd_4WC06A",
+    "es256_jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.QjqZuKWpBY82YQf3jsAP3SE6O7ZrGDi_kHV0geZZSGPkCfwSBS6ifdkBxCofXdHzH5Obb7Gcwa10yAaNF7r8ag",
     "es256_public_jwk": {
       "kty": "EC",
       "crv": "P-256",
@@ -108,7 +108,7 @@
       "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4"
     },
     "jws_payload": "parity-vector-protocol-act-hash",
-    "es256_jwt": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnRlY2hjb3JwLmV4YW1wbGUiLCJhdWQiOiJkaWQ6d2ViOmFjbWUtY29ycC5jb20iLCJpYXQiOjE3ODMyODY3NDAsImV4cCI6MjA5ODY0Njc0MCwianRpIjoiMzM5ZWRmNTgtNTM1ZC00NTRmLWIxYzYtMTYxMGRmODczZjJkIiwicHVycG9zZSI6InBhcml0eV92ZWN0b3IiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3Npb24ifQ.dyJpuFHa19CYtxdBdyZYODuzPqw01el9t7osc0m9TkX-DiNRdZx12ObjMkQM5FUzyTQGLtmaO0CDIrbyxRPJyg",
+    "es256_jwt": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnRlY2hjb3JwLmV4YW1wbGUiLCJhdWQiOiJkaWQ6d2ViOmFjbWUtY29ycC5jb20iLCJpYXQiOjE3ODk0NDAxMDAsImV4cCI6MjEwNDgwMDEwMCwianRpIjoiZDkwNDJkMDYtYjdlYi00YmU5LThiYmQtZGNlZTJjOTQwOTI0IiwicHVycG9zZSI6InBhcml0eV92ZWN0b3IiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3Npb24ifQ.3_yEpuSs-_kMegwoGC0Juu_hOk-YT8ID_8LfhH_12MBhUCpSEuP4Y9e1oiW_WCsli4Sibj6c8fI2CXT19EXBmA",
     "jwt_issuer": "did:web:techcorp.example",
     "jwt_audience": "did:web:acme-corp.com",
     "ed25519_invitation_signature": "WUdOCD65Uon7uoU6TC7vqJLwJL3xeLCyC8T7UQzdwOmzpsk86PPlfcOKr0ZDkSi_CxLBE6BqzdcnMN8tD19ICQ",
@@ -206,7 +206,7 @@
           "seat_count": 100
         },
         "protocol_act_hash": "BQrDVoDsNH_ZE_IUEYBgIS2DzrmPFWadiF7w5zaXzNc",
-        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.Jy2fMBoD-3si_ez0sS8seqCz7lrKbrx1VEdY8wLVFTHX40wicnuqh_kQiGMf05ubVsOTlo3fceZ6AmkkRsVyyw"
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.tha2vyli0xVSn44jzyWQMaeT96IA7IvH-T_wMGGig9WR8CuOA415qhYLoolesIOM4ydmFlu9pdMo0DmJALECvg"
       },
       {
         "message_type": "counteroffer",
@@ -225,7 +225,7 @@
           "seat_count": 100
         },
         "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.QNjL_M6_38ppdNrb3DzOBqa7PgYHL6J6UDwTaIj_DJRQysuDapLgozHu27Iudgmu8rjR1X5SqMRSCsptyJre9A",
         "in_reply_to": "parity-offer-1"
       },
       {
@@ -241,18 +241,18 @@
         "sender_agent_id": "parity-agent",
         "sender_verification_method": "did:web:techcorp.example#key-1",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.jc0VaqnukUv2gCNuNwkD0E63A7ZbY6yNTFexzvlSq86E99jAWQA-xLQat9WMaM6FL_UKKnE8uYZVoh7JgKOKqA"
       }
     ],
     "expected": {
       "a2cn_namespace": "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c",
       "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
-      "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w",
+      "record_hash": "AIlzj4qbFg_pI6wyaaVr-2DF17vfrFiYM6S4P0Ta_TM",
       "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
       "generated_at": "2026-03-24T10:03:00Z",
       "full_record": {
         "record_type": "a2cn_transaction_record",
-        "record_version": "0.1",
+        "record_version": "0.2",
         "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
         "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
         "generated_at": "2026-03-24T10:03:00Z",
@@ -294,7 +294,7 @@
           "message_id": "parity-counter-1",
           "sender_did": "did:web:acme-corp.com",
           "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ"
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.QNjL_M6_38ppdNrb3DzOBqa7PgYHL6J6UDwTaIj_DJRQysuDapLgozHu27Iudgmu8rjR1X5SqMRSCsptyJre9A"
         },
         "final_acceptance": {
           "message_id": "parity-acc-1",
@@ -303,10 +303,10 @@
           "sequence_number": 3,
           "accepted_offer_id": "parity-counter-1",
           "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.jc0VaqnukUv2gCNuNwkD0E63A7ZbY6yNTFexzvlSq86E99jAWQA-xLQat9WMaM6FL_UKKnE8uYZVoh7JgKOKqA"
         },
         "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
-        "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w"
+        "record_hash": "AIlzj4qbFg_pI6wyaaVr-2DF17vfrFiYM6S4P0Ta_TM"
       }
     }
   }

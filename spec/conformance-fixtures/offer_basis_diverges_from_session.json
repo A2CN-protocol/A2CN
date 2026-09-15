@@ -1,0 +1,25 @@
+{
+  "id": "offer_basis_diverges_from_session",
+  "status": "active",
+  "summary": "An offer restates a money basis that differs from the basis the session fixed at initiation.",
+  "given": {
+    "session_state": "ACTIVE",
+    "session_params": {
+      "currency": "USD",
+      "basis": "gross"
+    },
+    "offer": {
+      "message_type": "offer",
+      "terms": {
+        "total_value": 9500000,
+        "currency": "USD",
+        "basis": "net"
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "SESSION_PARAM_CHANGED",
+    "reason": "terms.basis must equal session_params.basis, which is fixed at session initiation; a receiver never converts between net and gross."
+  }
+}

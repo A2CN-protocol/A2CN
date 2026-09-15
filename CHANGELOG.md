@@ -11,7 +11,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 |------|---------|
 | Release | `0.3.0` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.2` |
-| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.1` / `0.1` / `0.1` |
+| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.2` / `0.1` / `0.2` |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0: the minor version moves for substantive additions.
@@ -20,20 +20,36 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
-**Three additive Session Evidence Record extensions (wire-compatible with 0.2;
-no signature changes).**
+**Session Evidence Record extensions, at `record_version` `"0.2"`
+(wire-compatible with 0.2; no signature changes).**
 
-`record_version` stays `"0.1"` and the schema `$id` stays at `/0.1`. Changes 1
-and 3 are relaxations, so a verifier predating them rejects the new records.
-Amending in place is defensible only because the artifact has no external
-consumers yet; see Section 9A.2. **This choice requires confirmation before
-release.** The alternative is to bump `record_version` and `$id` to `0.2`
-together, with verifiers accepting `{0.1, 0.2}`.
+The SessionEvidenceRecord moves to `record_version` `"0.2"`, and its schema
+`$id` to `/0.2`. Version `"0.2"` is the one that introduced Sections 9A.8 to
+9A.11 and the Section 9A.9 rule that a `net` or `gross` `money_basis` agrees
+with the described act's `terms.basis`. Sections 9A.8 to 9A.11 are relaxations,
+so a verifier that predates them rejects records that use them, and the basis
+rule adds a rejection. Producers emit `"0.2"`. Verifiers accept `"0.1"` and
+`"0.2"`, apply the same rules to both, and reject any other value;
+verification does not depend on the version.
 
-**Session money basis, `session_params.basis` (additive; wire-compatible with
-0.2).** Wire `protocol_version` stays `"0.2"`. TransactionRecord, AuditLog, and
-SessionEvidenceRecord generation are untouched, so no `record_version` or schema
-`$id` changes.
+**Session money basis, `session_params.basis`, restated in `terms.basis` and
+recorded in the TransactionRecord at `record_version` `"0.2"` (wire-compatible
+with 0.2).** Wire `protocol_version` stays `"0.2"`. The TransactionRecord moves
+to `record_version` `"0.2"`, and every newly generated record carries it. The
+record of a session that fixed a basis also carries a top-level `basis`, which
+its `record_hash` covers; the record of a session that fixed none differs from
+its `"0.1"` record only in `record_version` and `record_hash`. A party whose
+implementation predates `basis` can still take part in a session that fixed
+one, when its caller sets `basis` and `terms.basis` and the implementation
+passes them through, but its own TransactionRecord has no top-level `basis`. A
+mixed-version session could produce two TransactionRecords that differ yet both
+verify under 0.1; 0.2 makes the difference explicit. Verifiers accept `"0.1"`
+and `"0.2"` and reject any other value. The other verification steps are the
+same for both, except that a `"0.2"` record without `basis` must not carry
+`agreed_terms.basis` either. AuditLog stays at `"0.1"`: its content does not
+change. An
+evidence record for a completed session seals whatever TransactionRecord hash
+that session has.
 
 ### Added
 
@@ -55,7 +71,9 @@ SessionEvidenceRecord generation are untouched, so no `record_version` or schema
 - **Section 9A.11 — namespaced `extensions`.** The only place additional
   properties are permitted. Sealed by `record_hash`, never interpreted.
 - `spec/test-vectors/session-evidence-record-extensions.json` — cross-language
-  parity vectors covering all three extensions.
+  parity vectors covering the extensions, and `money_basis_act_basis_cases`,
+  where a `money_basis` label agrees with or contradicts the described act's
+  `terms.basis`.
 - **Section 6.3.1 — `session_params.basis`** (`net` | `gross`). The money basis
   of every amount in a session, fixed at initiation like
   `session_params.currency`. A SessionAck that carries it must carry it
@@ -68,15 +86,63 @@ SessionEvidenceRecord generation are untouched, so no `record_version` or schema
   `proposed_session_params`.
 - **Section 7.2 — single-figure offers.** When the session fixed a basis, an
   offer states `terms.total_value` on that basis only, as a single figure.
-- **Section 9A.9 — basis cross-reference.** A `money_basis` describing an
-  on-basis total SHOULD carry the session basis. This is a producer obligation,
-  not a verifier check; the verifier is unchanged.
+- **Section 7.2 — `terms.basis`.** Every offer restates the session basis inside
+  its signed terms, so the protocol-act signature covers it with no change to
+  what is signed (Section 7.3.1). When the session fixed a basis, `terms.basis`
+  is required and must equal it; when the session fixed none, it must be absent.
+  A missing, different, or added `terms.basis` is rejected with
+  `SESSION_PARAM_CHANGED`, and a value outside `net` | `gross` (including
+  `null`) with `INVALID_BASIS`. Both reference implementations check it on every
+  offer and counteroffer they receive, after signature verification and before
+  any state changes. Their clients also check `terms.currency` and `terms.basis`
+  on each offer or counteroffer they receive, before recording it; on each offer
+  they send, before the round and sequence advance, so a refused offer can be
+  corrected and resent in the same round; and on the offer they are accepting,
+  before signing. The reference MCP servers record a counterparty offer only
+  after the client has taken it, so a refused counteroffer is never reported or
+  accepted. `TermsObject` takes an optional `basis`; the reference clients send
+  terms as given and do not insert it.
+- **Section 9.3 — TransactionRecord `basis`.** Beside `currency`, present exactly
+  when the session fixed a basis, and equal to `agreed_terms.basis`.
+- **Section 9.5 — verification step 1.** A TransactionRecord verifier accepts
+  `record_version` `"0.1"` or `"0.2"` and rejects any other value, including an
+  absent, `null`, or non-string one. Before, it did not check `record_version`.
+  The later steps are renumbered.
+- **Section 9.5 — verification step 7.** A record that carries `basis` verifies
+  only if it is `net` or `gross` and `agreed_terms.basis` is present and equal to
+  it, whichever version it carries. A `"0.2"` record without `basis` verifies
+  only if `agreed_terms` has no `basis` key either. A `"0.1"` record without
+  `basis` gets no new check, since an implementation that predates the field
+  records `agreed_terms.basis` alone.
+- **Section 9A.9 — a `money_basis` agrees with the act's basis.** A
+  `money_basis` describing an on-basis total SHOULD carry the session basis.
+  When the described act's `terms` carries `basis` and `money_basis.basis` is
+  `net` or `gross`, the two must be equal: the generator refuses such a record
+  and the verifier rejects it, exactly as for `currency`, for per-act and
+  terminal `money_basis` alike. `per_unit`, `line_total`, and `unspecified` are
+  not compared, and an act without `terms.basis` gets no comparison. Labels are
+  compared, never converted.
 - **Section 12.3 — `INVALID_BASIS` and `SESSION_PARAM_CHANGED`.** Dedicated error
   codes for a `basis` outside `net` | `gross`, and for a message that changes a
   parameter fixed at session initiation; the error's `message` names the
   parameter.
 - `spec/test-vectors/session-params-basis.json` — cross-language vectors for the
-  basis enum and for SessionAcks that keep or change `currency` or `basis`.
+  basis enum, for SessionAcks that keep or change `currency` or `basis`, and for
+  offers whose `terms.currency` or `terms.basis` matches, omits, adds, or
+  changes the session value.
+- `spec/test-vectors/transaction-record-basis.json` — a cross-language
+  TransactionRecord vector for a session that fixed a basis, with a tampered
+  negative and the evidence record that seals it; and a session that fixed none,
+  with the `"0.1"` record an implementation that predates `basis` produced for
+  it.
+- `spec/test-vectors/record-versions.json` — the `record_version` values a
+  TransactionRecord or SessionEvidenceRecord verifier accepts (`"0.1"`, `"0.2"`)
+  and values it must reject, including `"0.3"`, `""`, `"0.2 "`, the number
+  `0.2`, `null`, and an absent key.
+- `spec/conformance-fixtures/offer_basis_diverges_from_session.json` and
+  `offer_currency_diverges_from_session.json` — an offer whose `terms.basis` or
+  `terms.currency` differs from the session value is rejected with
+  `SESSION_PARAM_CHANGED`.
 
 ### Fixed
 
@@ -84,13 +150,22 @@ SessionEvidenceRecord generation are untouched, so no `record_version` or schema
   that changes `currency` or `basis` with `SESSION_PARAM_CHANGED`, naming the
   parameter, both when the responder creates the session and when the initiator
   client receives the ack. Section 6.4.1 already forbade changing `currency` in
-  the SessionAck, but nothing enforced it. §7.2's requirement that each offer's
-  `terms.currency` match the session currency is still not enforced. A `basis`
-  outside `net` | `gross` is rejected with `INVALID_BASIS`. Malformed input is
-  `INVALID_REQUEST`: a missing, empty, or non-string `session_params.currency`,
-  and a `session_params` or `session_params_accepted` that is not an object. The
-  initiator client also rejects a SessionAck whose body is not an object or that
-  omits `session_params_accepted`.
+  the SessionAck, but nothing enforced it. A `basis` outside `net` | `gross` is
+  rejected with `INVALID_BASIS`. Malformed input is `INVALID_REQUEST`: a missing,
+  empty, or non-string `session_params.currency`, and a `session_params` or
+  `session_params_accepted` that is not an object. The initiator client also
+  rejects a SessionAck whose body is not an object or that omits
+  `session_params_accepted`.
+- Both reference implementations now enforce §7.2's requirement that each
+  offer's `terms.currency` match the session currency. An offer or counteroffer
+  whose `terms.currency` is absent, a different string, or not a string is
+  rejected with `SESSION_PARAM_CHANGED`, naming `currency`, whether or not a
+  mandate caps the commitment. Before, only a mandate's
+  `max_commitment_currency` was compared, and only when the mandate set
+  `max_commitment_value`. The check runs with the basis check on every offer,
+  after signature verification and before the mandate check and any state
+  change; a malformed `terms.basis` is reported first, then `currency`, then
+  `basis`.
 
 ## [0.3.0] — 2026-09-02
 

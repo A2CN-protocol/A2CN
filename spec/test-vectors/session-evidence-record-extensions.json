@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vectors for the three additive Section 9A extensions: an identity-light observed_party responder, a recomputable money_basis, and the HALTED_BY_CONTROLS terminal outcome. The private JWK is test-only.",
+  "description": "Cross-language vectors for the additive Section 9A extensions: an identity-light observed_party responder, a recomputable money_basis, and the HALTED_BY_CONTROLS terminal outcome, all at record_version \"0.2\"; and money_basis_act_basis_cases, where a money_basis label agrees with or contradicts the terms.basis of the act it describes. The private JWK is test-only.",
   "did_documents": {
     "did:example:buyer": {
       "@context": [
@@ -25,6 +25,91 @@
         }
       ]
     }
+  },
+  "money_basis_act_basis_cases": {
+    "base_vector": "money_basis",
+    "cases": [
+      {
+        "act_terms_basis": "gross",
+        "money_basis_basis": "net",
+        "name": "net-over-gross-act",
+        "placement": "act",
+        "resealed_record_hash": "FdZ1EFELpUrBaSofiruWDbxy9GOaV6b-3jMNF0nAXII",
+        "valid": false
+      },
+      {
+        "act_terms_basis": "net",
+        "money_basis_basis": "gross",
+        "name": "gross-over-net-act",
+        "placement": "act",
+        "resealed_record_hash": "a2DMqZGSKWLhMML8OXmSYel49X6lRKVDj2SIc17zNmU",
+        "valid": false
+      },
+      {
+        "act_terms_basis": "gross",
+        "money_basis_basis": "net",
+        "name": "net-over-gross-act-terminal",
+        "placement": "terminal",
+        "resealed_record_hash": "WGgjTj5zg4M4DX9EPWNxIygvFFjtug54xikSaLjX9Xw",
+        "valid": false
+      },
+      {
+        "act_terms_basis": null,
+        "money_basis_basis": "net",
+        "name": "net-over-null-act-basis",
+        "placement": "act",
+        "resealed_record_hash": "vgNTjhTXc6AfdPtSTcfKl3VvFmNSBfalYiYR-wLBKEs",
+        "valid": false
+      },
+      {
+        "act_terms_basis": "GROSS",
+        "money_basis_basis": "gross",
+        "name": "gross-over-uppercase-act-basis",
+        "placement": "act",
+        "resealed_record_hash": "urZhVv7k4pK_iQZQkKIb-6g5REmMLoHjCG_INfmuIEo",
+        "valid": false
+      },
+      {
+        "act_terms_basis": "gross",
+        "money_basis_basis": "gross",
+        "name": "gross-over-gross-act",
+        "placement": "act",
+        "record_hash": "dw2GywWKgEl_7da4PBcQEnHG9z82457dV5muaKTVZx0",
+        "valid": true
+      },
+      {
+        "act_terms_basis": "gross",
+        "money_basis_basis": "gross",
+        "name": "gross-over-gross-act-terminal",
+        "placement": "terminal",
+        "record_hash": "ng3DxGze7QINWr-Ttkl8DfbcCJP3RaRFN8jjOz0lKNU",
+        "valid": true
+      },
+      {
+        "act_terms_basis": "gross",
+        "money_basis_basis": "unspecified",
+        "name": "unspecified-over-gross-act",
+        "placement": "act",
+        "record_hash": "17i3l6VpbwoMBX06x6vf39OMNL_d_V3iBKdJgEw5nvs",
+        "valid": true
+      },
+      {
+        "act_terms_basis": "net",
+        "money_basis_basis": "per_unit",
+        "name": "per-unit-over-net-act",
+        "placement": "act",
+        "record_hash": "pcvaJG4GwIispWCTd9n0f6qBzbEt6uJjyLcfqA2K5Ng",
+        "valid": true
+      },
+      {
+        "money_basis_basis": "net",
+        "name": "net-over-act-without-basis",
+        "placement": "act",
+        "record_hash": "7VJwo9uvp4dwAE78MkUq8PUryFUpRYfYDmABciSTN6g",
+        "valid": true
+      }
+    ],
+    "description": "Section 9A.9: a money_basis labelled net or gross must equal the terms.basis of the act it describes whenever that act's terms carries basis. Each case starts from vectors[base_vector]. act_terms_basis, when present, is set as the observed quote's act.terms.basis; when absent, the act states no basis. Placement \"act\" keeps only the quote's own money_basis and drops terminal_money_basis; placement \"terminal\" keeps only terminal_money_basis. The kept money_basis gets basis money_basis_basis. A valid case generates a record with record_hash that verifies. An invalid case is refused by the generator; the record generated with the label \"unspecified\" instead, then relabelled to money_basis_basis and resealed with producer_private_jwk, has resealed_record_hash and fails verification."
   },
   "producer": {
     "agent_id": "buyer-agent",
@@ -122,7 +207,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "gS5D11P3MmCq4EHbjabtGuwdL2-AGD_g8uaKR7iqR-4",
+        "record_hash": "UEFWfmZA9epWxekWSVzsO7BRqyxeZIMcHJy8PEC3NjQ",
         "terminal_outcome": "HALTED_BY_CONTROLS"
       },
       "message_log": [
@@ -171,7 +256,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "mixed",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "mdiZgsSN39BLoU0ichNHHw15FBdcFz8pVbWIVTpGoZw",
+        "record_hash": "jt4918QDWMq_NZLwGkvZ74BKgs0ehsUQClEyr6U-hPs",
         "terminal_outcome": "IMPASSE"
       },
       "message_log": [
@@ -252,7 +337,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "DhN9xOwSts9EiQjdB76a9WkvGiVpYflzsToXgJKxMnw",
+        "record_hash": "S7c1gp9gpSZNHViNElsoTZFR8HDEfZmDCBtjJjYLnbU",
         "terminal_outcome": "TIMED_OUT"
       },
       "message_log": [

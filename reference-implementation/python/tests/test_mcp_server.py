@@ -7,6 +7,7 @@ between each test via the autouse clear_sessions fixture.
 
 from __future__ import annotations
 
+import copy
 import sys
 import os
 import uuid
@@ -25,6 +26,7 @@ if str(_REPO_PY) not in sys.path:
 import mcp_server
 from a2cn.client import A2CNClient
 from a2cn.crypto import generate_keypair
+from a2cn.session import A2CNError
 
 # ---------------------------------------------------------------------------
 # Constants shared across tests
@@ -555,3 +557,56 @@ def test_inject_counterparty_offer_updates_store():
 def test_inject_counterparty_offer_unknown_session():
     with pytest.raises(KeyError):
         mcp_server.inject_counterparty_offer("no-such-session", SAMPLE_CP_OFFER)
+
+
+# A counteroffer the client refuses must leave no trace in the MCP entry: not in
+# the status report, and not as an offer a2cn_accept could sign. MCP sessions fix
+# no basis, so an off-currency counteroffer is one any session can meet.
+REFUSED_CP_OFFERS = {
+    "eur-in-a-usd-session": {
+        **SAMPLE_CP_OFFER,
+        "terms": {**SAMPLE_CP_OFFER["terms"], "currency": "EUR"},
+    },
+    "basis-added-to-a-basis-less-session": {
+        **SAMPLE_CP_OFFER,
+        "terms": {**SAMPLE_CP_OFFER["terms"], "basis": "gross"},
+    },
+    "non-object-terms": {**SAMPLE_CP_OFFER, "terms": "11500000 USD"},
+}
+
+
+def _entry_fields(entry: dict) -> dict:
+    """The entry without its client objects, which are compared through their state."""
+    return copy.deepcopy(
+        {key: value for key, value in entry.items() if key not in ("client", "http_client")}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", list(REFUSED_CP_OFFERS))
+async def test_a_refused_counteroffer_leaves_the_session_entry_unchanged(name):
+    entry = _seed_session()
+    fields_before = _entry_fields(entry)
+    client_state_before = copy.deepcopy(entry["client"]._sessions[SESSION_ID])
+
+    with pytest.raises(A2CNError) as exc_info:
+        mcp_server.inject_counterparty_offer(SESSION_ID, REFUSED_CP_OFFERS[name])
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+
+    assert _entry_fields(entry) == fields_before
+    assert entry["client"]._sessions[SESSION_ID] == client_state_before
+
+    status = await mcp_server.a2cn_get_session_status(SESSION_ID)
+    assert status["has_counterparty_offer"] is False
+    assert status["counterparty_last_offer"] is None
+
+    with respx.mock(assert_all_called=False) as mock:
+        messages = mock.post(url__regex=rf"{BASE_URL}/sessions/.+/messages").mock(
+            return_value=httpx.Response(200, json={"status": "accepted"},
+                                        headers={"Content-Type": "application/a2cn+json"})
+        )
+        result = await mcp_server.a2cn_accept(SESSION_ID)
+
+    assert result["error"] == "no_counterparty_offer"
+    assert not messages.called
+    assert entry["status"] == "NEGOTIATING"

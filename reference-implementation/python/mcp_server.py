@@ -243,13 +243,18 @@ def inject_counterparty_offer(session_id: str, offer_message: dict) -> None:
     entry = _sessions.get(session_id)
     if entry is None:
         raise KeyError(f"Session {session_id!r} not found in MCP session store")
-    terms = offer_message.get("terms", {})
-    payment = terms.get("payment_terms", {})
+    # The client refuses an offer that breaks the session's currency or basis
+    # (Section 7.2). Record it here only once the client has taken it, so a
+    # refused offer is never reported by a2cn_get_session_status or signed by
+    # a2cn_accept. Nothing below can raise, so the entry and the client agree.
+    entry["client"].process_incoming(session_id, offer_message)
+    terms = offer_message.get("terms")
+    terms = terms if isinstance(terms, dict) else {}
+    payment = terms.get("payment_terms")
+    payment = payment if isinstance(payment, dict) else {}
     entry["counterparty_last_offer_cents"] = terms.get("total_value")
     entry["counterparty_last_offer_net_days"] = payment.get("net_days")
     entry["counterparty_last_offer_message"] = offer_message
-    # Keep the A2CNClient's internal state in sync (for record generation)
-    entry["client"].process_incoming(session_id, offer_message)
 
 
 # ---------------------------------------------------------------------------

@@ -24,10 +24,13 @@ import {
   type DidResolver,
   type RecordSession,
 } from "./record.js";
-import { SessionState, now } from "./session.js";
+import { SESSION_BASES, SessionState, now } from "./session.js";
 import type { Dict } from "./messages.js";
 
-export const SESSION_EVIDENCE_RECORD_VERSION = "0.1";
+export const SESSION_EVIDENCE_RECORD_VERSION = "0.2";
+// The versions a verifier accepts (Section 9A.2). Every other value is rejected,
+// and verification is the same for both.
+export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2"];
 export const SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record";
 
 export const EvidenceLevel = {
@@ -264,7 +267,10 @@ export function generateSessionEvidenceRecord(
   // verifier run the same two rules so a producer cannot emit a record that only
   // fails once it is somebody else's problem.
   if (!moneyBasisClaimsVerify(record)) {
-    throw new Error("money_basis does not recompute to the claimed and signed totals");
+    throw new Error(
+      "money_basis does not recompute to the claimed and signed totals, " +
+        "or contradicts the currency or basis of the act it describes",
+    );
   }
   if (!observedResponderRulesHold(record)) {
     throw new Error(
@@ -309,7 +315,7 @@ export function assessSessionEvidenceRecord(
     if (record.record_type !== SESSION_EVIDENCE_RECORD_TYPE) {
       return assessment;
     }
-    if (record.record_version !== SESSION_EVIDENCE_RECORD_VERSION) {
+    if (!RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.includes(record.record_version as string)) {
       return assessment;
     }
 
@@ -853,7 +859,26 @@ function moneyBasisBindsToAct(entry: unknown, moneyBasis: unknown): boolean {
   if (typeof currency !== "string") {
     return false;
   }
-  return moneyBasisRecomputes(moneyBasis, total as number, currency);
+  return (
+    moneyBasisRecomputes(moneyBasis, total as number, currency) &&
+    moneyBasisLabelAgreesWithAct(moneyBasis as Dict, terms as Dict)
+  );
+}
+
+/**
+ * A net or gross label must not contradict the basis the act itself states.
+ *
+ * This mirrors the currency rule: when the act's terms carry basis (Section
+ * 7.2), a money_basis labelled net or gross must carry the same value. The other
+ * labels, and an act that states no basis, are not compared. Labels are
+ * compared, never converted. Called only once the money_basis has recomputed, so
+ * its basis is already a recognized label.
+ */
+function moneyBasisLabelAgreesWithAct(moneyBasis: Dict, terms: Dict): boolean {
+  if (!hasOwn(terms, "basis") || !SESSION_BASES.includes(moneyBasis.basis as string)) {
+    return true;
+  }
+  return terms.basis === moneyBasis.basis;
 }
 
 /** Every money_basis in the record recomputes, or the record is rejected. */

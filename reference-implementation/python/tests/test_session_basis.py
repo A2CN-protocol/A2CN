@@ -1,4 +1,5 @@
-"""Tests for session_params.basis: carried, enum-checked, and fixed at initiation.
+"""Tests for session_params.basis: carried, enum-checked, fixed at initiation, and
+restated in every offer's terms.basis.
 
 Verdicts come from spec/test-vectors/session-params-basis.json, which the
 TypeScript suite asserts too. basis is a label: nothing here converts net and
@@ -7,6 +8,7 @@ gross, and an absent basis stays absent (no default).
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from pathlib import Path
@@ -15,10 +17,10 @@ import httpx
 import pytest
 
 from a2cn.client import A2CNClient
-from a2cn.crypto import generate_keypair, hash_object, sign_jws
-from a2cn.messages import SessionParams
-from a2cn.session import SESSION_BASES, A2CNError, SessionManager
-from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_session_init
+from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
+from a2cn.messages import SessionParams, TermsObject
+from a2cn.session import SESSION_BASES, A2CNError, SessionManager, SessionState
+from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document, make_session_init
 
 REPO_ROOT = Path(__file__).parents[3]
 VECTORS = json.loads(
@@ -27,7 +29,22 @@ VECTORS = json.loads(
 INVITATION_SCHEMA = json.loads(
     (REPO_ROOT / "spec" / "schemas" / "session-invitation.schema.json").read_text()
 )
+MONEY_PARAM_FIXTURES = {
+    name: json.loads((REPO_ROOT / "spec" / "conformance-fixtures" / f"{name}.json").read_text())
+    for name in ("offer_basis_diverges_from_session", "offer_currency_diverges_from_session")
+}
 NOW = "2026-03-24T10:00:00Z"
+
+INITIATOR_KEY, INITIATOR_PUBLIC_KEY = generate_keypair()
+RESPONDER_KEY, RESPONDER_PUBLIC_KEY = generate_keypair()
+DID_DOCUMENTS = {
+    INITIATOR_DID: make_did_document(
+        INITIATOR_DID, "key-1", public_key_to_jwk(INITIATOR_PUBLIC_KEY)
+    ),
+    RESPONDER_DID: make_did_document(
+        RESPONDER_DID, "key-2026-01", public_key_to_jwk(RESPONDER_PUBLIC_KEY)
+    ),
+}
 
 
 def _headers(message_id: str) -> dict:
@@ -59,12 +76,16 @@ def _init_and_ack(proposed: dict, accepted: dict) -> tuple[dict, dict]:
     return session_init, session_ack
 
 
-def _signed_offer(session_id, rnd, sender_did, private_key, in_reply_to=None) -> dict:
-    """A signed round-``rnd`` offer or counteroffer; its terms carry no basis field."""
+def _terms(basis) -> dict:
+    return {"total_value": 9_500_000, "currency": "USD", "basis": basis}
+
+
+def _signed_offer(session_id, rnd, sender_did, private_key, *, terms, in_reply_to=None) -> dict:
+    """A signed round-``rnd`` offer or counteroffer carrying ``terms`` verbatim."""
     timestamp = "2026-03-24T10:01:00Z"
     expires_at = "2030-01-01T00:00:00Z"
     message_type = "offer" if rnd == 1 else "counteroffer"
-    terms = {"total_value": 9_500_000, "currency": "USD"}
+    terms = copy.deepcopy(terms)
     protocol_act_hash = hash_object({
         "protocol_version": "0.2",
         "session_id": session_id,
@@ -187,9 +208,17 @@ async def test_basis_echoed_and_pinned_across_rounds(
     assert r.json()["session_params_accepted"]["basis"] == "gross"
     session_id = r.json()["session_id"]
 
-    offer = _signed_offer(session_id, 1, INITIATOR_DID, initiator_keypair[0])
+    # Each offer restates the session basis in its signed terms (Section 7.2).
+    offer = _signed_offer(
+        session_id, 1, INITIATOR_DID, initiator_keypair[0], terms=_terms("gross")
+    )
     counter = _signed_offer(
-        session_id, 2, RESPONDER_DID, responder_keypair[0], in_reply_to=offer["message_id"]
+        session_id,
+        2,
+        RESPONDER_DID,
+        responder_keypair[0],
+        terms=_terms("gross"),
+        in_reply_to=offer["message_id"],
     )
     for client, message in ((test_client, offer), (responder_test_client, counter)):
         r = await client.post(
@@ -231,6 +260,161 @@ async def test_missing_currency_rejected_at_session_init(test_client):
 
 
 # ---------------------------------------------------------------------------
+# Offers restate the session basis in terms.basis (Section 7.2)
+# ---------------------------------------------------------------------------
+
+def _open_session(proposed: dict, accepted: dict):
+    """A live session whose SessionInit and SessionAck carry the given money parameters.
+
+    The initiator's mandate caps commitments in the session currency, so a
+    conformant offer also passes the mandate check.
+    """
+    session_init, session_ack = _init_and_ack(proposed, accepted)
+    session_init["initiator_mandate"]["max_commitment_currency"] = proposed["currency"]
+    manager = SessionManager()
+    for did, did_document in DID_DOCUMENTS.items():
+        manager.register_did_document(did, did_document)
+    session = manager.create_session("sess-basis", session_init, session_ack, NOW)
+    session.session_timeout_seconds = 86400 * 365 * 100  # NOW is in the past
+    return manager, session
+
+
+def _assert_offer_left_no_trace(session, offer: dict) -> None:
+    """A rejected offer is refused before any session state changes."""
+    assert session.state == SessionState.ACTIVE
+    assert (session.round_number, session.sequence_number) == (0, 0)
+    assert session.current_turn == "initiator"
+    assert session.latest_offer_id is None
+    assert session._message_log == []
+    assert session._offer_chain == []
+    assert offer["message_id"] not in session._processed_messages
+
+
+@pytest.mark.parametrize("case", VECTORS["offer_cases"], ids=lambda case: case["name"])
+def test_offer_terms_basis_held_to_the_session_basis(case):
+    manager, session = _open_session(case["proposed"], case["accepted"])
+    offer = _signed_offer("sess-basis", 1, INITIATOR_DID, INITIATOR_KEY, terms=case["terms"])
+    if case["valid"]:
+        state = manager.process_message(session, offer)
+        assert (state["state"], state["round_number"]) == (SessionState.NEGOTIATING, 1)
+    else:
+        with pytest.raises(A2CNError) as exc_info:
+            manager.process_message(session, offer)
+        assert exc_info.value.code == case["error"]
+        assert exc_info.value.http_status == 400
+        assert case["changed"] in exc_info.value.message
+        _assert_offer_left_no_trace(session, offer)
+
+
+@pytest.mark.parametrize(
+    "session_basis", [*VECTORS["valid_bases"], None], ids=lambda basis: basis or "no-basis"
+)
+@pytest.mark.parametrize("basis", VECTORS["invalid_bases"], ids=repr)
+def test_unrecognized_terms_basis_rejected(basis, session_basis):
+    money = {"currency": "USD"}
+    if session_basis is not None:
+        money["basis"] = session_basis
+    manager, session = _open_session(money, money)
+    offer = _signed_offer("sess-basis", 1, INITIATOR_DID, INITIATOR_KEY, terms=_terms(basis))
+    with pytest.raises(A2CNError) as exc_info:
+        manager.process_message(session, offer)
+    assert exc_info.value.code == "INVALID_BASIS"
+    assert "basis" in exc_info.value.message
+    _assert_offer_left_no_trace(session, offer)
+
+
+def test_counteroffer_cannot_change_the_basis():
+    money = {"currency": "USD", "basis": "gross"}
+    manager, session = _open_session(money, money)
+    offer = _signed_offer("sess-basis", 1, INITIATOR_DID, INITIATOR_KEY, terms=_terms("gross"))
+    manager.process_message(session, offer)
+
+    net = _signed_offer(
+        "sess-basis", 2, RESPONDER_DID, RESPONDER_KEY,
+        terms=_terms("net"), in_reply_to=offer["message_id"],
+    )
+    with pytest.raises(A2CNError) as exc_info:
+        manager.process_message(session, net)
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+    assert "basis" in exc_info.value.message
+    assert (session.round_number, session.sequence_number, session.current_turn) == (
+        1, 1, "responder",
+    )
+    assert session._offer_chain == [offer["protocol_act_hash"]]
+
+    gross = _signed_offer(
+        "sess-basis", 2, RESPONDER_DID, RESPONDER_KEY,
+        terms=_terms("gross"), in_reply_to=offer["message_id"],
+    )
+    assert manager.process_message(session, gross)["round_number"] == 2
+
+
+def test_session_money_params_are_checked_before_the_mandate():
+    """A currency the session did not fix is SESSION_PARAM_CHANGED, whatever the mandate says."""
+    manager, session = _open_session({"currency": "EUR"}, {"currency": "EUR"})
+    assert session.initiator_mandate["max_commitment_currency"] == "EUR"
+    # Both a mandate-currency mismatch and over the mandate cap: the session check wins.
+    offer = _signed_offer(
+        "sess-basis", 1, INITIATOR_DID, INITIATOR_KEY,
+        terms={"total_value": 99_000_000, "currency": "USD"},
+    )
+    with pytest.raises(A2CNError) as exc_info:
+        manager.process_message(session, offer)
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+    assert "currency" in exc_info.value.message
+    _assert_offer_left_no_trace(session, offer)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    # The reference responder echoes basis unchanged, so over HTTP accepted == proposed.
+    [case for case in VECTORS["offer_cases"] if case["accepted"] == case["proposed"]],
+    ids=lambda case: case["name"],
+)
+async def test_offer_terms_basis_held_over_http(case, test_client, initiator_keypair):
+    body = make_session_init()
+    body["session_params"] = {**body["session_params"], **case["proposed"]}
+    body["initiator_mandate"]["max_commitment_currency"] = case["proposed"]["currency"]
+    r = await test_client.post("/sessions", json=body, headers=_headers(body["message_id"]))
+    assert r.status_code == 201
+    session_id = r.json()["session_id"]
+
+    offer = _signed_offer(session_id, 1, INITIATOR_DID, initiator_keypair[0], terms=case["terms"])
+    r = await test_client.post(
+        f"/sessions/{session_id}/messages", json=offer, headers=_headers(offer["message_id"])
+    )
+    state = (await test_client.get(f"/sessions/{session_id}")).json()
+    if case["valid"]:
+        assert r.status_code == 200
+        assert (state["state"], state["round_number"]) == (SessionState.NEGOTIATING, 1)
+    else:
+        assert r.status_code == 400
+        error = r.json()["error"]
+        assert error["code"] == case["error"]
+        assert case["changed"] in error["message"]
+        assert (state["state"], state["round_number"], state["sequence_number"]) == (
+            SessionState.ACTIVE, 0, 0,
+        )
+
+
+@pytest.mark.parametrize("name", sorted(MONEY_PARAM_FIXTURES))
+def test_offer_money_param_conformance_fixture(name):
+    given, expect = MONEY_PARAM_FIXTURES[name]["given"], MONEY_PARAM_FIXTURES[name]["expect"]
+    manager, session = _open_session(given["session_params"], given["session_params"])
+    assert session.state == given["session_state"]
+    offer = _signed_offer(
+        "sess-basis", 1, INITIATOR_DID, INITIATOR_KEY, terms=given["offer"]["terms"]
+    )
+    assert offer["message_type"] == given["offer"]["message_type"]
+    assert expect["accepted"] is False
+    with pytest.raises(A2CNError) as exc_info:
+        manager.process_message(session, offer)
+    assert exc_info.value.code == expect["error_code"]
+    _assert_offer_left_no_trace(session, offer)
+
+
+# ---------------------------------------------------------------------------
 # A2CNClient.initiate_session (the initiator receives the SessionAck)
 # ---------------------------------------------------------------------------
 
@@ -252,13 +436,17 @@ def _client(respond) -> A2CNClient:
     )
 
 
-def _client_answering_with(accepted) -> A2CNClient:
+def _client_answering_with(accepted, posted: list | None = None) -> A2CNClient:
     """An initiator whose responder answers any SessionInit with ``accepted`` params.
 
-    ``_OMITTED`` leaves session_params_accepted out of the SessionAck.
+    ``_OMITTED`` leaves session_params_accepted out of the SessionAck. Each
+    message posted to the session is appended to ``posted`` and answered 200.
     """
 
     def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/messages"):
+            posted.append(json.loads(request.content))
+            return httpx.Response(200, json={"state": SessionState.NEGOTIATING})
         ack = {
             "message_type": "session_ack",
             "message_id": str(uuid.uuid4()),
@@ -322,7 +510,120 @@ async def test_client_rejects_malformed_ack_body(body):
 
 
 # ---------------------------------------------------------------------------
-# SessionParams and the SessionInvitation schema
+# A2CNClient: the offers it sends and the counteroffers it receives (Section 7.2)
+# ---------------------------------------------------------------------------
+
+async def _opened_client(case: dict, posted: list) -> A2CNClient:
+    """An initiator holding session sess-basis, opened from the case's money parameters."""
+    session_init, session_ack = _init_and_ack(case["proposed"], case["accepted"])
+    client = _client_answering_with(session_ack["session_params_accepted"], posted)
+    await client.initiate_session(
+        "https://acme.example", RESPONDER_DID, session_init["session_params"]
+    )
+    return client
+
+
+def _conformant_terms(accepted: dict) -> dict:
+    """Terms restating the session currency and, when the session fixed one, its basis."""
+    basis = {"basis": accepted["basis"]} if "basis" in accepted else {}
+    return {"total_value": 9_500_000, "currency": accepted["currency"], **basis}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", VECTORS["offer_cases"], ids=lambda case: case["name"])
+async def test_client_checks_received_offer_money_params(case):
+    """The initiator receives counteroffers, so it applies the Section 7.2 receiver rules."""
+    client = await _opened_client(case, posted=[])
+    state = client._sessions["sess-basis"]
+    before = copy.deepcopy(state)
+    counteroffer = _signed_offer("sess-basis", 2, RESPONDER_DID, RESPONDER_KEY, terms=case["terms"])
+    if case["valid"]:
+        client.process_incoming("sess-basis", counteroffer)
+        assert state["latest_offer"] == counteroffer
+        assert state["offer_chain"] == [counteroffer["protocol_act_hash"]]
+    else:
+        with pytest.raises(A2CNError) as exc_info:
+            client.process_incoming("sess-basis", counteroffer)
+        assert exc_info.value.code == case["error"]
+        assert case["changed"] in exc_info.value.message
+        assert state == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", VECTORS["offer_cases"], ids=lambda case: case["name"])
+async def test_client_checks_offer_money_params_before_sending(case):
+    """A refused offer is never posted and leaves the round and sequence where they were."""
+    posted: list = []
+    client = await _opened_client(case, posted)
+    state = client._sessions["sess-basis"]
+    send = lambda terms: client.send_offer(  # noqa: E731
+        "https://acme.example", RESPONDER_DID, "sess-basis", terms
+    )
+    if case["valid"]:
+        await send(case["terms"])
+    else:
+        with pytest.raises(A2CNError) as exc_info:
+            await send(case["terms"])
+        assert exc_info.value.code == case["error"]
+        assert case["changed"] in exc_info.value.message
+        assert posted == []
+        assert (state["round_number"], state["sequence_number"]) == (0, 0)
+        await send(_conformant_terms(case["accepted"]))
+    assert [(offer["round_number"], offer["sequence_number"]) for offer in posted] == [(1, 1)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", VECTORS["offer_cases"], ids=lambda case: case["name"])
+async def test_client_checks_offer_money_params_before_accepting(case):
+    """The client signs only terms the session allows, whatever reached it unchecked."""
+    posted: list = []
+    client = await _opened_client(case, posted)
+    state = client._sessions["sess-basis"]
+    before = copy.deepcopy(state)
+    offer = _signed_offer("sess-basis", 2, RESPONDER_DID, RESPONDER_KEY, terms=case["terms"])
+    accept = lambda: client.send_acceptance(  # noqa: E731
+        "https://acme.example", RESPONDER_DID, "sess-basis", offer
+    )
+    if case["valid"]:
+        await accept()
+        assert [message["accepted_offer_id"] for message in posted] == [offer["message_id"]]
+        assert state["sequence_number"] == before["sequence_number"] + 1
+    else:
+        with pytest.raises(A2CNError) as exc_info:
+            await accept()
+        assert exc_info.value.code == case["error"]
+        assert case["changed"] in exc_info.value.message
+        assert posted == []
+        assert state == before
+
+
+@pytest.mark.asyncio
+async def test_client_refuses_to_accept_a_mislabelled_offer_it_recorded():
+    """A message_type other than offer or counteroffer skips the receive check, not this one."""
+    posted: list = []
+    usd = {"currency": "USD"}
+    client = await _opened_client({"proposed": usd, "accepted": usd}, posted)
+    state = client._sessions["sess-basis"]
+    mislabelled = _signed_offer(
+        "sess-basis", 2, RESPONDER_DID, RESPONDER_KEY,
+        terms={"total_value": 9_500_000, "currency": "EUR"},
+    )
+    mislabelled["message_type"] = "Counteroffer"
+    client.process_incoming("sess-basis", mislabelled)
+    sequence_number = state["sequence_number"]
+
+    with pytest.raises(A2CNError) as exc_info:
+        await client.send_acceptance(
+            "https://acme.example", RESPONDER_DID, "sess-basis", mislabelled
+        )
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+    assert "currency" in exc_info.value.message
+    assert posted == []
+    assert state["sequence_number"] == sequence_number
+
+
+# ---------------------------------------------------------------------------
+# SessionParams, TermsObject, and the SessionInvitation schema
 # ---------------------------------------------------------------------------
 
 def test_session_params_carry_basis_only_when_set():
@@ -336,6 +637,15 @@ def test_session_params_carry_basis_only_when_set():
     }
     assert SessionParams(**fields, basis="gross").to_dict()["basis"] == "gross"
     assert "basis" not in SessionParams(**fields).to_dict()
+
+
+def test_terms_object_carries_basis_only_when_set():
+    assert TermsObject(total_value=9_500_000, currency="USD", basis="gross").to_dict() == {
+        "total_value": 9_500_000,
+        "currency": "USD",
+        "basis": "gross",
+    }
+    assert "basis" not in TermsObject(total_value=9_500_000, currency="USD").to_dict()
 
 
 def _invitation(proposed_session_params: dict) -> dict:

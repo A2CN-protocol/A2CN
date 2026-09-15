@@ -190,6 +190,87 @@ def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
             )
 
 
+def check_offer_money_params(
+    session_params: dict,
+    terms: Any,
+    *,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> None:
+    """Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+
+    ``session_params`` are the parameters the session fixed, as the SessionAck's
+    session_params_accepted carries them. A receiver runs this on every offer
+    and counteroffer, and the reference client also runs it on each offer
+    before sending it. The checks are presence-aware, so an absent field is not
+    the same as null, and run in this order:
+
+    1. A terms.basis that is present must be 'net' or 'gross' (INVALID_BASIS).
+    2. terms.currency must equal the session currency; absent, a different
+       string, or a non-string is SESSION_PARAM_CHANGED.
+    3. When the session fixed a basis, terms.basis must be present and equal
+       to it; when the session fixed none, terms.basis must be absent,
+       because an offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+
+    A terms value that is not an object carries neither field. Nothing here
+    converts between currencies or between net and gross. The state machine
+    does not check an acceptance again, since the offer it accepts was checked
+    on receipt; the reference client checks the offer it is about to accept,
+    because the offer it is handed may never have been checked.
+    """
+    is_object = isinstance(terms, dict)
+    offered_basis = terms.get("basis", _ABSENT) if is_object else _ABSENT
+    offered_currency = terms.get("currency", _ABSENT) if is_object else _ABSENT
+    context = {"session_id": session_id, "message_id": message_id}
+
+    if offered_basis is not _ABSENT and offered_basis not in SESSION_BASES:
+        raise A2CNError(
+            "INVALID_BASIS",
+            f"terms.basis must be 'net' or 'gross', got {offered_basis!r}",
+            400,
+            **context,
+        )
+
+    session_currency = session_params.get("currency", _ABSENT)
+    if offered_currency is _ABSENT or offered_currency != session_currency:
+        stated = (
+            "omits terms.currency"
+            if offered_currency is _ABSENT
+            else f"has terms.currency {offered_currency!r}"
+        )
+        raise A2CNError(
+            "SESSION_PARAM_CHANGED",
+            f"Offer {stated}, but the session fixed currency "
+            f"{session_params.get('currency')!r} at initiation",
+            400,
+            **context,
+        )
+
+    session_basis = session_params.get("basis", _ABSENT)
+    if session_basis is _ABSENT:
+        if offered_basis is not _ABSENT:
+            raise A2CNError(
+                "SESSION_PARAM_CHANGED",
+                f"terms.basis {offered_basis!r} adds a basis the session did not fix "
+                "at initiation",
+                400,
+                **context,
+            )
+        return
+    if offered_basis is _ABSENT or offered_basis != session_basis:
+        stated = (
+            "omits terms.basis"
+            if offered_basis is _ABSENT
+            else f"has terms.basis {offered_basis!r}"
+        )
+        raise A2CNError(
+            "SESSION_PARAM_CHANGED",
+            f"Offer {stated}, but the session fixed basis {session_basis!r} at initiation",
+            400,
+            **context,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Session manager / state machine
 # ---------------------------------------------------------------------------
@@ -549,6 +630,13 @@ class SessionManager:
             message,
             payload_hash=expected_hash,
             signature_field="protocol_act_signature",
+        )
+        # After the signature, before the mandate check and any state change (Section 7.2)
+        check_offer_money_params(
+            session.session_params,
+            terms,
+            session_id=session.session_id,
+            message_id=message.get("message_id"),
         )
         self._enforce_max_commitment(session, sender_role, terms, message)
 

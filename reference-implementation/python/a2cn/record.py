@@ -15,15 +15,18 @@ from typing import Callable, Mapping
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
 from a2cn.did import get_public_key, get_verification_method
-from a2cn.session import Session, SessionState, _now
+from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
 # A2CN namespace UUID for record_id (UUID v5) — Appendix A
 A2CN_NAMESPACE = uuid.UUID("f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c")
 
 # These identify the transaction-record and audit-log artifact schemas. They
 # are intentionally independent of the Python package release version.
-TRANSACTION_RECORD_VERSION = "0.1"
+TRANSACTION_RECORD_VERSION = "0.2"
 AUDIT_LOG_VERSION = "0.1"
+# The TransactionRecord versions a verifier accepts (Section 9.5 step 1). Every
+# other value is rejected; the remaining verification steps are the same for both.
+RECOGNIZED_TRANSACTION_RECORD_VERSIONS = ("0.1", "0.2")
 
 
 def generate_transaction_record(session: Session) -> dict:
@@ -89,6 +92,13 @@ def generate_transaction_record(session: Session) -> dict:
         },
         "deal_type": session.session_params.get("deal_type", ""),
         "currency": session.session_params.get("currency", ""),
+        # basis sits beside currency only when the session fixed one (Section 9.3);
+        # the record of a session without a basis has no basis key.
+        **(
+            {"basis": session.session_params["basis"]}
+            if "basis" in session.session_params
+            else {}
+        ),
         "subject": session_init.get("session_params", {}).get("subject", ""),
         "subject_reference": session_init.get("session_params", {}).get("subject_reference"),
         "agreed_terms": final_offer.get("terms", {}),
@@ -134,6 +144,39 @@ def _compute_offer_chain_hash(offer_hashes: list[str]) -> str:
     return hash_bytes(canonical)
 
 
+def _record_version_recognized(record: dict) -> bool:
+    """Section 9.5 step 1: record_version is exactly one of the recognized strings.
+
+    Absent, null, a number, or a string that differs by so much as a space is
+    rejected rather than parsed.
+    """
+    version = record.get("record_version")
+    return isinstance(version, str) and version in RECOGNIZED_TRANSACTION_RECORD_VERSIONS
+
+
+def _record_basis_matches_agreed_terms(record: dict) -> bool:
+    """Section 9.5 step 7: the top-level basis and agreed_terms.basis agree.
+
+    agreed_terms is the final offer's terms, which restate the session basis
+    (Section 7.2). A record that carries basis must hold 'net' or 'gross' there,
+    equal to agreed_terms.basis. A "0.2" record without basis must not carry
+    agreed_terms.basis either, since a "0.2" producer records the basis whenever
+    the final offer's terms carried one; presence is by key, so a null counts. A
+    "0.1" record without basis gets no check: an implementation that predates
+    the field records agreed_terms.basis alone.
+    """
+    agreed_terms = record.get("agreed_terms")
+    if "basis" not in record:
+        if record.get("record_version") == "0.1":
+            return True
+        return not (isinstance(agreed_terms, dict) and "basis" in agreed_terms)
+    return (
+        record["basis"] in SESSION_BASES
+        and isinstance(agreed_terms, dict)
+        and agreed_terms.get("basis") == record["basis"]
+    )
+
+
 def verify_transaction_record(
     record: dict,
     did_resolver: Mapping[str, dict] | Callable[[str], dict],
@@ -147,12 +190,18 @@ def verify_transaction_record(
     list as `offer_hashes` so `offer_chain_hash` can be independently recomputed.
     """
     try:
+        if not _record_version_recognized(record):
+            return False
+
         final_offer = record["final_offer"]
         final_acceptance = record["final_acceptance"]
         offer_hash = final_offer["protocol_act_hash"]
         accepted_hash = final_acceptance["accepted_protocol_act_hash"]
 
         if not _record_hash_matches(record):
+            return False
+
+        if not _record_basis_matches_agreed_terms(record):
             return False
 
         if accepted_hash != offer_hash:

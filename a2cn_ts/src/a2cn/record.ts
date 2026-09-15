@@ -12,7 +12,7 @@ import { v5 as uuidv5 } from "uuid";
 
 import { hashObject, canonicalize, hashBytes, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
-import { SessionState, now, parseIsoMs } from "./session.js";
+import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import type { Dict } from "./messages.js";
 
 /**
@@ -42,8 +42,11 @@ export const A2CN_NAMESPACE = "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c";
 
 // These identify the transaction-record and audit-log artifact schemas. They
 // are intentionally independent of the package release version.
-export const TRANSACTION_RECORD_VERSION = "0.1";
+export const TRANSACTION_RECORD_VERSION = "0.2";
 export const AUDIT_LOG_VERSION = "0.1";
+// The TransactionRecord versions a verifier accepts (Section 9.5 step 1). Every
+// other value is rejected; the remaining verification steps are the same for both.
+export const RECOGNIZED_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2"];
 
 export type DidResolver = Record<string, Dict> | ((did: string) => Dict);
 
@@ -112,6 +115,11 @@ export function generateTransactionRecord(session: RecordSession): Dict {
     },
     deal_type: (session.session_params.deal_type as string) ?? "",
     currency: (session.session_params.currency as string) ?? "",
+    // basis sits beside currency only when the session fixed one (Section 9.3);
+    // the record of a session without a basis has no basis key.
+    ...(session.session_params.basis !== undefined
+      ? { basis: session.session_params.basis }
+      : {}),
     subject: (sessionInitParams.subject as string) ?? "",
     subject_reference: sessionInitParams.subject_reference ?? null,
     agreed_terms: (finalOffer.terms as Dict) ?? {},
@@ -158,6 +166,45 @@ function computeOfferChainHash(offerHashes: string[]): string {
 }
 
 /**
+ * Section 9.5 step 1: record_version is exactly one of the recognized strings.
+ *
+ * Absent, null, a number, or a string that differs by so much as a space is
+ * rejected rather than parsed.
+ */
+function recordVersionRecognized(record: Dict): boolean {
+  const version = record.record_version;
+  return typeof version === "string" && RECOGNIZED_TRANSACTION_RECORD_VERSIONS.includes(version);
+}
+
+/**
+ * Section 9.5 step 7: the top-level basis and agreed_terms.basis agree.
+ *
+ * agreed_terms is the final offer's terms, which restate the session basis
+ * (Section 7.2). A record that carries basis must hold 'net' or 'gross' there,
+ * equal to agreed_terms.basis. A "0.2" record without basis must not carry
+ * agreed_terms.basis either, since a "0.2" producer records the basis whenever
+ * the final offer's terms carried one; presence is by key, so a null counts. A
+ * "0.1" record without basis gets no check: an implementation that predates the
+ * field records agreed_terms.basis alone.
+ */
+function recordBasisMatchesAgreedTerms(record: Dict): boolean {
+  const agreedTerms = record.agreed_terms;
+  const agreedTermsIsObject =
+    agreedTerms !== null && typeof agreedTerms === "object" && !Array.isArray(agreedTerms);
+  if (record.basis === undefined) {
+    if (record.record_version === "0.1") {
+      return true;
+    }
+    return !(agreedTermsIsObject && Object.prototype.hasOwnProperty.call(agreedTerms, "basis"));
+  }
+  return (
+    SESSION_BASES.includes(record.basis as string) &&
+    agreedTermsIsObject &&
+    (agreedTerms as Dict).basis === record.basis
+  );
+}
+
+/**
  * Verify a transaction record per Section 9.5.
  *
  * `didResolver` may be a mapping of DID → DID document or a callable returning
@@ -170,12 +217,20 @@ export function verifyTransactionRecord(
   offerHashes: string[] | null = null,
 ): boolean {
   try {
+    if (!recordVersionRecognized(record)) {
+      return false;
+    }
+
     const finalOffer = record.final_offer as Dict;
     const finalAcceptance = record.final_acceptance as Dict;
     const offerHash = finalOffer.protocol_act_hash as string;
     const acceptedHash = finalAcceptance.accepted_protocol_act_hash as string;
 
     if (!recordHashMatches(record)) {
+      return false;
+    }
+
+    if (!recordBasisMatchesAgreedTerms(record)) {
       return false;
     }
 

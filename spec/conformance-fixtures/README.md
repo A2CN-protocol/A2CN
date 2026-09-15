@@ -21,3 +21,5 @@ Status values:
 | `payment_terms_drift_mid_negotiation` | `active` | Reject counteroffer outside mandate bounds |
 | `partial_acceptance_unresolved_constraint` | `known_gap` | Partial acceptance is not a v0.2 message type |
 | `reputation_score_cannot_expand_authority` | `active` | Mandate remains the authority boundary |
+| `offer_basis_diverges_from_session` | `active` | Reject an offer whose `terms.basis` differs from the session basis with `SESSION_PARAM_CHANGED` |
+| `offer_currency_diverges_from_session` | `active` | Reject an offer whose `terms.currency` differs from the session currency with `SESSION_PARAM_CHANGED` |

@@ -43,8 +43,8 @@ is the most common source of confusion, so they are stated separately here.
    `protocol_version` is the first field of the signed protocol act (Section 7.3.1),
    moving it invalidates every existing signature and hash chain.
 3. **`record_version`** — one per terminal artifact, each independent of the others
-   and of the two versions above: TransactionRecord `"0.1"`, AuditLog `"0.1"`,
-   SessionEvidenceRecord `"0.1"`. Each moves only when that artifact's own shape or
+   and of the two versions above: TransactionRecord `"0.2"`, AuditLog `"0.1"`,
+   SessionEvidenceRecord `"0.2"`. Each moves only when that artifact's own shape or
    canonical meaning changes; see Section 9A.1.
 
 A schema's `$id` version is the version of the thing that schema describes — the
@@ -893,8 +893,11 @@ are not permitted.
 **`session_params.basis`** (string, RECOMMENDED)  
 The money basis of every amount in the session: `"net"` (tax-exclusive) or
 `"gross"` (tax-inclusive). No other value is valid. The session basis is fixed at
-initiation. All offers and the transaction record MUST use this basis. Basis
-changes across rounds are not permitted.
+initiation. All offers and the transaction record MUST use this basis, and both
+carry it where it can be checked: every offer restates it in `terms.basis`
+(Section 7.2), inside the signed protocol act (Section 7.3.1), and the
+transaction record records it in `basis` (Section 9.3). Basis changes across
+rounds are not permitted.
 
 An initiator SHOULD set `basis` in a priced session (one whose offers carry
 monetary amounts). A later version of this specification is expected to make it
@@ -1122,7 +1125,22 @@ Total monetary value in smallest unit of `terms.currency`.
 
 **`terms.currency`** (string, REQUIRED)  
 MUST match the session's negotiated `currency`. Currency MUST NOT change across
-rounds.
+rounds. A receiver MUST reject an offer whose `terms.currency` is absent or
+differs from the session currency with `SESSION_PARAM_CHANGED` (Section 12.3).
+
+**`terms.basis`** (string, OPTIONAL; REQUIRED when the session fixed a basis)  
+The money basis of the offer's amounts: `"net"` or `"gross"`. No other value is
+valid, including `null`. When the session fixed a `basis` (Section 6.3.1), every
+offer and counteroffer MUST carry `terms.basis`, and it MUST equal the session
+basis. When the session fixed no `basis`, `terms.basis` MUST be absent: an offer
+cannot introduce a basis the session did not fix. A receiver MUST reject an
+offer that breaks either rule with `SESSION_PARAM_CHANGED`, and a `terms.basis`
+that is present but not `net` or `gross` with `INVALID_BASIS` (Section 12.3).
+Because it is inside `terms`, `terms.basis` is signed with the rest of the terms
+(Section 7.3.1). An Acceptance carries no terms; the offer it accepts was checked
+when it was received. When an offer breaks more than one of these rules, a
+receiver reports a malformed `terms.basis` first, then a changed
+`terms.currency`, then a changed `terms.basis`.
 
 When the session fixed a `basis` (Section 6.3.1), an offer states
 `terms.total_value` on that basis only, as a single figure. A consumer never
@@ -1226,6 +1244,9 @@ The **protocol act object** used for signing is:
   "terms": {}
 }
 ```
+
+`terms.basis` (Section 7.2), when present, is inside `terms`, so it is signed like
+the rest of the terms; the protocol act object is unchanged.
 
 #### 7.3.2 Signing Procedure
 
@@ -1659,7 +1680,7 @@ Schema: `spec/schemas/transaction-record.schema.json`
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.1",
+  "record_version": "0.2",
   "record_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -1681,6 +1702,7 @@ Schema: `spec/schemas/transaction-record.schema.json`
   },
   "deal_type": "string",
   "currency": "string",
+  "basis": "net | gross",
   "subject": "string",
   "subject_reference": "string",
   "agreed_terms": {},
@@ -1710,6 +1732,14 @@ Schema: `spec/schemas/transaction-record.schema.json`
 }
 ```
 
+**`record_version`** — `"0.2"`. A producer MUST emit `"0.2"`. Version `"0.2"`
+adds the top-level `basis` below; a `"0.1"` record comes from an implementation
+that predates it. Without the version, a session in which only one party's
+implementation predates `basis` could yield two TransactionRecords that differ
+yet both verify; the version makes that difference explicit. A verifier accepts
+both versions (Section 9.5). The TransactionRecord version is independent of the
+SessionEvidenceRecord and AuditLog versions.
+
 **`parties`** (object, REQUIRED)  
 Contains initiator and responder sub-objects. Fields `organization_name` and
 `agent_id` are **informational only** — they are not cryptographically bound and
@@ -1733,6 +1763,15 @@ parties derive this from the same protocol message, ensuring identical values.
 
 **`negotiation_summary.accepted_at`** — The `timestamp` field of the Acceptance message.
 
+**`basis`** — Present exactly when the session fixed a basis, that is, when the
+SessionAck's `session_params_accepted` carries `basis` (Sections 6.3.1 and
+6.4.1), and then equal to it; absent otherwise. It MUST equal
+`agreed_terms.basis`, which the final offer carried inside its signed terms
+(Section 7.2), so a `"0.2"` record carries `basis` exactly when `agreed_terms`
+does (Section 9.5). The record of a session that fixed no basis has no `basis`
+key; it differs from the `"0.1"` record of the same session only in
+`record_version` and `record_hash`.
+
 **`final_offer`** — Contains fields from the accepted Offer message, regardless of
 which party sent it. This replaces the v0.1-draft's party-role-specific
 `initiator_offer_signature` field, which was incorrect when the responder made
@@ -1753,12 +1792,24 @@ Using JCS-serialized array eliminates the ambiguity of bare concatenation.
 ### 9.5 Record Verification
 
 Any party verifying a transaction record MUST:
-1. Compute `record_hash` independently and compare
-2. Verify `final_offer.protocol_act_signature` against the offering party's key
-3. Verify `final_acceptance.acceptance_signature` against the accepting party's key
-4. Verify `final_acceptance.accepted_protocol_act_hash` matches
+1. Verify that `record_version` is `"0.1"` or `"0.2"`, and reject the record
+   otherwise, including when `record_version` is absent or not a string. A
+   verifier MUST NOT attempt best-effort parsing of any other version. Steps 2
+   to 6 are the same for both versions; step 7 differs only for a record
+   without `basis`.
+2. Compute `record_hash` independently and compare
+3. Verify `final_offer.protocol_act_signature` against the offering party's key
+4. Verify `final_acceptance.acceptance_signature` against the accepting party's key
+5. Verify `final_acceptance.accepted_protocol_act_hash` matches
    `final_offer.protocol_act_hash`
-5. Recompute `offer_chain_hash` from the session message history and compare
+6. Recompute `offer_chain_hash` from the session message history and compare
+7. If the record carries `basis`, verify that it is `net` or `gross` and that
+   `agreed_terms.basis` is present and equal to it, whichever version the record
+   carries. If a `"0.2"` record carries no `basis`, verify that `agreed_terms`
+   has no `basis` key either, not even one whose value is `null`: a `"0.2"`
+   producer records `basis` whenever the final offer's terms carried it. A
+   `"0.1"` record without `basis` gets no basis check, because an implementation
+   that predates the field records `agreed_terms.basis` alone.
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
@@ -1776,7 +1827,8 @@ A `SessionEvidenceRecord` is a producer-sealed evidence package for any terminal
 A2CN session. It preserves the complete acts observed by the producer, identifies
 which acts have verifiable A2CN signatures, and protects the package against
 post-sealing modification. Its wire artifact type is
-`"a2cn_session_evidence_record"`; the initial artifact version is `"0.1"`.
+`"a2cn_session_evidence_record"`; the initial artifact version is `"0.1"` and
+the current version is `"0.2"` (Section 9A.2).
 
 The three terminal-session artifacts are distinct:
 
@@ -1808,7 +1860,7 @@ Schema: `spec/schemas/session-evidence-record.schema.json`
 ```json
 {
   "record_type": "a2cn_session_evidence_record",
-  "record_version": "0.1",
+  "record_version": "0.2",
   "evidence_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -1877,13 +1929,13 @@ from these named optional members, the record and every object inside it remain
 closed to additional properties.
 
 `record_version` is the version of the SessionEvidenceRecord artifact and is
-independent of the TransactionRecord version. A verifier MUST reject an
-unrecognized SessionEvidenceRecord version rather than attempt best-effort
-parsing. After a version is published, any incompatible shape or canonical
-meaning change MUST increment `record_version` and the version in the schema
-`$id`; the schema, specification, Python implementation, and TypeScript
-implementation MUST use the same value. Version `"0.1"` is the initial
-SessionEvidenceRecord version.
+independent of the TransactionRecord version. A producer MUST emit `"0.2"`. A
+verifier MUST reject an unrecognized SessionEvidenceRecord version rather than
+attempt best-effort parsing. After a version is published, any incompatible
+shape or canonical meaning change MUST increment `record_version` and the
+version in the schema `$id`; the schema, specification, Python implementation,
+and TypeScript implementation MUST use the same value. Version `"0.1"` is the
+initial SessionEvidenceRecord version.
 
 `evidence_id` MUST be UUID v5 using the A2CN namespace from Appendix A and the
 UTF-8 name `session-evidence:{session_id}:{producer.did}`. This namespace input
@@ -1895,12 +1947,15 @@ not required to be identical when produced by different parties.
 `producer.verification_method` MUST be controlled by `producer.did` and MUST
 resolve through that DID document to the key used for `producer_signature`.
 
-Sections 9A.8, 9A.9, 9A.10, and 9A.11 were added to `record_version` `"0.1"` in
-place rather than by incrementing it. They are relaxations: a verifier predating
-them rejects records that use them, while every record valid before them remains
-valid. Amending in place is defensible only because no external consumer of this
-artifact existed at the time; a later relaxation MUST increment `record_version`
-and the schema `$id` together instead.
+Version `"0.2"` is the version that introduced Sections 9A.8, 9A.9, 9A.10, and
+9A.11, and the Section 9A.9 rule that a `net` or `gross` `money_basis` agrees
+with the `terms.basis` of the act it describes. Its schema `$id` ends in `/0.2`.
+Sections 9A.8 to 9A.11 are relaxations, so a verifier that predates them
+rejects records that use them, and the basis rule adds a rejection. A verifier
+recognizes `"0.1"` and `"0.2"` and MUST reject any other value. Verification
+does not depend on the version: Section 9A.6, with Sections 9A.8 to 9A.11 and
+the basis rule, applies to a `"0.1"` record exactly as to a `"0.2"` record, so a
+`"0.1"` record that uses those sections is valid when it satisfies them.
 
 `parties` uses the same SessionInit and SessionAck metadata sources as the
 TransactionRecord. Informational names and agent identifiers do not acquire
@@ -2071,7 +2126,8 @@ per-message signing coverage requires a separate protocol change.
 
 ### 9A.6 Verification
 
-A verifier MUST reject an unrecognized `record_version` and then:
+A verifier MUST reject a `record_version` other than `"0.1"` or `"0.2"` (Section
+9A.2) and then:
 
 1. Validate the record structure and terminal outcome.
 2. Recompute every `act_hash` from the complete `act`.
@@ -2094,7 +2150,9 @@ A verifier MUST reject an unrecognized `record_version` and then:
     `evidence_level` MUST be `unilateral`. Do not resolve the observed identity.
 11. Recompute every `money_basis` present under Section 9A.9 and reject the
     record if any of them does not reproduce both the claimed
-    `normalized_total_minor` and the total inside the act it describes.
+    `normalized_total_minor` and the total inside the act it describes, or if it
+    contradicts that act's `terms.currency` or, for a `net` or `gross` label,
+    its `terms.basis`.
 12. Confirm every key of `extensions` is namespaced per Section 9A.11. Do not
     interpret their values.
 
@@ -2211,21 +2269,29 @@ passes through a binary float is money that has already been altered.
   failure this section exists to prevent;
 - sum the results and require that sum to equal both `normalized_total_minor` and
   the `terms.total_value` of the act being described;
-- require `currency` to equal that act's `terms.currency`.
+- require `currency` to equal that act's `terms.currency`;
+- when that act's `terms` carries `basis` and `basis` here is `net` or `gross`,
+  require the two to be equal.
 
 **A verifier MUST NOT convert between `net` and `gross`.** That is a tax
 calculation, not a normalization; performing it silently corrupts money, and
 performing it wrongly corrupts it invisibly. `basis` is a CHECKED LABEL: a
-verifier confirms it is a recognized value and otherwise does not act on it. The
-arithmetic above is identical for every label. Relabelling `net` as `gross`
-therefore changes no total, which is the intended behaviour: the label describes
-what the producer observed, and never instructs a computation.
+verifier confirms it is a recognized value and that a `net` or `gross` label
+agrees with the act's own `terms.basis` (below), and otherwise does not act on
+it. The arithmetic above is identical for every label. Relabelling `net` as
+`gross` therefore changes no total, which is the intended behaviour: the label
+describes what the producer observed, and never instructs a computation.
 
-When the session fixed a basis (`session_params.basis`, Section 6.3.1), an act's
-total is stated on that basis (Section 7.2), so a `money_basis` describing it
-SHOULD carry the same `basis`. This is a producer obligation, not a verifier
-check: the record does not carry `session_params`, and the verification above is
-unchanged.
+When the session fixed a basis (Sections 6.3.1 and 6.4.1), an act's total is
+stated on that basis, and the act restates it in `terms.basis` (Section 7.2), so
+a `money_basis` describing it SHOULD carry the same `basis`. Whether or not the
+session fixed one, a `money_basis` MUST NOT contradict the act it describes:
+when that act's `terms` carries `basis` and `money_basis.basis` is `net` or
+`gross`, the two MUST be equal. A producer MUST NOT seal a record that breaks
+this rule, and a verifier MUST reject one, exactly as for `currency`. The labels
+`per_unit`, `line_total`, and `unspecified` are not compared, and an act whose
+`terms` carries no `basis` gets no basis comparison. Only labels are compared;
+nothing is converted.
 
 **Absence of raw data MUST fail closed.** If `normalized_total_minor` is claimed
 and `raw_amounts` is absent or empty, a verifier MUST reject the record. An
@@ -3098,8 +3164,8 @@ SessionReject messages also use this format via the `error_code` and
 |------|------|------------|-------------|
 | `PROTOCOL_VERSION_MISMATCH` | 400 | Yes | Version not supported |
 | `DEAL_TYPE_NOT_SUPPORTED` | 403 | Yes | Deal type not in discovery |
-| `INVALID_BASIS` | 400 | Yes | `session_params.basis` present but not `net` or `gross` (Section 6.3.1) |
-| `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck (or a later message) changed a parameter fixed at session initiation (Section 6.4.1); `message` names the parameter |
+| `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis` or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 7.2) |
+| `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck, or a later message such as an offer, changed a parameter fixed at session initiation (Sections 6.4.1, 7.2); `message` names the parameter |
 | `MANDATE_INVALID` | 403 | Yes | Mandate expired, missing, or VC proof failed |
 | `MANDATE_INSUFFICIENT` | 403 | Yes | Mandate scope doesn't cover proposed terms |
 | `INVALID_SIGNATURE` | 400 | Yes | Protocol act signature verification failed |
@@ -5145,7 +5211,7 @@ Both parties independently generate the transaction record. Key fields:
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.1",
+  "record_version": "0.2",
   "record_id": "{uuid5(A2CN_NAMESPACE, 'c3d4e5f6-a7b8-9012-cdef-123456789012')}",
   "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
   "generated_at": "2026-03-24T10:08:45Z",

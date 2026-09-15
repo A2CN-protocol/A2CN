@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://a2cn.dev/schemas/session-evidence-record/0.1",
+  "$id": "https://a2cn.dev/schemas/session-evidence-record/0.2",
   "title": "A2CN SessionEvidenceRecord",
   "description": "Producer-sealed evidence package for any terminal A2CN negotiation outcome.",
   "type": "object",
@@ -27,7 +27,7 @@
     },
     "record_version": {
       "type": "string",
-      "const": "0.1"
+      "const": "0.2"
     },
     "evidence_id": {
       "type": "string",
@@ -234,7 +234,7 @@
     },
     "money_basis": {
       "type": "object",
-      "description": "Independently recomputable unit normalization for a claimed total. `basis` is a checked label only: a verifier MUST NOT convert between net and gross.",
+      "description": "Independently recomputable unit normalization for a claimed total. `basis` is a checked label only: a verifier MUST NOT convert between net and gross. A `net` or `gross` label MUST equal the `terms.basis` of the act it describes whenever that act's terms carries `basis` (Section 9A.9).",
       "required": [
         "raw_amounts",
         "currency",

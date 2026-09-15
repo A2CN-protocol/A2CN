@@ -20,12 +20,12 @@ most common source of confusion, so they are named separately here.
 |------|---------|------------|---------------|
 | **Release** | `0.3.0` | The published package and repository release (`pyproject.toml`, `package.json`, git tag). | Any shipped change, additive or not. See [CHANGELOG](../CHANGELOG.md). |
 | **Spec / wire protocol** | `0.2` | The on-the-wire contract: the `protocol_version` and `a2cn_version` fields, and the `$id` of every message schema. | Only on a **wire-incompatible** change. See [Status of This Document](a2cn-spec-v0.2.0.md#status-of-this-document). |
-| **`record_version`** | TransactionRecord `0.1`<br>AuditLog `0.1`<br>SessionEvidenceRecord `0.1` | The version of each terminal artifact, carried inside its own hashed bytes. Each artifact has its **own** line. | Only when that artifact's shape or canonical meaning changes (Section 9A.1). |
+| **`record_version`** | TransactionRecord `0.2`<br>AuditLog `0.1`<br>SessionEvidenceRecord `0.2` | The version of each terminal artifact, carried inside its own hashed bytes. Each artifact has its **own** line. | Only when that artifact's shape or canonical meaning changes (Section 9A.1). |
 
 A schema's `$id` version is the version of the **thing the schema describes** — the
-wire version for wire messages, the `record_version` for record artifacts. This is
-why `session-evidence-record/0.1` sits alongside `session-invitation/0.2`: both are
-correct, because they version different things.
+wire version for wire messages, the `record_version` for record artifacts. So
+`session-evidence-record/0.2` and `session-invitation/0.2` share a number only by
+coincidence: one versions a record artifact, the other the wire protocol.
 
 Release `0.3.0` is additive and fully wire-compatible with `0.2`: a `0.2` peer and a
 `0.3.0` peer interoperate, and every signature, hash, and test vector produced under

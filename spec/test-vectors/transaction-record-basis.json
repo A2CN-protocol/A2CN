@@ -1,0 +1,479 @@
+{
+  "description": "Cross-language vector for the TransactionRecord basis (Section 9.3). The session fixed session_params.basis \"gross\" and every offer restates it in terms.basis (Section 7.2). Replaying the signed messages through either reference implementation, or building the record on the client side from the same messages, must produce expected.full_record, a record_version \"0.2\" record, and expected.record_hash, and the record must verify (Section 9.5). expected.tampered_record_hash is the hash after setting the top-level basis to expected.tampered_basis and recomputing record_hash; that record must fail verification because its basis no longer equals agreed_terms.basis. expected.basis_dropped_record_hash is the hash after removing the top-level basis and recomputing record_hash; that record_version \"0.2\" record still carries agreed_terms.basis, so it must fail verification. expected.basis_dropped_0_1_record_hash is the same record with record_version \"0.1\", which verifies. The evidence record for the completed session, sealed with producer_private_jwk, must have expected.evidence_record_hash and verify. Keys are test-only public fixtures and MUST NOT be used outside tests. ES256 signatures are randomized, so they are recorded here rather than recomputed. without_basis is a session that fixed no basis, with the record_version \"0.1\" record an earlier implementation produced for it.",
+  "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+  "did_documents": {
+    "did:web:techcorp.example": {
+      "@context": [
+        "https://www.w3.org/ns/did/v1",
+        "https://w3id.org/security/suites/jws-2020/v1"
+      ],
+      "id": "did:web:techcorp.example",
+      "verificationMethod": [
+        {
+          "id": "did:web:techcorp.example#key-1",
+          "type": "JsonWebKey2020",
+          "controller": "did:web:techcorp.example",
+          "publicKeyJwk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "ptPTh0ZVngWl-mOcivGjmhw90R8VqN35HPPAHBWi8T0",
+            "y": "QuSfnKR6KP3itYqz9JZtuZ9xwc0LC5wVdFJVRoKdNTA"
+          }
+        }
+      ],
+      "authentication": [
+        "did:web:techcorp.example#key-1"
+      ],
+      "assertionMethod": [
+        "did:web:techcorp.example#key-1"
+      ]
+    },
+    "did:web:acme-corp.com": {
+      "@context": [
+        "https://www.w3.org/ns/did/v1",
+        "https://w3id.org/security/suites/jws-2020/v1"
+      ],
+      "id": "did:web:acme-corp.com",
+      "verificationMethod": [
+        {
+          "id": "did:web:acme-corp.com#key-2026-01",
+          "type": "JsonWebKey2020",
+          "controller": "did:web:acme-corp.com",
+          "publicKeyJwk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "lP-m1JyHCMulOoIIhY1YjQioPd9HEqU7Q8We4mgHz3k",
+            "y": "6gJiemj_qJ74GZbqnk_ADkL73Dq0sO6-PhoVBkRMrNQ"
+          }
+        }
+      ],
+      "authentication": [
+        "did:web:acme-corp.com#key-2026-01"
+      ],
+      "assertionMethod": [
+        "did:web:acme-corp.com#key-2026-01"
+      ]
+    }
+  },
+  "producer": {
+    "did": "did:web:acme-corp.com",
+    "agent_id": "basis-seller-agent",
+    "verification_method": "did:web:acme-corp.com#key-2026-01"
+  },
+  "producer_private_jwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "lP-m1JyHCMulOoIIhY1YjQioPd9HEqU7Q8We4mgHz3k",
+    "y": "6gJiemj_qJ74GZbqnk_ADkL73Dq0sO6-PhoVBkRMrNQ",
+    "d": "-ZlmVd_2cmn1i0lV2gGwoe4nbemb5a39Uo7YM5gjaEc"
+  },
+  "session_init": {
+    "message_type": "session_init",
+    "message_id": "basis-init-1",
+    "protocol_version": "0.2",
+    "session_params": {
+      "deal_type": "saas_renewal",
+      "currency": "USD",
+      "basis": "gross",
+      "max_rounds": 4,
+      "session_timeout_seconds": 3600,
+      "round_timeout_seconds": 900,
+      "subject": "Basis record vector",
+      "subject_reference": "BASIS-REF-001"
+    },
+    "initiator": {
+      "organization_name": "TechCorp Inc",
+      "did": "did:web:techcorp.example",
+      "verification_method": "did:web:techcorp.example#key-1",
+      "agent_id": "basis-buyer-agent",
+      "endpoint": "https://techcorp.example/api/a2cn"
+    },
+    "initiator_mandate": {
+      "mandate_type": "declared"
+    }
+  },
+  "session_ack": {
+    "message_type": "session_ack",
+    "message_id": "basis-ack-1",
+    "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+    "in_reply_to": "basis-init-1",
+    "protocol_version": "0.2",
+    "session_params_accepted": {
+      "deal_type": "saas_renewal",
+      "currency": "USD",
+      "basis": "gross",
+      "max_rounds": 4,
+      "session_timeout_seconds": 3600,
+      "round_timeout_seconds": 900
+    },
+    "responder": {
+      "organization_name": "Acme Corp",
+      "did": "did:web:acme-corp.com",
+      "verification_method": "did:web:acme-corp.com#key-2026-01",
+      "agent_id": "basis-seller-agent",
+      "endpoint": "http://localhost:8000"
+    },
+    "responder_mandate": {
+      "mandate_type": "declared"
+    },
+    "session_created_at": "2026-03-24T10:00:00Z",
+    "current_turn": "initiator"
+  },
+  "messages": [
+    {
+      "message_type": "offer",
+      "message_id": "basis-offer-1",
+      "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+      "round_number": 1,
+      "sequence_number": 1,
+      "sender_did": "did:web:techcorp.example",
+      "sender_agent_id": "basis-agent",
+      "sender_verification_method": "did:web:techcorp.example#key-1",
+      "timestamp": "2026-03-24T10:01:00Z",
+      "expires_at": "2030-01-01T00:00:00Z",
+      "terms": {
+        "total_value": 9500000,
+        "currency": "USD",
+        "basis": "gross",
+        "seat_count": 100
+      },
+      "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+      "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ._ThY7apcfwmnaVr36E5esZdlxuvYiW6C_6UxwBEf9y_uClSQFm8W43lMf9wXM1Hzsg2yqSRlFHNFA6dvupJ4Vg"
+    },
+    {
+      "message_type": "counteroffer",
+      "message_id": "basis-counter-1",
+      "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+      "round_number": 2,
+      "sequence_number": 2,
+      "sender_did": "did:web:acme-corp.com",
+      "sender_agent_id": "basis-agent",
+      "sender_verification_method": "did:web:acme-corp.com#key-2026-01",
+      "timestamp": "2026-03-24T10:02:00Z",
+      "expires_at": "2030-01-01T00:00:00Z",
+      "terms": {
+        "total_value": 10000000,
+        "currency": "USD",
+        "basis": "gross",
+        "seat_count": 100
+      },
+      "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+      "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw",
+      "in_reply_to": "basis-offer-1"
+    },
+    {
+      "message_type": "acceptance",
+      "message_id": "basis-acc-1",
+      "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+      "in_reply_to": "basis-counter-1",
+      "round_number": 2,
+      "sequence_number": 3,
+      "accepted_offer_id": "basis-counter-1",
+      "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+      "sender_did": "did:web:techcorp.example",
+      "sender_agent_id": "basis-agent",
+      "sender_verification_method": "did:web:techcorp.example#key-1",
+      "timestamp": "2026-03-24T10:03:00Z",
+      "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+    }
+  ],
+  "expected": {
+    "basis": "gross",
+    "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+    "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
+    "record_hash": "_0lDVSppRFYQmBiELHhjf2PMHpgpPZvcstr0phOZRyQ",
+    "full_record": {
+      "record_type": "a2cn_transaction_record",
+      "record_version": "0.2",
+      "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+      "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+      "generated_at": "2026-03-24T10:03:00Z",
+      "parties": {
+        "initiator": {
+          "organization_name": "TechCorp Inc",
+          "did": "did:web:techcorp.example",
+          "agent_id": "basis-buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1",
+          "mandate_type": "declared"
+        },
+        "responder": {
+          "organization_name": "Acme Corp",
+          "did": "did:web:acme-corp.com",
+          "agent_id": "basis-seller-agent",
+          "verification_method": "did:web:acme-corp.com#key-2026-01",
+          "mandate_type": "declared"
+        }
+      },
+      "deal_type": "saas_renewal",
+      "currency": "USD",
+      "subject": "Basis record vector",
+      "subject_reference": "BASIS-REF-001",
+      "agreed_terms": {
+        "total_value": 10000000,
+        "currency": "USD",
+        "basis": "gross",
+        "seat_count": 100
+      },
+      "negotiation_summary": {
+        "total_rounds": 2,
+        "total_messages": 3,
+        "session_created_at": "2026-03-24T10:00:00Z",
+        "first_offer_at": "2026-03-24T10:01:00Z",
+        "accepted_at": "2026-03-24T10:03:00Z",
+        "initiating_party_did": "did:web:techcorp.example",
+        "accepting_party_did": "did:web:techcorp.example"
+      },
+      "final_offer": {
+        "message_id": "basis-counter-1",
+        "sender_did": "did:web:acme-corp.com",
+        "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw"
+      },
+      "final_acceptance": {
+        "message_id": "basis-acc-1",
+        "sender_did": "did:web:techcorp.example",
+        "round_number": 2,
+        "sequence_number": 3,
+        "accepted_offer_id": "basis-counter-1",
+        "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+      },
+      "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
+      "record_hash": "_0lDVSppRFYQmBiELHhjf2PMHpgpPZvcstr0phOZRyQ",
+      "basis": "gross"
+    },
+    "tampered_basis": "net",
+    "tampered_record_hash": "uPbDPK-GJCCvqxvz9qL_-bCSKAc8tWl9cu95Q4AUXpk",
+    "evidence_record_hash": "lPVP0qqtGxOqZ2m2XPqtvOb1pgtPz4C43cBpUzjSY_s",
+    "basis_dropped_record_hash": "HtzGwaQD_5pm_CPYxmQxPqUGpF2N6s61OlqfOJm6Pow",
+    "basis_dropped_0_1_record_hash": "kXjlH2VO_ZWRsj52HRF1j_kv6hEHEWem7P84drB_wy8"
+  },
+  "without_basis": {
+    "description": "A completed session that fixed no basis, recorded with the TransactionRecord that a record_version \"0.1\" implementation, one that predates basis, produced for it (record_version_0_1). Replaying the messages through either reference implementation yields a record without basis that is record_version_0_1.full_record with record_version set to \"0.2\" and record_hash recomputed, which is expected.record_hash. The \"0.1\" record still verifies (Section 9.5).",
+    "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "did_documents": {
+      "did:web:techcorp.example": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1",
+          "https://w3id.org/security/suites/jws-2020/v1"
+        ],
+        "id": "did:web:techcorp.example",
+        "verificationMethod": [
+          {
+            "id": "did:web:techcorp.example#key-1",
+            "type": "JsonWebKey2020",
+            "controller": "did:web:techcorp.example",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "yBqAozmK34lgmawkZJiql8cV8mBdLvmyVH8AHrThJHo",
+              "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4"
+            }
+          }
+        ],
+        "authentication": [
+          "did:web:techcorp.example#key-1"
+        ],
+        "assertionMethod": [
+          "did:web:techcorp.example#key-1"
+        ]
+      },
+      "did:web:acme-corp.com": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1",
+          "https://w3id.org/security/suites/jws-2020/v1"
+        ],
+        "id": "did:web:acme-corp.com",
+        "verificationMethod": [
+          {
+            "id": "did:web:acme-corp.com#key-1",
+            "type": "JsonWebKey2020",
+            "controller": "did:web:acme-corp.com",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "6vLBotDYauSe6zbkEWMLxM84MYXIXbsvqRU-yfvdOAM",
+              "y": "iENZCpZVUyC63C9Y7fhtZ6z367TNAm1Iebia49zfGzY"
+            }
+          }
+        ],
+        "authentication": [
+          "did:web:acme-corp.com#key-1"
+        ],
+        "assertionMethod": [
+          "did:web:acme-corp.com#key-1"
+        ]
+      }
+    },
+    "session_init": {
+      "message_type": "session_init",
+      "message_id": "parity-init-1",
+      "protocol_version": "0.2",
+      "session_params": {
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Parity Vector Session",
+        "subject_reference": "PARITY-REF-001",
+        "max_rounds": 4,
+        "session_timeout_seconds": 3600,
+        "round_timeout_seconds": 900
+      },
+      "initiator": {
+        "organization_name": "TechCorp Inc",
+        "did": "did:web:techcorp.example",
+        "verification_method": "did:web:techcorp.example#key-1",
+        "agent_id": "parity-buyer-agent",
+        "endpoint": "https://techcorp.example/api/a2cn"
+      },
+      "initiator_mandate": {
+        "mandate_type": "declared"
+      }
+    },
+    "session_ack": {
+      "message_type": "session_ack",
+      "message_id": "parity-ack-1",
+      "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "in_reply_to": "parity-init-1",
+      "protocol_version": "0.2",
+      "session_params_accepted": {
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "max_rounds": 4,
+        "session_timeout_seconds": 3600,
+        "round_timeout_seconds": 900
+      },
+      "responder": {
+        "organization_name": "Acme Corp",
+        "did": "did:web:acme-corp.com",
+        "verification_method": "did:web:acme-corp.com#key-1",
+        "agent_id": "parity-seller-agent",
+        "endpoint": "http://localhost:8000"
+      },
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_created_at": "2026-03-24T10:00:00Z",
+      "current_turn": "initiator"
+    },
+    "messages": [
+      {
+        "message_type": "offer",
+        "message_id": "parity-offer-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "round_number": 1,
+        "sequence_number": 1,
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:01:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "protocol_act_hash": "BQrDVoDsNH_ZE_IUEYBgIS2DzrmPFWadiF7w5zaXzNc",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.Jy2fMBoD-3si_ez0sS8seqCz7lrKbrx1VEdY8wLVFTHX40wicnuqh_kQiGMf05ubVsOTlo3fceZ6AmkkRsVyyw"
+      },
+      {
+        "message_type": "counteroffer",
+        "message_id": "parity-counter-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "round_number": 2,
+        "sequence_number": 2,
+        "sender_did": "did:web:acme-corp.com",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:acme-corp.com#key-1",
+        "timestamp": "2026-03-24T10:02:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {
+          "total_value": 10500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ",
+        "in_reply_to": "parity-offer-1"
+      },
+      {
+        "message_type": "acceptance",
+        "message_id": "parity-acc-1",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "in_reply_to": "parity-counter-1",
+        "round_number": 2,
+        "sequence_number": 3,
+        "accepted_offer_id": "parity-counter-1",
+        "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "parity-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:03:00Z",
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+      }
+    ],
+    "record_version_0_1": {
+      "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w",
+      "full_record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.1",
+        "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "parity-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "parity-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Parity Vector Session",
+        "subject_reference": "PARITY-REF-001",
+        "agreed_terms": {
+          "total_value": 10500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 2,
+          "total_messages": 3,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:techcorp.example"
+        },
+        "final_offer": {
+          "message_id": "parity-counter-1",
+          "sender_did": "did:web:acme-corp.com",
+          "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ"
+        },
+        "final_acceptance": {
+          "message_id": "parity-acc-1",
+          "sender_did": "did:web:techcorp.example",
+          "round_number": 2,
+          "sequence_number": 3,
+          "accepted_offer_id": "parity-counter-1",
+          "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+        },
+        "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
+        "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w"
+      }
+    },
+    "expected": {
+      "record_hash": "NF4Kenti4HHgEOZhF5UiW9CQVU-qKBQrwWgwQvsIqus"
+    }
+  }
+}

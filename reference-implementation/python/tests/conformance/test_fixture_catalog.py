@@ -13,6 +13,8 @@ EXPECTED_FIXTURES = {
     "payment_terms_drift_mid_negotiation",
     "partial_acceptance_unresolved_constraint",
     "reputation_score_cannot_expand_authority",
+    "offer_basis_diverges_from_session",
+    "offer_currency_diverges_from_session",
 }
 
 
