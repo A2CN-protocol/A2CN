@@ -1,78 +1,193 @@
 {
-  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, steps 1 and 7) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit. The TransactionRecord version follows the record's shape: a producer emits \"0.1\" for a session that fixed no basis and \"0.2\" for a session that fixed one, so a \"0.2\" record carries a top-level basis and a \"0.1\" record carries none. The AuditLog carries its version in log_version. Both suites take a valid record, set record_version to a value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict. The TransactionRecord of each shape is the record transaction-record-basis.json replays to: session_with_basis is its basis session and session_without_basis its without_basis session. Each accepted TransactionRecord version verifies on the record of the shape that emits it, and each transaction_record_cross_shape case puts a recognized version on the other shape and fails verification. Every rejected value fails verification on both TransactionRecord shapes and on the SessionEvidenceRecord, instead of being parsed best-effort. Every accepted value verifies on the SessionEvidenceRecord, whose verification does not depend on the version. The SessionEvidenceRecord is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk.",
+  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, steps 1 and 7) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit. Each artifact's version follows its record's shape. A TransactionRecord producer emits \"0.1\" for a session that fixed no basis and \"0.2\" for a session that fixed one, so a \"0.2\" record carries a top-level basis and a \"0.1\" record carries none. A SessionEvidenceRecord producer emits \"0.3\" for a record that carries external_commitment_reference and \"0.2\" for one that does not. The AuditLog carries its version in log_version. Both suites take a valid record, set record_version to a value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict. The TransactionRecord of each shape is the record transaction-record-basis.json replays to: session_with_basis is its basis session and session_without_basis its without_basis session. The SessionEvidenceRecord without_external_commitment is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk, and with_external_commitment is the record session-evidence-record-external-channel.json produces, resealed with its own. Each accepted TransactionRecord version verifies on the shape that emits it, and each accepted SessionEvidenceRecord version on the shape it names; \"0.1\", which no current producer emits, verifies on the shape without external_commitment_reference, whose rules do not depend on the version. Each cross_shape case puts a recognized version on the other shape of its artifact and fails verification. Every rejected value fails verification on both shapes of its artifact, instead of being parsed best-effort. \"0.3\" is a recognized SessionEvidenceRecord version, and the TransactionRecord still rejects it.",
   "producers_emit": {
     "transaction_record": {
       "session_without_basis": "0.1",
       "session_with_basis": "0.2"
     },
-    "session_evidence_record": "0.2",
+    "session_evidence_record": {
+      "without_external_commitment": "0.2",
+      "with_external_commitment": "0.3"
+    },
     "audit_log": "0.1"
   },
-  "accepted": [
-    "0.1",
-    "0.2"
-  ],
-  "transaction_record_cross_shape": [
-    {
-      "name": "0.2-without-basis",
-      "shape": "session_without_basis",
-      "record_version": "0.2"
-    },
-    {
-      "name": "0.1-with-basis",
-      "shape": "session_with_basis",
-      "record_version": "0.1"
-    }
-  ],
-  "rejected": [
-    {
-      "name": "next-minor",
-      "record_version": "0.3"
-    },
-    {
-      "name": "next-major",
-      "record_version": "1.0"
-    },
-    {
-      "name": "three-part",
-      "record_version": "0.2.0"
-    },
-    {
-      "name": "empty-string",
-      "record_version": ""
-    },
-    {
-      "name": "trailing-space",
-      "record_version": "0.2 "
-    },
-    {
-      "name": "leading-space",
-      "record_version": " 0.2"
-    },
-    {
-      "name": "v-prefix",
-      "record_version": "v0.2"
-    },
-    {
-      "name": "number-0.2",
-      "record_version": 0.2
-    },
-    {
-      "name": "number-0.1",
-      "record_version": 0.1
-    },
-    {
-      "name": "array",
-      "record_version": [
-        "0.2"
-      ]
-    },
-    {
-      "name": "null",
-      "record_version": null
-    },
-    {
-      "name": "absent"
-    }
-  ]
+  "transaction_record": {
+    "accepted": [
+      "0.1",
+      "0.2"
+    ],
+    "cross_shape": [
+      {
+        "name": "0.2-without-basis",
+        "shape": "session_without_basis",
+        "record_version": "0.2"
+      },
+      {
+        "name": "0.1-with-basis",
+        "shape": "session_with_basis",
+        "record_version": "0.1"
+      }
+    ],
+    "rejected": [
+      {
+        "name": "next-minor",
+        "record_version": "0.3"
+      },
+      {
+        "name": "next-major",
+        "record_version": "1.0"
+      },
+      {
+        "name": "three-part",
+        "record_version": "0.2.0"
+      },
+      {
+        "name": "empty-string",
+        "record_version": ""
+      },
+      {
+        "name": "trailing-space",
+        "record_version": "0.2 "
+      },
+      {
+        "name": "leading-space",
+        "record_version": " 0.2"
+      },
+      {
+        "name": "v-prefix",
+        "record_version": "v0.2"
+      },
+      {
+        "name": "number-0.2",
+        "record_version": 0.2
+      },
+      {
+        "name": "number-0.1",
+        "record_version": 0.1
+      },
+      {
+        "name": "array",
+        "record_version": [
+          "0.2"
+        ]
+      },
+      {
+        "name": "null",
+        "record_version": null
+      },
+      {
+        "name": "absent"
+      }
+    ]
+  },
+  "session_evidence_record": {
+    "accepted": [
+      {
+        "record_version": "0.1",
+        "shape": "without_external_commitment"
+      },
+      {
+        "record_version": "0.2",
+        "shape": "without_external_commitment"
+      },
+      {
+        "record_version": "0.3",
+        "shape": "with_external_commitment"
+      }
+    ],
+    "cross_shape": [
+      {
+        "name": "0.3-without-external-commitment",
+        "shape": "without_external_commitment",
+        "record_version": "0.3"
+      },
+      {
+        "name": "0.2-with-external-commitment",
+        "shape": "with_external_commitment",
+        "record_version": "0.2"
+      },
+      {
+        "name": "0.1-with-external-commitment",
+        "shape": "with_external_commitment",
+        "record_version": "0.1"
+      }
+    ],
+    "rejected": [
+      {
+        "name": "next-minor",
+        "record_version": "0.4"
+      },
+      {
+        "name": "next-major",
+        "record_version": "1.0"
+      },
+      {
+        "name": "three-part",
+        "record_version": "0.2.0"
+      },
+      {
+        "name": "three-part-0.3",
+        "record_version": "0.3.0"
+      },
+      {
+        "name": "empty-string",
+        "record_version": ""
+      },
+      {
+        "name": "trailing-space",
+        "record_version": "0.2 "
+      },
+      {
+        "name": "trailing-space-0.3",
+        "record_version": "0.3 "
+      },
+      {
+        "name": "leading-space",
+        "record_version": " 0.2"
+      },
+      {
+        "name": "leading-space-0.3",
+        "record_version": " 0.3"
+      },
+      {
+        "name": "v-prefix",
+        "record_version": "v0.2"
+      },
+      {
+        "name": "v-prefix-0.3",
+        "record_version": "v0.3"
+      },
+      {
+        "name": "number-0.3",
+        "record_version": 0.3
+      },
+      {
+        "name": "number-0.2",
+        "record_version": 0.2
+      },
+      {
+        "name": "number-0.1",
+        "record_version": 0.1
+      },
+      {
+        "name": "array",
+        "record_version": [
+          "0.2"
+        ]
+      },
+      {
+        "name": "array-0.3",
+        "record_version": [
+          "0.3"
+        ]
+      },
+      {
+        "name": "null",
+        "record_version": null
+      },
+      {
+        "name": "absent"
+      }
+    ]
+  }
 }

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+import a2cn.evidence as evidence
 from a2cn.crypto import hash_object, private_key_from_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
 from a2cn.record import generate_transaction_record
@@ -342,3 +343,224 @@ def test_a_record_that_uses_sections_9a_8_to_9a_11_fits_only_the_0_2_schema(name
     )
     assert verify_session_evidence_record(relabelled, did_documents)
     assert _errors(SER_0_1, relabelled) != []
+
+
+# ---------------------------------------------------------------------------
+# SessionEvidenceRecord "0.3": external-channel completion (Section 9A.12)
+# ---------------------------------------------------------------------------
+
+SER_0_3 = "session-evidence-record-0.3.schema.json"
+EXTERNAL_CHANNEL_VECTOR = json.loads(
+    (VECTORS / "session-evidence-record-external-channel.json").read_text()
+)
+EXTERNAL_CHANNEL_KEY = private_key_from_jwk(EXTERNAL_CHANNEL_VECTOR["producer_private_jwk"])
+
+
+def _external_channel_record(reference=None) -> dict:
+    """The record the external-channel vector generates, or with ``reference`` instead."""
+    fixture = EXTERNAL_CHANNEL_VECTOR
+    source = fixture["session"]
+    session = Session(
+        session_id=source["session_id"],
+        state=source["state"],
+        current_turn="none",
+        terminal_reason=source["terminal_reason"],
+        terminal_message_id=source["terminal_message_id"],
+        session_created_at=source["session_created_at"],
+        state_updated_at=source["state_updated_at"],
+        session_params=source["session_params"],
+        initiator_mandate=source["initiator_mandate"],
+        responder_mandate=source["responder_mandate"],
+    )
+    session._session_init = source["session_init"]
+    session._session_ack = source["session_ack"]
+    session._message_log = source["message_log"]
+    options = copy.deepcopy(fixture["options"])
+    if reference is not None:
+        options["external_commitment_reference"] = copy.deepcopy(reference)
+    producer = fixture["producer"]
+    return generate_session_evidence_record(
+        session,
+        producer_private_key=EXTERNAL_CHANNEL_KEY,
+        producer_did=producer["did"],
+        producer_agent_id=producer["agent_id"],
+        producer_verification_method=producer["verification_method"],
+        observed_acts=fixture["observed_acts"],
+        **options,
+    )
+
+
+def _resealed_external_channel_record(record: dict) -> dict:
+    record["record_hash"] = ""
+    record["producer_signature"] = ""
+    record["record_hash"] = hash_object(record)
+    record["producer_signature"] = sign_jws(
+        record["record_hash"],
+        EXTERNAL_CHANNEL_KEY,
+        kid=EXTERNAL_CHANNEL_VECTOR["producer"]["verification_method"],
+    )
+    return record
+
+
+def _with_changes(record: dict, case: dict) -> dict:
+    """Set each path in case["set"] to its value and delete each path in case["remove"]."""
+    for change in case.get("set", []):
+        holder = record
+        for key in change["path"][:-1]:
+            holder = holder[key]
+        holder[change["path"][-1]] = copy.deepcopy(change["value"])
+    for path in case.get("remove", []):
+        holder = record
+        for key in path[:-1]:
+            holder = holder[key]
+        del holder[path[-1]]
+    return record
+
+
+def _names_the_reference(errors: list) -> bool:
+    return any("external_commitment_reference" in error.message for error in errors)
+
+
+EXTERNAL_CHANNEL_RECORDS = [
+    pytest.param(lambda: EXTERNAL_CHANNEL_VECTOR["expected"]["record"], id="expected-record"),
+    pytest.param(_external_channel_record, id="generated"),
+    *[
+        pytest.param(
+            lambda case=case: _external_channel_record(case["external_commitment_reference"]),
+            id=case["name"],
+        )
+        for case in EXTERNAL_CHANNEL_VECTOR["valid_references"]
+    ],
+]
+
+
+@pytest.mark.parametrize("record", EXTERNAL_CHANNEL_RECORDS)
+def test_an_external_channel_record_fits_only_the_0_3_schema(record):
+    """Section 9A.12 arrived in "0.3"; the earlier schemas are closed where it goes."""
+    record = record()
+
+    assert record["record_version"] == "0.3"
+    assert _errors(SER_0_3, record) == []
+    for earlier in (SER_0_1, SER_0_2):
+        assert _names_the_reference(_errors(earlier, record)), earlier
+
+
+@pytest.mark.parametrize(("schema_file", "version"), [(SER_0_1, "0.1"), (SER_0_2, "0.2")])
+def test_the_earlier_schemas_refuse_the_reference_under_their_own_version(schema_file, version):
+    record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
+    record["record_version"] = version
+    _resealed_external_channel_record(record)
+
+    assert _names_the_reference(_errors(schema_file, record))
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["invalid_records"], ids=lambda case: case["name"]
+)
+def test_the_0_3_schema_refuses_every_invalid_external_channel_record(case):
+    """The healthy record goes first: a schema that refused everything would pass every case."""
+    record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
+    assert _errors(SER_0_3, record) == []
+
+    _resealed_external_channel_record(_with_changes(record, case))
+    if case.get("schema_expresses") is False:
+        # A JSON Schema cannot compare two members, so the schema accepts this
+        # record and only the verifier refuses it.
+        assert _errors(SER_0_3, record) == []
+    else:
+        assert _errors(SER_0_3, record) != []
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["invalid_references"], ids=lambda case: case["name"]
+)
+def test_the_0_3_schema_refuses_every_malformed_reference(case):
+    record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
+    assert _errors(SER_0_3, record) == []
+
+    record["external_commitment_reference"] = copy.deepcopy(case["external_commitment_reference"])
+    _resealed_external_channel_record(record)
+    assert _errors(SER_0_3, record) != []
+
+
+def test_no_record_without_the_reference_fits_the_0_3_schema():
+    """Every record that does not complete through an external channel stays "0.2"."""
+    records = [_session_evidence_record("0.2")] + [
+        _extension_record(name) for name in sorted(EXTENSIONS_VECTOR["vectors"])
+    ]
+
+    for record in records:
+        assert _errors(SER_0_2, record) == []
+        assert _errors(SER_0_3, record) != []
+        relabelled = copy.deepcopy(record)
+        relabelled["record_version"] = "0.3"
+        assert _names_the_reference(_errors(SER_0_3, relabelled))
+
+
+def test_the_0_3_schema_is_the_0_2_schema_with_external_channel_completion():
+    """Only the version, the new member, and the rules that go with it differ."""
+    previous = json.loads((SCHEMAS / SER_0_2).read_text())
+    current = json.loads((SCHEMAS / SER_0_3).read_text())
+
+    assert current["$id"] == "https://a2cn.dev/schemas/session-evidence-record/0.3"
+    assert current["properties"]["record_version"] == {"type": "string", "const": "0.3"}
+    assert current["required"] == previous["required"] + ["external_commitment_reference"]
+    assert current["properties"]["external_commitment_reference"] == {
+        "$ref": "#/$defs/external_commitment_reference"
+    }
+    # An external-channel record carries at least one act its producer signed.
+    # The schema can require a verified act; that its sender is the initiator is
+    # a cross-reference between two members, which a JSON Schema cannot state.
+    assert current["properties"]["acts"]["contains"] == {
+        "properties": {"attribution": {"const": "verified_signature"}},
+        "required": ["attribution"],
+    }
+    reference = current["$defs"]["external_commitment_reference"]
+    assert reference["type"] == "object"
+    assert reference["additionalProperties"] is False
+    assert reference["required"] == ["external_order_id"]
+    assert {
+        name: {key: rule[key] for key in ("type", "minLength") if key in rule}
+        for name, rule in reference["properties"].items()
+    } == {
+        "external_order_id": {"type": "string", "minLength": 1},
+        "locator": {"type": "string", "minLength": 1},
+        "reference_note": {"type": "string"},
+    }
+
+    def everything_else(schema: dict) -> dict:
+        schema = copy.deepcopy(schema)
+        for name in ("$id", "description", "allOf"):
+            del schema[name]
+        del schema["properties"]["record_version"]
+        del schema["properties"]["acts"]
+        schema["properties"].pop("external_commitment_reference", None)
+        schema["$defs"].pop("external_commitment_reference", None)
+        schema["required"] = [
+            name for name in schema["required"] if name != "external_commitment_reference"
+        ]
+        return schema
+
+    assert everything_else(current) == everything_else(previous)
+
+
+def test_the_0_2_evidence_record_schema_is_unchanged():
+    """The "0.3" schema is published beside it, and "0.2" is not rewritten (Section 17)."""
+    digest = hashlib.sha256((SCHEMAS / SER_0_2).read_bytes()).hexdigest()
+
+    assert digest == EXTERNAL_CHANNEL_VECTOR["session_evidence_record_0_2_schema_sha256"]
+
+
+def test_the_evidence_record_schemas_name_the_versions_the_generator_emits():
+    for version, schema_file in (
+        (evidence.SESSION_EVIDENCE_RECORD_VERSION, SER_0_2),
+        (evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT, SER_0_3),
+    ):
+        schema = json.loads((SCHEMAS / schema_file).read_text())
+        assert schema["properties"]["record_version"]["const"] == version
+    # A verifier recognizes exactly the versions it has a schema for.
+    assert list(evidence.RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS) == [
+        "0.1",
+        evidence.SESSION_EVIDENCE_RECORD_VERSION,
+        evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
+    ]
