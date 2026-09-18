@@ -1,0 +1,323 @@
+{
+  "description": "Cross-language vectors for session_params.basis (Section 6.3.1), the rule that a SessionAck echoes currency, and any basis it carries, unchanged (Section 6.4.1), and the rules that every offer restates the session currency in terms.currency and the session basis in terms.basis (Section 7.2). The Python and TypeScript suites assert the same verdict for every case. basis is a label: no case converts net and gross, and an absent basis means unstated, never a default. A SessionAck that omits basis (from a responder that predates it) leaves the basis unstated rather than changed. invalid_bases are rejected with INVALID_BASIS, in session_params.basis, session_params_accepted.basis, and terms.basis alike; each rejected case gives its error code and the parameter the error message names. invalid_currencies are rejected because currency is a REQUIRED ISO 4217 string, and so is an absent currency, with INVALID_REQUEST, in session_params.currency and session_params_accepted.currency alike. A receiver validates session_params_accepted before comparing it with session_params: a malformed accepted currency is reported first, then a malformed accepted basis, and SESSION_PARAM_CHANGED is reserved for a well-formed value that differs. malformed_accepted, malformed_session_params, and malformed_ack_bodies are values that are not a JSON object. Each offer case opens a session from its proposed and accepted money parameters and sends one signed round-1 offer carrying the given terms. terms.currency must equal the session currency: absent, a different string, or a non-string is SESSION_PARAM_CHANGED naming currency. When the session fixed a basis, terms.basis must be present and equal to it; when the session fixed none, terms.basis must be absent. A terms value that is not a JSON object carries neither terms.currency nor terms.basis. When an offer breaks more than one rule, a malformed terms.basis is reported first, then currency, then basis.",
+  "valid_bases": ["net", "gross"],
+  "invalid_bases": ["vat", "GROSS", "Net", "", "unspecified", "per_unit", null, 1, true, ["gross"]],
+  "invalid_currencies": [["USD"], 1, true, null, { "code": "USD" }, ""],
+  "malformed_accepted": [null, [], "USD"],
+  "malformed_session_params": [null, [], "USD", 5],
+  "malformed_ack_bodies": [null, [], "USD", 5],
+  "ack_cases": [
+    {
+      "name": "gross-unchanged",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "valid": true
+    },
+    {
+      "name": "net-unchanged",
+      "proposed": { "currency": "EUR", "basis": "net" },
+      "accepted": { "currency": "EUR", "basis": "net" },
+      "valid": true
+    },
+    {
+      "name": "absent-both-no-signal",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "gross-to-net",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "net" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "gross-omitted-unstated",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "gross-added",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "null-added",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD", "basis": null },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "session_params_accepted.basis"
+    },
+    {
+      "name": "currency-changed-basis-pinned",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "EUR", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "currency-changed-no-basis",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "EUR" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "accepted-vat-proposed-gross",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "vat" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "session_params_accepted.basis"
+    },
+    {
+      "name": "accepted-vat-proposed-no-basis",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD", "basis": "vat" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "session_params_accepted.basis"
+    },
+    {
+      "name": "accepted-currency-absent",
+      "proposed": { "currency": "USD" },
+      "accepted": {},
+      "valid": false,
+      "error": "INVALID_REQUEST",
+      "changed": "session_params_accepted.currency"
+    },
+    {
+      "name": "accepted-malformed-currency-reported-before-malformed-basis",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": 5, "basis": "vat" },
+      "valid": false,
+      "error": "INVALID_REQUEST",
+      "changed": "session_params_accepted.currency"
+    },
+    {
+      "name": "accepted-malformed-basis-reported-before-currency-change",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "EUR", "basis": "vat" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "session_params_accepted.basis"
+    }
+  ],
+  "offer_cases": [
+    {
+      "name": "gross-session-gross-offer",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "gross" },
+      "valid": true
+    },
+    {
+      "name": "net-session-net-offer",
+      "proposed": { "currency": "USD", "basis": "net" },
+      "accepted": { "currency": "USD", "basis": "net" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "net" },
+      "valid": true
+    },
+    {
+      "name": "no-basis-session-no-basis-offer",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "eur-session-eur-offer",
+      "proposed": { "currency": "EUR" },
+      "accepted": { "currency": "EUR" },
+      "terms": { "total_value": 9500000, "currency": "EUR" },
+      "valid": true
+    },
+    {
+      "name": "unechoed-basis-no-basis-offer",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD" },
+      "valid": true
+    },
+    {
+      "name": "gross-session-net-offer",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "net" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "net-session-gross-offer",
+      "proposed": { "currency": "USD", "basis": "net" },
+      "accepted": { "currency": "USD", "basis": "net" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "gross-session-basis-omitted",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "no-basis-session-gross-offer",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "no-basis-session-net-offer",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "net" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "unechoed-basis-gross-offer",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "gross" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "basis"
+    },
+    {
+      "name": "gross-session-uppercase-offer",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "GROSS" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "basis"
+    },
+    {
+      "name": "gross-session-null-offer-basis",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": null },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "basis"
+    },
+    {
+      "name": "no-basis-session-null-offer-basis",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": null },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "basis"
+    },
+    {
+      "name": "no-basis-session-unspecified-offer",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "unspecified" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "basis"
+    },
+    {
+      "name": "eur-session-usd-offer",
+      "proposed": { "currency": "EUR" },
+      "accepted": { "currency": "EUR" },
+      "terms": { "total_value": 9500000, "currency": "USD" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "usd-session-currency-omitted",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000 },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "usd-session-lowercase-currency",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": "usd" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "usd-session-null-currency",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": null },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "usd-session-non-string-currency",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": { "total_value": 9500000, "currency": ["USD"] },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "no-basis-session-non-object-terms",
+      "proposed": { "currency": "USD" },
+      "accepted": { "currency": "USD" },
+      "terms": [],
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "gross-session-non-object-terms",
+      "proposed": { "currency": "USD", "basis": "gross" },
+      "accepted": { "currency": "USD", "basis": "gross" },
+      "terms": [],
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "gross-session-currency-and-basis-diverge",
+      "proposed": { "currency": "EUR", "basis": "gross" },
+      "accepted": { "currency": "EUR", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "net" },
+      "valid": false,
+      "error": "SESSION_PARAM_CHANGED",
+      "changed": "currency"
+    },
+    {
+      "name": "gross-session-malformed-basis-and-currency-diverge",
+      "proposed": { "currency": "EUR", "basis": "gross" },
+      "accepted": { "currency": "EUR", "basis": "gross" },
+      "terms": { "total_value": 9500000, "currency": "USD", "basis": "GROSS" },
+      "valid": false,
+      "error": "INVALID_BASIS",
+      "changed": "basis"
+    }
+  ]
+}

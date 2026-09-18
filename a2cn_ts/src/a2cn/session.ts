@@ -144,6 +144,167 @@ export class Session {
 }
 
 // ---------------------------------------------------------------------------
+// Money parameters fixed at initiation (Sections 6.3.1, 6.4.1)
+// ---------------------------------------------------------------------------
+
+/** session_params.basis values. A label only: nothing here converts net and gross. */
+export const SESSION_BASES: readonly string[] = ["net", "gross"];
+
+// Section 6.4.1 also fixes deal_type and both timeouts; only the money
+// parameters are checked here.
+const FIXED_MONEY_PARAMS = ["currency", "basis"] as const;
+
+function isJsonObject(value: unknown): value is Dict {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Reject malformed money parameters, or a SessionAck that changed currency or basis.
+ *
+ * `proposed` is the SessionInit's session_params and `accepted` the SessionAck's
+ * session_params_accepted; both must be objects, and each must carry currency,
+ * which is REQUIRED. basis is optional with no default: adding or altering it
+ * counts as a change, while a SessionAck that omits it (from a responder that
+ * predates basis) leaves the session's basis unstated. Both sides are validated
+ * before they are compared (Section 6.4.1), so a malformed value is reported as
+ * malformed, never as a change: an unrecognized basis is INVALID_BASIS, and a
+ * malformed currency or a part that is not an object is INVALID_REQUEST.
+ * SESSION_PARAM_CHANGED, naming the parameter, is left for a well-formed value
+ * that differs (Section 12.3).
+ */
+export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
+  if (!isJsonObject(proposed)) {
+    throw new A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400);
+  }
+  if (typeof proposed.currency !== "string" || proposed.currency === "") {
+    throw new A2CNError(
+      "INVALID_REQUEST",
+      `session_params.currency must be a non-empty string, got ${JSON.stringify(proposed.currency)}`,
+      400,
+    );
+  }
+  if (proposed.basis !== undefined && !SESSION_BASES.includes(proposed.basis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `session_params.basis must be 'net' or 'gross', got ${JSON.stringify(proposed.basis)}`,
+      400,
+    );
+  }
+  if (!isJsonObject(accepted)) {
+    throw new A2CNError("INVALID_REQUEST", "SessionAck session_params_accepted must be an object", 400);
+  }
+  if (typeof accepted.currency !== "string" || accepted.currency === "") {
+    throw new A2CNError(
+      "INVALID_REQUEST",
+      "session_params_accepted.currency must be a non-empty string, " +
+        `got ${JSON.stringify(accepted.currency)}`,
+      400,
+    );
+  }
+  if (accepted.basis !== undefined && !SESSION_BASES.includes(accepted.basis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `session_params_accepted.basis must be 'net' or 'gross', got ${JSON.stringify(accepted.basis)}`,
+      400,
+    );
+  }
+  for (const key of FIXED_MONEY_PARAMS) {
+    if (key === "basis" && accepted.basis === undefined) {
+      continue; // unechoed: the session's basis is unstated (Section 6.4.1)
+    }
+    if (accepted[key] !== proposed[key]) {
+      throw new A2CNError(
+        "SESSION_PARAM_CHANGED",
+        `SessionAck changed ${key}, which is fixed at session initiation`,
+        400,
+      );
+    }
+  }
+}
+
+/**
+ * Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+ *
+ * `sessionParams` are the parameters the session fixed, as the SessionAck's
+ * session_params_accepted carries them. A receiver runs this on every offer and
+ * counteroffer, and the reference client also runs it on each offer before
+ * sending it. The checks are presence-aware, so an absent field is not the same
+ * as null, and run in this order:
+ *
+ * 1. A terms.basis that is present must be 'net' or 'gross' (INVALID_BASIS).
+ * 2. terms.currency must equal the session currency; absent, a different
+ *    string, or a non-string is SESSION_PARAM_CHANGED.
+ * 3. When the session fixed a basis, terms.basis must be present and equal to
+ *    it; when the session fixed none, terms.basis must be absent, because an
+ *    offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+ *
+ * A terms value that is not an object carries neither field. Nothing here
+ * converts between currencies or between net and gross. The state machine does
+ * not check an acceptance again, since the offer it accepts was checked on
+ * receipt; the reference client checks the offer it is about to accept, because
+ * the offer it is handed may never have been checked.
+ */
+export function checkOfferMoneyParams(
+  sessionParams: Dict,
+  terms: unknown,
+  context: { sessionId?: string | null; messageId?: string | null } = {},
+): void {
+  const fields: Dict = isJsonObject(terms) ? terms : {};
+  const offeredBasis = fields.basis;
+  const offeredCurrency = fields.currency;
+
+  if (offeredBasis !== undefined && !SESSION_BASES.includes(offeredBasis as string)) {
+    throw new A2CNError(
+      "INVALID_BASIS",
+      `terms.basis must be 'net' or 'gross', got ${JSON.stringify(offeredBasis)}`,
+      400,
+      context,
+    );
+  }
+
+  const sessionCurrency = sessionParams.currency;
+  if (offeredCurrency === undefined || offeredCurrency !== sessionCurrency) {
+    const stated =
+      offeredCurrency === undefined
+        ? "omits terms.currency"
+        : `has terms.currency ${JSON.stringify(offeredCurrency)}`;
+    throw new A2CNError(
+      "SESSION_PARAM_CHANGED",
+      `Offer ${stated}, but the session fixed currency ${JSON.stringify(sessionCurrency)} ` +
+        "at initiation",
+      400,
+      context,
+    );
+  }
+
+  const sessionBasis = sessionParams.basis;
+  if (sessionBasis === undefined) {
+    if (offeredBasis !== undefined) {
+      throw new A2CNError(
+        "SESSION_PARAM_CHANGED",
+        `terms.basis ${JSON.stringify(offeredBasis)} adds a basis the session did not fix ` +
+          "at initiation",
+        400,
+        context,
+      );
+    }
+    return;
+  }
+  if (offeredBasis === undefined || offeredBasis !== sessionBasis) {
+    const stated =
+      offeredBasis === undefined
+        ? "omits terms.basis"
+        : `has terms.basis ${JSON.stringify(offeredBasis)}`;
+    throw new A2CNError(
+      "SESSION_PARAM_CHANGED",
+      `Offer ${stated}, but the session fixed basis ${JSON.stringify(sessionBasis)} at initiation`,
+      400,
+      context,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Session manager / state machine
 // ---------------------------------------------------------------------------
 
@@ -185,9 +346,10 @@ export class SessionManager {
 
   createSession(sessionId: string, sessionInit: Dict, sessionAck: Dict, now: string): Session {
     // Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
-    const accepted = (sessionAck.session_params_accepted ??
-      (sessionInit.session_params as Dict) ??
-      {}) as Dict;
+    const proposed = sessionInit.session_params === undefined ? {} : sessionInit.session_params;
+    const accepted =
+      sessionAck.session_params_accepted === undefined ? proposed : sessionAck.session_params_accepted;
+    checkFixedMoneyParams(proposed, accepted);
     const session = new Session({
       session_id: sessionId,
       state: SessionState.ACTIVE,
@@ -488,6 +650,11 @@ export class SessionManager {
       });
     }
     this.verifySenderSignature(session, message, expectedHash, "protocol_act_signature");
+    // After the signature, before the mandate check and any state change (Section 7.2)
+    checkOfferMoneyParams(session.session_params, terms, {
+      sessionId: session.session_id,
+      messageId: message.message_id as string | undefined,
+    });
     this.enforceMaxCommitment(session, senderRole, terms, message);
 
     // Message type check: round 1 must be "offer", round 2+ must be "counteroffer"
@@ -961,9 +1128,10 @@ export class SessionManager {
 //   UNAUTHORIZED_APPROVER   — 403  — human approval extension
 //   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.3
 //   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
-//   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
-//                                     used for malformed input that fails basic
-//                                     validation before any protocol logic runs
+//   INVALID_BASIS           — 400  — spec Section 12.3
+//   SESSION_PARAM_CHANGED   — 400  — spec Section 12.3
+//   INVALID_REQUEST         — 400  — spec Section 12.3; malformed input that fails
+//                                     basic validation before any protocol logic runs
 
 /** Protocol error with A2CN error code, HTTP status, and context. */
 export class A2CNError extends Error {

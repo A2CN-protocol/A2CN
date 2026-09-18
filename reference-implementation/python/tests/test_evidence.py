@@ -1096,6 +1096,86 @@ def test_money_basis_currency_must_match_the_act_it_describes():
     assert not verify_session_evidence_record(wrong_currency, did_documents)
 
 
+# A net or gross money_basis must agree with the basis the act itself states
+# (Section 9A.9). The other labels, and an act that states none, are not compared.
+
+
+def _quote_stating_basis(act_basis, label: str) -> dict:
+    """An observed quote whose terms state act_basis, with a money_basis labelled label."""
+    entry = _observed_quote(money_basis={**MONEY_BASIS, "basis": label})
+    entry["act"]["terms"]["basis"] = act_basis
+    return entry
+
+
+def test_money_basis_contradicting_the_acts_basis_is_refused_and_rejected():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    # The quote says gross, so a net money_basis contradicts it. The generator
+    # refuses it exactly as it refuses a currency mismatch.
+    with pytest.raises(ValueError, match="money_basis"):
+        _generate(session, [_quote_stating_basis("gross", "net")])
+
+    healthy = _generate(session, [_quote_stating_basis("gross", "gross")])
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    relabelled = copy.deepcopy(healthy)
+    relabelled["acts"][1]["money_basis"]["basis"] = "net"
+    _reseal(relabelled)
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+def test_terminal_money_basis_contradicting_the_acts_basis_is_refused_and_rejected():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    session.state = SessionState.IMPASSE
+    session.current_turn = "none"
+    session.terminal_reason = "no_movement"
+    session.terminal_message_id = "portal-quote-1"
+    session.state_updated_at = "2026-03-24T10:10:00Z"
+    quote = _observed_quote()
+    quote["act"]["terms"]["basis"] = "gross"
+
+    with pytest.raises(ValueError, match="money_basis"):
+        _generate(session, [quote], terminal_money_basis={**MONEY_BASIS, "basis": "net"})
+
+    healthy = _generate(
+        session, [quote], terminal_money_basis={**MONEY_BASIS, "basis": "gross"}
+    )
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    relabelled = copy.deepcopy(healthy)
+    relabelled["terminal"]["money_basis"]["basis"] = "net"
+    _reseal(relabelled)
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+@pytest.mark.parametrize("label", ["per_unit", "line_total", "unspecified"])
+def test_labels_other_than_net_and_gross_are_not_compared_with_the_acts_basis(label):
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    evidence = _generate(session, [_quote_stating_basis("gross", label)])
+
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+@pytest.mark.parametrize("label", ["net", "gross"])
+def test_an_act_that_states_no_basis_gets_no_basis_comparison(label):
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    evidence = _generate(
+        session, [_observed_quote(money_basis={**MONEY_BASIS, "basis": label})]
+    )
+
+    assert "basis" not in evidence["acts"][1]["act"]["terms"]
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
 # --- Fixture (v) -----------------------------------------------------------
 
 
@@ -1371,7 +1451,7 @@ def test_every_extension_vector_validates_against_the_published_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1421,7 +1501,7 @@ def test_the_schema_rejects_what_the_verifier_rejects():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     validator = jsonschema.Draft202012Validator(schema)
     healthy, _ = _priced_record()
@@ -1465,7 +1545,7 @@ def test_the_pre_extension_parity_record_still_validates_against_the_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1499,3 +1579,89 @@ def test_the_pre_extension_parity_record_still_validates_against_the_schema():
 
     assert record["record_hash"] == fixture["expected"]["record_hash"]
     assert list(jsonschema.Draft202012Validator(schema).iter_errors(record)) == []
+
+
+EXTENSION_VECTORS = json.loads(
+    (
+        Path(__file__).parents[3]
+        / "spec"
+        / "test-vectors"
+        / "session-evidence-record-extensions.json"
+    ).read_text()
+)
+MONEY_BASIS_ACT_BASIS_CASES = EXTENSION_VECTORS["money_basis_act_basis_cases"]
+
+
+def _money_basis_case_record(case: dict, label: str) -> dict:
+    """The base vector's record, with the case's act basis and label on its money_basis."""
+    fixture = EXTENSION_VECTORS
+    vector = copy.deepcopy(fixture["vectors"][MONEY_BASIS_ACT_BASIS_CASES["base_vector"]])
+    quote = vector["observed_acts"][0]
+    if "act_terms_basis" in case:
+        quote["act"]["terms"]["basis"] = case["act_terms_basis"]
+    options = vector["options"]
+    if case["placement"] == "act":
+        del options["terminal_money_basis"]
+        quote["money_basis"]["basis"] = label
+    else:
+        del quote["money_basis"]
+        options["terminal_money_basis"]["basis"] = label
+
+    session_ack = fixture["session_acks"][vector["session_ack"]]
+    session = Session(
+        session_id=fixture["session_id"],
+        state=vector["state"],
+        current_turn="none",
+        terminal_reason=vector["terminal_reason"],
+        terminal_message_id=vector["terminal_message_id"],
+        session_created_at=fixture["session_created_at"],
+        state_updated_at=vector["state_updated_at"],
+        session_params=fixture["session_params"],
+        initiator_mandate=fixture["session_init"]["initiator_mandate"],
+        responder_mandate=session_ack["responder_mandate"],
+    )
+    session._session_init = fixture["session_init"]
+    session._session_ack = session_ack
+    session._message_log = vector["message_log"]
+    producer = fixture["producer"]
+    return generate_session_evidence_record(
+        session,
+        producer_private_key=private_key_from_jwk(fixture["producer_private_jwk"]),
+        producer_did=producer["did"],
+        producer_agent_id=producer["agent_id"],
+        producer_verification_method=producer["verification_method"],
+        observed_acts=vector["observed_acts"],
+        **options,
+    )
+
+
+@pytest.mark.parametrize(
+    "case", MONEY_BASIS_ACT_BASIS_CASES["cases"], ids=lambda case: case["name"]
+)
+def test_money_basis_act_basis_vectors_have_python_typescript_parity(case):
+    fixture = EXTENSION_VECTORS
+    label = case["money_basis_basis"]
+    if case["valid"]:
+        record = _money_basis_case_record(case, label)
+        assert record["record_hash"] == case["record_hash"]
+        assert verify_session_evidence_record(record, fixture["did_documents"])
+        return
+
+    with pytest.raises(ValueError, match="money_basis"):
+        _money_basis_case_record(case, label)
+
+    # The same record with the label the generator refused, resealed by hand.
+    record = _money_basis_case_record(case, "unspecified")
+    holder = record["acts"][1] if case["placement"] == "act" else record["terminal"]
+    holder["money_basis"]["basis"] = label
+    record["record_hash"] = ""
+    record["producer_signature"] = ""
+    record["record_hash"] = hash_object(record)
+    record["producer_signature"] = sign_jws(
+        record["record_hash"],
+        private_key_from_jwk(fixture["producer_private_jwk"]),
+        kid=fixture["producer"]["verification_method"],
+    )
+
+    assert record["record_hash"] == case["resealed_record_hash"]
+    assert not verify_session_evidence_record(record, fixture["did_documents"])

@@ -18,10 +18,13 @@ from typing import Any
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
-from a2cn.session import Session, SessionState, _now
+from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
 
-SESSION_EVIDENCE_RECORD_VERSION = "0.1"
+SESSION_EVIDENCE_RECORD_VERSION = "0.2"
+# The versions a verifier accepts (Section 9A.2). Every other value is rejected,
+# and verification is the same for both.
+RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2")
 SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record"
 
 EVIDENCE_BILATERAL = "bilateral"
@@ -238,7 +241,8 @@ def generate_session_evidence_record(
     # only fails once it is somebody else's problem.
     if not _money_basis_claims_verify(record):
         raise ValueError(
-            "money_basis does not recompute to the claimed and signed totals"
+            "money_basis does not recompute to the claimed and signed totals, "
+            "or contradicts the currency or basis of the act it describes"
         )
     if not _observed_responder_rules_hold(record):
         raise ValueError(
@@ -279,7 +283,7 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if record.get("record_type") != SESSION_EVIDENCE_RECORD_TYPE:
             return assessment
-        if record.get("record_version") != SESSION_EVIDENCE_RECORD_VERSION:
+        if record.get("record_version") not in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS:
             return assessment
 
         terminal = record["terminal"]
@@ -755,7 +759,21 @@ def _money_basis_binds_to_act(entry: Any, money_basis: Any) -> bool:
         money_basis,
         expected_total_minor=total,
         expected_currency=currency,
-    )
+    ) and _money_basis_label_agrees_with_act(money_basis, terms)
+
+
+def _money_basis_label_agrees_with_act(money_basis: dict, terms: dict) -> bool:
+    """A net or gross label must not contradict the basis the act itself states.
+
+    This mirrors the currency rule: when the act's terms carry basis (Section
+    7.2), a money_basis labelled net or gross must carry the same value. The
+    other labels, and an act that states no basis, are not compared. Labels are
+    compared, never converted. Called only once the money_basis has recomputed,
+    so its basis is already a recognized label.
+    """
+    if "basis" not in terms or money_basis["basis"] not in SESSION_BASES:
+        return True
+    return terms["basis"] == money_basis["basis"]
 
 
 def _money_basis_claims_verify(record: dict) -> bool:

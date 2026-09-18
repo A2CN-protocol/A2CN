@@ -23,7 +23,13 @@ from a2cn.crypto import (
     create_jwt,
 )
 from a2cn.record import generate_transaction_record, A2CN_NAMESPACE
-from a2cn.session import Session, SessionState
+from a2cn.session import (
+    A2CNError,
+    Session,
+    SessionState,
+    check_fixed_money_params,
+    check_offer_money_params,
+)
 
 A2CN_CONTENT_TYPE = "application/a2cn+json"
 
@@ -108,6 +114,11 @@ class A2CNClient:
         )
         resp.raise_for_status()
         ack = resp.json()
+        if not isinstance(ack, dict):
+            raise A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400)
+
+        # The responder must echo currency, and any basis it carries, unchanged (Section 6.4.1)
+        check_fixed_money_params(session_params, ack.get("session_params_accepted"))
 
         # Cache session state
         session_id = ack["session_id"]
@@ -137,6 +148,11 @@ class A2CNClient:
         Section 7.1 + 7.3.
         """
         state = self._sessions[session_id]
+        # Check the terms before the counters move, so a refused offer leaves
+        # nothing to undo and the corrected one goes out in the same round (Section 7.2)
+        check_offer_money_params(
+            state["session_ack"]["session_params_accepted"], terms, session_id=session_id
+        )
         state["sequence_number"] += 1
         state["round_number"] += 1
 
@@ -216,6 +232,16 @@ class A2CNClient:
         Section 7.4.
         """
         state = self._sessions[session_id]
+        # The offer may never have passed the receive check: a caller can hand over
+        # any dict, and a message whose message_type is not exactly offer or
+        # counteroffer is recorded unchecked. Hold its terms to the session before
+        # the counters move, so a refused acceptance leaves nothing to undo (Section 7.2)
+        check_offer_money_params(
+            state["session_ack"]["session_params_accepted"],
+            offer.get("terms"),
+            session_id=session_id,
+            message_id=offer.get("message_id"),
+        )
         state["sequence_number"] += 1
         sequence_number = state["sequence_number"]
         round_number = state["round_number"]
@@ -312,6 +338,16 @@ class A2CNClient:
             )
         state = self._sessions[session_id]
         msg_type = message.get("message_type", "")
+
+        if msg_type in ("offer", "counteroffer"):
+            # The initiator is a receiver too: before recording an offer, refuse it
+            # if its terms break the session's currency or basis (Section 7.2)
+            check_offer_money_params(
+                state["session_ack"]["session_params_accepted"],
+                message.get("terms"),
+                session_id=session_id,
+                message_id=message.get("message_id"),
+            )
 
         state["message_log"].append(message)
 

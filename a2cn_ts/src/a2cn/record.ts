@@ -12,7 +12,7 @@ import { v5 as uuidv5 } from "uuid";
 
 import { hashObject, canonicalize, hashBytes, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
-import { SessionState, now, parseIsoMs } from "./session.js";
+import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import type { Dict } from "./messages.js";
 
 /**
@@ -41,9 +41,17 @@ export interface RecordSession {
 export const A2CN_NAMESPACE = "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c";
 
 // These identify the transaction-record and audit-log artifact schemas. They
-// are intentionally independent of the package release version.
-export const TRANSACTION_RECORD_VERSION = "0.1";
+// are intentionally independent of the package release version. A
+// TransactionRecord's version follows its content (Section 9.3): "0.2" exactly
+// when it carries the session's basis, so a session that fixed no basis gets
+// the "0.1" record every party derives for it, whichever version its
+// implementation is (Section 9.2).
+export const TRANSACTION_RECORD_VERSION_WITHOUT_BASIS = "0.1";
+export const TRANSACTION_RECORD_VERSION_WITH_BASIS = "0.2";
 export const AUDIT_LOG_VERSION = "0.1";
+// The TransactionRecord versions a verifier accepts (Section 9.5 step 1). Every
+// other value is rejected; step 7 holds each version to its shape.
+export const RECOGNIZED_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2"];
 
 export type DidResolver = Record<string, Dict> | ((did: string) => Dict);
 
@@ -88,9 +96,17 @@ export function generateTransactionRecord(session: RecordSession): Dict {
 
   const sessionInitParams = (sessionInit.session_params as Dict) ?? {};
 
+  // basis sits beside currency only when the session fixed one (Section 9.3),
+  // and the version follows it: the record of a session without a basis has no
+  // basis key and is the "0.1" record an implementation that predates basis
+  // generates for the same session.
+  const hasBasis = session.session_params.basis !== undefined;
+
   const record: Dict = {
     record_type: "a2cn_transaction_record",
-    record_version: TRANSACTION_RECORD_VERSION,
+    record_version: hasBasis
+      ? TRANSACTION_RECORD_VERSION_WITH_BASIS
+      : TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
     record_id: recordId,
     session_id: session.session_id,
     generated_at: generatedAt,
@@ -112,6 +128,7 @@ export function generateTransactionRecord(session: RecordSession): Dict {
     },
     deal_type: (session.session_params.deal_type as string) ?? "",
     currency: (session.session_params.currency as string) ?? "",
+    ...(hasBasis ? { basis: session.session_params.basis } : {}),
     subject: (sessionInitParams.subject as string) ?? "",
     subject_reference: sessionInitParams.subject_reference ?? null,
     agreed_terms: (finalOffer.terms as Dict) ?? {},
@@ -158,6 +175,43 @@ function computeOfferChainHash(offerHashes: string[]): string {
 }
 
 /**
+ * Section 9.5 step 1: record_version is exactly one of the recognized strings.
+ *
+ * Absent, null, a number, or a string that differs by so much as a space is
+ * rejected rather than parsed.
+ */
+function recordVersionRecognized(record: Dict): boolean {
+  const version = record.record_version;
+  return typeof version === "string" && RECOGNIZED_TRANSACTION_RECORD_VERSIONS.includes(version);
+}
+
+/**
+ * Section 9.5 step 7: a record carries a top-level basis exactly when it is "0.2".
+ *
+ * A "0.2" record carries basis, as 'net' or 'gross', equal to agreed_terms.basis:
+ * agreed_terms is the final offer's terms, which restate the session basis
+ * (Section 7.2). A "0.2" record without basis fails whatever agreed_terms holds.
+ * A "0.1" record carries no basis key. Presence is by key, so a null counts as
+ * carried; a key whose value is undefined is not serialized, so it is not
+ * carried. A "0.1" record's agreed_terms.basis is not checked: an implementation
+ * that predates the field records it there alone. Step 1 has already limited the
+ * version to "0.1" or "0.2".
+ */
+function recordBasisMatchesVersion(record: Dict): boolean {
+  if (record.record_version === TRANSACTION_RECORD_VERSION_WITHOUT_BASIS) {
+    return record.basis === undefined;
+  }
+  const agreedTerms = record.agreed_terms;
+  const agreedTermsIsObject =
+    agreedTerms !== null && typeof agreedTerms === "object" && !Array.isArray(agreedTerms);
+  return (
+    SESSION_BASES.includes(record.basis as string) &&
+    agreedTermsIsObject &&
+    (agreedTerms as Dict).basis === record.basis
+  );
+}
+
+/**
  * Verify a transaction record per Section 9.5.
  *
  * `didResolver` may be a mapping of DID → DID document or a callable returning
@@ -170,12 +224,20 @@ export function verifyTransactionRecord(
   offerHashes: string[] | null = null,
 ): boolean {
   try {
+    if (!recordVersionRecognized(record)) {
+      return false;
+    }
+
     const finalOffer = record.final_offer as Dict;
     const finalAcceptance = record.final_acceptance as Dict;
     const offerHash = finalOffer.protocol_act_hash as string;
     const acceptedHash = finalAcceptance.accepted_protocol_act_hash as string;
 
     if (!recordHashMatches(record)) {
+      return false;
+    }
+
+    if (!recordBasisMatchesVersion(record)) {
       return false;
     }
 

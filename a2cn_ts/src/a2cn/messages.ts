@@ -42,6 +42,7 @@ export class SessionParams {
   subject_reference: string | null;
   estimated_value: number | null;
   impasse_threshold: number | null;
+  basis: string | null; // "net" | "gross"; null (absent) means unstated
 
   constructor(props: {
     deal_type: string;
@@ -53,6 +54,7 @@ export class SessionParams {
     subject_reference?: string | null;
     estimated_value?: number | null;
     impasse_threshold?: number | null;
+    basis?: string | null;
   }) {
     this.deal_type = props.deal_type;
     this.currency = props.currency;
@@ -63,12 +65,14 @@ export class SessionParams {
     this.subject_reference = props.subject_reference ?? null;
     this.estimated_value = props.estimated_value ?? null;
     this.impasse_threshold = props.impasse_threshold ?? null;
+    this.basis = props.basis ?? null;
   }
 
   toDict(): Dict {
     return dropNone({
       deal_type: this.deal_type,
       currency: this.currency,
+      basis: this.basis,
       subject: this.subject,
       subject_reference: this.subject_reference,
       estimated_value: this.estimated_value,
@@ -173,6 +177,9 @@ export class TermsObject {
   contract_duration: Dict | null;
   sla: Dict | null;
   custom_terms: Dict | null;
+  // "net" | "gross": restates the session basis when the session fixed one
+  // (Section 7.2). null (absent) when the session fixed no basis.
+  basis: string | null;
 
   constructor(props: {
     total_value: number;
@@ -183,6 +190,7 @@ export class TermsObject {
     contract_duration?: Dict | null;
     sla?: Dict | null;
     custom_terms?: Dict | null;
+    basis?: string | null;
   }) {
     this.total_value = props.total_value;
     this.currency = props.currency;
@@ -192,12 +200,14 @@ export class TermsObject {
     this.contract_duration = props.contract_duration ?? null;
     this.sla = props.sla ?? null;
     this.custom_terms = props.custom_terms ?? null;
+    this.basis = props.basis ?? null;
   }
 
   toDict(): Dict {
     return dropNone({
       total_value: this.total_value,
       currency: this.currency,
+      basis: this.basis,
       line_items: this.line_items,
       payment_terms: this.payment_terms,
       delivery_terms: this.delivery_terms,

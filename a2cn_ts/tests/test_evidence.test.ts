@@ -1095,6 +1095,93 @@ test("money_basis currency must match the act it describes", () => {
   expect(verifySessionEvidenceRecord(wrongCurrency, didDocuments)).toBe(false);
 });
 
+// A net or gross money_basis must agree with the basis the act itself states
+// (Section 9A.9). The other labels, and an act that states none, are not compared.
+
+/** An observed quote whose terms state `actBasis`, with a money_basis labelled `label`. */
+function quoteStatingBasis(actBasis: unknown, label: string): Dict {
+  const entry = observedQuote({ moneyBasis: { ...MONEY_BASIS, basis: label } });
+  ((entry.act as Dict).terms as Dict).basis = actBasis;
+  return entry;
+}
+
+test("money_basis contradicting the act's basis is refused and rejected", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+
+  // The quote says gross, so a net money_basis contradicts it. The generator
+  // refuses it exactly as it refuses a currency mismatch.
+  expect(() => generateEvidence(session, [quoteStatingBasis("gross", "net")])).toThrow(
+    /money_basis/,
+  );
+
+  const healthy = generateEvidence(session, [quoteStatingBasis("gross", "gross")]);
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+
+  const relabelled = structuredClone(healthy);
+  ((relabelled.acts as Dict[])[1].money_basis as Dict).basis = "net";
+  reseal(relabelled);
+  expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(false);
+});
+
+test("terminal money_basis contradicting the act's basis is refused and rejected", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  session.state = SessionState.IMPASSE;
+  session.current_turn = "none";
+  session.terminal_reason = "no_movement";
+  session.terminal_message_id = "portal-quote-1";
+  session.state_updated_at = "2026-03-24T10:10:00Z";
+  const quote = observedQuote();
+  ((quote.act as Dict).terms as Dict).basis = "gross";
+
+  expect(() =>
+    generateEvidenceWith(session, [quote], {
+      terminalMoneyBasis: { ...MONEY_BASIS, basis: "net" },
+    }),
+  ).toThrow(/money_basis/);
+
+  const healthy = generateEvidenceWith(session, [quote], {
+    terminalMoneyBasis: { ...MONEY_BASIS, basis: "gross" },
+  });
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+
+  const relabelled = structuredClone(healthy);
+  ((relabelled.terminal as Dict).money_basis as Dict).basis = "net";
+  reseal(relabelled);
+  expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(false);
+});
+
+test.each(["per_unit", "line_total", "unspecified"])(
+  "labels other than net and gross are not compared with the act's basis: %s",
+  (label) => {
+    const [manager, session, didDocuments] = makeSession();
+    manager.processMessage(session, makeOffer(session.session_id));
+    markTimedOut(session);
+
+    const evidence = generateEvidence(session, [quoteStatingBasis("gross", label)]);
+
+    expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+  },
+);
+
+test.each(["net", "gross"])(
+  "an act that states no basis gets no basis comparison: %s",
+  (label) => {
+    const [manager, session, didDocuments] = makeSession();
+    manager.processMessage(session, makeOffer(session.session_id));
+    markTimedOut(session);
+
+    const evidence = generateEvidence(session, [
+      observedQuote({ moneyBasis: { ...MONEY_BASIS, basis: label } }),
+    ]);
+
+    expect(((evidence.acts as Dict[])[1].act as Dict).terms).not.toHaveProperty("basis");
+    expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+  },
+);
+
 // --- Fixture (v) -----------------------------------------------------------
 
 test("money_basis claiming a total with no raw amounts fails closed", () => {
@@ -1384,4 +1471,103 @@ test("extension vectors have Python/TypeScript hash parity", () => {
       name,
     ).toBe(true);
   }
+});
+
+const EXTENSION_VECTORS = JSON.parse(
+  readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "spec",
+      "test-vectors",
+      "session-evidence-record-extensions.json",
+    ),
+    "utf-8",
+  ),
+) as Dict;
+const MONEY_BASIS_ACT_BASIS_CASES = EXTENSION_VECTORS.money_basis_act_basis_cases as Dict;
+
+/** The base vector's record, with the case's act basis and `label` on its money_basis. */
+function moneyBasisCaseRecord(moneyBasisCase: Dict, label: string): Dict {
+  const fixture = EXTENSION_VECTORS;
+  const vector = structuredClone(
+    (fixture.vectors as Record<string, Dict>)[MONEY_BASIS_ACT_BASIS_CASES.base_vector as string],
+  );
+  const quote = (vector.observed_acts as Dict[])[0];
+  if (Object.prototype.hasOwnProperty.call(moneyBasisCase, "act_terms_basis")) {
+    ((quote.act as Dict).terms as Dict).basis = moneyBasisCase.act_terms_basis;
+  }
+  // The Python suite passes the base vector's options straight through; its only
+  // option is the terminal money_basis, so a new one would have to be mapped here.
+  const vectorOptions = vector.options as Dict;
+  expect(Object.keys(vectorOptions)).toEqual(["terminal_money_basis"]);
+  let terminalMoneyBasis: Dict | null = null;
+  if (moneyBasisCase.placement === "act") {
+    (quote.money_basis as Dict).basis = label;
+  } else {
+    delete quote.money_basis;
+    terminalMoneyBasis = { ...(vectorOptions.terminal_money_basis as Dict), basis: label };
+  }
+
+  const sessionAck = (fixture.session_acks as Dict)[vector.session_ack as string] as Dict;
+  const session = new Session({
+    session_id: fixture.session_id as string,
+    state: vector.state as string,
+    current_turn: "none",
+    terminal_reason: vector.terminal_reason as string,
+    terminal_message_id: vector.terminal_message_id as string | null,
+    session_created_at: fixture.session_created_at as string,
+    state_updated_at: vector.state_updated_at as string,
+    session_params: fixture.session_params as Dict,
+    initiator_mandate: (fixture.session_init as Dict).initiator_mandate as Dict,
+    responder_mandate: sessionAck.responder_mandate as Dict,
+    _session_init: fixture.session_init as Dict,
+    _session_ack: sessionAck,
+    _message_log: vector.message_log as Dict[],
+  });
+  const producer = fixture.producer as Dict;
+  return generateSessionEvidenceRecord(session, {
+    producerPrivateKey: privateKeyFromJwk(fixture.producer_private_jwk as Dict),
+    producerDid: producer.did as string,
+    producerAgentId: producer.agent_id as string,
+    producerVerificationMethod: producer.verification_method as string,
+    observedActs: vector.observed_acts as Dict[],
+    terminalMoneyBasis,
+  });
+}
+
+test.each(
+  (MONEY_BASIS_ACT_BASIS_CASES.cases as Dict[]).map(
+    (moneyBasisCase): [string, Dict] => [moneyBasisCase.name as string, moneyBasisCase],
+  ),
+)("money_basis act-basis vectors have Python/TypeScript parity: %s", (_name, moneyBasisCase) => {
+  const fixture = EXTENSION_VECTORS;
+  const didDocuments = fixture.did_documents as Record<string, Dict>;
+  const label = moneyBasisCase.money_basis_basis as string;
+  if (moneyBasisCase.valid) {
+    const record = moneyBasisCaseRecord(moneyBasisCase, label);
+    expect(record.record_hash).toBe(moneyBasisCase.record_hash);
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+    return;
+  }
+
+  expect(() => moneyBasisCaseRecord(moneyBasisCase, label)).toThrow(/money_basis/);
+
+  // The same record with the label the generator refused, resealed by hand.
+  const record = moneyBasisCaseRecord(moneyBasisCase, "unspecified");
+  const holder =
+    moneyBasisCase.placement === "act" ? (record.acts as Dict[])[1] : (record.terminal as Dict);
+  (holder.money_basis as Dict).basis = label;
+  record.record_hash = "";
+  record.producer_signature = "";
+  record.record_hash = hashObject(record);
+  record.producer_signature = signJws(
+    record.record_hash as string,
+    privateKeyFromJwk(fixture.producer_private_jwk as Dict),
+    (fixture.producer as Dict).verification_method as string,
+  );
+
+  expect(record.record_hash).toBe(moneyBasisCase.resealed_record_hash);
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(false);
 });

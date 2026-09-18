@@ -43,11 +43,13 @@ class SessionParams:
     subject_reference: str | None = None
     estimated_value: int | None = None
     impasse_threshold: int | None = None
+    basis: str | None = None  # "net" | "gross"; None (absent) means unstated
 
     def to_dict(self) -> dict:
         return _drop_none({
             "deal_type": self.deal_type,
             "currency": self.currency,
+            "basis": self.basis,
             "subject": self.subject,
             "subject_reference": self.subject_reference,
             "estimated_value": self.estimated_value,
@@ -114,11 +116,15 @@ class TermsObject:
     contract_duration: dict | None = None
     sla: dict | None = None
     custom_terms: dict | None = None
+    # "net" | "gross": restates the session basis when the session fixed one
+    # (Section 7.2). None (absent) when the session fixed no basis.
+    basis: str | None = None
 
     def to_dict(self) -> dict:
         return _drop_none({
             "total_value": self.total_value,
             "currency": self.currency,
+            "basis": self.basis,
             "line_items": self.line_items,
             "payment_terms": self.payment_terms,
             "delivery_terms": self.delivery_terms,

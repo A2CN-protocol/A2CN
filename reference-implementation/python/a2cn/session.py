@@ -137,6 +137,158 @@ class Session:
 
 
 # ---------------------------------------------------------------------------
+# Money parameters fixed at initiation (Sections 6.3.1, 6.4.1)
+# ---------------------------------------------------------------------------
+
+# session_params.basis values. A label only: nothing here converts net and gross.
+SESSION_BASES = ("net", "gross")
+
+# Section 6.4.1 also fixes deal_type and both timeouts; only the money
+# parameters are checked here.
+_FIXED_MONEY_PARAMS = ("currency", "basis")
+_ABSENT = object()
+
+
+def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
+    """Reject malformed money parameters, or a SessionAck that changed currency or basis.
+
+    ``proposed`` is the SessionInit's session_params and ``accepted`` the
+    SessionAck's session_params_accepted; both must be objects, and each must
+    carry currency, which is REQUIRED. basis is optional with no default: adding
+    or altering it counts as a change, while a SessionAck that omits it (from a
+    responder that predates basis) leaves the session's basis unstated. Both
+    sides are validated before they are compared (Section 6.4.1), so a malformed
+    value is reported as malformed, never as a change: an unrecognized basis is
+    INVALID_BASIS, and a malformed currency or a part that is not an object is
+    INVALID_REQUEST. SESSION_PARAM_CHANGED, naming the parameter, is left for a
+    well-formed value that differs (Section 12.3).
+    """
+    if not isinstance(proposed, dict):
+        raise A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400)
+    currency = proposed.get("currency")
+    if not isinstance(currency, str) or not currency:
+        raise A2CNError(
+            "INVALID_REQUEST",
+            f"session_params.currency must be a non-empty string, got {currency!r}",
+            400,
+        )
+    if "basis" in proposed and proposed["basis"] not in SESSION_BASES:
+        raise A2CNError(
+            "INVALID_BASIS",
+            f"session_params.basis must be 'net' or 'gross', got {proposed['basis']!r}",
+            400,
+        )
+    if not isinstance(accepted, dict):
+        raise A2CNError(
+            "INVALID_REQUEST", "SessionAck session_params_accepted must be an object", 400
+        )
+    accepted_currency = accepted.get("currency")
+    if not isinstance(accepted_currency, str) or not accepted_currency:
+        raise A2CNError(
+            "INVALID_REQUEST",
+            "session_params_accepted.currency must be a non-empty string, "
+            f"got {accepted_currency!r}",
+            400,
+        )
+    if "basis" in accepted and accepted["basis"] not in SESSION_BASES:
+        raise A2CNError(
+            "INVALID_BASIS",
+            f"session_params_accepted.basis must be 'net' or 'gross', got {accepted['basis']!r}",
+            400,
+        )
+    for key in _FIXED_MONEY_PARAMS:
+        if key == "basis" and key not in accepted:
+            continue  # unechoed: the session's basis is unstated (Section 6.4.1)
+        if accepted.get(key, _ABSENT) != proposed.get(key, _ABSENT):
+            raise A2CNError(
+                "SESSION_PARAM_CHANGED",
+                f"SessionAck changed {key}, which is fixed at session initiation",
+                400,
+            )
+
+
+def check_offer_money_params(
+    session_params: dict,
+    terms: Any,
+    *,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> None:
+    """Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+
+    ``session_params`` are the parameters the session fixed, as the SessionAck's
+    session_params_accepted carries them. A receiver runs this on every offer
+    and counteroffer, and the reference client also runs it on each offer
+    before sending it. The checks are presence-aware, so an absent field is not
+    the same as null, and run in this order:
+
+    1. A terms.basis that is present must be 'net' or 'gross' (INVALID_BASIS).
+    2. terms.currency must equal the session currency; absent, a different
+       string, or a non-string is SESSION_PARAM_CHANGED.
+    3. When the session fixed a basis, terms.basis must be present and equal
+       to it; when the session fixed none, terms.basis must be absent,
+       because an offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+
+    A terms value that is not an object carries neither field. Nothing here
+    converts between currencies or between net and gross. The state machine
+    does not check an acceptance again, since the offer it accepts was checked
+    on receipt; the reference client checks the offer it is about to accept,
+    because the offer it is handed may never have been checked.
+    """
+    is_object = isinstance(terms, dict)
+    offered_basis = terms.get("basis", _ABSENT) if is_object else _ABSENT
+    offered_currency = terms.get("currency", _ABSENT) if is_object else _ABSENT
+    context = {"session_id": session_id, "message_id": message_id}
+
+    if offered_basis is not _ABSENT and offered_basis not in SESSION_BASES:
+        raise A2CNError(
+            "INVALID_BASIS",
+            f"terms.basis must be 'net' or 'gross', got {offered_basis!r}",
+            400,
+            **context,
+        )
+
+    session_currency = session_params.get("currency", _ABSENT)
+    if offered_currency is _ABSENT or offered_currency != session_currency:
+        stated = (
+            "omits terms.currency"
+            if offered_currency is _ABSENT
+            else f"has terms.currency {offered_currency!r}"
+        )
+        raise A2CNError(
+            "SESSION_PARAM_CHANGED",
+            f"Offer {stated}, but the session fixed currency "
+            f"{session_params.get('currency')!r} at initiation",
+            400,
+            **context,
+        )
+
+    session_basis = session_params.get("basis", _ABSENT)
+    if session_basis is _ABSENT:
+        if offered_basis is not _ABSENT:
+            raise A2CNError(
+                "SESSION_PARAM_CHANGED",
+                f"terms.basis {offered_basis!r} adds a basis the session did not fix "
+                "at initiation",
+                400,
+                **context,
+            )
+        return
+    if offered_basis is _ABSENT or offered_basis != session_basis:
+        stated = (
+            "omits terms.basis"
+            if offered_basis is _ABSENT
+            else f"has terms.basis {offered_basis!r}"
+        )
+        raise A2CNError(
+            "SESSION_PARAM_CHANGED",
+            f"Offer {stated}, but the session fixed basis {session_basis!r} at initiation",
+            400,
+            **context,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Session manager / state machine
 # ---------------------------------------------------------------------------
 
@@ -174,7 +326,9 @@ class SessionManager:
         now: str,
     ) -> Session:
         # Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
-        accepted = session_ack.get("session_params_accepted", session_init.get("session_params", {}))
+        proposed = session_init.get("session_params", {})
+        accepted = session_ack.get("session_params_accepted", proposed)
+        check_fixed_money_params(proposed, accepted)
         session = Session(
             session_id=session_id,
             state=SessionState.ACTIVE,
@@ -493,6 +647,13 @@ class SessionManager:
             message,
             payload_hash=expected_hash,
             signature_field="protocol_act_signature",
+        )
+        # After the signature, before the mandate check and any state change (Section 7.2)
+        check_offer_money_params(
+            session.session_params,
+            terms,
+            session_id=session.session_id,
+            message_id=message.get("message_id"),
         )
         self._enforce_max_commitment(session, sender_role, terms, message)
 
@@ -989,9 +1150,10 @@ class SessionManager:
 #   UNAUTHORIZED_APPROVER   — 403  — human approval extension
 #   PROTOCOL_VERSION_MISMATCH — 400 — spec Section 12.3
 #   UNAUTHORIZED_SENDER     — 403  — spec Section 12.3
-#   INVALID_REQUEST         — 400  — extension (not in spec Section 12.3 table);
-#                                     used for malformed input that fails basic
-#                                     validation before any protocol logic runs
+#   INVALID_BASIS           — 400  — spec Section 12.3
+#   SESSION_PARAM_CHANGED   — 400  — spec Section 12.3
+#   INVALID_REQUEST         — 400  — spec Section 12.3; malformed input that fails
+#                                     basic validation before any protocol logic runs
 
 
 class A2CNError(Exception):

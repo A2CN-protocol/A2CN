@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 import { createMcpContext, type McpContext } from "../src/mcp_server.js";
 import { A2CNClient } from "../src/a2cn/client.js";
 import type { Dict } from "../src/a2cn/messages.js";
+import { A2CNError } from "../src/a2cn/session.js";
 
 // ---------------------------------------------------------------------------
 // Constants shared across tests
@@ -578,3 +579,66 @@ test("inject counterparty offer unknown session", () => {
   const ctx = createMcpContext();
   expect(() => ctx.injectCounterpartyOffer("no-such-session", SAMPLE_CP_OFFER)).toThrow();
 });
+
+// A counteroffer the client refuses must leave no trace in the MCP entry: not in
+// the status report, and not as an offer a2cnAccept could sign. MCP sessions fix
+// no basis, so an off-currency counteroffer is one any session can meet.
+const REFUSED_CP_OFFERS: [string, Dict][] = [
+  [
+    "eur-in-a-usd-session",
+    { ...SAMPLE_CP_OFFER, terms: { ...(SAMPLE_CP_OFFER.terms as Dict), currency: "EUR" } },
+  ],
+  [
+    "basis-added-to-a-basis-less-session",
+    { ...SAMPLE_CP_OFFER, terms: { ...(SAMPLE_CP_OFFER.terms as Dict), basis: "gross" } },
+  ],
+  ["non-object-terms", { ...SAMPLE_CP_OFFER, terms: "11500000 USD" }],
+];
+
+/** The entry without its client, which is compared through its session state. */
+function entryFields(ctx: McpContext): Dict {
+  const fields = { ...ctx.sessions[SESSION_ID] } as Dict;
+  delete fields.client;
+  return structuredClone(fields);
+}
+
+test.each(REFUSED_CP_OFFERS)(
+  "a refused counteroffer leaves the session entry unchanged: %s",
+  async (_name, offer) => {
+    const requests: string[] = [];
+    const ctx = createMcpContext({
+      fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push(`${init?.method ?? "GET"} ${String(url)}`);
+        return new Response(JSON.stringify({ status: "accepted" }), {
+          status: 200,
+          headers: { "Content-Type": "application/a2cn+json" },
+        });
+      }) as typeof fetch,
+    });
+    seedSession(ctx);
+    const entry = ctx.sessions[SESSION_ID];
+    const fieldsBefore = entryFields(ctx);
+    const clientStateBefore = structuredClone(entry.client._sessions[SESSION_ID]);
+
+    let refusal: unknown = null;
+    try {
+      ctx.injectCounterpartyOffer(SESSION_ID, offer);
+    } catch (exc) {
+      refusal = exc;
+    }
+    expect(refusal).toBeInstanceOf(A2CNError);
+    expect((refusal as A2CNError).code).toBe("SESSION_PARAM_CHANGED");
+
+    expect(entryFields(ctx)).toEqual(fieldsBefore);
+    expect(entry.client._sessions[SESSION_ID]).toEqual(clientStateBefore);
+
+    const status = await ctx.a2cnGetSessionStatus(SESSION_ID);
+    expect(status.has_counterparty_offer).toBe(false);
+    expect(status.counterparty_last_offer).toBeNull();
+
+    const result = await ctx.a2cnAccept(SESSION_ID);
+    expect(result.error).toBe("no_counterparty_offer");
+    expect(requests).toEqual([]);
+    expect(entry.status).toBe("NEGOTIATING");
+  },
+);

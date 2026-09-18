@@ -228,13 +228,16 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
       if (entry === undefined) {
         throw new Error(`Session ${JSON.stringify(sessionId)} not found in MCP session store`);
       }
+      // The client refuses an offer that breaks the session's currency or basis
+      // (Section 7.2). Record it here only once the client has taken it, so a
+      // refused offer is never reported by a2cnGetSessionStatus or signed by
+      // a2cnAccept. Nothing below can throw, so the entry and the client agree.
+      entry.client.processIncoming(sessionId, offerMessage);
       const terms = (offerMessage.terms as Dict) ?? {};
       const payment = (terms.payment_terms as Dict) ?? {};
       entry.counterparty_last_offer_cents = (terms.total_value as number) ?? null;
       entry.counterparty_last_offer_net_days = (payment.net_days as number) ?? null;
       entry.counterparty_last_offer_message = offerMessage;
-      // Keep the A2CNClient's internal state in sync (for record generation)
-      entry.client.processIncoming(sessionId, offerMessage);
     },
 
     /**
