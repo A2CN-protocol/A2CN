@@ -2,6 +2,7 @@
 
 import copy
 import json
+import socket
 import uuid
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from a2cn.evidence import (
     generate_session_evidence_record,
     verify_session_evidence_record,
 )
-from a2cn.record import generate_transaction_record, verify_transaction_record
+from a2cn.record import A2CN_NAMESPACE, generate_transaction_record, verify_transaction_record
 from a2cn.session import Session, SessionManager, SessionState
 from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
 
@@ -1313,9 +1314,10 @@ def test_an_observed_responder_cannot_ride_a_completed_record_to_bilateral():
     assert verify_session_evidence_record(bilateral, did_documents)
 
     # Strip the counterparty's identity and its signed acceptance. What remains
-    # is one party whose every act is signed, which the classifier still calls
-    # bilateral -- so the explicit unilateral coupling is the only thing that
-    # refuses a COMPLETED record with an unidentified counterparty.
+    # is one party whose every act is signed. Two rules refuse it: the level of
+    # a record whose responder is an observed_party is asserted unilateral
+    # (Section 9A.5), so the recomputed level contradicts this claim, and the
+    # explicit unilateral coupling refuses it as well.
     forged = copy.deepcopy(bilateral)
     forged["parties"]["responder"] = {
         "identity_source": "supplier_ordering_portal",
@@ -1665,3 +1667,720 @@ def test_money_basis_act_basis_vectors_have_python_typescript_parity(case):
 
     assert record["record_hash"] == case["resealed_record_hash"]
     assert not verify_session_evidence_record(record, fixture["did_documents"])
+
+
+# ---------------------------------------------------------------------------
+# External-channel completion (Section 9A.12): a COMPLETED record whose
+# completion witness is an external_commitment_reference, at record_version
+# "0.3". The counterparty holds no A2CN identity, so there is no bilateral
+# TransactionRecord to cross-link.
+# ---------------------------------------------------------------------------
+
+EXTERNAL_COMMITMENT_REFERENCE = {
+    "external_order_id": "ORD-2026-000123",
+    "locator": "https://shop.example/.well-known/ucp",
+}
+
+
+def _order_confirmation() -> dict:
+    """The seller's order confirmation, observed through its commerce API, unsigned."""
+    return {
+        "sequence_number": None,
+        "round_number": None,
+        "message_type": "order_confirmation",
+        "message_id": "order-confirmation-1",
+        "sender_did": None,
+        "timestamp": "2026-03-24T10:05:00Z",
+        "source_protocol": "ucp",
+        "act": {
+            "message_type": "order_confirmation",
+            "message_id": "order-confirmation-1",
+            "timestamp": "2026-03-24T10:05:00Z",
+            "order": {"id": "ORD-2026-000123", "status": "confirmed"},
+        },
+    }
+
+
+def _mark_completed_externally(session) -> None:
+    session.state = SessionState.COMPLETED
+    session.current_turn = "none"
+    session.terminal_reason = "external_order_confirmed"
+    session.terminal_message_id = "order-confirmation-1"
+    session.state_updated_at = "2026-03-24T10:05:00Z"
+
+
+def _external_channel_session():
+    """An identity-light session whose seller confirmed an order outside A2CN."""
+    manager, session, did_documents = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_completed_externally(session)
+    return session, did_documents
+
+
+def _external_channel_record(**kwargs):
+    session, did_documents = _external_channel_session()
+    kwargs.setdefault("observed_responder", OBSERVED_RESPONDER)
+    kwargs.setdefault("external_commitment_reference", EXTERNAL_COMMITMENT_REFERENCE)
+    return _generate(session, [_order_confirmation()], **kwargs), did_documents
+
+
+def _bilateral_record():
+    manager, session, did_documents = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    manager.process_message(session, _acceptance(session.session_id, offer))
+    return _generate(session), did_documents, session
+
+
+# --- (i) and (ii): each completion witness on its own ------------------------
+
+
+def test_a_bilateral_completed_record_keeps_its_transaction_record_hash_at_0_2():
+    evidence, did_documents, session = _bilateral_record()
+
+    assert evidence["record_version"] == "0.2"
+    assert evidence["transaction_record_hash"] == generate_transaction_record(session)["record_hash"]
+    assert "external_commitment_reference" not in evidence
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_an_external_channel_completed_record_is_valid_at_0_3():
+    session, did_documents = _external_channel_session()
+    # No TransactionRecord exists for this session: the counterparty never signed
+    # an A2CN act. So the record below is produced without generating one.
+    with pytest.raises(ValueError):
+        generate_transaction_record(session)
+
+    evidence = _generate(
+        session,
+        [_order_confirmation()],
+        observed_responder=OBSERVED_RESPONDER,
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+
+    assert evidence["record_version"] == "0.3"
+    assert evidence["terminal"]["outcome"] == SessionState.COMPLETED
+    assert evidence["transaction_record_hash"] is None
+    assert evidence["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
+    assert "did" not in evidence["parties"]["responder"]
+    assert assess_session_evidence_record(evidence, did_documents) == {
+        "valid": True,
+        "evidence_level": "unilateral",
+        "verified_acts": 1,
+        "unsigned_acts": 1,
+        "invalid_acts": 0,
+    }
+
+
+# --- (iii) to (vi): the completion-witness rule and its coupling -------------
+
+
+def test_a_completed_record_with_both_witnesses_is_rejected():
+    healthy, did_documents = _external_channel_record()
+    assert verify_session_evidence_record(healthy, did_documents)
+    # Re-sealing must itself produce a verifiable record, or the red below would
+    # prove only that the reseal helper is broken.
+    assert verify_session_evidence_record(_reseal(copy.deepcopy(healthy)), did_documents)
+
+    both = copy.deepcopy(healthy)
+    both["transaction_record_hash"] = hash_bytes(b"a transaction record")
+    _reseal(both)
+
+    assert not verify_session_evidence_record(both, did_documents)
+
+
+def test_a_completed_record_with_neither_witness_is_rejected():
+    healthy, did_documents = _external_channel_record()
+
+    neither = copy.deepcopy(healthy)
+    del neither["external_commitment_reference"]
+    neither["record_version"] = "0.2"
+    _reseal(neither)
+
+    assert not verify_session_evidence_record(neither, did_documents)
+
+    # A bilateral record that loses its TransactionRecord hash is refused too.
+    bilateral, bilateral_documents, _ = _bilateral_record()
+    assert verify_session_evidence_record(bilateral, bilateral_documents)
+    bilateral["transaction_record_hash"] = None
+    _reseal(bilateral)
+
+    assert not verify_session_evidence_record(bilateral, bilateral_documents)
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        SessionState.REJECTED_FINAL,
+        SessionState.WITHDRAWN,
+        SessionState.TIMED_OUT,
+        SessionState.IMPASSE,
+        SessionState.ERROR,
+        "HALTED_BY_CONTROLS",
+    ],
+)
+def test_a_reference_on_any_other_outcome_is_rejected(outcome):
+    healthy, did_documents = _external_channel_record()
+
+    relabelled = copy.deepcopy(healthy)
+    relabelled["terminal"]["outcome"] = outcome
+    _reseal(relabelled)
+
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+def test_a_transaction_record_hash_on_any_other_outcome_is_still_rejected():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    healthy = _generate(session)
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    cross_linked = copy.deepcopy(healthy)
+    cross_linked["transaction_record_hash"] = hash_bytes(b"a transaction record")
+    _reseal(cross_linked)
+
+    assert not verify_session_evidence_record(cross_linked, did_documents)
+
+
+def test_a_reference_with_a_did_bearing_responder_is_rejected():
+    healthy, did_documents = _external_channel_record()
+
+    identified = copy.deepcopy(healthy)
+    identified["parties"]["responder"] = {
+        "organization_name": "Acme",
+        "did": RESPONDER_DID,
+        "agent_id": "seller-agent",
+        "verification_method": RESPONDER_VM,
+        "mandate_type": "declared",
+    }
+    _reseal(identified)
+
+    assessment = assess_session_evidence_record(identified, did_documents)
+
+    # Assert the reason before the verdict: every act verifies, and with the
+    # seller's act unsigned the record is still unilateral, so what refuses it
+    # is the rule that a reference needs an observed responder.
+    assert assessment["invalid_acts"] == 0
+    assert assessment["verified_acts"] == 1
+    assert assessment["unsigned_acts"] == 1
+    assert assessment["evidence_level"] == "unilateral"
+    assert not assessment["valid"]
+
+
+@pytest.mark.parametrize("evidence_level", ["mixed", "bilateral"])
+def test_a_reference_with_evidence_other_than_unilateral_is_rejected(evidence_level):
+    healthy, did_documents = _external_channel_record()
+
+    promoted = copy.deepcopy(healthy)
+    promoted["evidence_level"] = evidence_level
+    _reseal(promoted)
+
+    assert not verify_session_evidence_record(promoted, did_documents)
+
+
+def test_a_reference_cannot_ride_a_fully_signed_record_to_bilateral():
+    """The producer's own signed acts never make an observed-responder record bilateral.
+
+    The level of such a record is asserted unilateral (Section 9A.5), so the
+    recomputed level contradicts a bilateral claim. Section 9A.8 and the
+    reference's own coupling (Section 9A.12) refuse it as well.
+    """
+    healthy, did_documents = _external_channel_record()
+
+    forged = copy.deepcopy(healthy)
+    forged["acts"] = [forged["acts"][0]]
+    forged["evidence_level"] = "bilateral"
+    _reseal(forged)
+
+    assessment = assess_session_evidence_record(forged, did_documents)
+
+    assert assessment["invalid_acts"] == 0
+    assert assessment["verified_acts"] == 1
+    assert not assessment["valid"]
+
+
+# --- record_version follows the reference, in both directions ----------------
+
+
+@pytest.mark.parametrize("version", ["0.2", "0.1"])
+def test_a_reference_on_a_record_that_is_not_0_3_is_rejected(version):
+    healthy, did_documents = _external_channel_record()
+
+    relabelled = copy.deepcopy(healthy)
+    relabelled["record_version"] = version
+    _reseal(relabelled)
+
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+def test_a_0_3_record_without_a_reference_is_rejected():
+    bilateral, bilateral_documents, _ = _bilateral_record()
+    timed_out, timed_out_documents = _mixed_record()
+
+    for record, did_documents in (
+        (bilateral, bilateral_documents),
+        (timed_out, timed_out_documents),
+    ):
+        assert verify_session_evidence_record(record, did_documents)
+        relabelled = copy.deepcopy(record)
+        relabelled["record_version"] = "0.3"
+        _reseal(relabelled)
+        assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+# --- the seal, and what the verifier must not do ----------------------------
+
+
+def test_editing_the_reference_after_sealing_invalidates_the_record():
+    healthy, did_documents = _external_channel_record(
+        external_commitment_reference={
+            **EXTERNAL_COMMITMENT_REFERENCE,
+            "reference_note": "confirmed",
+        }
+    )
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    for field, value in (
+        ("external_order_id", "ORD-2026-000124"),
+        ("locator", "https://other.example/.well-known/ucp"),
+        ("reference_note", "cancelled"),
+    ):
+        edited = copy.deepcopy(healthy)
+        edited["external_commitment_reference"][field] = value
+        assert not verify_session_evidence_record(edited, did_documents), field
+
+    dropped = copy.deepcopy(healthy)
+    del dropped["external_commitment_reference"]["reference_note"]
+    assert not verify_session_evidence_record(dropped, did_documents)
+
+
+def test_the_verifier_never_dereferences_the_locator(monkeypatch):
+    evidence, did_documents = _external_channel_record()
+    requested: list[str] = []
+    connections: list[tuple] = []
+
+    def recording_resolver(did: str) -> dict:
+        requested.append(did)
+        return did_documents[did]
+
+    def refuse_network(*args, **kwargs):
+        connections.append(args)
+        raise AssertionError("the verifier reached for the network")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse_network)
+    monkeypatch.setattr(socket, "create_connection", refuse_network)
+    monkeypatch.setattr(socket.socket, "connect", refuse_network)
+
+    assert verify_session_evidence_record(evidence, recording_resolver)
+    assert set(requested) == {INITIATOR_DID}
+    assert connections == []
+
+
+# --- what the generator refuses to seal -------------------------------------
+
+
+def test_the_generator_refuses_a_reference_for_a_did_bearing_responder():
+    manager, session, _ = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    manager.process_message(session, _acceptance(session.session_id, offer))
+
+    with pytest.raises(ValueError, match="completes with its TransactionRecord"):
+        _generate(session, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE)
+
+
+@pytest.mark.parametrize("pass_none", [False, True], ids=["omitted", "none"])
+def test_the_generator_refuses_an_observed_completion_without_a_reference(pass_none):
+    session, _ = _external_channel_session()
+    kwargs = {"external_commitment_reference": None} if pass_none else {}
+
+    with pytest.raises(ValueError, match="requires external_commitment_reference"):
+        _generate(
+            session,
+            [_order_confirmation()],
+            observed_responder=OBSERVED_RESPONDER,
+            **kwargs,
+        )
+
+
+def test_the_generator_refuses_a_reference_on_any_other_outcome():
+    # An observed responder, so only the outcome is wrong.
+    manager, session, _ = _make_identity_light_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    with pytest.raises(ValueError, match="only for a COMPLETED session"):
+        _generate(
+            session,
+            [_order_confirmation()],
+            observed_responder=OBSERVED_RESPONDER,
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+    # A run the producer's controls halted did not complete either.
+    session.state = SessionState.WITHDRAWN
+    with pytest.raises(ValueError, match="only for a COMPLETED session"):
+        _generate(
+            session,
+            observed_responder=OBSERVED_RESPONDER,
+            terminal_outcome="HALTED_BY_CONTROLS",
+            terminal_reason="buyer_spend_control:max_session_commitment",
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+    # A DID-bearing responder on another outcome is refused for the outcome.
+    manager, session, _ = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+    with pytest.raises(ValueError, match="only for a COMPLETED session"):
+        _generate(session, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE)
+
+
+def test_the_generator_refuses_a_reference_that_is_not_an_object():
+    session, _ = _external_channel_session()
+
+    # Anchored, so the refusal is the object check and not the shape check behind it.
+    with pytest.raises(ValueError, match="must be an object$"):
+        _generate(
+            session,
+            [_order_confirmation()],
+            observed_responder=OBSERVED_RESPONDER,
+            external_commitment_reference="ORD-2026-000123",
+        )
+
+
+def test_the_generator_seals_a_copy_of_the_reference():
+    reference = copy.deepcopy(EXTERNAL_COMMITMENT_REFERENCE)
+    evidence, did_documents = _external_channel_record(external_commitment_reference=reference)
+
+    reference["external_order_id"] = "ORD-2026-999999"
+
+    assert evidence["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_a_reference_of_none_is_not_supplied():
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_timed_out(session)
+
+    evidence = _generate(session, external_commitment_reference=None)
+
+    assert evidence["record_version"] == "0.2"
+    assert "external_commitment_reference" not in evidence
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+@pytest.mark.parametrize("version", ["0.2", "0.1"])
+def test_an_observed_completion_with_a_transaction_record_hash_is_rejected(version):
+    """The completion witness matches the responder in both directions (Section 9A.2).
+
+    A TransactionRecord is bilateral (Section 9.3), so a session whose responder
+    is an observed_party has none, and a record that claims one for such a
+    session is refused at every version. The generators that predate the
+    external commitment reference sealed exactly this record, over a
+    TransactionRecord whose responder was empty.
+    """
+    healthy, did_documents = _external_channel_record()
+
+    earlier_shape = copy.deepcopy(healthy)
+    del earlier_shape["external_commitment_reference"]
+    earlier_shape["record_version"] = version
+    earlier_shape["transaction_record_hash"] = hash_bytes(b"a transaction record")
+    _reseal(earlier_shape)
+
+    assert not verify_session_evidence_record(earlier_shape, did_documents)
+    # A DID-bearing responder carrying the same witness still verifies.
+    bilateral, bilateral_documents, _ = _bilateral_record()
+    assert verify_session_evidence_record(bilateral, bilateral_documents)
+
+
+def test_the_generator_refuses_a_completed_record_whose_responder_has_no_did():
+    """A responder with no DID signs no TransactionRecord, so none can be cross-linked.
+
+    The generators that predate the external commitment reference sealed this
+    record anyway, hashing a TransactionRecord whose responder was empty.
+    """
+    manager, session, _ = _make_identity_light_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    manager.process_message(session, _acceptance(session.session_id, offer))
+    assert session.state == SessionState.COMPLETED
+
+    with pytest.raises(ValueError, match="DID-bearing responder"):
+        _generate(session)
+
+
+# --- the evidence level is asserted, and one producer act is required --------
+
+
+def test_an_external_channel_record_of_producer_acts_only_is_unilateral():
+    """The producer's signed offer plus the order reference, with nothing observed.
+
+    A record whose responder is an observed_party is unilateral by assertion
+    (Section 9A.5) rather than by counting acts, so this record has a level it
+    can carry. Before, the classifier called it bilateral and no level verified.
+    """
+    session, did_documents = _external_channel_session()
+
+    evidence = _generate(
+        session,
+        observed_responder=OBSERVED_RESPONDER,
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+
+    assert [entry["attribution"] for entry in evidence["acts"]] == ["verified_signature"]
+    assert evidence["evidence_level"] == "unilateral"
+    assert verify_session_evidence_record(evidence, did_documents)
+
+
+def test_an_external_channel_record_without_a_producer_signed_act_is_rejected():
+    """Section 9A.12: at least one act is signed by the initiator that sealed it."""
+    healthy, did_documents = _external_channel_record()
+
+    act_less = copy.deepcopy(healthy)
+    act_less["acts"] = []
+    _reseal(act_less)
+
+    unsigned_only = copy.deepcopy(healthy)
+    unsigned_only["acts"] = [copy.deepcopy(healthy["acts"][1])]
+    _reseal(unsigned_only)
+
+    assert not verify_session_evidence_record(act_less, did_documents)
+    assert not verify_session_evidence_record(unsigned_only, did_documents)
+
+
+def test_the_generator_refuses_an_external_channel_record_with_no_producer_act():
+    session, _ = _external_channel_session()
+    session._message_log = []
+
+    with pytest.raises(ValueError, match="at least one act signed by"):
+        _generate(
+            session,
+            [_order_confirmation()],
+            observed_responder=OBSERVED_RESPONDER,
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+# --- the producer of an external-channel record is its initiator -------------
+
+
+def _sealed_by_third_party(record: dict) -> dict:
+    """The record resealed by a DID that is not a session party."""
+    record["producer"] = {
+        "did": THIRD_PARTY_DID,
+        "agent_id": "recorder-agent",
+        "verification_method": THIRD_PARTY_VM,
+    }
+    record["evidence_id"] = str(
+        uuid.uuid5(
+            A2CN_NAMESPACE,
+            f"session-evidence:{record['session_id']}:{THIRD_PARTY_DID}",
+        )
+    )
+    record["act_chain_hash"] = hash_bytes(
+        canonicalize([entry["act_hash"] for entry in record["acts"]])
+    )
+    record["record_hash"] = ""
+    record["producer_signature"] = ""
+    record["record_hash"] = hash_object(record)
+    record["producer_signature"] = sign_jws(
+        record["record_hash"], THIRD_PARTY_PRIVATE_KEY, kid=THIRD_PARTY_VM
+    )
+    return record
+
+
+def test_an_external_channel_record_sealed_by_a_third_party_is_rejected():
+    """Section 9A.12: the seal is the only cryptographic evidence, so it is the initiator's."""
+    healthy, did_documents = _external_channel_record()
+    did_documents[THIRD_PARTY_DID] = make_did_document(
+        THIRD_PARTY_DID,
+        "key-1",
+        public_key_to_jwk(THIRD_PARTY_PUBLIC_KEY),
+    )
+
+    reseated = _sealed_by_third_party(copy.deepcopy(healthy))
+
+    assessment = assess_session_evidence_record(reseated, did_documents)
+
+    # The acts verify and the seal itself is sound, so the producer binding is
+    # what refuses the record.
+    assert assessment["invalid_acts"] == 0
+    assert assessment["verified_acts"] == 1
+    assert not assessment["valid"]
+
+
+def test_the_generator_refuses_to_seal_an_external_channel_record_for_another_party():
+    session, _ = _external_channel_session()
+
+    with pytest.raises(ValueError, match="sealed by"):
+        generate_session_evidence_record(
+            session,
+            producer_private_key=THIRD_PARTY_PRIVATE_KEY,
+            producer_did=THIRD_PARTY_DID,
+            producer_agent_id="recorder-agent",
+            producer_verification_method=THIRD_PARTY_VM,
+            observed_acts=[_order_confirmation()],
+            observed_responder=OBSERVED_RESPONDER,
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+# --- the shared external-channel vector --------------------------------------
+
+EXTERNAL_CHANNEL_VECTOR = json.loads(
+    (
+        Path(__file__).parents[3]
+        / "spec"
+        / "test-vectors"
+        / "session-evidence-record-external-channel.json"
+    ).read_text()
+)
+EXTERNAL_CHANNEL_KEY = private_key_from_jwk(EXTERNAL_CHANNEL_VECTOR["producer_private_jwk"])
+_VECTOR_REFERENCE = object()
+
+
+def _external_channel_vector_record(reference=_VECTOR_REFERENCE, observed_acts=None) -> dict:
+    """The record the vector's session generates, optionally with other inputs."""
+    fixture = EXTERNAL_CHANNEL_VECTOR
+    source = fixture["session"]
+    session = Session(
+        session_id=source["session_id"],
+        state=source["state"],
+        current_turn="none",
+        terminal_reason=source["terminal_reason"],
+        terminal_message_id=source["terminal_message_id"],
+        session_created_at=source["session_created_at"],
+        state_updated_at=source["state_updated_at"],
+        session_params=source["session_params"],
+        initiator_mandate=source["initiator_mandate"],
+        responder_mandate=source["responder_mandate"],
+    )
+    session._session_init = source["session_init"]
+    session._session_ack = source["session_ack"]
+    session._message_log = source["message_log"]
+    options = copy.deepcopy(fixture["options"])
+    if reference is not _VECTOR_REFERENCE:
+        options["external_commitment_reference"] = copy.deepcopy(reference)
+    producer = fixture["producer"]
+    return generate_session_evidence_record(
+        session,
+        producer_private_key=EXTERNAL_CHANNEL_KEY,
+        producer_did=producer["did"],
+        producer_agent_id=producer["agent_id"],
+        producer_verification_method=producer["verification_method"],
+        observed_acts=fixture["observed_acts"] if observed_acts is None else observed_acts,
+        **options,
+    )
+
+
+def _reseal_external_channel(record: dict, case: dict | None = None) -> dict:
+    """Reseal, with the producer the case names or the vector's own."""
+    sealed_by = (case or {}).get("sealed_by")
+    if sealed_by:
+        producer = EXTERNAL_CHANNEL_VECTOR[sealed_by]
+        key = private_key_from_jwk(producer["private_jwk"])
+        verification_method = producer["verification_method"]
+    else:
+        key = EXTERNAL_CHANNEL_KEY
+        verification_method = EXTERNAL_CHANNEL_VECTOR["producer"]["verification_method"]
+    record["act_chain_hash"] = hash_bytes(
+        canonicalize([entry["act_hash"] for entry in record["acts"]])
+    )
+    record["record_hash"] = ""
+    record["producer_signature"] = ""
+    record["record_hash"] = hash_object(record)
+    record["producer_signature"] = sign_jws(record["record_hash"], key, kid=verification_method)
+    return record
+
+
+def _apply_changes(record: dict, case: dict) -> dict:
+    """Set each path in case["set"] to its value and delete each path in case["remove"]."""
+    for change in case.get("set", []):
+        value = change["value"]
+        if value == "OBSERVED_ACTS_ONLY":
+            # The record's observed act alone, so no act is the producer's.
+            value = [record["acts"][1]]
+        holder = record
+        for key in change["path"][:-1]:
+            holder = holder[key]
+        holder[change["path"][-1]] = copy.deepcopy(value)
+    for path in case.get("remove", []):
+        holder = record
+        for key in path[:-1]:
+            holder = holder[key]
+        del holder[path[-1]]
+    return record
+
+
+def test_external_channel_vector_has_python_typescript_parity():
+    fixture = EXTERNAL_CHANNEL_VECTOR
+    expected = fixture["expected"]
+
+    record = _external_channel_vector_record()
+
+    assert record["record_version"] == expected["record_version"]
+    assert record["evidence_id"] == expected["evidence_id"]
+    assert record["generated_at"] == expected["generated_at"]
+    assert record["evidence_level"] == expected["evidence_level"]
+    assert [entry["act_hash"] for entry in record["acts"]] == expected["act_hashes"]
+    assert record["act_chain_hash"] == expected["act_chain_hash"]
+    assert record["record_hash"] == expected["record_hash"]
+    # Ed25519 signatures are deterministic, so the whole sealed record matches,
+    # the producer seal included.
+    assert record == expected["record"]
+    assert verify_session_evidence_record(record, fixture["did_documents"])
+    # Resealing the same bytes reproduces the same record.
+    assert _reseal_external_channel(copy.deepcopy(record)) == record
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["valid_references"], ids=lambda case: case["name"]
+)
+def test_external_channel_valid_references_have_python_typescript_parity(case):
+    record = _external_channel_vector_record(case["external_commitment_reference"])
+
+    assert record["external_commitment_reference"] == case["external_commitment_reference"]
+    assert record["record_hash"] == case["record_hash"]
+    assert verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["invalid_references"], ids=lambda case: case["name"]
+)
+def test_external_channel_malformed_references_are_refused_and_rejected(case):
+    reference = case["external_commitment_reference"]
+    # None is not supplied, so the generator refuses the session for lacking one.
+    message = "requires external_commitment_reference" if reference is None else "must be an object"
+    with pytest.raises(ValueError, match=message):
+        _external_channel_vector_record(reference)
+
+    record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
+    record["external_commitment_reference"] = copy.deepcopy(reference)
+    _reseal_external_channel(record)
+
+    assert record["record_hash"] == case["resealed_record_hash"]
+    assert not verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["invalid_records"], ids=lambda case: case["name"]
+)
+def test_external_channel_invalid_records_have_python_typescript_parity(case):
+    record = _apply_changes(copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"]), case)
+    _reseal_external_channel(record, case)
+
+    assert record["record_hash"] == case["resealed_record_hash"]
+    assert not verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["valid_variants"], ids=lambda case: case["name"]
+)
+def test_external_channel_valid_variants_have_python_typescript_parity(case):
+    record = _external_channel_vector_record(observed_acts=case["observed_acts"])
+
+    assert record["evidence_level"] == case["evidence_level"]
+    assert record["record_hash"] == case["record_hash"]
+    assert verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
