@@ -55,6 +55,7 @@
   ],
   "assertionMethod": [
     "did:web:a2cn.io#a2cn-buyer-agent-mandate-v1",
-    "did:web:a2cn.io#a2cn-buyer-agent-mandate-av1"
+    "did:web:a2cn.io#a2cn-buyer-agent-mandate-av1",
+    "did:web:a2cn.io#a2cn-buyer-agent-transport-av1"
   ]
 }
