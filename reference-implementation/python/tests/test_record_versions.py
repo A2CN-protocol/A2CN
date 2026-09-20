@@ -1,11 +1,13 @@
 """record_version: the values each record verifier accepts, and what producers emit.
 
-spec/test-vectors/record-versions.json lists the values. Both suites reseal a
-valid record of each shape of each artifact with each one and must reach the
-same verdict. A record's version follows its shape: a "0.2" TransactionRecord
-carries a top-level basis and a "0.1" one does not (Section 9.5, step 7), and a
-"0.3" SessionEvidenceRecord carries external_commitment_reference and no other
-version does (Section 9A.2). A value outside the accepted set is rejected,
+spec/test-vectors/record-versions.json lists them per artifact, because each
+versions its own shape. Both suites reseal a valid record of each shape of each
+artifact with each value and must reach the same verdict. A TransactionRecord's
+version follows its content: a "0.3" record carries the Section 7.3.1 act fields
+in final_offer, a "0.2" record carries a top-level basis and no act fields, and a
+"0.1" record carries neither (Section 9.5, steps 3 and 8). A "0.3"
+SessionEvidenceRecord carries external_commitment_reference and no other version
+does (Section 9A.2). A value outside an artifact's accepted set is rejected,
 never parsed best-effort (Sections 9.5 and 9A.6).
 """
 
@@ -24,7 +26,8 @@ from a2cn.evidence import (
     verify_session_evidence_record,
 )
 from a2cn.record import (
-    RECOGNIZED_TRANSACTION_RECORD_VERSIONS,
+    ACCEPTED_TRANSACTION_RECORD_VERSIONS,
+    KNOWN_TRANSACTION_RECORD_VERSIONS,
     generate_audit_log,
     generate_transaction_record,
     verify_transaction_record,
@@ -38,19 +41,17 @@ RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
 TR_VERSIONS = RECORD_VERSIONS["transaction_record"]
 SER_VERSIONS = RECORD_VERSIONS["session_evidence_record"]
 TR_VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
+WITHOUT_BASIS = TR_VECTOR["without_basis"]
 SER_VECTOR = json.loads((VECTORS / "session-evidence-record-parity.json").read_text())
 EXTERNAL_CHANNEL_VECTOR = json.loads(
     (VECTORS / "session-evidence-record-external-channel.json").read_text()
 )
 
-# The recorded session behind each TransactionRecord shape, and the version a
-# producer emits for that shape (Section 9.3).
-TR_SHAPES = {
-    "session_with_basis": TR_VECTOR,
-    "session_without_basis": TR_VECTOR["without_basis"],
-}
+# The recorded session each TransactionRecord shape came from, for its DID
+# documents and its offer chain. A TransactionRecord shape is named by the
+# version whose content it carries (Section 9.3).
+SHAPE_VECTOR = {"0.1": WITHOUT_BASIS, "0.2": TR_VECTOR, "0.3": TR_VECTOR}
 TR_EMITTED = RECORD_VERSIONS["producers_emit"]["transaction_record"]
-TR_SHAPE_FOR_VERSION = {version: shape for shape, version in TR_EMITTED.items()}
 
 # The vector behind each SessionEvidenceRecord shape, and the version a producer
 # emits for that shape (Section 9A.2).
@@ -60,22 +61,60 @@ SER_SHAPES = {
 }
 SER_EMITTED = RECORD_VERSIONS["producers_emit"]["session_evidence_record"]
 
+
+def _transaction_record_session(vector: dict):
+    """Replay a session transaction-record-basis.json records to COMPLETED."""
+    manager = SessionManager()
+    for did, did_document in vector["did_documents"].items():
+        manager.register_did_document(did, did_document)
+    session_ack = vector["session_ack"]
+    session = manager.create_session(
+        vector["session_id"],
+        vector["session_init"],
+        session_ack,
+        session_ack["session_created_at"],
+    )
+    session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
+    for message in copy.deepcopy(vector["messages"]):
+        manager.process_message(session, message)
+    assert session.state == SessionState.COMPLETED
+    return session
+
+
+def _shape(version: str) -> dict:
+    """A valid TransactionRecord whose content fits ``version``.
+
+    "0.3" is what this implementation produces; "0.2" and "0.1" are the records
+    earlier implementations produced for the same two sessions.
+    """
+    if version == "0.3":
+        return generate_transaction_record(_transaction_record_session(TR_VECTOR))
+    if version == "0.2":
+        return copy.deepcopy(TR_VECTOR["expected"]["record_version_0_2"]["full_record"])
+    return copy.deepcopy(WITHOUT_BASIS["record_version_0_1"]["full_record"])
+
+
+def _offer_hashes(vector: dict) -> list[str]:
+    return [
+        message["protocol_act_hash"]
+        for message in vector["messages"]
+        if message["message_type"] in ("offer", "counteroffer")
+    ]
+
+
 TR_CASES = (
     [
-        pytest.param(
-            TR_SHAPE_FOR_VERSION[version], {"record_version": version}, True,
-            id=f"accepted-{version}",
-        )
+        pytest.param(version, {"record_version": version}, True, id=f"accepted-{version}")
         for version in TR_VERSIONS["accepted"]
     ]
     + [
-        pytest.param(case["shape"], case, False, id=case["name"])
-        for case in TR_VERSIONS["cross_shape"]
+        pytest.param(case["shape"], case, False, id=f"unbound-{case['name']}")
+        for case in TR_VERSIONS["unbound"]
     ]
     + [
         pytest.param(shape, case, False, id=f"{case['name']}-{shape}")
         for case in TR_VERSIONS["rejected"]
-        for shape in TR_SHAPES
+        for shape in TR_VERSIONS["shapes"]
     ]
 )
 SER_CASES = (
@@ -105,33 +144,6 @@ def _with_version(record: dict, case: dict) -> dict:
     else:
         del record["record_version"]
     return record
-
-
-def _transaction_record_session(vector: dict):
-    """Replay a session transaction-record-basis.json records to COMPLETED."""
-    manager = SessionManager()
-    for did, did_document in vector["did_documents"].items():
-        manager.register_did_document(did, did_document)
-    session_ack = vector["session_ack"]
-    session = manager.create_session(
-        vector["session_id"],
-        vector["session_init"],
-        session_ack,
-        session_ack["session_created_at"],
-    )
-    session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
-    for message in copy.deepcopy(vector["messages"]):
-        manager.process_message(session, message)
-    assert session.state == SessionState.COMPLETED
-    return session
-
-
-def _offer_hashes(vector: dict) -> list[str]:
-    return [
-        message["protocol_act_hash"]
-        for message in vector["messages"]
-        if message["message_type"] in ("offer", "counteroffer")
-    ]
 
 
 def _session_evidence_record(vector: dict) -> dict:
@@ -173,8 +185,8 @@ def _schema(artifact: str, version: str) -> dict:
 
 @pytest.mark.parametrize(("shape", "case", "accepted"), TR_CASES)
 def test_transaction_record_verifier_accepts_only_recognized_versions(shape, case, accepted):
-    vector = TR_SHAPES[shape]
-    record = _with_version(generate_transaction_record(_transaction_record_session(vector)), case)
+    vector = SHAPE_VECTOR[shape]
+    record = _with_version(_shape(shape), case)
     record["record_hash"] = ""
     record["record_hash"] = hash_object(record)
 
@@ -200,14 +212,22 @@ def test_session_evidence_record_verifier_accepts_only_recognized_versions(shape
     assert verify_session_evidence_record(record, vector["did_documents"]) is accepted
 
 
+@pytest.mark.parametrize("vector_name", ["with_basis", "without_basis"])
+def test_producers_emit_the_transaction_record_version(vector_name):
+    """Every record this implementation produces carries the act fields, so every
+    one is "0.3", whether or not the session fixed a basis (Section 9.3)."""
+    vector = TR_VECTOR if vector_name == "with_basis" else WITHOUT_BASIS
+
+    assert TR_EMITTED in TR_VERSIONS["accepted"]
+    assert generate_transaction_record(_transaction_record_session(vector))["record_version"] == (
+        TR_EMITTED
+    )
+
+
 def test_producers_emit_the_current_versions():
     emitted = RECORD_VERSIONS["producers_emit"]
+    session = _transaction_record_session(TR_VECTOR)
 
-    # Each accepted TransactionRecord version is the one producers emit for one shape.
-    assert sorted(emitted["transaction_record"].values()) == sorted(TR_VERSIONS["accepted"])
-    for shape, version in emitted["transaction_record"].items():
-        session = _transaction_record_session(TR_SHAPES[shape])
-        assert generate_transaction_record(session)["record_version"] == version, shape
     # Each SessionEvidenceRecord shape has its own version.
     for shape, version in SER_EMITTED.items():
         assert _session_evidence_record(SER_SHAPES[shape])["record_version"] == version, shape
@@ -217,19 +237,38 @@ def test_producers_emit_the_current_versions():
     assert set(SER_EMITTED.values()) <= set(accepted)
 
 
-def test_each_verifier_recognizes_exactly_the_versions_the_vector_accepts():
-    assert list(RECOGNIZED_TRANSACTION_RECORD_VERSIONS) == TR_VERSIONS["accepted"]
+def test_each_verifier_accepts_exactly_the_versions_the_vector_accepts():
+    """The TransactionRecord accepts only the bound version; the evidence record
+    is unaffected by that rule and keeps its own set."""
+    assert list(ACCEPTED_TRANSACTION_RECORD_VERSIONS) == TR_VERSIONS["accepted"]
     assert list(RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS) == [
         case["record_version"] for case in SER_VERSIONS["accepted"]
     ]
+    # The older TransactionRecord shapes stay known, because their schemas are
+    # published, and every shape the vector names is one this implementation knows.
+    assert set(TR_VERSIONS["shapes"]) == set(KNOWN_TRANSACTION_RECORD_VERSIONS)
+    assert set(ACCEPTED_TRANSACTION_RECORD_VERSIONS) < set(KNOWN_TRANSACTION_RECORD_VERSIONS)
 
 
-def test_0_3_is_a_session_evidence_record_version_only():
-    """The SessionEvidenceRecord recognizes "0.3"; the TransactionRecord still rejects it."""
-    assert "0.3" not in TR_VERSIONS["accepted"]
-    assert {"name": "next-minor", "record_version": "0.3"} in TR_VERSIONS["rejected"]
-    assert "0.3" in [case["record_version"] for case in SER_VERSIONS["accepted"]]
+def test_each_artifacts_version_set_is_its_own():
+    """"0.3" means a different thing to each artifact, and neither set is merged.
+
+    For the TransactionRecord it is the record whose final_offer carries the act
+    fields, and the only version a verifier accepts (Section 9.3); for the
+    SessionEvidenceRecord it is the record that carries
+    external_commitment_reference, one of three it accepts (Section 9A.2). One
+    artifact's rules never decide the other's: the TransactionRecord refusing
+    "0.1" and "0.2" says nothing about an evidence record carrying them.
+    """
+    assert TR_VERSIONS["accepted"] == ["0.3"]
+    ser_accepted = [case["record_version"] for case in SER_VERSIONS["accepted"]]
+    assert ser_accepted == ["0.1", "0.2", "0.3"]
     assert {"name": "next-minor", "record_version": "0.4"} in SER_VERSIONS["rejected"]
+    # The versions the TransactionRecord refuses as unbound are still accepted by
+    # the evidence record, which is the point of keeping the two sets apart.
+    unbound = {case["record_version"] for case in TR_VERSIONS["unbound"]}
+    assert {"0.1", "0.2"} <= unbound
+    assert {"0.1", "0.2"} <= set(ser_accepted)
 
 
 SCHEMA_CASES = [
@@ -256,11 +295,8 @@ def test_every_accepted_version_has_a_schema_that_names_it(artifact, version):
 
 def test_the_schemas_name_the_versions_producers_emit():
     """The schema, the specification, and both implementations use the same value."""
-    emitted = RECORD_VERSIONS["producers_emit"]
-
-    for version in emitted["transaction_record"].values():
-        schema = _schema("transaction-record", version)
-        assert schema["properties"]["record_version"]["const"] == version
+    schema = _schema("transaction-record", TR_EMITTED)
+    assert schema["properties"]["record_version"]["const"] == TR_EMITTED
     for version in SER_EMITTED.values():
         schema = _schema("session-evidence-record", version)
         assert schema["properties"]["record_version"]["const"] == version

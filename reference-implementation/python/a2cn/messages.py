@@ -29,6 +29,63 @@ def _drop_none(d: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# The signed protocol act (Section 7.3.1)
+# ---------------------------------------------------------------------------
+
+# The wire version the protocol act object states. It is the a2cn_version /
+# protocol_version of Section 6.3.1, and it is part of what the signature
+# covers, so a signer and a verifier must use the same value.
+PROTOCOL_ACT_VERSION = "0.2"
+
+# The protocol act object's fields, in the order Section 7.3.1 lists them. JCS
+# sorts keys before hashing, so the order is for readers.
+PROTOCOL_ACT_FIELDS = (
+    "protocol_version",
+    "session_id",
+    "round_number",
+    "sequence_number",
+    "message_type",
+    "sender_did",
+    "timestamp",
+    "expires_at",
+    "terms",
+)
+
+
+def protocol_act_object(
+    *,
+    protocol_version: str,
+    session_id: Any,
+    round_number: Any,
+    sequence_number: Any,
+    message_type: Any,
+    sender_did: Any,
+    timestamp: Any,
+    expires_at: Any,
+    terms: Any,
+) -> dict:
+    """The object a protocol_act_signature covers (Section 7.3.1).
+
+    One definition for every site that builds it: a client signing an offer, the
+    state machine checking one it received, the evidence record rebuilding an act
+    it holds, and the TransactionRecord rebuilding the act from the record
+    (Section 9.5). Every value is the caller's, and nothing is defaulted here, so
+    each caller keeps its own handling of an absent field.
+    """
+    return {
+        "protocol_version": protocol_version,
+        "session_id": session_id,
+        "round_number": round_number,
+        "sequence_number": sequence_number,
+        "message_type": message_type,
+        "sender_did": sender_did,
+        "timestamp": timestamp,
+        "expires_at": expires_at,
+        "terms": terms,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Sub-objects
 # ---------------------------------------------------------------------------
 
@@ -270,17 +327,19 @@ class Offer:
             if hasattr(self.terms, "to_dict")
             else self.terms
         )
-        return {
-            "protocol_version": "0.2",
-            "session_id": self.session_id,
-            "round_number": self.round_number,
-            "sequence_number": self.sequence_number,
-            "message_type": self.message_type,
-            "sender_did": self.sender_did,
-            "timestamp": self.timestamp,
-            "expires_at": self.expires_at,
-            "terms": terms_dict,
-        }
+        # The module-level builder of the same name; this method supplies the
+        # offer's own values.
+        return protocol_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,
+            session_id=self.session_id,
+            round_number=self.round_number,
+            sequence_number=self.sequence_number,
+            message_type=self.message_type,
+            sender_did=self.sender_did,
+            timestamp=self.timestamp,
+            expires_at=self.expires_at,
+            terms=terms_dict,
+        )
 
 
 @dataclass

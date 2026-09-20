@@ -11,7 +11,7 @@
 
 import { hashObject, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
-import type { Dict } from "./messages.js";
+import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
 
 // ---------------------------------------------------------------------------
 // States (Section 8.2)
@@ -631,8 +631,8 @@ export class SessionManager {
     const terms = (message.terms as Dict) ?? {};
     const timestamp = (message.timestamp as string) ?? "";
     const expiresAt = (message.expires_at as string) ?? "";
-    const protocolAct = {
-      protocol_version: "0.2", // Section 7.3.1
+    const protocolAct = protocolActObject({
+      protocol_version: PROTOCOL_ACT_VERSION, // Section 7.3.1
       session_id: (message.session_id as string) ?? "",
       round_number: message.round_number,
       sequence_number: message.sequence_number,
@@ -641,7 +641,7 @@ export class SessionManager {
       timestamp,
       expires_at: expiresAt,
       terms,
-    };
+    });
     const expectedHash = hashObject(protocolAct);
     if (claimedHash !== expectedHash) {
       throw new A2CNError("INVALID_SIGNATURE", "Protocol act hash does not match message fields", 400, {

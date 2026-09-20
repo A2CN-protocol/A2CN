@@ -22,6 +22,7 @@ from a2cn.crypto import (
     sign_jws,
     create_jwt,
 )
+from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
 from a2cn.record import generate_transaction_record, A2CN_NAMESPACE
 from a2cn.session import (
     A2CNError,
@@ -164,17 +165,17 @@ class A2CNClient:
         expires_at = _expires_at(state["session_ack"]["session_params_accepted"]["round_timeout_seconds"])
 
         # Build protocol act object (Section 7.3.1)
-        protocol_act = {
-            "protocol_version": "0.2",
-            "session_id": session_id,
-            "round_number": round_number,
-            "sequence_number": sequence_number,
-            "message_type": message_type,
-            "sender_did": self.agent_info["did"],
-            "timestamp": timestamp,
-            "expires_at": expires_at,
-            "terms": terms,
-        }
+        protocol_act = protocol_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,
+            session_id=session_id,
+            round_number=round_number,
+            sequence_number=sequence_number,
+            message_type=message_type,
+            sender_did=self.agent_info["did"],
+            timestamp=timestamp,
+            expires_at=expires_at,
+            terms=terms,
+        )
 
         protocol_act_hash = hash_object(protocol_act)
         protocol_act_signature = sign_jws(

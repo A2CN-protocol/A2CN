@@ -13,7 +13,7 @@ import { randomUUID, type KeyObject } from "node:crypto";
 import { hashObject, signJws } from "./crypto.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
 import { A2CNError, SessionState, checkFixedMoneyParams, checkOfferMoneyParams } from "./session.js";
-import type { Dict } from "./messages.js";
+import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
 
@@ -187,8 +187,8 @@ export class A2CNClient {
     );
 
     // Build protocol act object (Section 7.3.1)
-    const protocolAct = {
-      protocol_version: "0.2",
+    const protocolAct = protocolActObject({
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_id: sessionId,
       round_number: roundNumber,
       sequence_number: sequenceNumber,
@@ -197,7 +197,7 @@ export class A2CNClient {
       timestamp,
       expires_at: expiresAt,
       terms,
-    };
+    });
 
     const protocolActHash = hashObject(protocolAct);
     const protocolActSignature = signJws(

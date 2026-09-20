@@ -1,13 +1,16 @@
 /**
  * record_version: the values each record verifier accepts, and what producers emit.
  *
- * spec/test-vectors/record-versions.json lists the values. Both suites reseal a
- * valid record of each shape of each artifact with each one and must reach the
- * same verdict. A record's version follows its shape: a "0.2" TransactionRecord
- * carries a top-level basis and a "0.1" one does not (Section 9.5, step 7), and
- * a "0.3" SessionEvidenceRecord carries external_commitment_reference and no
- * other version does (Section 9A.2). A value outside the accepted set is
- * rejected, never parsed best-effort (Sections 9.5 and 9A.6).
+ * spec/test-vectors/record-versions.json lists them per artifact, because each
+ * versions its own shape. Both suites reseal a valid record of each shape of
+ * each artifact with each value and must reach the same verdict. A
+ * TransactionRecord verifier accepts "0.3" alone: the version whose final_offer
+ * carries the Section 7.3.1 act fields, so the record can be rebound to the
+ * offering party's signature (Section 9.5, step 1). A version it knows but
+ * cannot rebind is unbound; anything else is unrecognized. A "0.3"
+ * SessionEvidenceRecord carries external_commitment_reference and no other
+ * version does (Section 9A.2); that artifact is unaffected by the
+ * TransactionRecord's rule and keeps its own set.
  */
 
 import { readFileSync } from "node:fs";
@@ -23,7 +26,8 @@ import {
   type GenerateSessionEvidenceOptions,
 } from "../src/a2cn/evidence.js";
 import {
-  RECOGNIZED_TRANSACTION_RECORD_VERSIONS,
+  ACCEPTED_TRANSACTION_RECORD_VERSIONS,
+  KNOWN_TRANSACTION_RECORD_VERSIONS,
   generateAuditLog,
   generateTransactionRecord,
   verifyTransactionRecord,
@@ -41,6 +45,7 @@ const RECORD_VERSIONS = readJson("spec", "test-vectors", "record-versions.json")
 const TR_VERSIONS = RECORD_VERSIONS.transaction_record as Dict;
 const SER_VERSIONS = RECORD_VERSIONS.session_evidence_record as Dict;
 const TR_VECTOR = readJson("spec", "test-vectors", "transaction-record-basis.json");
+const WITHOUT_BASIS = TR_VECTOR.without_basis as Dict;
 const SER_VECTOR = readJson("spec", "test-vectors", "session-evidence-record-parity.json");
 const EXTERNAL_CHANNEL_VECTOR = readJson(
   "spec",
@@ -48,19 +53,15 @@ const EXTERNAL_CHANNEL_VECTOR = readJson(
   "session-evidence-record-external-channel.json",
 );
 
-// The recorded session behind each TransactionRecord shape, and the version a
-// producer emits for that shape (Section 9.3).
-const TR_SHAPES: Record<string, Dict> = {
-  session_with_basis: TR_VECTOR,
-  session_without_basis: TR_VECTOR.without_basis as Dict,
+// The recorded session each TransactionRecord shape came from, for its DID
+// documents and its offer chain. A TransactionRecord shape is named by the
+// version whose content it carries (Section 9.3).
+const SHAPE_VECTOR: Record<string, Dict> = {
+  "0.1": WITHOUT_BASIS,
+  "0.2": TR_VECTOR,
+  "0.3": TR_VECTOR,
 };
-const TR_EMITTED = (RECORD_VERSIONS.producers_emit as Dict).transaction_record as Record<
-  string,
-  string
->;
-const TR_SHAPE_FOR_VERSION: Record<string, string> = Object.fromEntries(
-  Object.entries(TR_EMITTED).map(([shape, version]) => [version, shape]),
-);
+const TR_EMITTED = (RECORD_VERSIONS.producers_emit as Dict).transaction_record as string;
 
 // The vector behind each SessionEvidenceRecord shape, and the version a producer
 // emits for that shape (Section 9A.2).
@@ -76,18 +77,18 @@ const SER_EMITTED = (RECORD_VERSIONS.producers_emit as Dict).session_evidence_re
 const TR_CASES: [string, string, Dict, boolean][] = [
   ...(TR_VERSIONS.accepted as string[]).map((version): [string, string, Dict, boolean] => [
     `accepted-${version}`,
-    TR_SHAPE_FOR_VERSION[version],
+    version,
     { record_version: version },
     true,
   ]),
-  ...(TR_VERSIONS.cross_shape as Dict[]).map((crossShape): [string, string, Dict, boolean] => [
-    crossShape.name as string,
-    crossShape.shape as string,
-    crossShape,
+  ...(TR_VERSIONS.unbound as Dict[]).map((unboundCase): [string, string, Dict, boolean] => [
+    `unbound-${unboundCase.name as string}`,
+    unboundCase.shape as string,
+    unboundCase,
     false,
   ]),
   ...(TR_VERSIONS.rejected as Dict[]).flatMap((versionCase) =>
-    Object.keys(TR_SHAPES).map((shape): [string, string, Dict, boolean] => [
+    (TR_VERSIONS.shapes as string[]).map((shape): [string, string, Dict, boolean] => [
       `${versionCase.name as string}-${shape}`,
       shape,
       versionCase,
@@ -157,6 +158,23 @@ function transactionRecordSession(vector: Dict): Session {
   return session;
 }
 
+/**
+ * A valid TransactionRecord whose content fits `version`. "0.3" is what this
+ * implementation produces; "0.2" and "0.1" are the records earlier
+ * implementations produced for the same two sessions.
+ */
+function shapedRecord(version: string): Dict {
+  if (version === "0.3") {
+    return generateTransactionRecord(transactionRecordSession(TR_VECTOR));
+  }
+  if (version === "0.2") {
+    return structuredClone(
+      ((TR_VECTOR.expected as Dict).record_version_0_2 as Dict).full_record as Dict,
+    );
+  }
+  return structuredClone((WITHOUT_BASIS.record_version_0_1 as Dict).full_record as Dict);
+}
+
 function offerHashes(vector: Dict): string[] {
   return (vector.messages as Dict[])
     .filter((message) => message.message_type === "offer" || message.message_type === "counteroffer")
@@ -207,13 +225,10 @@ function schema(artifact: string, version: string): Dict {
 }
 
 test.each(TR_CASES)(
-  "transaction record verifier accepts only recognized versions: %s",
+  "transaction record verifier accepts only the bound version: %s",
   (_name, shape, versionCase, accepted) => {
-    const vector = TR_SHAPES[shape];
-    const record = withVersion(
-      generateTransactionRecord(transactionRecordSession(vector)),
-      versionCase,
-    );
+    const vector = SHAPE_VECTOR[shape];
+    const record = withVersion(shapedRecord(shape), versionCase);
     record.record_hash = "";
     record.record_hash = hashObject(record);
 
@@ -247,41 +262,69 @@ test.each(SER_CASES)(
   },
 );
 
+test.each([
+  ["with basis", TR_VECTOR],
+  ["without basis", WITHOUT_BASIS],
+] as [string, Dict][])("producers emit the transaction record version: %s", (_name, vector) => {
+  // Every record this implementation produces carries the act fields, so every
+  // one is "0.3", whether or not the session fixed a basis (Section 9.3).
+  expect(TR_VERSIONS.accepted).toContain(TR_EMITTED);
+  expect(generateTransactionRecord(transactionRecordSession(vector)).record_version).toBe(
+    TR_EMITTED,
+  );
+});
+
 test("producers emit the current versions", () => {
   const emitted = RECORD_VERSIONS.producers_emit as Dict;
+  const session = transactionRecordSession(TR_VECTOR);
 
-  // Each accepted TransactionRecord version is the one producers emit for one shape.
-  expect(Object.values(TR_EMITTED).sort()).toEqual([...(TR_VERSIONS.accepted as string[])].sort());
-  let session: Session | undefined;
-  for (const [shape, version] of Object.entries(TR_EMITTED)) {
-    session = transactionRecordSession(TR_SHAPES[shape]);
-    expect(generateTransactionRecord(session).record_version, shape).toBe(version);
-  }
   // Each SessionEvidenceRecord shape has its own version.
   for (const [shape, version] of Object.entries(SER_EMITTED)) {
     expect(sessionEvidenceRecord(SER_SHAPES[shape]).record_version, shape).toBe(version);
   }
   // The AuditLog's content did not change, so its version did not move.
-  expect(generateAuditLog(session as Session).log_version).toBe(emitted.audit_log);
+  expect(generateAuditLog(session).log_version).toBe(emitted.audit_log);
   const accepted = (SER_VERSIONS.accepted as Dict[]).map((entry) => entry.record_version);
   for (const version of Object.values(SER_EMITTED)) {
     expect(accepted).toContain(version);
   }
 });
 
-test("each verifier recognizes exactly the versions the vector accepts", () => {
-  expect([...RECOGNIZED_TRANSACTION_RECORD_VERSIONS]).toEqual(TR_VERSIONS.accepted);
+test("each verifier accepts exactly the versions the vector accepts", () => {
+  // The TransactionRecord accepts only the bound version; the evidence record is
+  // unaffected by that rule and keeps its own set.
+  expect([...ACCEPTED_TRANSACTION_RECORD_VERSIONS]).toEqual(TR_VERSIONS.accepted);
   expect([...RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS]).toEqual(
     (SER_VERSIONS.accepted as Dict[]).map((entry) => entry.record_version),
   );
+  // The older TransactionRecord shapes stay known, because their schemas are
+  // published, and every shape the vector names is one this implementation knows.
+  expect([...(TR_VERSIONS.shapes as string[])].sort()).toEqual(
+    [...KNOWN_TRANSACTION_RECORD_VERSIONS].sort(),
+  );
+  expect(ACCEPTED_TRANSACTION_RECORD_VERSIONS.length).toBeLessThan(
+    KNOWN_TRANSACTION_RECORD_VERSIONS.length,
+  );
 });
 
-test("0.3 is a session evidence record version only", () => {
-  // The SessionEvidenceRecord recognizes "0.3"; the TransactionRecord still rejects it.
-  expect(TR_VERSIONS.accepted).not.toContain("0.3");
-  expect(TR_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.3" });
-  expect((SER_VERSIONS.accepted as Dict[]).map((entry) => entry.record_version)).toContain("0.3");
+test("each artifact's version set is its own", () => {
+  // "0.3" means a different thing to each artifact, and neither set is merged.
+  // For the TransactionRecord it is the record whose final_offer carries the act
+  // fields, and the only version a verifier accepts (Section 9.3); for the
+  // SessionEvidenceRecord it is the record that carries
+  // external_commitment_reference, one of three it accepts (Section 9A.2). One
+  // artifact's rules never decide the other's.
+  expect(TR_VERSIONS.accepted).toEqual(["0.3"]);
+  const serAccepted = (SER_VERSIONS.accepted as Dict[]).map((entry) => entry.record_version);
+  expect(serAccepted).toEqual(["0.1", "0.2", "0.3"]);
   expect(SER_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.4" });
+  // The versions the TransactionRecord refuses as unbound are still accepted by
+  // the evidence record, which is the point of keeping the two sets apart.
+  const unbound = (TR_VERSIONS.unbound as Dict[]).map((entry) => entry.record_version);
+  expect(unbound).toContain("0.1");
+  expect(unbound).toContain("0.2");
+  expect(serAccepted).toContain("0.1");
+  expect(serAccepted).toContain("0.2");
 });
 
 const SCHEMA_CASES: [string, string][] = [
@@ -308,12 +351,10 @@ test.each(SCHEMA_CASES)(
 
 test("the schemas name the versions producers emit", () => {
   // The schema, the specification, and both implementations use the same value.
-  for (const version of Object.values(TR_EMITTED)) {
-    const found = schema("transaction-record", version);
-    expect(((found.properties as Dict).record_version as Dict).const).toBe(version);
-  }
+  const found = schema("transaction-record", TR_EMITTED);
+  expect(((found.properties as Dict).record_version as Dict).const).toBe(TR_EMITTED);
   for (const version of Object.values(SER_EMITTED)) {
-    const found = schema("session-evidence-record", version);
-    expect(((found.properties as Dict).record_version as Dict).const).toBe(version);
+    const serSchema = schema("session-evidence-record", version);
+    expect(((serSchema.properties as Dict).record_version as Dict).const).toBe(version);
   }
 });

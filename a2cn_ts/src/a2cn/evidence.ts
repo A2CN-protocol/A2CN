@@ -25,7 +25,7 @@ import {
   type RecordSession,
 } from "./record.js";
 import { SESSION_BASES, SessionState, now } from "./session.js";
-import type { Dict } from "./messages.js";
+import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
 
 export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2";
 // A record's version follows its content (Section 9A.2): "0.3" exactly when it
@@ -1635,8 +1635,8 @@ function signedActPayloadHash(act: Dict, signatureType: string): string | null {
     if (typeof act.terms !== "object" || act.terms === null || Array.isArray(act.terms)) {
       return null;
     }
-    const protocolAct = {
-      protocol_version: "0.2",
+    const protocolAct = protocolActObject({
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_id: act.session_id,
       round_number: act.round_number,
       sequence_number: act.sequence_number,
@@ -1645,7 +1645,7 @@ function signedActPayloadHash(act: Dict, signatureType: string): string | null {
       timestamp: act.timestamp,
       expires_at: act.expires_at,
       terms: act.terms,
-    };
+    });
     const expectedHash = hashObject(protocolAct);
     if (act.protocol_act_hash !== expectedHash) {
       return null;

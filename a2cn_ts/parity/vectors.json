@@ -100,7 +100,7 @@
       "crv": "Ed25519",
       "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
     },
-    "es256_jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.VfLhjo4_15RTzEwjM8DxS0cvD0EjFvr-HDiG_OcpQWut6AAEgReg8XVR4A0bJa-gCt8eWnK8sM94yMd_4WC06A",
+    "es256_jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cGFyaXR5LXZlY3Rvci1wcm90b2NvbC1hY3QtaGFzaA.S0Jtt4vWIvYYvXNIZBh5Esp3TC0C4AUnffV-QEkLdr6xjiIqZ-NXhXn0j_b6WaJlCeKdB_K45UvW1CExzhdClg",
     "es256_public_jwk": {
       "kty": "EC",
       "crv": "P-256",
@@ -108,7 +108,7 @@
       "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4"
     },
     "jws_payload": "parity-vector-protocol-act-hash",
-    "es256_jwt": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnRlY2hjb3JwLmV4YW1wbGUiLCJhdWQiOiJkaWQ6d2ViOmFjbWUtY29ycC5jb20iLCJpYXQiOjE3ODMyODY3NDAsImV4cCI6MjA5ODY0Njc0MCwianRpIjoiMzM5ZWRmNTgtNTM1ZC00NTRmLWIxYzYtMTYxMGRmODczZjJkIiwicHVycG9zZSI6InBhcml0eV92ZWN0b3IiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3Npb24ifQ.dyJpuFHa19CYtxdBdyZYODuzPqw01el9t7osc0m9TkX-DiNRdZx12ObjMkQM5FUzyTQGLtmaO0CDIrbyxRPJyg",
+    "es256_jwt": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnRlY2hjb3JwLmV4YW1wbGUiLCJhdWQiOiJkaWQ6d2ViOmFjbWUtY29ycC5jb20iLCJpYXQiOjE3ODk2OTQ3ODcsImV4cCI6MjEwNTA1NDc4NywianRpIjoiNmU0YmQ1M2MtMjUxYy00MDNmLTg1YWMtNjZjMmZlYTg3NDY3IiwicHVycG9zZSI6InBhcml0eV92ZWN0b3IiLCJzZXNzaW9uX2lkIjoicGFyaXR5LXNlc3Npb24ifQ.pmmsOtR-A4IHQRPOUvMxm-wumEuPXk1YVuoVVBZIDZPb2-47S85sVUPoqKIa9_Y4KxY5kVdmoQnZsd9LPLU9qQ",
     "jwt_issuer": "did:web:techcorp.example",
     "jwt_audience": "did:web:acme-corp.com",
     "ed25519_invitation_signature": "WUdOCD65Uon7uoU6TC7vqJLwJL3xeLCyC8T7UQzdwOmzpsk86PPlfcOKr0ZDkSi_CxLBE6BqzdcnMN8tD19ICQ",
@@ -206,7 +206,7 @@
           "seat_count": 100
         },
         "protocol_act_hash": "BQrDVoDsNH_ZE_IUEYBgIS2DzrmPFWadiF7w5zaXzNc",
-        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.Jy2fMBoD-3si_ez0sS8seqCz7lrKbrx1VEdY8wLVFTHX40wicnuqh_kQiGMf05ubVsOTlo3fceZ6AmkkRsVyyw"
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QlFyRFZvRHNOSF9aRV9JVUVZQmdJUzJEenJtUEZXYWRpRjd3NXphWHpOYw.JuUVFX8aihAsx0tULjYL25XAfN5PMjA3FccUBzUx4Rk4z5WxjOV1Hni276ZrDVsCwm0hmSPdo5imeeZixCY2Sw"
       },
       {
         "message_type": "counteroffer",
@@ -225,7 +225,7 @@
           "seat_count": 100
         },
         "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ",
+        "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.sPy7My1FN5kFqg-XjHfxE2Vozs_63B8vu90rPF0b6jMSPXVdhKiRUPdSBa-fkIuGws1JWhfDyVqmlxhaOKXqvw",
         "in_reply_to": "parity-offer-1"
       },
       {
@@ -241,18 +241,18 @@
         "sender_agent_id": "parity-agent",
         "sender_verification_method": "did:web:techcorp.example#key-1",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.1rBu19xmxycpQ7cJe3alMdgXPUiBQeIrERY9gJw0syHK0MDuq5cz0kYmWFKnSFY3Kf1eutkdwL8uQs1uYD7dMQ"
       }
     ],
     "expected": {
       "a2cn_namespace": "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c",
       "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
-      "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w",
+      "record_hash": "__0APjjbUn0WjzuDHYXr92vhQu9hFYX_SSb4D5xCE6g",
       "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
       "generated_at": "2026-03-24T10:03:00Z",
       "full_record": {
         "record_type": "a2cn_transaction_record",
-        "record_version": "0.1",
+        "record_version": "0.3",
         "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
         "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
         "generated_at": "2026-03-24T10:03:00Z",
@@ -292,9 +292,15 @@
         },
         "final_offer": {
           "message_id": "parity-counter-1",
+          "protocol_version": "0.2",
+          "round_number": 2,
+          "sequence_number": 2,
+          "message_type": "counteroffer",
           "sender_did": "did:web:acme-corp.com",
+          "timestamp": "2026-03-24T10:02:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
           "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ"
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.sPy7My1FN5kFqg-XjHfxE2Vozs_63B8vu90rPF0b6jMSPXVdhKiRUPdSBa-fkIuGws1JWhfDyVqmlxhaOKXqvw"
         },
         "final_acceptance": {
           "message_id": "parity-acc-1",
@@ -303,10 +309,10 @@
           "sequence_number": 3,
           "accepted_offer_id": "parity-counter-1",
           "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
-          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.1rBu19xmxycpQ7cJe3alMdgXPUiBQeIrERY9gJw0syHK0MDuq5cz0kYmWFKnSFY3Kf1eutkdwL8uQs1uYD7dMQ"
         },
         "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
-        "record_hash": "ICivBMYISjR92Pt6ovHev3MNLCuAPn8EJA3mmdODM5w"
+        "record_hash": "__0APjjbUn0WjzuDHYXr92vhQu9hFYX_SSb4D5xCE6g"
       }
     }
   }

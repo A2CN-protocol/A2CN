@@ -17,6 +17,7 @@ from typing import Any
 
 from a2cn.crypto import hash_object, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
 
 
 # ---------------------------------------------------------------------------
@@ -622,17 +623,17 @@ class SessionManager:
         terms = message.get("terms", {})
         timestamp = message.get("timestamp", "")
         expires_at = message.get("expires_at", "")
-        protocol_act = {
-            "protocol_version": "0.2",  # Section 7.3.1
-            "session_id": message.get("session_id", ""),
-            "round_number": message.get("round_number"),
-            "sequence_number": message.get("sequence_number"),
-            "message_type": message_type,
-            "sender_did": sender_did,
-            "timestamp": timestamp,
-            "expires_at": expires_at,
-            "terms": terms,
-        }
+        protocol_act = protocol_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,  # Section 7.3.1
+            session_id=message.get("session_id", ""),
+            round_number=message.get("round_number"),
+            sequence_number=message.get("sequence_number"),
+            message_type=message_type,
+            sender_did=sender_did,
+            timestamp=timestamp,
+            expires_at=expires_at,
+            terms=terms,
+        )
         expected_hash = hash_object(protocol_act)
         if claimed_hash != expected_hash:
             raise A2CNError(

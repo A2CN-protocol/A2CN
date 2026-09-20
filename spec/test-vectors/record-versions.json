@@ -1,10 +1,7 @@
 {
-  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5, steps 1 and 7) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Producers emit producers_emit. Each artifact's version follows its record's shape. A TransactionRecord producer emits \"0.1\" for a session that fixed no basis and \"0.2\" for a session that fixed one, so a \"0.2\" record carries a top-level basis and a \"0.1\" record carries none. A SessionEvidenceRecord producer emits \"0.3\" for a record that carries external_commitment_reference and \"0.2\" for one that does not. The AuditLog carries its version in log_version. Both suites take a valid record, set record_version to a value (a rejected case with no record_version key removes the key), recompute record_hash and, for the SessionEvidenceRecord, the producer seal, and assert the verdict. The TransactionRecord of each shape is the record transaction-record-basis.json replays to: session_with_basis is its basis session and session_without_basis its without_basis session. The SessionEvidenceRecord without_external_commitment is the record session-evidence-record-parity.json produces, resealed with that file's producer_private_jwk, and with_external_commitment is the record session-evidence-record-external-channel.json produces, resealed with its own. Each accepted TransactionRecord version verifies on the shape that emits it, and each accepted SessionEvidenceRecord version on the shape it names; \"0.1\", which no current producer emits, verifies on the shape without external_commitment_reference, whose rules do not depend on the version. Each cross_shape case puts a recognized version on the other shape of its artifact and fails verification. Every rejected value fails verification on both shapes of its artifact, instead of being parsed best-effort. \"0.3\" is a recognized SessionEvidenceRecord version, and the TransactionRecord still rejects it.",
+  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Each artifact has its own set, because each versions its own shape, and the two are never merged. A TransactionRecord verifier accepts ONLY the bound version, \"0.3\": the one whose final_offer carries the Section 7.3.1 act fields, so the record can be rebound to the offering party's signature from the record alone. record_version is covered by no signature, so a verifier refuses any version it cannot rebind rather than trusting the label. \"0.2\" was the version of a record that carried the session's basis and no act fields, and \"0.1\" of one that carried neither; both are listed in transaction_record.unbound and are REJECTED, with unbound_reason rather than the generic unrecognized_reason, because they are versions this implementation knows but cannot rebind. A \"0.3\" record whose act fields are missing is unbound for the same reason. Values in transaction_record.rejected are no version at all and get unrecognized_reason. A SessionEvidenceRecord is unaffected by that rule: it accepts \"0.1\", \"0.2\" and \"0.3\", where \"0.3\" is the record that carries external_commitment_reference (Section 9A.2), and rejects \"0.4\". producers_emit is the version each producer writes: one value for every TransactionRecord, and a per-shape value for the SessionEvidenceRecord. The AuditLog carries its version in log_version. The three TransactionRecord shapes come from transaction-record-basis.json: \"0.3\" is the record its basis session replays to, \"0.2\" is expected.record_version_0_2.full_record, and \"0.1\" is without_basis.record_version_0_1.full_record. The SessionEvidenceRecord shapes are the record session-evidence-record-parity.json produces (without the reference) and the one session-evidence-record-external-channel.json produces (with it), each resealed with its own producer_private_jwk.",
   "producers_emit": {
-    "transaction_record": {
-      "session_without_basis": "0.1",
-      "session_with_basis": "0.2"
-    },
+    "transaction_record": "0.3",
     "session_evidence_record": {
       "without_external_commitment": "0.2",
       "with_external_commitment": "0.3"
@@ -13,25 +10,51 @@
   },
   "transaction_record": {
     "accepted": [
-      "0.1",
-      "0.2"
+      "0.3"
     ],
-    "cross_shape": [
+    "shapes": [
+      "0.1",
+      "0.2",
+      "0.3"
+    ],
+    "unbound_reason": "UNBOUND_RECORD_VERSION",
+    "unrecognized_reason": "UNRECOGNIZED_RECORD_VERSION",
+    "unbound": [
       {
-        "name": "0.2-without-basis",
-        "shape": "session_without_basis",
+        "name": "0.1-shape-and-version",
+        "shape": "0.1",
+        "record_version": "0.1"
+      },
+      {
+        "name": "0.2-shape-and-version",
+        "shape": "0.2",
         "record_version": "0.2"
       },
       {
-        "name": "0.1-with-basis",
-        "shape": "session_with_basis",
+        "name": "0.3-on-a-0.1-shape",
+        "shape": "0.1",
+        "record_version": "0.3"
+      },
+      {
+        "name": "0.3-on-a-0.2-shape",
+        "shape": "0.2",
+        "record_version": "0.3"
+      },
+      {
+        "name": "0.1-on-a-0.3-shape",
+        "shape": "0.3",
         "record_version": "0.1"
+      },
+      {
+        "name": "0.2-on-a-0.3-shape",
+        "shape": "0.3",
+        "record_version": "0.2"
       }
     ],
     "rejected": [
       {
         "name": "next-minor",
-        "record_version": "0.3"
+        "record_version": "0.4"
       },
       {
         "name": "next-major",
@@ -39,7 +62,7 @@
       },
       {
         "name": "three-part",
-        "record_version": "0.2.0"
+        "record_version": "0.3.0"
       },
       {
         "name": "empty-string",
@@ -47,15 +70,19 @@
       },
       {
         "name": "trailing-space",
-        "record_version": "0.2 "
+        "record_version": "0.3 "
       },
       {
         "name": "leading-space",
-        "record_version": " 0.2"
+        "record_version": " 0.3"
       },
       {
         "name": "v-prefix",
-        "record_version": "v0.2"
+        "record_version": "v0.3"
+      },
+      {
+        "name": "number-0.3",
+        "record_version": 0.3
       },
       {
         "name": "number-0.2",
@@ -68,7 +95,7 @@
       {
         "name": "array",
         "record_version": [
-          "0.2"
+          "0.3"
         ]
       },
       {
