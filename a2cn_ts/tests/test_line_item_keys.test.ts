@@ -29,6 +29,7 @@ import {
   UNIT_PRICE_MINOR,
   lineItemKeyViolations,
   requireMinor,
+  sessionCurrencyIsSupported,
   toMinorUnits,
 } from "../src/a2cn/line_items.js";
 import { A2CNError, checkOfferMoneyParams } from "../src/a2cn/session.js";
@@ -454,3 +455,41 @@ test("an added basis is reported before this build's own limit", () => {
 
   expect((thrown as A2CNError).code).toBe("SESSION_PARAM_CHANGED");
 });
+
+interface NonStringCurrencyCase {
+  name: string;
+  currency: unknown;
+}
+
+const NON_STRING_CURRENCIES =
+  VECTOR.non_string_session_currencies as unknown as NonStringCurrencyCase[];
+
+test.each(NON_STRING_CURRENCIES.map((c) => [c.name, c] as const))(
+  "the guard answers false for a currency that is not a string: %s",
+  (_name, testCase) => {
+    // The `typeof` is belt-and-braces here and load-bearing in Python, where a
+    // list or dict is unhashable and `currency in frozenset(...)` raises
+    // TypeError without it. These rows exist so that both languages answer the
+    // same way for a malformed session, rather than one crashing and one
+    // refusing.
+    expect(sessionCurrencyIsSupported(testCase.currency)).toBe(false);
+  },
+);
+
+test.each(NON_STRING_CURRENCIES.map((c) => [c.name, c] as const))(
+  "a session currency that is not a string is refused and does not crash: %s",
+  (_name, testCase) => {
+    // Unreachable through the state machine, which settles a non-string currency
+    // as INVALID_REQUEST before a session exists (Section 6.4.1); this holds the
+    // guard to answering for itself anyway.
+    const terms = structuredClone(OFFER.terms as Dict);
+    terms.currency = testCase.currency;
+
+    const thrown = thrownFrom(() =>
+      checkOfferMoneyParams({ currency: testCase.currency } as Dict, terms),
+    );
+
+    expect(thrown).toBeInstanceOf(A2CNError);
+    expect((thrown as A2CNError).code).toBe("INVALID_LINE_ITEM");
+  },
+);

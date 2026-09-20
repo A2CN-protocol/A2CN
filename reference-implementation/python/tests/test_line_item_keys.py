@@ -29,6 +29,7 @@ from a2cn.line_items import (
     UNIT_PRICE_MINOR,
     line_item_key_violations,
     require_minor,
+    session_currency_is_supported,
     to_minor_units,
 )
 from a2cn.session import A2CNError, check_offer_money_params
@@ -390,3 +391,41 @@ def test_an_added_basis_is_reported_before_this_builds_own_limit():
         check_offer_money_params({"currency": "JPY"}, terms)
 
     assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+
+
+@pytest.mark.parametrize(
+    "case",
+    VECTOR["non_string_session_currencies"],
+    ids=_ids(VECTOR["non_string_session_currencies"]),
+)
+def test_the_guard_answers_false_for_a_currency_that_is_not_a_string(case):
+    """The ``isinstance`` is load-bearing here, and only in Python.
+
+    A list or a dict is unhashable, so ``currency in frozenset(...)`` raises
+    ``TypeError`` without it, while the TypeScript ``.includes`` simply returns
+    false. The two implementations would then disagree about a malformed
+    session — one crashing, one refusing — which is the divergence this whole
+    section exists to prevent.
+    """
+    assert session_currency_is_supported(case["currency"]) is False
+
+
+@pytest.mark.parametrize(
+    "case",
+    VECTOR["non_string_session_currencies"],
+    ids=_ids(VECTOR["non_string_session_currencies"]),
+)
+def test_a_session_currency_that_is_not_a_string_is_refused_and_does_not_crash(case):
+    """It surfaces as a protocol refusal, not an exception the caller cannot read.
+
+    Unreachable through the state machine, which settles a non-string currency
+    as INVALID_REQUEST before a session exists (Section 6.4.1); this holds the
+    guard to answering for itself anyway.
+    """
+    terms = copy.deepcopy(OFFER["terms"])
+    terms["currency"] = case["currency"]
+
+    with pytest.raises(A2CNError) as exc_info:
+        check_offer_money_params({"currency": case["currency"]}, terms)
+
+    assert exc_info.value.code == "INVALID_LINE_ITEM"
