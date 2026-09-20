@@ -216,9 +216,9 @@ external-channel record must be sealed by `parties.initiator.did`.
   verifier never dereferences `locator`. A counterparty's transport signature,
   if captured, belongs in the observed act and is recorded as observed, not
   verified. Such a record must be sealed by `parties.initiator.did` and must
-  carry at least one act that initiator signed: for the counterparty's side of
-  the claim the seal is the only cryptographic evidence the record carries, and
-  the initiator's act signature is evidence of the producer's own acts.
+  carry at least one act that initiator signed: for the external counterparty's
+  commitment the seal is the only cryptographic evidence the record bears, and
+  the initiator's act signature proves only that the initiator acted.
 - **Section 9A.2 and Section 9A.6, step 9 — exactly one completion witness.** A
   `COMPLETED` record carries a `transaction_record_hash` or an
   `external_commitment_reference`, never both and never neither; every other

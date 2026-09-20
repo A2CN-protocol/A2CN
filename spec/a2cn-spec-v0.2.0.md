@@ -2507,17 +2507,16 @@ initiator holds no A2CN identity has no representation in this version.
 
 Such a record is `unilateral` by construction, and the producer is its only
 DID-bearing party: the initiator seals it, and the counterparty side is an
-observed reference, not a verified counterparty. For the external-completion
-claim itself, the counterparty's side, the producer's seal is the only
-cryptographic evidence the record carries, which is why the party that sealed it
-MUST be the party the record names as initiator. The initiator's own act
-signatures are cryptographic evidence too, of the producer's acts rather than of
-any counterparty attestation, and that is why at least one act MUST be one of
-them: a record with neither would attribute nothing to anyone, while stating
-that a deal completed. The seal attests that
-the producer recorded this commitment, and it attributes nothing to the
-counterparty. A verifier MUST NOT resolve or authenticate the reference, exactly
-as it does not resolve an `observed_party`.
+observed reference, not a verified counterparty. For the external counterparty's
+commitment, the producer's seal is the only cryptographic evidence the record
+bears, which is why the party that sealed it MUST be the party the record names
+as initiator. The initiator's act signatures prove that the initiator acted;
+nothing in the record attests that the counterparty did, and that is why at
+least one act MUST be one of the initiator's own: a record with neither would
+attribute nothing to anyone, while stating that a deal completed. The seal
+attests that the producer recorded this commitment, and it attributes nothing to
+the counterparty. A verifier MUST NOT resolve or authenticate the reference,
+exactly as it does not resolve an `observed_party`.
 
 If the producer captures the counterparty's transport signature at all, for
 example a signature on the order confirmation it received, that signature
