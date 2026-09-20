@@ -1181,6 +1181,20 @@ Schema: `spec/schemas/offer.schema.json`
 line item) state that line's money in **integer minor units** of
 `terms.currency` — the same unit `terms.total_value` uses.
 
+Minor units are only meaningful once the minor-unit exponent of the session
+currency is known. An implementation MUST NOT state or read a line item's money
+in minor units unless it can establish that this exponent is 2, and MUST reject
+an offer in any other session currency with `INVALID_LINE_ITEM` (Section 12.3),
+whether or not that offer carries line items. A2CN defines no currency exponent
+registry and states no table here (see Section 9A.9): what an implementation can
+establish is its own to declare, and it SHOULD publish which currencies those
+are. The rule is written as *unless it can establish* deliberately. The inverse
+— assume 2 unless the currency is known to differ — fails open the moment such a
+list falls behind ISO 4217, so a neglected list would silently misread a
+zero-decimal price by a factor of one hundred, which is the failure this whole
+section exists to prevent. Refusing a currency whose exponent really is 2 is the
+recoverable error; reading one wrongly is not.
+
 Each is an integer **value**, not a particular spelling. RFC 8785 makes `36000`
 and `36000.0` the same number, so both are valid, as is `3.6e4`, and `-0.0` is
 the same number as `0`. A receiver MUST accept any integral number, and MUST
@@ -3400,7 +3414,7 @@ SessionReject messages also use this format via the `error_code` and
 | `INVALID_REQUEST` | 400 | Yes | A message, or a required part of it, is malformed before any protocol check runs: a SessionAck body, `session_params`, or `session_params_accepted` that is not a JSON object; a `currency` in either that is absent, empty, or not a string (Section 6.4.1); a `sender_did` that is not a DID; or, on an offer, counteroffer, acceptance, or rejection, a `sequence_number` or `round_number` that is not a positive integer (Section 7.1) |
 | `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis`, `session_params_accepted.basis`, or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 6.4.1, 7.2) |
 | `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck, or a later message such as an offer, changed a parameter fixed at session initiation (Sections 6.4.1, 7.2); `message` names the parameter |
-| `INVALID_LINE_ITEM` | 400 | Yes | A `terms.line_items` entry does not state its money under the pinned keys (Section 7.2): it carries the bare `unit_price` or `total`, omits `unit_price_minor` or `total_minor`, states either of them — or `quantity` — as a value that is not an integer within ±`9007199254740991`, or states a negative `quantity`. A fractional part a binary64 double has already discarded is not detectable and is not covered (Section 7.2). Also a `terms.line_items` that is not an array, and a vendor amount a platform adapter cannot read as a decimal figure. `message` names the line and the key |
+| `INVALID_LINE_ITEM` | 400 | Yes | A `terms.line_items` entry does not state its money under the pinned keys (Section 7.2): it carries the bare `unit_price` or `total`, omits `unit_price_minor` or `total_minor`, states either of them — or `quantity` — as a value that is not an integer within ±`9007199254740991`, or states a negative `quantity`. A fractional part a binary64 double has already discarded is not detectable and is not covered (Section 7.2). Also a `terms.line_items` that is not an array, a vendor amount a platform adapter cannot read as a decimal figure, and an offer whose session currency has a minor-unit exponent the receiver cannot establish is 2 (Section 7.2) — which is refused whether or not the offer carries line items. `message` names the line and the key |
 | `MANDATE_INVALID` | 403 | Yes | Mandate expired, missing, or VC proof failed |
 | `MANDATE_INSUFFICIENT` | 403 | Yes | Mandate scope doesn't cover proposed terms |
 | `INVALID_SIGNATURE` | 400 | Yes | Protocol act signature verification failed |

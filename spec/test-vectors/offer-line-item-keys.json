@@ -276,6 +276,39 @@
     { "name": "an empty money object", "value": {}, "minor": 0 }
   ],
 
+  "session_currency_rule": "A _minor line-item amount means nothing until the minor-unit exponent of the session currency is known, and this implementation assumes 2. It therefore refuses an offer whose session currency is not one it has declared it can carry, with INVALID_LINE_ITEM, on the offer path and whether or not the offer carries any line items. The refusal is the designed behaviour and it fails CLOSED: a currency whose exponent really is 2 but which is not on the list is refused too, loudly and recoverably, rather than assumed. The inverse shape — listing the currencies known NOT to be 2 and assuming 2 for the rest — fails open the moment the list goes stale, which is the silent hundredfold misread this whole section exists to prevent. Membership is an exact match on the declared spelling: no case folding, because Python and JavaScript do not fold every string identically and a money guard must not differ between them. A2CN itself maintains no currency exponent registry (Section 9A.9); this list is one implementation's declared limit, not a claim about the world.",
+
+  "supported_session_currencies": ["EUR", "GBP", "USD"],
+
+  "session_currency_cases": [
+    { "name": "the currency this corpus uses throughout", "currency": "USD", "supported": true },
+    { "name": "also declared", "currency": "EUR", "supported": true },
+    { "name": "also declared", "currency": "GBP", "supported": true },
+    {
+      "name": "a zero-decimal currency, where a _minor amount is wrong by one hundred",
+      "currency": "JPY",
+      "supported": false
+    },
+    { "name": "another zero-decimal currency", "currency": "KRW", "supported": false },
+    {
+      "name": "a three-decimal currency, where a _minor amount is wrong by ten",
+      "currency": "BHD",
+      "supported": false
+    },
+    {
+      "name": "a two-decimal currency this implementation has not declared, refused by design",
+      "currency": "CAD",
+      "supported": false
+    },
+    { "name": "a metal code, which has no minor unit at all", "currency": "XAU", "supported": false },
+    { "name": "the no-currency code", "currency": "XXX", "supported": false },
+    {
+      "name": "the right currency in the wrong spelling, not case-folded",
+      "currency": "usd",
+      "supported": false
+    }
+  ],
+
   "rejected_vendor_amounts": [
     { "name": "a hexadecimal literal", "value": "0x10" },
     { "name": "an octal literal", "value": "0o10" },

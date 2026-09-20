@@ -12,7 +12,11 @@
 import { hashObject, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
-import { lineItemKeyViolations } from "./line_items.js";
+import {
+  SUPPORTED_SESSION_CURRENCIES,
+  lineItemKeyViolations,
+  sessionCurrencyIsSupported,
+} from "./line_items.js";
 import type { Dict } from "./messages.js";
 
 // Re-exported: see the note beside their old home further down this file.
@@ -280,7 +284,13 @@ export function checkOfferLineItems(
  * 3. When the session fixed a basis, terms.basis must be present and equal to
  *    it; when the session fixed none, terms.basis must be absent, because an
  *    offer cannot introduce a basis (SESSION_PARAM_CHANGED).
- * 4. Every line item states its money under the pinned keys
+ * 4. The session currency must be one this build can state minor amounts in
+ *    (INVALID_LINE_ITEM). It runs after the checks above so that a
+ *    counterparty's own mistake is reported before a limitation of ours, and it
+ *    runs whether or not the offer carries line items: Section 7.2's money
+ *    encoding attaches to the offer, and failing at the first offer is more
+ *    honest than failing at the first line.
+ * 5. Every line item states its money under the pinned keys
  *    (INVALID_LINE_ITEM; see checkOfferLineItems). It runs last because the
  *    session parameters settle what the amounts are denominated in before
  *    there is any point checking how they are spelled.
@@ -343,6 +353,18 @@ export function checkOfferMoneyParams(
     throw new A2CNError(
       "SESSION_PARAM_CHANGED",
       `Offer ${stated}, but the session fixed basis ${JSON.stringify(sessionBasis)} at initiation`,
+      400,
+      context,
+    );
+  }
+
+  if (!sessionCurrencyIsSupported(sessionCurrency)) {
+    const carried = [...SUPPORTED_SESSION_CURRENCIES].sort().join(", ");
+    throw new A2CNError(
+      "INVALID_LINE_ITEM",
+      "a line item states its money in minor units, and this implementation cannot " +
+        `establish that the minor-unit exponent of session currency ` +
+        `${JSON.stringify(sessionCurrency)} is 2; it carries ${carried} (Section 7.2)`,
       400,
       context,
     );

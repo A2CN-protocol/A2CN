@@ -49,6 +49,47 @@ export const REJECTED_MONEY_KEYS = ["unit_price", "total"] as const;
 export const MINOR_UNIT_EXPONENT = 2;
 
 /**
+ * The session currencies this build is prepared to carry line-item minor
+ * amounts in. NAMES ONLY, deliberately: the moment this maps a currency to a
+ * number other than 2 it has stopped being a capability list and become the
+ * currency-exponent table, which is separate work.
+ *
+ * **A capability limit, not knowledge about the world.** A2CN maintains no
+ * currency exponent registry (Section 9A.9), and these are emphatically not the
+ * only currencies whose minor-unit exponent is 2 — they are the only ones this
+ * build has grounds to assert it for. Measured from the corpus on 2026-09-20,
+ * not recalled: across the spec, both implementations, every vector and every
+ * adapter, the currency-keyed values are USD (446), EUR (39) and GBP (2), and
+ * the only currencies ever fixed as a *session* currency are USD and EUR.
+ *
+ * **The list is short on purpose and will refuse legitimate two-decimal
+ * currencies** — CAD among them, which our own Conga adapter can emit. That
+ * refusal is the designed behaviour, not an oversight: it fails CLOSED, loudly
+ * and recoverably, exactly as Section 7.2 already does for a bare key name. The
+ * inverse shape — listing the currencies known *not* to be 2 and assuming 2 for
+ * everything else — fails OPEN the moment it falls behind ISO 4217, turning a
+ * neglected list into a silent hundredfold misread. Adding a currency here is
+ * meant to be a deliberate act with a reason attached, never topping up a list
+ * someone assumed was exhaustive.
+ */
+export const SUPPORTED_SESSION_CURRENCIES = ["EUR", "GBP", "USD"] as const;
+
+/**
+ * Whether this build can state a line item's money in `currency`.
+ *
+ * An exact match on the declared spelling, with no case folding: JavaScript and
+ * Python do not upper-case every string identically, and a money guard that
+ * differed between the two would be the very defect it exists to prevent. A
+ * currency that is not a string is not one this build carries.
+ */
+export function sessionCurrencyIsSupported(currency: unknown): boolean {
+  return (
+    typeof currency === "string" &&
+    (SUPPORTED_SESSION_CURRENCIES as readonly string[]).includes(currency)
+  );
+}
+
+/**
  * The largest amount both languages hold exactly: JavaScript's safe-integer
  * range. Past it a double can no longer separate adjacent integers, so one JSON
  * document could be read as two different amounts — Python's

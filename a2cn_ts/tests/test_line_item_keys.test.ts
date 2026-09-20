@@ -24,6 +24,7 @@ import { hashObject } from "../src/a2cn/crypto.js";
 import {
   MAX_SAFE_MINOR,
   REJECTED_MONEY_KEYS,
+  SUPPORTED_SESSION_CURRENCIES,
   TOTAL_MINOR,
   UNIT_PRICE_MINOR,
   lineItemKeyViolations,
@@ -381,4 +382,75 @@ test("toMinorUnits reads an amount inside a money object", () => {
 test("a null amount member falls through to value", () => {
   // `.get("amount", default)` returned None for a present-but-null key; `??` did not.
   expect(toMinorUnits({ amount: null, value: 500 })).toBe(50000);
+});
+
+// ---------------------------------------------------------------------------
+// The session currency this build is prepared to carry minor amounts in
+// ---------------------------------------------------------------------------
+
+interface CurrencyCase {
+  name: string;
+  currency: string;
+  supported: boolean;
+}
+
+const CURRENCY_CASES = VECTOR.session_currency_cases as unknown as CurrencyCase[];
+
+function termsInCurrency(currency: string): Dict {
+  const terms = structuredClone(OFFER.terms as Dict);
+  terms.currency = currency;
+  return terms;
+}
+
+test("the declared currencies are the ones the vector records", () => {
+  expect([...SUPPORTED_SESSION_CURRENCIES].sort()).toEqual(VECTOR.supported_session_currencies);
+});
+
+test.each(CURRENCY_CASES.map((c) => [c.name, c] as const))(
+  "an offer is refused unless this build carries its session currency: %s",
+  (_name, testCase) => {
+    // Fails closed: a currency whose exponent really is 2 is refused too, if undeclared.
+    const terms = termsInCurrency(testCase.currency);
+    const sessionParams: Dict = { currency: testCase.currency };
+
+    if (testCase.supported) {
+      expect(() => checkOfferMoneyParams(sessionParams, terms)).not.toThrow();
+      return;
+    }
+
+    const thrown = thrownFrom(() => checkOfferMoneyParams(sessionParams, terms));
+
+    expect(thrown).toBeInstanceOf(A2CNError);
+    expect((thrown as A2CNError).code).toBe("INVALID_LINE_ITEM");
+    expect((thrown as A2CNError).message).toContain(testCase.currency);
+  },
+);
+
+test("the currency guard fires even when the offer carries no line items", () => {
+  // Section 7.2's money encoding attaches to the offer, not to the presence of a line.
+  const terms = termsInCurrency("JPY");
+  delete terms.line_items;
+
+  const thrown = thrownFrom(() => checkOfferMoneyParams({ currency: "JPY" }, terms));
+
+  expect((thrown as A2CNError).code).toBe("INVALID_LINE_ITEM");
+});
+
+test("a changed currency is reported before this build's own limit", () => {
+  // The counterparty's own mistake outranks a limitation of ours.
+  const thrown = thrownFrom(() =>
+    checkOfferMoneyParams({ currency: "USD" }, termsInCurrency("JPY")),
+  );
+
+  expect((thrown as A2CNError).code).toBe("SESSION_PARAM_CHANGED");
+});
+
+test("an added basis is reported before this build's own limit", () => {
+  // Same precedence: a session-parameter violation comes before the capability guard.
+  const terms = termsInCurrency("JPY");
+  terms.basis = "net";
+
+  const thrown = thrownFrom(() => checkOfferMoneyParams({ currency: "JPY" }, terms));
+
+  expect((thrown as A2CNError).code).toBe("SESSION_PARAM_CHANGED");
 });

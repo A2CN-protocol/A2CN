@@ -18,7 +18,11 @@ from typing import Any
 from a2cn.crypto import hash_object, verify_jws
 from a2cn.did import get_public_key, get_verification_method
 from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
-from a2cn.line_items import line_item_key_violations
+from a2cn.line_items import (
+    SUPPORTED_SESSION_CURRENCIES,
+    line_item_key_violations,
+    session_currency_is_supported,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +272,13 @@ def check_offer_money_params(
     3. When the session fixed a basis, terms.basis must be present and equal
        to it; when the session fixed none, terms.basis must be absent,
        because an offer cannot introduce a basis (SESSION_PARAM_CHANGED).
-    4. Every line item states its money under the pinned keys
+    4. The session currency must be one this build can state minor amounts in
+       (INVALID_LINE_ITEM). It runs after the checks above so that a
+       counterparty's own mistake is reported before a limitation of ours, and
+       it runs whether or not the offer carries line items: Section 7.2's money
+       encoding attaches to the offer, and failing at the first offer is more
+       honest than failing at the first line.
+    5. Every line item states its money under the pinned keys
        (INVALID_LINE_ITEM; see check_offer_line_items). It runs last because
        the session parameters settle what the amounts are denominated in
        before there is any point checking how they are spelled.
@@ -326,6 +336,17 @@ def check_offer_money_params(
         raise A2CNError(
             "SESSION_PARAM_CHANGED",
             f"Offer {stated}, but the session fixed basis {session_basis!r} at initiation",
+            400,
+            **context,
+        )
+
+    if not session_currency_is_supported(session_currency):
+        carried = ", ".join(sorted(SUPPORTED_SESSION_CURRENCIES))
+        raise A2CNError(
+            "INVALID_LINE_ITEM",
+            f"a line item states its money in minor units, and this implementation "
+            f"cannot establish that the minor-unit exponent of session currency "
+            f"{session_currency!r} is 2; it carries {carried} (Section 7.2)",
             400,
             **context,
         )

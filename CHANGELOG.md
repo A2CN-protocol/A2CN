@@ -57,6 +57,36 @@ class moved to `a2cn/errors.py` (`errors.ts`) so that modules below the state
 machine can raise one without an import cycle; `a2cn.session` re-exports it, so
 every existing import is unaffected.
 
+**An offer in a currency a receiver cannot place the decimal point in is now
+refused.** Line items have always assumed a minor-unit exponent of 2, which is
+wrong by a hundred for a zero-decimal currency such as JPY or KRW, and by ten
+for a three-decimal one such as BHD or KWD — the same silent misread the pinned
+keys exist to stop, arriving through a different door. A receiver now refuses an
+offer with `INVALID_LINE_ITEM` unless it can establish that the session
+currency's exponent is 2. The check runs on the offer path and fires whether or
+not the offer carries any line items, because Section 7.2's money encoding
+attaches to the offer rather than to the presence of a line, and it runs after
+the session-parameter checks so that a counterparty's own mistake is still
+reported before a limitation of the receiver's.
+
+The rule is stated as *unless it can establish*, and that direction is the point.
+Listing the currencies known **not** to use two decimals and assuming 2 for
+everything else fails open the moment the list falls behind ISO 4217: a newly
+added zero-decimal currency would pass and be misread by a factor of a hundred,
+silently. Listing the currencies an implementation can vouch for fails closed —
+an unrecognised currency is refused, loudly and recoverably, which is the trade
+Section 7.2 already makes for a bare key name.
+
+**The spec states the rule and does not carry the data.** A2CN still maintains
+no currency exponent registry (Section 9A.9) and nothing normative names a
+currency. Each reference implementation instead declares its own limit,
+`SUPPORTED_SESSION_CURRENCIES` — currently EUR, GBP and USD — as names only,
+with no exponent values attached: the moment such a list maps a currency to a
+number it has become the exponent table, which is separate work. The set is
+deliberately short, measured from this repository rather than recalled, and it
+will refuse legitimate two-decimal currencies. Adding one is meant to be a
+deliberate act with a reason attached, not a list being topped up.
+
 **A pinned amount is an integer value, not a JSON spelling.** RFC 8785 makes
 `36000` and `36000.0` the same number, and a parser that holds every number as a
 binary64 double cannot tell them apart once parsed — so a rule written over JSON

@@ -24,6 +24,7 @@ from a2cn.crypto import hash_object
 from a2cn.line_items import (
     MAX_SAFE_MINOR,
     REJECTED_MONEY_KEYS,
+    SUPPORTED_SESSION_CURRENCIES,
     TOTAL_MINOR,
     UNIT_PRICE_MINOR,
     line_item_key_violations,
@@ -326,3 +327,66 @@ def test_to_minor_units_reads_an_amount_inside_a_money_object():
 def test_a_null_amount_member_falls_through_to_value():
     """``.get("amount", default)`` returned None for a present-but-null key; ``??`` did not."""
     assert to_minor_units({"amount": None, "value": 500}) == 50000
+
+
+# ---------------------------------------------------------------------------
+# The session currency this build is prepared to carry minor amounts in
+# ---------------------------------------------------------------------------
+
+def test_the_declared_currencies_are_the_ones_the_vector_records():
+    assert sorted(SUPPORTED_SESSION_CURRENCIES) == VECTOR["supported_session_currencies"]
+
+
+@pytest.mark.parametrize(
+    "case", VECTOR["session_currency_cases"], ids=_ids(VECTOR["session_currency_cases"])
+)
+def test_an_offer_is_refused_unless_this_build_carries_its_session_currency(case):
+    """Fails closed: a currency whose exponent really is 2 is refused too, if undeclared."""
+    terms = copy.deepcopy(OFFER["terms"])
+    terms["currency"] = case["currency"]
+    session_params = {"currency": case["currency"]}
+
+    if case["supported"]:
+        check_offer_money_params(session_params, terms)
+        return
+
+    with pytest.raises(A2CNError) as exc_info:
+        check_offer_money_params(session_params, terms)
+
+    assert exc_info.value.code == "INVALID_LINE_ITEM"
+    assert case["currency"] in str(exc_info.value)
+
+
+def test_the_currency_guard_fires_even_when_the_offer_carries_no_line_items():
+    """Section 7.2's money encoding attaches to the offer, not to the presence of a line."""
+    terms = copy.deepcopy(OFFER["terms"])
+    terms["currency"] = "JPY"
+    del terms["line_items"]
+
+    with pytest.raises(A2CNError) as exc_info:
+        check_offer_money_params({"currency": "JPY"}, terms)
+
+    assert exc_info.value.code == "INVALID_LINE_ITEM"
+
+
+def test_a_changed_currency_is_reported_before_this_builds_own_limit():
+    """The counterparty's own mistake outranks a limitation of ours."""
+    terms = copy.deepcopy(OFFER["terms"])
+    terms["currency"] = "JPY"
+
+    with pytest.raises(A2CNError) as exc_info:
+        check_offer_money_params({"currency": "USD"}, terms)
+
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
+
+
+def test_an_added_basis_is_reported_before_this_builds_own_limit():
+    """Same precedence: a session-parameter violation comes before the capability guard."""
+    terms = copy.deepcopy(OFFER["terms"])
+    terms["currency"] = "JPY"
+    terms["basis"] = "net"
+
+    with pytest.raises(A2CNError) as exc_info:
+        check_offer_money_params({"currency": "JPY"}, terms)
+
+    assert exc_info.value.code == "SESSION_PARAM_CHANGED"
