@@ -1184,10 +1184,10 @@ line item) state that line's money in **integer minor units** of
 Each is an integer **value**, not a particular spelling. RFC 8785 makes `36000`
 and `36000.0` the same number, so both are valid, as is `3.6e4`, and `-0.0` is
 the same number as `0`. A receiver MUST accept any integral number, and MUST
-reject — with `INVALID_LINE_ITEM` (Section 12.3) — a value carrying a fractional
-part, a value that is not a number at all (a decimal string, `null`, a boolean),
-a non-finite value, and a line item that omits either key. The rule is stated
-over values rather than over JSON types because a receiver cannot recover the
+reject — with `INVALID_LINE_ITEM` (Section 12.3) — a value that is not integral,
+a value that is not a number at all (a decimal string, `null`, a boolean), a
+non-finite value, and a line item that omits either key. The rule is stated over
+values rather than over JSON types because a receiver cannot recover the
 spelling: a parser that represents every number as a binary64 double, as
 JavaScript's does, cannot distinguish `36000.0` from `36000` once parsed, so a
 type rule would have two conformant implementations disagree about one document.
@@ -1197,6 +1197,18 @@ makes this the ordinary case rather than an exotic one.
 The magnitude of either value MUST NOT exceed `9007199254740991` (2^53 − 1).
 Past that a binary64 double can no longer represent adjacent integers
 distinctly, so one document could be read as two different amounts.
+
+**What "integral" can and cannot promise.** A receiver judges the value it
+parsed, and above 2^52 (`4503599627370496`) a binary64 double has no room left
+for a fractional part: `9007199254740991.2` parses to `9007199254740991` and is
+accepted — by both reference implementations and by the schema, which agree
+precisely because the fraction was gone before any of them looked. This section
+therefore does not promise to detect a fractional part that IEEE-754 has already
+discarded, and an implementation is not non-conformant for failing to detect
+one. Below that threshold a fractional part does survive parsing and MUST be
+rejected: `36000.5` and `36000.0001` are refused by all three. A sender that
+needs an amount carried exactly states it within the range above, where every
+integer is distinct and nothing is dropped.
 
 The bare names `unit_price` and `total` are **not** valid line-item keys. A
 receiver MUST reject a line item carrying either with `INVALID_LINE_ITEM`. It
@@ -3388,7 +3400,7 @@ SessionReject messages also use this format via the `error_code` and
 | `INVALID_REQUEST` | 400 | Yes | A message, or a required part of it, is malformed before any protocol check runs: a SessionAck body, `session_params`, or `session_params_accepted` that is not a JSON object; a `currency` in either that is absent, empty, or not a string (Section 6.4.1); a `sender_did` that is not a DID; or, on an offer, counteroffer, acceptance, or rejection, a `sequence_number` or `round_number` that is not a positive integer (Section 7.1) |
 | `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis`, `session_params_accepted.basis`, or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 6.4.1, 7.2) |
 | `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck, or a later message such as an offer, changed a parameter fixed at session initiation (Sections 6.4.1, 7.2); `message` names the parameter |
-| `INVALID_LINE_ITEM` | 400 | Yes | A `terms.line_items` entry does not state its money under the pinned keys (Section 7.2): it carries the bare `unit_price` or `total`, omits `unit_price_minor` or `total_minor`, states either of them — or `quantity` — as something other than an integer value within ±`9007199254740991`, or states a negative `quantity`. Also a `terms.line_items` that is not an array, and a vendor amount a platform adapter cannot read as a decimal figure. `message` names the line and the key |
+| `INVALID_LINE_ITEM` | 400 | Yes | A `terms.line_items` entry does not state its money under the pinned keys (Section 7.2): it carries the bare `unit_price` or `total`, omits `unit_price_minor` or `total_minor`, states either of them — or `quantity` — as a value that is not an integer within ±`9007199254740991`, or states a negative `quantity`. A fractional part a binary64 double has already discarded is not detectable and is not covered (Section 7.2). Also a `terms.line_items` that is not an array, and a vendor amount a platform adapter cannot read as a decimal figure. `message` names the line and the key |
 | `MANDATE_INVALID` | 403 | Yes | Mandate expired, missing, or VC proof failed |
 | `MANDATE_INSUFFICIENT` | 403 | Yes | Mandate scope doesn't cover proposed terms |
 | `INVALID_SIGNATURE` | 400 | Yes | Protocol act signature verification failed |
