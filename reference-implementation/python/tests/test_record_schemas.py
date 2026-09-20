@@ -3,11 +3,12 @@
 A record artifact's unversioned schema file describes its "0.1" version; each
 later version is published beside it as <name>-<version>.schema.json, and a
 published schema file is never rewritten (Section 17). A TransactionRecord's
-version follows its shape, so the "0.1" schema permits no top-level basis and
-the "0.2" schema requires it (Sections 9.3 and 9.5). The "0.1"
-SessionEvidenceRecord schema is the file release 0.3.0 published, which predates
-Sections 9A.8 to 9A.11; those arrived in "0.2" (Section 9A.2). The TypeScript
-suite checks the same files structurally.
+version follows its shape: the "0.1" schema permits no top-level basis, the
+"0.2" schema requires it, and the "0.3" schema requires the Section 7.3.1 act
+fields in final_offer and carries basis exactly when agreed_terms does
+(Sections 9.3 and 9.5). The "0.1" SessionEvidenceRecord schema is the file
+release 0.3.0 published, which predates Sections 9A.8 to 9A.11; those arrived in
+"0.2" (Section 9A.2). The TypeScript suite checks the same files structurally.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import pytest
 import a2cn.evidence as evidence
 from a2cn.crypto import hash_object, private_key_from_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
-from a2cn.record import generate_transaction_record
+from a2cn.record import FINAL_OFFER_ACT_FIELDS, generate_transaction_record
 from a2cn.session import Session, SessionManager, SessionState
 
 REPO_ROOT = Path(__file__).parents[3]
@@ -30,14 +31,26 @@ SCHEMAS = REPO_ROOT / "spec" / "schemas"
 VECTORS = REPO_ROOT / "spec" / "test-vectors"
 TR_VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 WITHOUT_BASIS = TR_VECTOR["without_basis"]
+EXPECTED_0_2 = TR_VECTOR["expected"]["record_version_0_2"]
+EXPECTED_0_3 = TR_VECTOR["expected"]["record_version_0_3"]
+# A session whose round-1 offer omits expires_at, so its signed act, and the
+# record, carry "". A conformant producer can emit this, so the schema takes it.
+EMPTY_EXPIRES_AT = TR_VECTOR["empty_expires_at"]
 PARITY_VECTORS = json.loads((REPO_ROOT / "a2cn_ts" / "parity" / "vectors.json").read_text())
 SER_VECTOR = json.loads((VECTORS / "session-evidence-record-parity.json").read_text())
 
 TR_0_1 = "transaction-record.schema.json"
 TR_0_2 = "transaction-record-0.2.schema.json"
+TR_0_3 = "transaction-record-0.3.schema.json"
 SER_0_1 = "session-evidence-record.schema.json"
 SER_0_2 = "session-evidence-record-0.2.schema.json"
-OTHER_VERSION = {TR_0_1: TR_0_2, TR_0_2: TR_0_1, SER_0_1: SER_0_2, SER_0_2: SER_0_1}
+TR_SCHEMAS = (TR_0_1, TR_0_2, TR_0_3)
+# Every other version's schema, which the record of one version must not fit.
+OTHER_VERSIONS = {
+    **{name: [other for other in TR_SCHEMAS if other != name] for name in TR_SCHEMAS},
+    SER_0_1: [SER_0_2],
+    SER_0_2: [SER_0_1],
+}
 
 
 def _errors(schema_file: str, record: dict) -> list:
@@ -80,12 +93,12 @@ def _without_subject_reference() -> dict:
 
 def _agreed_terms_basis_alone() -> dict:
     """What an implementation that predates basis records for a session that fixed one."""
-    record = copy.deepcopy(TR_VECTOR["expected"]["full_record"])
+    record = copy.deepcopy(EXPECTED_0_2["full_record"])
     del record["basis"]
     record["record_version"] = "0.1"
     record["record_hash"] = ""
     record["record_hash"] = hash_object(record)
-    assert record["record_hash"] == TR_VECTOR["expected"]["basis_dropped_0_1_record_hash"]
+    assert record["record_hash"] == EXPECTED_0_2["basis_dropped_0_1_record_hash"]
     return record
 
 
@@ -96,17 +109,32 @@ TRANSACTION_RECORDS = [
         TR_0_1, lambda: WITHOUT_BASIS["record_version_0_1"]["full_record"],
         id="0.1-from-an-implementation-that-predates-basis",
     ),
-    pytest.param(
-        TR_0_1, lambda: _replay(WITHOUT_BASIS), id="0.1-generated-for-a-session-without-basis"
-    ),
-    pytest.param(
-        TR_0_1, lambda: PARITY_VECTORS["session"]["expected"]["full_record"],
-        id="0.1-parity-vector",
-    ),
-    pytest.param(TR_0_1, _without_subject_reference, id="0.1-generated-without-subject-reference"),
     pytest.param(TR_0_1, _agreed_terms_basis_alone, id="0.1-with-agreed-terms-basis-alone"),
-    pytest.param(TR_0_2, lambda: TR_VECTOR["expected"]["full_record"], id="0.2-basis-vector"),
-    pytest.param(TR_0_2, lambda: _replay(TR_VECTOR), id="0.2-generated-for-a-basis-session"),
+    pytest.param(
+        TR_0_2, lambda: EXPECTED_0_2["full_record"],
+        id="0.2-from-an-implementation-that-predates-the-act-fields",
+    ),
+    pytest.param(TR_0_3, lambda: EXPECTED_0_3["full_record"], id="0.3-basis-vector"),
+    pytest.param(
+        TR_0_3, lambda: WITHOUT_BASIS["record_version_0_3"]["full_record"],
+        id="0.3-without-basis-vector",
+    ),
+    pytest.param(TR_0_3, lambda: _replay(TR_VECTOR), id="0.3-generated-for-a-basis-session"),
+    pytest.param(
+        TR_0_3, lambda: _replay(WITHOUT_BASIS), id="0.3-generated-for-a-session-without-basis"
+    ),
+    pytest.param(
+        TR_0_3, lambda: PARITY_VECTORS["session"]["expected"]["full_record"],
+        id="0.3-parity-vector",
+    ),
+    pytest.param(TR_0_3, _without_subject_reference, id="0.3-generated-without-subject-reference"),
+    pytest.param(
+        TR_0_3, lambda: EMPTY_EXPIRES_AT["record_version_0_3"]["full_record"],
+        id="0.3-empty-expires-at-vector",
+    ),
+    pytest.param(
+        TR_0_3, lambda: _replay(EMPTY_EXPIRES_AT), id="0.3-generated-with-an-empty-expires-at"
+    ),
 ]
 
 
@@ -116,13 +144,21 @@ def test_every_transaction_record_validates_against_its_versions_schema(schema_f
 
     assert _errors(schema_file, record) == []
     # And against no other version's schema.
-    assert _errors(OTHER_VERSION[schema_file], record) != []
+    for other in OTHER_VERSIONS[schema_file]:
+        assert _errors(other, record) != [], other
 
 
 def _set_basis(value):
     def mutate(record: dict) -> None:
         record["basis"] = value
         record["agreed_terms"]["basis"] = value
+
+    return mutate
+
+
+def _drop_act_field(field_name: str):
+    def mutate(record: dict) -> None:
+        del record["final_offer"][field_name]
 
     return mutate
 
@@ -145,10 +181,41 @@ INVALID_TRANSACTION_RECORDS = [
     pytest.param(TR_0_1, lambda record: record.update(basis="gross"), id="0.1-with-basis"),
     pytest.param(TR_0_1, lambda record: record.update(basis=None), id="0.1-with-null-basis"),
     pytest.param(TR_0_1, lambda record: record.update(record_version="0.2"), id="0.1-labelled-0.2"),
-    # Both: closed objects, required fields, and field types.
+    # "0.3": every act field is required, and basis is carried exactly when
+    # agreed_terms carries one, and equal to it.
+    *[
+        pytest.param(TR_0_3, _drop_act_field(name), id=f"0.3-without-final-offer-{name}")
+        for name in FINAL_OFFER_ACT_FIELDS
+    ],
+    pytest.param(
+        TR_0_3, lambda record: record["agreed_terms"].pop("basis"),
+        id="0.3-with-basis-and-no-agreed-terms-basis",
+    ),
+    pytest.param(
+        TR_0_3, lambda record: record.pop("basis"), id="0.3-with-agreed-terms-basis-and-no-basis",
+    ),
+    pytest.param(
+        TR_0_3, lambda record: record["agreed_terms"].update(basis="net"),
+        id="0.3-agreed-terms-basis-differs",
+    ),
+    pytest.param(TR_0_3, _set_basis("vat"), id="0.3-unrecognized-basis"),
+    pytest.param(TR_0_3, lambda record: record.update(record_version="0.2"), id="0.3-labelled-0.2"),
+    pytest.param(
+        TR_0_3, lambda record: record["final_offer"].update(round_number="2"),
+        id="0.3-string-final-offer-round-number",
+    ),
+    pytest.param(
+        TR_0_3, lambda record: record["final_offer"].update(message_type="acceptance"),
+        id="0.3-final-offer-that-is-not-an-offer",
+    ),
+    pytest.param(
+        TR_0_3, lambda record: record["final_offer"].update(protocol_version=""),
+        id="0.3-empty-final-offer-protocol-version",
+    ),
+    # Every version: closed objects, required fields, and field types.
     *[
         pytest.param(schema_file, mutate, id=f"{version}-{name}")
-        for schema_file, version in ((TR_0_1, "0.1"), (TR_0_2, "0.2"))
+        for schema_file, version in ((TR_0_1, "0.1"), (TR_0_2, "0.2"), (TR_0_3, "0.3"))
         for name, mutate in (
             ("extra-top-level-field", lambda record: record.update(note="unsealed")),
             (
@@ -178,7 +245,8 @@ INVALID_TRANSACTION_RECORDS = [
 ]
 HEALTHY_TRANSACTION_RECORDS = {
     TR_0_1: WITHOUT_BASIS["record_version_0_1"]["full_record"],
-    TR_0_2: TR_VECTOR["expected"]["full_record"],
+    TR_0_2: EXPECTED_0_2["full_record"],
+    TR_0_3: EXPECTED_0_3["full_record"],
 }
 
 
@@ -192,12 +260,25 @@ def test_the_transaction_record_schemas_refuse_other_shapes(schema_file, mutate)
     assert _errors(schema_file, record) != []
 
 
+def test_the_0_3_schema_requires_every_act_field_and_leaves_basis_optional():
+    """The act fields are what "0.3" adds; basis follows agreed_terms (Section 9.3)."""
+    schema = json.loads((SCHEMAS / TR_0_3).read_text())
+    final_offer = schema["properties"]["final_offer"]
+
+    for name in FINAL_OFFER_ACT_FIELDS:
+        assert name in final_offer["properties"], name
+        assert name in final_offer["required"], name
+    # basis is the one declared top-level field a "0.3" record may leave out.
+    assert set(schema["properties"]) - set(schema["required"]) == {"basis"}
+    assert schema["properties"]["basis"]["enum"] == ["net", "gross"]
+
+
 # Every object the generator fills in full is closed; agreed_terms, the accepted
 # offer's terms, stays open (Section 7.2).
 CLOSED_OBJECTS = ("parties", "negotiation_summary", "final_offer", "final_acceptance")
 
 
-@pytest.mark.parametrize("schema_file", [TR_0_1, TR_0_2])
+@pytest.mark.parametrize("schema_file", TR_SCHEMAS)
 def test_the_transaction_record_schemas_are_closed_except_agreed_terms(schema_file):
     schema = json.loads((SCHEMAS / schema_file).read_text())
     properties = schema["properties"]
@@ -260,7 +341,8 @@ def test_each_session_evidence_record_validates_against_its_versions_schema(sche
     record = _session_evidence_record(version)
 
     assert _errors(schema_file, record) == []
-    assert _errors(OTHER_VERSION[schema_file], record) != []
+    for other in OTHER_VERSIONS[schema_file]:
+        assert _errors(other, record) != [], other
 
 
 def test_the_0_1_evidence_record_schema_is_the_file_release_0_3_0_published():

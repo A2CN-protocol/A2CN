@@ -11,7 +11,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 |------|---------|
 | Release | `0.3.0` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.2` |
-| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.2` for a record that carries a basis, `0.1` for one that does not (no basis fixed, or an implementation that predates basis) / `0.1` / `0.3` for a record that carries `external_commitment_reference`, `0.2` for one that does not |
+| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.3` for a record whose `final_offer` carries the signed protocol act's fields, with `0.2` (a basis and no act fields) and `0.1` (neither) still accepted / `0.1` / `0.3` for a record that carries `external_commitment_reference`, `0.2` for one that does not |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0: the minor version moves for substantive additions.
@@ -121,6 +121,76 @@ the vendor wrote is already gone; that remains a separate change.
 `protocol_version` stays `"0.2"`. Whether pinning a key name should move the
 wire version is an open question; this change does not settle it.
 
+> **BREAKING — TransactionRecords produced before this release no longer verify
+> and must be regenerated.** A verifier now accepts `record_version` `"0.3"`
+> alone. `"0.1"` and `"0.2"` records — everything produced up to and including
+> release `0.3.0` — are refused as unbound, because nothing in them binds
+> `agreed_terms` to a party's signature. Regenerate them from the session
+> messages. Their schema files stay published so such a record can still be
+> parsed and inspected; parsing is not accepting. This is wire-compatible: no
+> message changes and nothing new is signed, so only stored records are
+> affected.
+
+**`agreed_terms` binds to the signed final offer, at TransactionRecord
+`record_version` `"0.3"` (wire-compatible with 0.2; nothing new is signed).**
+
+An offer's `protocol_act_signature` already covers the Section 7.3.1 protocol
+act, its `terms` included. The TransactionRecord carried only that act's hash,
+so a reader could not rebuild the act, and `agreed_terms` hung free: a record
+whose `agreed_terms` differed from the terms that were signed, with `record_hash`
+recomputed, verified with both signatures intact. `final_offer` now carries the
+rest of the act — `protocol_version`, `round_number`, `sequence_number`,
+`message_type`, `timestamp`, `expires_at` — beside the `sender_did` it already
+carried, so a verifier rebuilds the act from the record (`session_id` from the
+top level, `terms` from `agreed_terms`) and requires its hash to equal
+`final_offer.protocol_act_hash`. The signature check then binds `agreed_terms`
+transitively. No new signature, no new cryptography, no change to Section 7.3.1
+or 7.3.2, and no wire message changes.
+
+A record carrying those fields is `record_version` `"0.3"`, which every producer
+conformant with Section 9.3 now emits; the fields and `"0.3"` imply each other,
+so a partial set, or either worn without the other, is rejected. Verifiers accept
+`"0.1"`, `"0.2"` and `"0.3"` and reject anything else. Records produced before
+this change still verify untouched, and the `"0.1"` and `"0.2"` schema files are
+unchanged. Note that the record of a session that fixed no basis is no longer
+byte-identical to the `"0.1"` record produced before the act fields existed,
+because every new record is `"0.3"`; same-version peers still derive identical
+records, and a mixed pair differs visibly in `record_version`, the same honest
+signal the basis change established. The acceptance side needed no new field:
+`acceptance_signature` covers the five fields of Section 7.4 and the record
+already carried all five, so both sides of a `"0.3"` record are now recomputable
+from the record alone. The SessionEvidenceRecord and AuditLog are untouched; an
+evidence record for a completed session seals whatever TransactionRecord hash
+that session has.
+
+Step 3 constrains the act's fields only as far as it needs to rebuild and
+canonicalize them — integers that are not booleans, strings, and an object for
+`agreed_terms` — and lets the hash comparison decide the rest. It deliberately
+does not require a non-empty string or a positive counter: neither `timestamp`
+nor `expires_at` is validated on the wire, and a receiver rebuilding an act
+defaults a missing one to `""`, so an offer that omits one is signed and
+recorded with `""` inside the signed act. Demanding more would reject a record
+whose signature genuinely covers those bytes. `transaction-record-0.3.schema.json`
+stays tighter, because it describes what a conformant producer emits (Section
+17) rather than what a verifier must accept.
+
+The act's `round_number` and `sequence_number` are accepted as any integral JSON
+number. RFC 8785 serializes `2.0` and `2` identically, so the two are one signed
+act in different spellings, with the same act hash and the same `record_hash`;
+Python rejected the float where TypeScript accepted it, on byte-identical input.
+Both now accept an integral float and reject a boolean, a fractional number, a
+string and `null`.
+
+Step 8 also binds a `"0.3"` record's top-level `currency` to
+`agreed_terms.currency`, which step 3 has made signature-backed, so a record
+cannot state one currency in its headline and another in the terms that were
+signed. A `"0.1"` or `"0.2"` record's `currency` is deliberately not checked:
+per-offer currency consistency was only required from the version that added
+`terms.basis`, so an older genuine record may legitimately differ, and every
+record that verified before still verifies. `deal_type`, `subject` and
+`subject_reference` stay producer-stated and covered by neither signature, which
+Section 9.3 now says plainly.
+
 **Session Evidence Record extensions, at `record_version` `"0.2"`
 (wire-compatible with 0.2; no signature changes).**
 
@@ -187,6 +257,33 @@ external-channel record must be sealed by `parties.initiator.did`.
 
 ### Added
 
+- **Section 9.3 — the signed act's fields in `final_offer`.** `protocol_version`,
+  `round_number`, `sequence_number`, `message_type`, `timestamp` and
+  `expires_at`, each copied verbatim from the accepted offer except
+  `protocol_version`, which an offer message does not carry and which states the
+  wire version the act was hashed under. With `session_id` at the record's top
+  level and `agreed_terms` as the act's `terms`, they let a reader rebuild the
+  Section 7.3.1 protocol act that `final_offer.protocol_act_signature` already
+  covers.
+- **Section 9.5 — verification step 3.** A verifier rebuilds that act from the
+  record and requires its hash to equal `final_offer.protocol_act_hash`, which is
+  what binds `agreed_terms` to the offering party's signature. It rebuilds with
+  the `protocol_version` the record carries, not its own, so a record produced
+  under a later wire version still recomputes, and rejects a record whose act
+  fields are malformed rather than hashing them best-effort. The act fields and
+  `"0.3"` imply each other, so a partial set, or either worn without the other,
+  is rejected. The later steps are renumbered, and step 8 (formerly step 7) is
+  restated version by version.
+- **Section 9.5 — both sides of a record are recomputable.** Stated plainly: the
+  Section 7.4 acceptance payload was always rebuildable from the five fields the
+  record carries, and the offer's protocol act now is too, so a third party can
+  check both signatures against the record's own content without the original
+  messages.
+- `spec/schemas/transaction-record-0.3.schema.json` — the TransactionRecord
+  schema at `record_version` `"0.3"`, `$id` `/0.3`, published beside the `"0.1"`
+  and `"0.2"` files, which are unchanged. It is closed except `agreed_terms`,
+  requires every act field in `final_offer`, and carries `basis` exactly when
+  `agreed_terms.basis` is present, and equal to it.
 - **Section 9A.8 — identity-light responders.** `parties.responder` may be an
   `observed_party`: a producer-asserted, unverified descriptor for a counterparty
   with no A2CN identity. A verifier never resolves or authenticates it. Such a
@@ -367,6 +464,26 @@ external-channel record must be sealed by `parties.initiator.did`.
   producer's own classified as `bilateral` while Section 9A.8 required
   `unilateral`, and no `evidence_level` verified: the plainest external-channel
   record, a signed offer and an order reference, could not be recorded at all.
+- The TransactionRecord `record_version` a producer emits is `"0.3"`, and a
+  verifier accepts `"0.1"`, `"0.2"` and `"0.3"`. `a2cn.record` and `record.ts`
+  add `TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT` (`"0.3"`) and
+  `FINAL_OFFER_ACT_FIELDS` beside the two existing version constants, which
+  still name the versions earlier producers emitted.
+- The Section 7.3.1 protocol act object now has one definition per language —
+  `protocol_act_object` in `a2cn.messages`, `protocolActObject` in
+  `messages.ts`, with `PROTOCOL_ACT_VERSION` for the wire version it states. The
+  reference client, the session state machine, the evidence record and the
+  TransactionRecord all build it through that one function, each supplying its
+  own values, so no site's behaviour changes.
+- `spec/test-vectors/transaction-record-basis.json` groups each record under the
+  version that produced it. The records earlier implementations produced keep
+  their exact bytes and hashes, now at `expected.record_version_0_2` and
+  `without_basis.record_version_0_1`, and every negative derived from them keeps
+  its hash; `expected.record_version_0_3` and
+  `without_basis.record_version_0_3` are what the reference implementations
+  produce now. `spec/test-vectors/record-versions.json` gives each artifact its
+  own accepted set, because `"0.3"` is a TransactionRecord version that a
+  SessionEvidenceRecord verifier rejects.
 - `TRANSACTION_RECORD_VERSION` (Python `a2cn.record`, TypeScript `record.ts`),
   exported in 0.3.0, is replaced by `TRANSACTION_RECORD_VERSION_WITHOUT_BASIS`
   (`"0.1"`) and `TRANSACTION_RECORD_VERSION_WITH_BASIS` (`"0.2"`), because a

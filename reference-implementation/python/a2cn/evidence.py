@@ -17,6 +17,7 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
@@ -1380,17 +1381,17 @@ def _signed_act_payload_hash(act: dict, signature_type: str) -> str | None:
             return None
         if not isinstance(act.get("terms"), dict):
             return None
-        protocol_act = {
-            "protocol_version": "0.2",
-            "session_id": act["session_id"],
-            "round_number": act["round_number"],
-            "sequence_number": act["sequence_number"],
-            "message_type": act["message_type"],
-            "sender_did": act["sender_did"],
-            "timestamp": act["timestamp"],
-            "expires_at": act["expires_at"],
-            "terms": act["terms"],
-        }
+        protocol_act = protocol_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,
+            session_id=act["session_id"],
+            round_number=act["round_number"],
+            sequence_number=act["sequence_number"],
+            message_type=act["message_type"],
+            sender_did=act["sender_did"],
+            timestamp=act["timestamp"],
+            expires_at=act["expires_at"],
+            terms=act["terms"],
+        )
         expected_hash = hash_object(protocol_act)
         if act.get("protocol_act_hash") != expected_hash:
             return None

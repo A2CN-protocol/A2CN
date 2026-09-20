@@ -10,10 +10,16 @@
 import { randomUUID } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 
-import { hashObject, canonicalize, hashBytes, verifyJws } from "./crypto.js";
+import {
+  hashObject,
+  canonicalize,
+  hashBytes,
+  verifyJws,
+  InvalidSignatureError,
+} from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
-import type { Dict } from "./messages.js";
+import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
 
 /**
  * Structural view of a Session sufficient for record/audit generation.
@@ -42,16 +48,57 @@ export const A2CN_NAMESPACE = "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c";
 
 // These identify the transaction-record and audit-log artifact schemas. They
 // are intentionally independent of the package release version. A
-// TransactionRecord's version follows its content (Section 9.3): "0.2" exactly
-// when it carries the session's basis, so a session that fixed no basis gets
-// the "0.1" record every party derives for it, whichever version its
-// implementation is (Section 9.2).
+// TransactionRecord's version follows its content (Section 9.3): a producer
+// emits "0.3" exactly when final_offer carries the signed act's fields, which
+// this implementation always does. "0.2" is the version of a record that carries
+// the session's basis and no act fields, and "0.1" of one that carries neither.
 export const TRANSACTION_RECORD_VERSION_WITHOUT_BASIS = "0.1";
 export const TRANSACTION_RECORD_VERSION_WITH_BASIS = "0.2";
+export const TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT = "0.3";
 export const AUDIT_LOG_VERSION = "0.1";
-// The TransactionRecord versions a verifier accepts (Section 9.5 step 1). Every
-// other value is rejected; step 7 holds each version to its shape.
-export const RECOGNIZED_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2"];
+// The record shapes this implementation knows, which is what the published
+// schema files describe. Knowing a shape is not accepting it.
+export const KNOWN_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2", "0.3"];
+// The versions a verifier accepts (Section 9.5 step 1): only the bound one, the
+// version whose final_offer carries the act fields, so the record can be rebound
+// to the offering party's signature from the record alone. record_version is
+// covered by no signature, so a verifier refuses any version it cannot rebind
+// rather than trusting the label; accepting an unbound version would let a
+// presenter strip the act fields, relabel the record and alter agreed_terms with
+// both signatures still verifying.
+export const ACCEPTED_TRANSACTION_RECORD_VERSIONS: readonly string[] = [
+  TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+];
+
+// Why a record failed (Section 9.5). verifyTransactionRecord returns a boolean;
+// verifyTransactionRecordReason returns one of these, or null when the record
+// verifies. A version this implementation knows but cannot rebind is reported as
+// unbound, distinct from a value that is no version at all.
+export const REASON_UNRECOGNIZED_RECORD_VERSION = "UNRECOGNIZED_RECORD_VERSION";
+export const REASON_UNBOUND_RECORD_VERSION = "UNBOUND_RECORD_VERSION";
+export const REASON_RECORD_HASH_MISMATCH = "RECORD_HASH_MISMATCH";
+export const REASON_ACT_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE";
+export const REASON_BASIS_MISMATCH = "BASIS_MISMATCH";
+export const REASON_CURRENCY_MISMATCH = "CURRENCY_MISMATCH";
+export const REASON_ACCEPTED_HASH_MISMATCH = "ACCEPTED_HASH_MISMATCH";
+export const REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH";
+export const REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID";
+export const REASON_ACCEPTANCE_SIGNATURE_INVALID = "ACCEPTANCE_SIGNATURE_INVALID";
+export const REASON_MALFORMED_RECORD = "MALFORMED_RECORD";
+
+// The Section 7.3.1 act fields final_offer carries beside the act's hash, so a
+// verifier can rebuild the signed act from the record alone (Section 9.3). The
+// act's other fields are already in the record: session_id at the top level,
+// sender_did in final_offer, and the act's terms as agreed_terms. Nothing new is
+// signed — this is the object protocol_act_signature already covers.
+export const FINAL_OFFER_ACT_FIELDS: readonly string[] = [
+  "protocol_version",
+  "round_number",
+  "sequence_number",
+  "message_type",
+  "timestamp",
+  "expires_at",
+];
 
 export type DidResolver = Record<string, Dict> | ((did: string) => Dict);
 
@@ -96,17 +143,17 @@ export function generateTransactionRecord(session: RecordSession): Dict {
 
   const sessionInitParams = (sessionInit.session_params as Dict) ?? {};
 
-  // basis sits beside currency only when the session fixed one (Section 9.3),
-  // and the version follows it: the record of a session without a basis has no
-  // basis key and is the "0.1" record an implementation that predates basis
-  // generates for the same session.
+  // basis sits beside currency only when the session fixed one (Section 9.3).
+  // Under "0.3" agreed_terms is bound to the offer's signature, so the version
+  // no longer has to encode whether the session fixed a basis; the record still
+  // carries basis exactly when it did, equal to agreed_terms.basis.
   const hasBasis = session.session_params.basis !== undefined;
 
   const record: Dict = {
     record_type: "a2cn_transaction_record",
-    record_version: hasBasis
-      ? TRANSACTION_RECORD_VERSION_WITH_BASIS
-      : TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
+    // Every record this implementation produces carries the act fields, so
+    // every one is "0.3" (Section 9.3).
+    record_version: TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
     record_id: recordId,
     session_id: session.session_id,
     generated_at: generatedAt,
@@ -141,9 +188,18 @@ export function generateTransactionRecord(session: RecordSession): Dict {
       initiating_party_did: (initiatorInfo.did as string) ?? "",
       accepting_party_did: (finalAcceptance.sender_did as string) ?? "",
     },
+    // The accepted offer's signed act, in Section 7.3.1's order. An offer
+    // message carries no protocol_version of its own, so the record states the
+    // wire version its signer hashed the act under.
     final_offer: {
       message_id: (finalOffer.message_id as string) ?? "",
+      protocol_version: PROTOCOL_ACT_VERSION,
+      round_number: finalOffer.round_number ?? null,
+      sequence_number: finalOffer.sequence_number ?? null,
+      message_type: (finalOffer.message_type as string) ?? "",
       sender_did: (finalOffer.sender_did as string) ?? "",
+      timestamp: (finalOffer.timestamp as string) ?? "",
+      expires_at: (finalOffer.expires_at as string) ?? "",
       protocol_act_hash: (finalOffer.protocol_act_hash as string) ?? "",
       protocol_act_signature: (finalOffer.protocol_act_signature as string) ?? "",
     },
@@ -175,39 +231,183 @@ function computeOfferChainHash(offerHashes: string[]): string {
 }
 
 /**
- * Section 9.5 step 1: record_version is exactly one of the recognized strings.
+ * Section 9.5 step 1: the record states the one version a verifier accepts.
  *
- * Absent, null, a number, or a string that differs by so much as a space is
- * rejected rather than parsed.
+ * A value that is no version this implementation knows is unrecognized; absent,
+ * null, a number, or a string that differs by so much as a space is rejected
+ * rather than parsed. A version it does know but cannot rebind is reported as
+ * unbound instead, because the two are different facts: one is a record from
+ * somewhere else, the other a record this implementation once produced and no
+ * longer accepts.
  */
-function recordVersionRecognized(record: Dict): boolean {
+function recordVersionReason(record: Dict): string | null {
   const version = record.record_version;
-  return typeof version === "string" && RECOGNIZED_TRANSACTION_RECORD_VERSIONS.includes(version);
+  if (typeof version === "string" && ACCEPTED_TRANSACTION_RECORD_VERSIONS.includes(version)) {
+    return null;
+  }
+  if (typeof version === "string" && KNOWN_TRANSACTION_RECORD_VERSIONS.includes(version)) {
+    return REASON_UNBOUND_RECORD_VERSION;
+  }
+  return REASON_UNRECOGNIZED_RECORD_VERSION;
+}
+
+function isNonemptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+// typeof already excludes a boolean here; Python must exclude it explicitly, so
+// the two implementations reach the same verdict.
+function isActInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+function isJsonObject(value: unknown): value is Dict {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
- * Section 9.5 step 7: a record carries a top-level basis exactly when it is "0.2".
+ * Rebuild the final offer's Section 7.3.1 act from the record and hash it.
  *
- * A "0.2" record carries basis, as 'net' or 'gross', equal to agreed_terms.basis:
- * agreed_terms is the final offer's terms, which restate the session basis
- * (Section 7.2). A "0.2" record without basis fails whatever agreed_terms holds.
- * A "0.1" record carries no basis key. Presence is by key, so a null counts as
- * carried; a key whose value is undefined is not serialized, so it is not
- * carried. A "0.1" record's agreed_terms.basis is not checked: an implementation
- * that predates the field records it there alone. Step 1 has already limited the
- * version to "0.1" or "0.2".
+ * Returns null when the record carries no well-formed act: a missing or wrongly
+ * typed field leaves nothing to rebuild, and the record fails rather than being
+ * hashed best-effort. The act is rebuilt with the protocol_version the record
+ * carries, not this implementation's, so a record produced under a later wire
+ * version still recomputes.
+ *
+ * The types are checked only so far as the act can be rebuilt and canonicalized
+ * from them. The values are not otherwise constrained: an empty string or a zero
+ * is rebuilt as it stands, because the hash comparison, not a field's length or
+ * floor, is what decides. Both state machines default a missing timestamp or
+ * expires_at to "" when they rebuild an act to check its hash, and neither field
+ * is validated on the wire, so an offer that omits one is signed and recorded
+ * with "" inside the signed act; demanding more here would reject a record whose
+ * signature genuinely covers those bytes.
  */
-function recordBasisMatchesVersion(record: Dict): boolean {
-  if (record.record_version === TRANSACTION_RECORD_VERSION_WITHOUT_BASIS) {
+function finalOfferActHash(record: Dict): string | null {
+  const finalOffer = record.final_offer;
+  if (!isJsonObject(finalOffer)) {
+    return null;
+  }
+  if (
+    !["protocol_version", "message_type", "sender_did", "timestamp", "expires_at"].every((name) =>
+      isString(finalOffer[name]),
+    )
+  ) {
+    return null;
+  }
+  if (!["round_number", "sequence_number"].every((name) => isActInteger(finalOffer[name]))) {
+    return null;
+  }
+  const sessionId = record.session_id;
+  const agreedTerms = record.agreed_terms;
+  if (!isString(sessionId) || !isJsonObject(agreedTerms)) {
+    return null;
+  }
+  return hashObject(
+    protocolActObject({
+      protocol_version: finalOffer.protocol_version as string,
+      session_id: sessionId,
+      round_number: finalOffer.round_number,
+      sequence_number: finalOffer.sequence_number,
+      message_type: finalOffer.message_type,
+      sender_did: finalOffer.sender_did,
+      timestamp: finalOffer.timestamp,
+      expires_at: finalOffer.expires_at,
+      terms: agreedTerms,
+    }),
+  );
+}
+
+/**
+ * Section 9.5 step 3: the record rebuilds the act its signature covers.
+ *
+ * Step 1 has already limited the version to the bound one, so this always runs:
+ * final_offer carries every Section 7.3.1 act field, and the act rebuilt from
+ * the record hashes to the protocol_act_hash the offer's signature covers. Step
+ * 4 then binds agreed_terms to that signature, because the act it was rebuilt
+ * from holds agreed_terms as its terms. Presence is by key, so a null counts as
+ * carried; a key whose value is undefined is not serialized, so it is not
+ * carried. A partial set is refused. Nothing here is newly signed.
+ *
+ * The hash comparison is what carries this check. The count of carried fields is
+ * belt-and-braces: a partial set leaves the rebuild with nothing to read, so it
+ * would fail the comparison anyway.
+ */
+/**
+ * Whether the record carries every Section 7.3.1 act field to rebuild from.
+ *
+ * A record that does not is unbound: there is nothing to rebind it to, whether
+ * because it is an older shape or because a presenter stripped the fields and
+ * relabelled it. Presence is by key.
+ */
+function recordCarriesActFields(record: Dict): boolean {
+  const finalOffer = record.final_offer;
+  if (!isJsonObject(finalOffer)) {
+    return false;
+  }
+  return FINAL_OFFER_ACT_FIELDS.every((name) => finalOffer[name] !== undefined);
+}
+
+function recordActIsBound(record: Dict): boolean {
+  const finalOffer = record.final_offer;
+  if (!isJsonObject(finalOffer)) {
+    return false;
+  }
+  const carried = FINAL_OFFER_ACT_FIELDS.filter((name) => finalOffer[name] !== undefined);
+  if (carried.length !== FINAL_OFFER_ACT_FIELDS.length) {
+    return false;
+  }
+  const expectedHash = finalOfferActHash(record);
+  return expectedHash !== null && expectedHash === finalOffer.protocol_act_hash;
+}
+
+/**
+ * Section 9.5 step 8: the top-level basis is the one that was signed.
+ *
+ * The record carries basis exactly when agreed_terms carries one, and equal to
+ * it. Step 3 has bound agreed_terms to the offering party's signature, so this
+ * reads a signed value. Presence is by key, so a null counts as carried; a key
+ * whose value is undefined is not serialized, so it is not carried.
+ *
+ * Earlier versions meant something else by the same field: a "0.2" record always
+ * carried basis and a "0.1" record never did, because neither could bind
+ * agreed_terms and the version had to encode whether the session fixed one. A
+ * verifier no longer accepts those versions, so those branches are gone rather
+ * than dead.
+ */
+function recordBasisMatches(record: Dict): boolean {
+  const agreedTerms = record.agreed_terms;
+  if (!(isJsonObject(agreedTerms) && (agreedTerms as Dict).basis !== undefined)) {
     return record.basis === undefined;
   }
-  const agreedTerms = record.agreed_terms;
-  const agreedTermsIsObject =
-    agreedTerms !== null && typeof agreedTerms === "object" && !Array.isArray(agreedTerms);
   return (
     SESSION_BASES.includes(record.basis as string) &&
-    agreedTermsIsObject &&
     (agreedTerms as Dict).basis === record.basis
+  );
+}
+
+/**
+ * Section 9.5 step 8: the top-level currency is the one that was signed.
+ *
+ * Step 3 has bound agreed_terms to the offering party's signature, so the
+ * record's currency is held to agreed_terms.currency: a record that states one
+ * currency in its headline and another in the terms that were signed is
+ * rejected. Presence is by key, and both must carry one. The check is
+ * unconditional, because only the bound version is accepted.
+ */
+function recordCurrencyMatches(record: Dict): boolean {
+  const agreedTerms = record.agreed_terms;
+  if (!isJsonObject(agreedTerms)) {
+    return false;
+  }
+  return (
+    record.currency !== undefined &&
+    (agreedTerms as Dict).currency !== undefined &&
+    record.currency === (agreedTerms as Dict).currency
   );
 }
 
@@ -223,9 +423,25 @@ export function verifyTransactionRecord(
   didResolver: DidResolver,
   offerHashes: string[] | null = null,
 ): boolean {
+  return verifyTransactionRecordReason(record, didResolver, offerHashes) === null;
+}
+
+/**
+ * Why a record does not verify (Section 9.5), or null when it does.
+ *
+ * The same arguments as `verifyTransactionRecord`, which is this function's
+ * boolean. The reason is one of the REASON_* constants, so a caller can tell a
+ * record it cannot rebind from one that was tampered with.
+ */
+export function verifyTransactionRecordReason(
+  record: Dict,
+  didResolver: DidResolver,
+  offerHashes: string[] | null = null,
+): string | null {
   try {
-    if (!recordVersionRecognized(record)) {
-      return false;
+    const versionReason = recordVersionReason(record);
+    if (versionReason !== null) {
+      return versionReason;
     }
 
     const finalOffer = record.final_offer as Dict;
@@ -234,20 +450,35 @@ export function verifyTransactionRecord(
     const acceptedHash = finalAcceptance.accepted_protocol_act_hash as string;
 
     if (!recordHashMatches(record)) {
-      return false;
+      return REASON_RECORD_HASH_MISMATCH;
     }
 
-    if (!recordBasisMatchesVersion(record)) {
-      return false;
+    // A record with no act to rebuild is unbound, whatever its label says; one
+    // that carries the act but hashes to something else was tampered with. The
+    // two reasons mean genuinely different things.
+    if (!recordCarriesActFields(record)) {
+      return REASON_UNBOUND_RECORD_VERSION;
+    }
+
+    if (!recordActIsBound(record)) {
+      return REASON_ACT_NOT_RECOMPUTABLE;
+    }
+
+    if (!recordBasisMatches(record)) {
+      return REASON_BASIS_MISMATCH;
+    }
+
+    if (!recordCurrencyMatches(record)) {
+      return REASON_CURRENCY_MISMATCH;
     }
 
     if (acceptedHash !== offerHash) {
-      return false;
+      return REASON_ACCEPTED_HASH_MISMATCH;
     }
 
     const chainHashes = offerHashes !== null ? offerHashes : [offerHash];
     if (record.offer_chain_hash !== computeOfferChainHash(chainHashes)) {
-      return false;
+      return REASON_OFFER_CHAIN_HASH_MISMATCH;
     }
 
     if (
@@ -257,7 +488,7 @@ export function verifyTransactionRecord(
         expectedPayload: offerHash,
       })
     ) {
-      return false;
+      return REASON_OFFER_SIGNATURE_INVALID;
     }
 
     if (
@@ -273,12 +504,12 @@ export function verifyTransactionRecord(
         }),
       })
     ) {
-      return false;
+      return REASON_ACCEPTANCE_SIGNATURE_INVALID;
     }
 
-    return true;
+    return null;
   } catch {
-    return false;
+    return REASON_MALFORMED_RECORD;
   }
 }
 
@@ -306,7 +537,20 @@ function verifyRecordSignature(
   const didDocument = resolveDidDocument(didResolver, did);
   const vm = getVerificationMethod(didDocument, verificationMethod);
   const publicKey = getPublicKey(vm);
-  const signedPayload = verifyJws(signature, publicKey);
+  // verifyJws throws on bad signature bytes. That is this check failing, not
+  // the record being unreadable, so it is caught here and the caller reports
+  // the signature reason. An unresolvable DID or a missing verification method
+  // is a different thing and still reaches the outer handler as a malformed
+  // record.
+  let signedPayload: string;
+  try {
+    signedPayload = verifyJws(signature, publicKey);
+  } catch (exc) {
+    if (exc instanceof InvalidSignatureError) {
+      return false;
+    }
+    throw exc;
+  }
   return expectedPayload === null || signedPayload === expectedPayload;
 }
 

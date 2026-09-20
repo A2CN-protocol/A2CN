@@ -1759,13 +1759,14 @@ reads or local state that could differ between parties.
 
 ### 9.3 Transaction Record Structure
 
-Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`)
-and `spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`)
+Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`),
+`spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`), and
+`spec/schemas/transaction-record-0.3.schema.json` (`"0.3"`)
 
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.1 | 0.2",
+  "record_version": "0.1 | 0.2 | 0.3",
   "record_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -1802,7 +1803,13 @@ and `spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`)
   },
   "final_offer": {
     "message_id": "string",
+    "protocol_version": "string",
+    "round_number": "integer",
+    "sequence_number": "integer",
+    "message_type": "string",
     "sender_did": "string",
+    "timestamp": "string",
+    "expires_at": "string",
     "protocol_act_hash": "string",
     "protocol_act_signature": "string"
   },
@@ -1820,17 +1827,20 @@ and `spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`)
 }
 ```
 
-**`record_version`** — `"0.1"` or `"0.2"`, following the record's content. A
-producer MUST emit `"0.2"` exactly when the record carries the top-level `basis`
-below, that is, when the session fixed a basis, and `"0.1"` otherwise. The
-record of a session that fixed no basis is therefore byte-identical to the
-`"0.1"` record an implementation that predates `basis` generates, so every
-party derives the same record for it whichever version its implementation is
-(Section 9.2). In a session that fixed a basis, a party whose implementation
-predates `basis` and passes it through generates a `"0.1"` record without the
-top-level `basis`, and a current party generates a `"0.2"` record with it, so
-the difference between the two records is explicit in `record_version`. A
-verifier accepts both versions and holds each to its shape (Section 9.5). The
+**`record_version`** — `"0.3"`. A producer MUST emit `"0.3"`, which it can
+always do, because `final_offer` carries the protocol act fields below. `"0.2"`
+and `"0.1"` describe what earlier producers emitted — a record carrying the
+top-level `basis` and no act fields, and one carrying neither — and a verifier
+**does not accept them** (Section 9.5, step 1). Their schema files stay
+published, so a reader can still parse and inspect such a record; parsing it is
+not accepting it.
+
+Two parties on the same version derive the same record for a session, byte for
+byte (Section 9.2). A party whose implementation predates the act fields
+produces a record that no conformant verifier will accept, so the disagreement
+surfaces as a refusal rather than as a quietly weaker artifact. The record of a
+session that fixed no basis is no longer byte-identical to the `"0.1"` record
+produced before the act fields existed, because it now carries them. The
 TransactionRecord version is independent of the SessionEvidenceRecord and
 AuditLog versions.
 
@@ -1860,16 +1870,48 @@ parties derive this from the same protocol message, ensuring identical values.
 **`basis`** — A producer MUST include `basis` exactly when the session fixed a
 basis, that is, when the SessionAck's `session_params_accepted` carries `basis`
 (Sections 6.3.1 and 6.4.1), and MUST set it to that value; otherwise it MUST
-omit the key. A record that carries `basis` is a `"0.2"` record, and a `"0.2"`
-record always carries it. It MUST equal `agreed_terms.basis`, which the final
-offer carried inside its signed terms (Section 7.2). A record without `basis`
-is a `"0.1"` record: the record of a session that fixed no basis, or the record
-an implementation that predates `basis` produces (see `record_version` above).
+omit the key. It MUST equal `agreed_terms.basis`, which the final offer carried
+inside its signed terms (Section 7.2). In a `"0.3"` record, `agreed_terms` is
+bound to that signature (step 3 of Section 9.5), so `basis` is present exactly
+when `agreed_terms.basis` is, and the version need not encode whether the
+session fixed one. In a `"0.2"` record `basis` is always present and in a
+`"0.1"` record never, because those versions had no other way to say it.
+
+**`currency`** — The session currency (Section 6.3.1). In a `"0.3"` record it
+MUST equal `agreed_terms.currency`, which the final offer carried inside its
+signed terms (Section 7.2), so the record's headline currency is the one that
+was signed; Section 9.5 step 8 checks it. In a `"0.1"` or `"0.2"` record it is
+not checked, because per-offer currency consistency was only required from the
+version that added `terms.basis`.
+
+**`deal_type`, `subject` and `subject_reference`** — Producer-stated, and covered
+by neither signature. They are derived from the SessionInit, which no signed
+protocol act contains, so `record_hash` seals them against later edits but
+nothing ties them to either party: a producer that stated them differently would
+still produce a record that verifies. `currency` and `basis` in a `"0.3"` record
+are different only because each is *also* carried inside the signed terms, where
+step 8 can check it. Binding the rest would require the session establishment
+itself to be signed, which is a larger change than this record version makes.
 
 **`final_offer`** — Contains fields from the accepted Offer message, regardless of
 which party sent it. This replaces the v0.1-draft's party-role-specific
 `initiator_offer_signature` field, which was incorrect when the responder made
 the final accepted offer.
+
+Beside `message_id`, `sender_did`, `protocol_act_hash` and
+`protocol_act_signature`, a `"0.3"` record's `final_offer` carries the remaining
+fields of the protocol act object that `protocol_act_signature` covers
+(Section 7.3.1): `protocol_version`, `round_number`, `sequence_number`,
+`message_type`, `timestamp` and `expires_at`, each copied verbatim from the
+accepted offer, except `protocol_version`, which an offer message does not
+carry and which states the wire version the act was hashed under. Together with
+`session_id` at the record's top level and `agreed_terms` as the act's `terms`,
+they let a reader rebuild the signed act from the record and recompute its hash
+(Section 9.5, step 3), which is what binds `agreed_terms` to the offering
+party's signature. **Nothing new is signed.** The protocol act object of
+Section 7.3.1, the signing procedure of Section 7.3.2, and every wire message
+are unchanged; the record simply carries the rest of an object it already
+carried the hash of.
 
 **`final_acceptance`** — Contains fields from the Acceptance message.
 
@@ -1886,24 +1928,92 @@ Using JCS-serialized array eliminates the ambiguity of bare concatenation.
 ### 9.5 Record Verification
 
 Any party verifying a transaction record MUST:
-1. Verify that `record_version` is `"0.1"` or `"0.2"`, and reject the record
-   otherwise, including when `record_version` is absent or not a string. A
-   verifier MUST NOT attempt best-effort parsing of any other version. Steps 2
-   to 6 are the same for both versions; step 7 holds each version to its shape.
+1. Verify that `record_version` is `"0.3"`, and reject the record otherwise. A
+   verifier MUST NOT attempt best-effort parsing of any other value.
+
+   `record_version` is covered by no signature. A verifier therefore refuses any
+   version whose records it cannot rebind, rather than trusting the label: if an
+   unbound version were accepted, a presenter could take a bound record, strip
+   the act fields from `final_offer`, relabel the record to that version, alter
+   `agreed_terms` and recompute `record_hash`. Both signatures would still
+   verify and the record would keep its `record_id`, so the forgery would be
+   reported as genuine. There is no accepted tier in which that is possible.
+
+   Two rejections are distinguished, because they are different facts. A record
+   whose version this implementation knows but cannot rebind — `"0.1"`, `"0.2"`,
+   or a `"0.3"` record whose `final_offer` does not carry every act field — is
+   refused as **unbound**. Any other value, including one that is absent, `null`,
+   a number, or a string differing by so much as a space, is refused as
+   **unrecognized**. Reporting the reason is RECOMMENDED; the reason codes are a
+   library concern and are not wire error codes (Section 12.3).
+
+   This is a deliberate break. Records produced before the act fields existed no
+   longer verify and must be regenerated. Such a record never gave a third party
+   proof of what was agreed — nothing bound its `agreed_terms` to a signature —
+   so accepting it cleanly was the misleading behaviour. Steps 2
+   and 4 to 7 are the same for every version; steps 3 and 8 hold each version to
+   its shape.
 2. Compute `record_hash` independently and compare
-3. Verify `final_offer.protocol_act_signature` against the offering party's key
-4. Verify `final_acceptance.acceptance_signature` against the accepting party's key
-5. Verify `final_acceptance.accepted_protocol_act_hash` matches
+3. Verify that `final_offer` carries the protocol act fields — `protocol_version`,
+   `round_number`, `sequence_number`, `message_type`, `timestamp`, `expires_at` —
+   exactly when `record_version` is `"0.3"`. Presence is by key: a `"0.3"` record
+   MUST carry all six and a `"0.1"` or `"0.2"` record none of them, so a partial
+   set is rejected rather than read as far as it goes. For a `"0.3"` record,
+   reconstruct the protocol act object of Section 7.3.1 from the record — those
+   six fields and `sender_did` from `final_offer`, `session_id` from the record's
+   top level, and `terms` from `agreed_terms` — compute its hash exactly as
+   Section 7.3.2 step 3 does, and verify that it equals
+   `final_offer.protocol_act_hash`. Reconstruct it with the `protocol_version`
+   the record carries, not the verifier's own, so that a record produced under a
+   later wire version still recomputes. Reject the record unless every field can
+   be canonicalized into the act: `round_number` and `sequence_number` integers
+   and not booleans, `protocol_version`, `message_type`, `sender_did`,
+   `timestamp`, `expires_at` and `session_id` strings, and `agreed_terms` an
+   object. The values are not otherwise constrained: an empty string or a zero is
+   rebuilt as it stands, because the hash comparison, not a field's length or a
+   floor, is what decides. A verifier MUST NOT demand more of them, because an
+   offer may be signed over an empty `timestamp` or `expires_at` — neither is
+   validated on the wire, and a receiver rebuilding the act defaults a missing
+   one to `""` (Section 7.3.1) — and rejecting such a record would reject one
+   whose signature genuinely covers those bytes. Nothing here is newly signed —
+   this is the object `final_offer.protocol_act_signature` already covers — so
+   step 4 then binds `agreed_terms` to that signature.
+4. Verify `final_offer.protocol_act_signature` against the offering party's key
+5. Verify `final_acceptance.acceptance_signature` against the accepting party's key
+6. Verify `final_acceptance.accepted_protocol_act_hash` matches
    `final_offer.protocol_act_hash`
-6. Recompute `offer_chain_hash` from the session message history and compare
-7. Verify that the record carries a top-level `basis` exactly when its
-   `record_version` is `"0.2"`; presence is by key, so a `basis` whose value is
-   `null` counts as carried. For a `"0.2"` record, verify that `basis` is `net`
-   or `gross` and that `agreed_terms` is an object whose `basis` is present and
-   equal to it; a `"0.2"` record without `basis` is rejected, whatever
-   `agreed_terms` holds. For a `"0.1"` record, verify that it has no top-level
-   `basis` key. A `"0.1"` record's `agreed_terms.basis` is not checked, because
-   an implementation that predates the field records it there alone.
+7. Recompute `offer_chain_hash` from the session message history and compare
+8. Verify the top-level `basis` against the record's version; presence is by key,
+   so a `basis` whose value is `null` counts as carried.
+   - `"0.1"`: verify that the record has no top-level `basis` key. Its
+     `agreed_terms.basis` is not checked, because an implementation that predates
+     the field records it there alone.
+   - `"0.2"`: verify that `basis` is present, is `net` or `gross`, and that
+     `agreed_terms` is an object whose `basis` is present and equal to it. A
+     `"0.2"` record without `basis` is rejected, whatever `agreed_terms` holds.
+   - `"0.3"`: verify that `basis` is present if and only if `agreed_terms.basis`
+     is, and, when present, that it is `net` or `gross` and equal to
+     `agreed_terms.basis`. Step 3 has bound `agreed_terms` to the offering
+     party's signature, so that presence is signature-backed and the version no
+     longer has to encode it. Verify also that the top-level `currency` and
+     `agreed_terms.currency` are both present and equal, so that the record's
+     headline currency is the one the offering party signed. A `"0.1"` or
+     `"0.2"` record's `currency` MUST NOT be checked this way: per-offer
+     currency consistency was only required from the version that added
+     `terms.basis` (Section 7.2), so an older genuine record may legitimately
+     differ, and a verifier must not begin rejecting records that verified
+     before.
+
+Both sides of a `"0.3"` record are recomputable from the record alone. The
+offering party's signature covers the protocol act step 3 rebuilds, whose `terms`
+are `agreed_terms`; the accepting party's signature covers the payload of
+Section 7.4, whose five fields the record has always carried — `session_id` at
+the top level and `round_number`, `sequence_number`, `accepted_offer_id` and
+`accepted_protocol_act_hash` in `final_acceptance`. A third party can therefore
+rebuild both signed objects and check both signatures against the record's own
+content, without the original messages. A record whose `agreed_terms` differ
+from the terms that were signed fails step 3 even when `record_hash` has been
+recomputed and both signatures still verify.
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
@@ -4544,8 +4654,9 @@ schemas. The following schema files are defined:
 | `rejection.schema.json` | Rejection |
 | `withdrawal.schema.json` | Withdrawal |
 | `timeout-notification.schema.json` | Timeout notification |
-| `transaction-record.schema.json` | Transaction record, `record_version` `"0.1"` |
-| `transaction-record-0.2.schema.json` | Transaction record, `record_version` `"0.2"` |
+| `transaction-record.schema.json` | Transaction record, `record_version` `"0.1"` — historical shape, not accepted for verification |
+| `transaction-record-0.2.schema.json` | Transaction record, `record_version` `"0.2"` — historical shape, not accepted for verification |
+| `transaction-record-0.3.schema.json` | Transaction record, `record_version` `"0.3"` |
 | `session-evidence-record.schema.json` | Session Evidence Record, `record_version` `"0.1"` |
 | `session-evidence-record-0.2.schema.json` | Session Evidence Record, `record_version` `"0.2"` |
 | `session-evidence-record-0.3.schema.json` | Session Evidence Record, `record_version` `"0.3"` |
@@ -4555,9 +4666,25 @@ schemas. The following schema files are defined:
 
 A record artifact's unversioned schema file describes its `"0.1"` version. Each
 later version is published beside it as `<name>-<version>.schema.json`, and a
-published schema file is never rewritten, so a verifier that accepts several
-versions finds the schema of each. A record schema's `$id` ends in the
+published schema file is never rewritten, so a reader finds the schema of every
+version an implementation has ever produced. A record schema's `$id` ends in the
 `record_version` it describes.
+
+A published schema outlives the acceptance of the shape it describes. The
+TransactionRecord `"0.1"` and `"0.2"` files remain here so that a record from
+before Section 9.5's binding can still be parsed and inspected, but no verifier
+accepts such a record (Section 9.5, step 1). Parsing a shape is not accepting
+it.
+
+A record schema constrains what a conformant **producer** emits, and may be
+stricter than what a **verifier** accepts. Verification is defined by the rules
+of the artifact's own section, not by these files: a `"0.3"` TransactionRecord
+whose protocol act was genuinely signed over an empty `timestamp` or
+`expires_at`, or over a zero `round_number`, rebinds under Section 9.5 step 3,
+which decides on the rebuilt act's hash rather than on field lengths or floors,
+even though `transaction-record-0.3.schema.json` refuses those values. The
+reverse does not hold: an implementation MUST NOT emit a record that its own
+version's schema rejects.
 
 Schemas are **normative** as of v0.1.2. Conformant implementations MUST produce
 messages that validate against these schemas.
