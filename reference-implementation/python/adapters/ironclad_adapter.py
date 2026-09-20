@@ -27,16 +27,15 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from a2cn.line_items import to_minor_units
+
 
 _SAAS_KEYWORDS = frozenset({"renewal", "subscription", "license", "seat", "saas"})
 
 
 def _money_to_cents(value: Any) -> int:
-    if value is None or value == "":
-        return 0
-    if isinstance(value, dict):
-        value = value.get("amount", 0)
-    return int(float(value) * 100)
+    """This platform's decimal amounts, in the integer minor units A2CN carries."""
+    return to_minor_units(value)
 
 
 def _int_value(value: Any, default: int = 0) -> int:
@@ -178,10 +177,10 @@ class IroncladWebhookParser:
                 {
                     "description": product,
                     "quantity": seat_count if deal_type == "saas_renewal" else 1,
-                    "unit_price": int(total_cents / max(seat_count, 1))
+                    "unit_price_minor": int(total_cents / max(seat_count, 1))
                     if deal_type == "saas_renewal"
                     else total_cents,
-                    "total": total_cents,
+                    "total_minor": total_cents,
                 }
             ],
             "payment_terms": {

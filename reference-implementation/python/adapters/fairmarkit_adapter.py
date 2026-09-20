@@ -13,6 +13,8 @@ Fairmarkit API reference:
 
 from __future__ import annotations
 
+from a2cn.line_items import require_minor, to_minor_units
+
 
 class FairmakitEventParser:
 
@@ -67,15 +69,15 @@ class FairmakitEventParser:
 
         for item in items:
             qty = float(item.get("quantity", 1))
-            unit_price_cents = int(float(item.get("unit_price", 0)) * 100)
+            unit_price_cents = to_minor_units(item.get("unit_price"))
             line_total = int(qty * unit_price_cents)
             total_cents += line_total
 
             line_item: dict = {
                 "description": item.get("description", ""),
                 "quantity": int(qty),
-                "unit_price": unit_price_cents,
-                "total": line_total,
+                "unit_price_minor": unit_price_cents,
+                "total_minor": line_total,
                 "unit_of_measure": item.get("uom", "EA"),
             }
             if item.get("mfg_part_number"):
@@ -114,8 +116,8 @@ class FairmakitEventParser:
             response_items.append({
                 "description": item.get("description", ""),
                 "quantity": item.get("quantity", 1),
-                "unit_price": item.get("unit_price", 0) / 100.0,
-                "total_price": item.get("total", 0) / 100.0,
+                "unit_price": require_minor(item, "unit_price_minor") / 100.0,
+                "total_price": require_minor(item, "total_minor") / 100.0,
                 "uom": item.get("unit_of_measure", "EA"),
                 "manufacturer_part_number": item.get("manufacturer_part_number", ""),
                 "internal_part_number": item.get("internal_part_number", ""),

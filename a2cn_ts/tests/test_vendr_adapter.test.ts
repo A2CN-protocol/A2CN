@@ -54,7 +54,7 @@ describe("VendrPricingToA2CNTerms", () => {
     const terms = vendrPricingToA2cnTerms(SAMPLE_VENDR_PRICING);
 
     // $1200 list * 20% midpoint discount = $960 per seat.
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(96_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(96_000);
     expect(terms.total_value).toBe(9_600_000);
   });
 
@@ -78,7 +78,7 @@ describe("VendrPricingToA2CNTerms", () => {
 
     const terms = vendrPricingToA2cnTerms(pricing);
 
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(85_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(85_000);
     expect(terms.total_value).toBe(850_000);
   });
 
@@ -90,7 +90,7 @@ describe("VendrPricingToA2CNTerms", () => {
       observed_discount: 0.25,
     });
 
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(150_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(150_000);
     expect(terms.total_value).toBe(750_000);
     expect(((terms.custom_terms as Dict).vendr as Dict).observed_discount).toBe(0.25);
   });

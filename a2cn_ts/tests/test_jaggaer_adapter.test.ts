@@ -108,8 +108,8 @@ describe("JaggaerEventParser", () => {
     expect(terms.currency).toBe("USD");
     expect(terms.delivery_days).toBe(21);
     expect((terms.payment_terms as Dict).net_days).toBe(45);
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(36_000);
-    expect((terms.line_items as Dict[])[0].total).toBe(1_800_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(36_000);
+    expect((terms.line_items as Dict[])[0].total_minor).toBe(1_800_000);
     expect(terms.total_value).toBe(1_970_000);
     expect(validateDealTypeTerms("goods_procurement", terms)).toEqual([]);
   });
@@ -163,8 +163,8 @@ describe("JaggaerEventParser", () => {
 
     const terms = JaggaerEventParser.sourcingEventToGoodsProcurementTerms(event);
 
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(10_000);
-    expect((terms.line_items as Dict[])[0].total).toBe(27_500);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(10_000);
+    expect((terms.line_items as Dict[])[0].total_minor).toBe(27_500);
     expect(terms.total_value).toBe(27_500);
   });
 });

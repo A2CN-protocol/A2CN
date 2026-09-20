@@ -35,6 +35,8 @@ from datetime import date
 
 import httpx
 
+from a2cn.line_items import require_minor
+
 
 class NueEventParser:
     """
@@ -264,7 +266,7 @@ class NueEventParser:
                 {
                     "productId": product_id,
                     "quantity": item.get("quantity", 1),
-                    "unitPrice": item.get("unit_price", 0) / 100.0,
+                    "unitPrice": require_minor(item, "unit_price_minor") / 100.0,
                     "term": term_months,
                 }
                 for item in line_items

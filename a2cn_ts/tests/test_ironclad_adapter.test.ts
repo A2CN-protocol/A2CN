@@ -114,7 +114,9 @@ describe("IroncladWebhookParser", () => {
     expect((parsed.session_params as Dict).deal_type).toBe("goods_procurement");
     expect((parsed.initial_terms as Dict).currency).toBe("EUR");
     expect((parsed.initial_terms as Dict).delivery_days).toBe(21);
-    expect(((parsed.initial_terms as Dict).line_items as Dict[])[0].unit_price).toBe(1_800_000);
+    expect(((parsed.initial_terms as Dict).line_items as Dict[])[0].unit_price_minor).toBe(
+      1_800_000,
+    );
     expect(validateDealTypeTerms("goods_procurement", parsed.initial_terms as Dict)).toEqual([]);
   });
 

@@ -1,0 +1,31 @@
+{
+  "id": "offer_line_item_uses_bare_money_key",
+  "status": "active",
+  "summary": "An offer states a line item's money under the bare names unit_price and total instead of the pinned integer minor-unit keys.",
+  "given": {
+    "session_state": "ACTIVE",
+    "session_params": {
+      "currency": "USD"
+    },
+    "offer": {
+      "message_type": "offer",
+      "terms": {
+        "total_value": 1800000,
+        "currency": "USD",
+        "line_items": [
+          {
+            "description": "Hydraulic fluid 200L drums",
+            "quantity": 50,
+            "unit_price": 360,
+            "total": 18000
+          }
+        ]
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "INVALID_LINE_ITEM",
+    "reason": "A line item states its money as integer minor units under unit_price_minor and total_minor (Section 7.2). The bare names are refused rather than read, because the two conventions differ by a factor of one hundred and nothing in the message says which was meant: read as minor units these lines are $3.60 and $180.00, against the $360.00 and $18,000.00 the header's total_value of 1800000 shows the sender intended. A receiver that guessed would agree with the sender about every number and disagree about every amount."
+  }
+}

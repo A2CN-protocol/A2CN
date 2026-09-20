@@ -20,6 +20,75 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+**Line-item money keys are pinned, and the bare spellings are now rejected
+(wire-visible).**
+
+**This breaks offers that were previously accepted.** A `terms.line_items`
+entry now states its money as integer minor units under `unit_price_minor` and
+`total_minor`, both REQUIRED, and a receiver refuses the bare names
+`unit_price` and `total` with the new `INVALID_LINE_ITEM` error (Section 12.3)
+rather than coercing, scaling, or reinterpreting them. An offer of the shape
+Section 7.2's own example used to show is invalid after this change, and a peer
+that has not updated has its offers rejected.
+
+Refusing beats accepting both spellings because of the size of the mistake.
+Section 7.2's prose showed `unit_price` / `total` while A2CN's verification
+tooling reconciled `unit_price_minor` / `total_minor`, and both were valid,
+because no offer schema existed to pin either. The two conventions differ by a
+factor of one hundred, so two conforming implementations agreed about every
+number in a message and disagreed about every amount, with nothing in the
+message to say so. Accepting both spellings would have preserved exactly that.
+
+`spec/schemas/offer.schema.json` is published for the first time; Section 17's
+table has always listed it. Its `$id` is `https://a2cn.dev/schemas/offer/0.2`,
+the wire version. The message object and the `terms` object stay open, and so
+does the line item apart from the two refused names, so deal-type terms
+extensions (`spec/schemas/terms/`) and platform identifiers still pass through.
+
+Both reference implementations emit and read the pinned keys throughout — the
+platform adapters, the examples, and the demos. Every read of a line item's
+money goes through one helper per language (`a2cn/line_items.py`,
+`a2cn_ts/src/a2cn/line_items.ts`), which refuses a missing or malformed amount
+instead of defaulting it: the previous `unit_price` lookups defaulted to `0`,
+turning a line that said nothing about money into one that said the price was
+zero. A refusal is an `A2CNError` carrying `INVALID_LINE_ITEM`, not a bare
+`ValueError`, so a caller sees a protocol code rather than a crash. The error
+class moved to `a2cn/errors.py` (`errors.ts`) so that modules below the state
+machine can raise one without an import cycle; `a2cn.session` re-exports it, so
+every existing import is unaffected.
+
+**A pinned amount is an integer value, not a JSON spelling.** RFC 8785 makes
+`36000` and `36000.0` the same number, and a parser that holds every number as a
+binary64 double cannot tell them apart once parsed — so a rule written over JSON
+types would have had one implementation refuse exactly what the other accepted,
+and a trailing `.0` is how a decimal or money type commonly serialises. Both
+implementations and the schema now accept any integral number and refuse a
+fractional one, a non-finite one, a decimal string, and a boolean. `-0.0`
+normalises to `0`. Magnitudes are bounded by `9007199254740991` (2^53 − 1), past
+which a double cannot represent adjacent integers distinctly and one document
+could be read as two different amounts. `quantity` is non-negative: a refund is
+a negative price, not a negative count.
+
+**Amounts convert half away from zero, not half up.**
+`sign(v) * floor(abs(v) * 100 + 0.5)` replaces the earlier scale-and-round-up,
+because a debit and the credit that offsets it have to cancel: under half-up,
+`2.675` and `-2.675` became `268` and `-267`, leaving a minor unit behind on
+every offsetting pair, and a negative line is exactly what a credit or rebate
+states. A vendor amount must also now be a decimal figure rather than whatever
+each language's parser happens to take: hexadecimal, octal and binary literals,
+underscore separators, exponent text, non-ASCII digits, `NaN` and `Infinity` are
+refused in both, and a money object falls through from a present-but-null
+`amount` to `value` in both. Several of those spellings previously converted to
+different amounts in the two languages, or to a number in one and an exception
+in the other.
+
+Rounding to nearest still does not make the conversion exact. Exactness needs
+the source amount as a decimal string, because once a float exists the decimal
+the vendor wrote is already gone; that remains a separate change.
+
+`protocol_version` stays `"0.2"`. Whether pinning a key name should move the
+wire version is an open question; this change does not settle it.
+
 **Session Evidence Record extensions, at `record_version` `"0.2"`
 (wire-compatible with 0.2; no signature changes).**
 

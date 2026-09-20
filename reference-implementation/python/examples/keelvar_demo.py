@@ -343,11 +343,11 @@ async def main() -> None:
         scale = supplier_counter_value / max(buyer_benchmark, 1)
         supplier_line_items = []
         for li in initial_terms["line_items"]:
-            new_unit = int(li["unit_price"] * scale)
+            new_unit = int(li["unit_price_minor"] * scale)
             supplier_line_items.append({
                 **li,
-                "unit_price": new_unit,
-                "total": li["quantity"] * new_unit,
+                "unit_price_minor": new_unit,
+                "total_minor": li["quantity"] * new_unit,
             })
 
         terms_r2 = {
@@ -409,11 +409,11 @@ async def main() -> None:
         scale2 = final_value / max(buyer_benchmark, 1)
         buyer_r3_line_items = []
         for li in initial_terms["line_items"]:
-            new_unit = int(li["unit_price"] * scale2)
+            new_unit = int(li["unit_price_minor"] * scale2)
             buyer_r3_line_items.append({
                 **li,
-                "unit_price": new_unit,
-                "total": li["quantity"] * new_unit,
+                "unit_price_minor": new_unit,
+                "total_minor": li["quantity"] * new_unit,
             })
 
         terms_r3 = {

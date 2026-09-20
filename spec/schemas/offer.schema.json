@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/offer/0.2",
+  "title": "A2CN Offer / Counteroffer",
+  "description": "The Section 7.1 protocol act that carries terms: message_type \"offer\" in round 1 and \"counteroffer\" in rounds 2 and beyond. The message object and the terms object stay open, so deal-type terms extensions (spec/schemas/terms/) and vendor fields pass through. The one place this schema closes is the spelling of a line item's two money figures.",
+  "type": "object",
+  "required": [
+    "message_type",
+    "message_id",
+    "session_id",
+    "round_number",
+    "sequence_number",
+    "sender_did",
+    "sender_verification_method",
+    "timestamp",
+    "expires_at",
+    "terms",
+    "protocol_act_hash",
+    "protocol_act_signature"
+  ],
+  "properties": {
+    "message_type": {
+      "type": "string",
+      "enum": ["offer", "counteroffer"],
+      "description": "\"offer\" for round 1, \"counteroffer\" for rounds 2 and beyond (Section 7.1)"
+    },
+    "message_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "in_reply_to": {
+      "type": "string",
+      "description": "The message_id of the most recent offer or counteroffer received from the other party. REQUIRED after round 1, and absent in round 1 (Section 7.1)."
+    },
+    "round_number": { "type": "integer", "minimum": 1 },
+    "sequence_number": { "type": "integer", "minimum": 1 },
+    "sender_did": { "type": "string", "pattern": "^did:" },
+    "sender_agent_id": { "type": "string" },
+    "sender_verification_method": {
+      "type": "string",
+      "minLength": 1,
+      "description": "DID URL of the verification method used to sign this message (Section 7.1)"
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "MUST be after timestamp and MUST NOT exceed timestamp plus the session's round_timeout_seconds (Section 7.1)"
+    },
+    "protocol_version": { "type": "string" },
+    "protocol_act_hash": { "type": "string", "minLength": 1 },
+    "protocol_act_signature": { "type": "string", "minLength": 1 },
+    "terms": {
+      "type": "object",
+      "description": "Section 7.2. Open on purpose: a deal type adds its own members here (spec/schemas/terms/goods_procurement.schema.json, spec/schemas/terms/saas_renewal.schema.json), and the TransactionRecord carries this object unchanged as agreed_terms.",
+      "required": ["total_value", "currency"],
+      "properties": {
+        "total_value": {
+          "type": "integer",
+          "description": "Total monetary value in the smallest unit of terms.currency (Section 7.2)"
+        },
+        "currency": {
+          "type": "string",
+          "description": "MUST equal the session's negotiated currency; a difference is SESSION_PARAM_CHANGED (Section 7.2)"
+        },
+        "basis": {
+          "type": "string",
+          "enum": ["net", "gross"],
+          "description": "The money basis of the offer's amounts. Present exactly when the session fixed a basis (Sections 6.3.1, 7.2); no other value is valid, including null."
+        },
+        "payment_terms": { "type": "object" },
+        "delivery_terms": { "type": "object" },
+        "contract_duration": { "type": "object" },
+        "sla": { "type": "object" },
+        "custom_terms": { "type": "object" },
+        "line_items": {
+          "type": "array",
+          "description": "Optional. When present, every entry is a priced line stating its money in integer minor units (Section 7.2).",
+          "items": {
+            "type": "object",
+            "description": "A priced line. Its two money figures are integer MINOR units of terms.currency: unit_price_minor and total_minor, both REQUIRED. The bare names unit_price and total are refused by propertyNames rather than simply left undeclared, because this object stays OPEN — a deal type extends it (goods_procurement adds manufacturer_part_number, internal_part_number and unit_of_measure) and a blanket additionalProperties:false would reject those extensions too. The refusal is by name because the two conventions differ by a factor of one hundred: a receiver that read a bare unit_price as minor units, or a pinned unit_price_minor as major units, would agree with the sender about the number and disagree about the amount, and nothing in the message would say so.",
+            "required": ["unit_price_minor", "total_minor"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string" },
+              "quantity": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "description": "A whole number of the stated unit, and never negative: a refund is a negative price, not a negative count. For fractional quantities, use the appropriate smaller unit and say so in unit (Section 7.2)."
+              },
+              "unit": { "type": "string" },
+              "unit_of_measure": {
+                "type": "string",
+                "description": "Line-item UOM code (e.g. EA, KG). goods_procurement deal-type extension."
+              },
+              "sku": { "type": "string" },
+              "manufacturer_part_number": {
+                "type": "string",
+                "description": "goods_procurement deal-type extension"
+              },
+              "internal_part_number": {
+                "type": "string",
+                "description": "goods_procurement deal-type extension"
+              },
+              "unit_price_minor": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "Price of one unit, in integer minor units of terms.currency. An integer VALUE, not a particular spelling: RFC 8785 makes 36000 and 36000.0 the same number and both are valid, while a value with a fractional part is not, and neither is a decimal string or a boolean. Bounded by the safe-integer range, past which a double cannot separate adjacent integers and two implementations could read one document as two different amounts."
+              },
+              "total_minor": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "This line's total, in integer minor units of terms.currency, an integer value on the same terms as unit_price_minor."
+              }
+            },
+            "propertyNames": {
+              "not": { "enum": ["unit_price", "total"] },
+              "description": "unit_price and total are the bare spellings this schema pins out. State the amounts as unit_price_minor and total_minor."
+            }
+          }
+        }
+      }
+    }
+  }
+}

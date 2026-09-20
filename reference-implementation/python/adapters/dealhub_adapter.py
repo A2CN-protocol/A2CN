@@ -33,6 +33,8 @@ import os
 
 import httpx
 
+from a2cn.line_items import to_minor_units
+
 
 _SUBSCRIPTION_KEYWORDS = frozenset({"license", "subscription", "seat"})
 
@@ -188,15 +190,15 @@ class DealHubEventParser:
         for item in items_raw:
             product_name = str(item.get(fm["product_name_field"], ""))
             qty = int(float(item.get(fm["quantity_field"], 1)))
-            unit_price_cents = int(float(item.get(fm["unit_price_field"], 0)) * 100)
+            unit_price_cents = to_minor_units(item.get(fm["unit_price_field"]))
             line_total = qty * unit_price_cents
             total_cents += line_total
 
             entry: dict = {
                 "description": product_name,
                 "quantity": qty,
-                "unit_price": unit_price_cents,
-                "total": line_total,
+                "unit_price_minor": unit_price_cents,
+                "total_minor": line_total,
             }
             uom = item.get(fm["unit_of_measure_field"])
             if uom:
@@ -204,7 +206,7 @@ class DealHubEventParser:
             line_items.append(entry)
 
         # Fall back to top-level total_price when line items carry no prices
-        total_from_header = int(float(quote_response.get(fm["total_value_field"], 0)) * 100)
+        total_from_header = to_minor_units(quote_response.get(fm["total_value_field"]))
         total_cents = total_cents or total_from_header
 
         currency = str(quote_response.get(fm["currency_field"], "USD"))
@@ -291,7 +293,7 @@ class DealHubEventParser:
 
         # FIELD NOTE: total_price field name should be verified against a live
         # DealHub sandbox. Contact DealHub support for exact simulate response schema.
-        ceiling_cents = int(float(data.get("total_price", 0)) * 100)
+        ceiling_cents = to_minor_units(data.get("total_price"))
         floor_cents = int(ceiling_cents * (1.0 - floor_discount_pct))
 
         return {

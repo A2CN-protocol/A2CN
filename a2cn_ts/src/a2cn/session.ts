@@ -11,7 +11,12 @@
 
 import { hashObject, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
+import { A2CNError, now } from "./errors.js";
+import { lineItemKeyViolations } from "./line_items.js";
 import type { Dict } from "./messages.js";
+
+// Re-exported: see the note beside their old home further down this file.
+export { A2CNError, now };
 
 // ---------------------------------------------------------------------------
 // States (Section 8.2)
@@ -223,7 +228,45 @@ export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): ass
 }
 
 /**
- * Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+ * Hold every line item to the pinned money keys (Section 7.2).
+ *
+ * `terms.line_items` is OPTIONAL, but where it is present it is an array, and
+ * every entry states its money as integer minor units under `unit_price_minor`
+ * and `total_minor`. The bare names `unit_price` and `total` are refused rather
+ * than read: the two conventions differ by a factor of one hundred, so reading
+ * one as the other is not a rounding error but a hundredfold one, and it
+ * arrives looking like agreement. A line item that omits a pinned key is
+ * refused for the same reason — there is no second reading to fall back on,
+ * only a guess. Both are `INVALID_LINE_ITEM` (Section 12.3), and the message
+ * names the line and the key, so a sender can fix the one field rather than
+ * resend the whole offer blind.
+ */
+export function checkOfferLineItems(
+  terms: unknown,
+  context: { sessionId?: string | null; messageId?: string | null } = {},
+): void {
+  if (!isJsonObject(terms) || terms.line_items === undefined) {
+    return;
+  }
+  const lineItems = terms.line_items;
+  if (!Array.isArray(lineItems)) {
+    throw new A2CNError("INVALID_LINE_ITEM", "terms.line_items must be an array", 400, context);
+  }
+  for (const [index, lineItem] of lineItems.entries()) {
+    const violations = lineItemKeyViolations(lineItem);
+    if (violations.length > 0) {
+      throw new A2CNError(
+        "INVALID_LINE_ITEM",
+        `terms.line_items[${index}] ${violations.join("; ")}`,
+        400,
+        context,
+      );
+    }
+  }
+}
+
+/**
+ * Hold an offer's money to the session, and to Section 7.2's spellings.
  *
  * `sessionParams` are the parameters the session fixed, as the SessionAck's
  * session_params_accepted carries them. A receiver runs this on every offer and
@@ -237,6 +280,10 @@ export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): ass
  * 3. When the session fixed a basis, terms.basis must be present and equal to
  *    it; when the session fixed none, terms.basis must be absent, because an
  *    offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+ * 4. Every line item states its money under the pinned keys
+ *    (INVALID_LINE_ITEM; see checkOfferLineItems). It runs last because the
+ *    session parameters settle what the amounts are denominated in before
+ *    there is any point checking how they are spelled.
  *
  * A terms value that is not an object carries neither field. Nothing here
  * converts between currencies or between net and gross. The state machine does
@@ -288,9 +335,7 @@ export function checkOfferMoneyParams(
         context,
       );
     }
-    return;
-  }
-  if (offeredBasis === undefined || offeredBasis !== sessionBasis) {
+  } else if (offeredBasis === undefined || offeredBasis !== sessionBasis) {
     const stated =
       offeredBasis === undefined
         ? "omits terms.basis"
@@ -302,6 +347,8 @@ export function checkOfferMoneyParams(
       context,
     );
   }
+
+  checkOfferLineItems(terms, context);
 }
 
 // ---------------------------------------------------------------------------
@@ -1133,46 +1180,11 @@ export class SessionManager {
 //   INVALID_REQUEST         — 400  — spec Section 12.3; malformed input that fails
 //                                     basic validation before any protocol logic runs
 
-/** Protocol error with A2CN error code, HTTP status, and context. */
-export class A2CNError extends Error {
-  code: string;
-  httpStatus: number;
-  detail: string;
-  sessionId: string | null;
-  messageId: string | null;
-
-  constructor(
-    code: string,
-    message: string,
-    httpStatus = 400,
-    options: { detail?: string; sessionId?: string | null; messageId?: string | null } = {},
-  ) {
-    super(message);
-    this.name = "A2CNError";
-    this.code = code;
-    this.httpStatus = httpStatus;
-    this.detail = options.detail ?? "";
-    this.sessionId = options.sessionId ?? null;
-    this.messageId = options.messageId ?? null;
-  }
-
-  toDict(): Dict {
-    return {
-      error: {
-        code: this.code,
-        message: this.message,
-        detail: this.detail,
-        timestamp: now(),
-        session_id: this.sessionId,
-        message_id: this.messageId,
-      },
-    };
-  }
-}
-
-export function now(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-}
+// A2CNError and now() live in errors.ts, and are imported at the top of this
+// module and re-exported there. They moved so that modules below the state
+// machine — line_items.ts first among them — can throw a protocol error without
+// importing the state machine, which would be a cycle.
+// `import { A2CNError } from "./session.js"` still resolves.
 
 /** Parse an ISO 8601 timestamp (Z suffix allowed) to epoch ms; NaN if invalid. */
 export function parseIsoMs(ts: string): number {

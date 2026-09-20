@@ -23,3 +23,4 @@ Status values:
 | `reputation_score_cannot_expand_authority` | `active` | Mandate remains the authority boundary |
 | `offer_basis_diverges_from_session` | `active` | Reject an offer whose `terms.basis` differs from the session basis with `SESSION_PARAM_CHANGED` |
 | `offer_currency_diverges_from_session` | `active` | Reject an offer whose `terms.currency` differs from the session currency with `SESSION_PARAM_CHANGED` |
+| `offer_line_item_uses_bare_money_key` | `active` | Reject an offer whose line item states money as the bare `unit_price` / `total` instead of `unit_price_minor` / `total_minor`, with `INVALID_LINE_ITEM` |

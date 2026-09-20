@@ -175,8 +175,8 @@ def renewal_terms(total_value: int, net_days: int) -> dict:
                 "description": "Acme Analytics Platform - 12 months",
                 "quantity": 1,
                 "unit": "year",
-                "unit_price": total_value,
-                "total": total_value,
+                "unit_price_minor": total_value,
+                "total_minor": total_value,
             }
         ],
         "payment_terms": {"net_days": net_days},

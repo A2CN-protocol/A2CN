@@ -278,8 +278,8 @@ async function main(): Promise<void> {
   // Scale supplier's line item prices proportionally
   const scale = supplierCounterValue / Math.max(buyerBenchmark, 1);
   const supplierLineItems = (initialTerms.line_items as Dict[]).map((li) => {
-    const newUnit = Math.trunc((li.unit_price as number) * scale);
-    return { ...li, unit_price: newUnit, total: (li.quantity as number) * newUnit };
+    const newUnit = Math.trunc((li.unit_price_minor as number) * scale);
+    return { ...li, unit_price_minor: newUnit, total_minor: (li.quantity as number) * newUnit };
   });
 
   const termsR2 = {
@@ -337,8 +337,8 @@ async function main(): Promise<void> {
 
   const scale2 = finalValue / Math.max(buyerBenchmark, 1);
   const buyerR3LineItems = (initialTerms.line_items as Dict[]).map((li) => {
-    const newUnit = Math.trunc((li.unit_price as number) * scale2);
-    return { ...li, unit_price: newUnit, total: (li.quantity as number) * newUnit };
+    const newUnit = Math.trunc((li.unit_price_minor as number) * scale2);
+    return { ...li, unit_price_minor: newUnit, total_minor: (li.quantity as number) * newUnit };
   });
 
   const termsR3 = {

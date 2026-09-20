@@ -176,12 +176,12 @@ class TestDealHubQuoteToOfferTerms:
         assert terms["line_items"][0]["description"] == "Widget Pro"
         assert terms["line_items"][0]["quantity"] == 10
         # $500 → 50000 cents
-        assert terms["line_items"][0]["unit_price"] == 50_000
+        assert terms["line_items"][0]["unit_price_minor"] == 50_000
 
     def test_line_items_prices_converted_to_cents(self):
         terms = DealHubEventParser.quote_to_a2cn_offer_terms(SAMPLE_QUOTE_RESPONSE_GOODS)
         # $360.0 → 36000 cents
-        assert terms["line_items"][0]["unit_price"] == 36_000
+        assert terms["line_items"][0]["unit_price_minor"] == 36_000
 
     def test_total_fallback_to_header_when_line_items_empty(self):
         quote = {"total_price": 7500.0, "currency": "USD", "line_items": []}

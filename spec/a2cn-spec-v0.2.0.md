@@ -1171,13 +1171,54 @@ Each item:
   "description": "string",
   "quantity": "integer",
   "unit": "string",
-  "unit_price": "integer",
-  "total": "integer"
+  "unit_price_minor": "integer",
+  "total_minor": "integer"
 }
 ```
-`quantity` is a non-negative integer. For fractional quantities (e.g., commodities
-measured in tenths), implementers SHOULD use the appropriate smallest unit
-(e.g., tenths, hundredths) and document the unit string accordingly.
+Schema: `spec/schemas/offer.schema.json`
+
+**`unit_price_minor`** and **`total_minor`** (integer, both REQUIRED on every
+line item) state that line's money in **integer minor units** of
+`terms.currency` — the same unit `terms.total_value` uses.
+
+Each is an integer **value**, not a particular spelling. RFC 8785 makes `36000`
+and `36000.0` the same number, so both are valid, as is `3.6e4`, and `-0.0` is
+the same number as `0`. A receiver MUST accept any integral number, and MUST
+reject — with `INVALID_LINE_ITEM` (Section 12.3) — a value carrying a fractional
+part, a value that is not a number at all (a decimal string, `null`, a boolean),
+a non-finite value, and a line item that omits either key. The rule is stated
+over values rather than over JSON types because a receiver cannot recover the
+spelling: a parser that represents every number as a binary64 double, as
+JavaScript's does, cannot distinguish `36000.0` from `36000` once parsed, so a
+type rule would have two conformant implementations disagree about one document.
+A trailing `.0` is also how a decimal or money type commonly serialises, which
+makes this the ordinary case rather than an exotic one.
+
+The magnitude of either value MUST NOT exceed `9007199254740991` (2^53 − 1).
+Past that a binary64 double can no longer represent adjacent integers
+distinctly, so one document could be read as two different amounts.
+
+The bare names `unit_price` and `total` are **not** valid line-item keys. A
+receiver MUST reject a line item carrying either with `INVALID_LINE_ITEM`. It
+MUST NOT read a bare name as minor units, and MUST NOT read it as major units
+and scale it. The two conventions differ by a factor of one hundred, so a
+receiver that guessed would agree with the sender about every number in the
+message and disagree about every amount, with nothing in the message to say
+which reading was meant. A refusal is recoverable; a hundredfold misreading of
+a price, accepted and signed, is not.
+
+A line item otherwise stays open. A deal type extends it — `goods_procurement`
+adds `manufacturer_part_number`, `internal_part_number`, and `unit_of_measure`
+(`spec/schemas/terms/goods_procurement.schema.json`) — and a platform adapter
+may carry its own identifiers alongside. Only the two bare money spellings are
+closed out.
+
+`quantity` is a non-negative integer value, on the same terms and within the
+same bound. A receiver MUST reject a negative `quantity` with
+`INVALID_LINE_ITEM`: a refund is a negative price, not a negative count. For
+fractional quantities (e.g., commodities measured in tenths), implementers
+SHOULD use the appropriate smallest unit (e.g., tenths, hundredths) and document
+the unit string accordingly.
 
 **`terms.payment_terms`** (object, OPTIONAL)
 ```json
@@ -3347,6 +3388,7 @@ SessionReject messages also use this format via the `error_code` and
 | `INVALID_REQUEST` | 400 | Yes | A message, or a required part of it, is malformed before any protocol check runs: a SessionAck body, `session_params`, or `session_params_accepted` that is not a JSON object; a `currency` in either that is absent, empty, or not a string (Section 6.4.1); a `sender_did` that is not a DID; or, on an offer, counteroffer, acceptance, or rejection, a `sequence_number` or `round_number` that is not a positive integer (Section 7.1) |
 | `INVALID_BASIS` | 400 | Yes | A `basis` (`session_params.basis`, `session_params_accepted.basis`, or `terms.basis`) present but not `net` or `gross` (Sections 6.3.1, 6.4.1, 7.2) |
 | `SESSION_PARAM_CHANGED` | 400 | Yes | A SessionAck, or a later message such as an offer, changed a parameter fixed at session initiation (Sections 6.4.1, 7.2); `message` names the parameter |
+| `INVALID_LINE_ITEM` | 400 | Yes | A `terms.line_items` entry does not state its money under the pinned keys (Section 7.2): it carries the bare `unit_price` or `total`, omits `unit_price_minor` or `total_minor`, states either of them — or `quantity` — as something other than an integer value within ±`9007199254740991`, or states a negative `quantity`. Also a `terms.line_items` that is not an array, and a vendor amount a platform adapter cannot read as a decimal figure. `message` names the line and the key |
 | `MANDATE_INVALID` | 403 | Yes | Mandate expired, missing, or VC proof failed |
 | `MANDATE_INSUFFICIENT` | 403 | Yes | Mandate scope doesn't cover proposed terms |
 | `INVALID_SIGNATURE` | 400 | Yes | Protocol act signature verification failed |
@@ -4205,7 +4247,7 @@ Fairmarkit `BID_CREATED` webhook path above.
 | `items[].description` | `line_items[].description` |
 | `items[].quantity` | `line_items[].quantity` |
 | `items[].uom` | `line_items[].unit_of_measure` |
-| `items[].unit_price` | `line_items[].unit_price` in cents |
+| `items[].unit_price` | `line_items[].unit_price_minor` in minor units |
 | `items[].mfg_part_number` | `line_items[].manufacturer_part_number` |
 | `items[].internal_part_number` | `line_items[].internal_part_number` |
 | Computed sum of line items | `total_value` in cents |
@@ -4219,8 +4261,8 @@ Fairmarkit `BID_CREATED` webhook path above.
 |--------------------------|---------------------------|
 | `line_items[].description` | `items[].description` |
 | `line_items[].quantity` | `items[].quantity` |
-| `line_items[].unit_price` in cents | `items[].unit_price` as decimal currency units |
-| `line_items[].total` in cents | `items[].total_price` as decimal currency units |
+| `line_items[].unit_price_minor` in minor units | `items[].unit_price` as decimal currency units |
+| `line_items[].total_minor` in minor units | `items[].total_price` as decimal currency units |
 | `line_items[].unit_of_measure` | `items[].uom` |
 | `line_items[].manufacturer_part_number` | `items[].manufacturer_part_number` |
 | `line_items[].internal_part_number` | `items[].internal_part_number` |
@@ -4327,7 +4369,7 @@ performed before processing any payload to prevent replay and forgery attacks.
 | `line_items[].description` | `line_items[].description` |
 | `line_items[].quantity` | `line_items[].quantity` |
 | `line_items[].unit_of_measure` | `line_items[].unit_of_measure` |
-| `line_items[].unit_price` (USD) | `line_items[].unit_price` (cents) |
+| `line_items[].unit_price` (USD) | `line_items[].unit_price_minor` (minor units) |
 | `line_items[].lot_id` | `line_items[].internal_part_number` |
 | `event.currency` | `currency` |
 | Computed from line items | `total_value` (cents) |
@@ -5238,7 +5280,7 @@ TechCorp's agent constructs the protocol act for signing:
     "currency": "USD",
     "line_items": [
       { "id": "li-1", "description": "Acme Analytics Platform — 12 months",
-        "quantity": 1, "unit": "year", "unit_price": 9500000, "total": 9500000 }
+        "quantity": 1, "unit": "year", "unit_price_minor": 9500000, "total_minor": 9500000 }
     ],
     "payment_terms": { "net_days": 30 },
     "contract_duration": {
@@ -5309,7 +5351,7 @@ price reduction).
     "currency": "USD",
     "line_items": [
       { "id": "li-1", "description": "Acme Analytics Platform — 12 months",
-        "quantity": 1, "unit": "year", "unit_price": 11500000, "total": 11500000 }
+        "quantity": 1, "unit": "year", "unit_price_minor": 11500000, "total_minor": 11500000 }
     ],
     "payment_terms": { "net_days": 60 },
     "contract_duration": {

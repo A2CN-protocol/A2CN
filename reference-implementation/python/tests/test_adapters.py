@@ -70,7 +70,7 @@ class TestFairmakitAdapter:
     def test_bid_created_line_item_prices_in_cents(self):
         terms = FairmakitEventParser.bid_created_to_goods_procurement_terms(SAMPLE_BID_CREATED)
         # $360.0 → 36000 cents
-        assert terms["line_items"][0]["unit_price"] == 36000
+        assert terms["line_items"][0]["unit_price_minor"] == 36000
 
     def test_bid_created_total_value_in_cents(self):
         terms = FairmakitEventParser.bid_created_to_goods_procurement_terms(SAMPLE_BID_CREATED)
@@ -119,7 +119,7 @@ class TestRevenueCloudAdapter:
         terms = RevenueCloudAdapter.pricing_response_to_a2cn_terms(SAMPLE_PRICING_RESPONSE)
         assert len(terms["line_items"]) == 1
         assert terms["line_items"][0]["description"] == "Analytics Platform"
-        assert terms["line_items"][0]["unit_price"] == 95000  # $950 in cents
+        assert terms["line_items"][0]["unit_price_minor"] == 95000  # $950 in cents
 
     def test_pricing_response_no_seat_count_for_other_deal_type(self):
         terms = RevenueCloudAdapter.pricing_response_to_a2cn_terms(
@@ -170,7 +170,7 @@ class TestRevenueCloudAdapter:
 #   event.line_items[].description     → line_items[].description
 #   event.line_items[].quantity        → line_items[].quantity
 #   event.line_items[].unit_of_measure → line_items[].unit_of_measure
-#   event.line_items[].unit_price (USD)→ line_items[].unit_price (cents)
+#   event.line_items[].unit_price (USD)→ line_items[].unit_price_minor (minor units)
 #   event.line_items[].lot_id          → line_items[].internal_part_number
 #   event.currency                     → currency
 #   Computed from line items           → total_value (cents)
@@ -288,7 +288,7 @@ class TestKeelvarAdapter:
             SAMPLE_SOURCING_EVENT_NO_PRICE
         )
         assert terms["total_value"] == 0
-        assert terms["line_items"][0]["unit_price"] == 0
+        assert terms["line_items"][0]["unit_price_minor"] == 0
 
     def test_sourcing_event_lot_id_to_internal_part_number(self):
         terms = KeelvarEventParser.sourcing_event_to_goods_procurement_terms(

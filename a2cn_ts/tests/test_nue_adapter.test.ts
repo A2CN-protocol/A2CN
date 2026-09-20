@@ -42,8 +42,8 @@ const SAMPLE_A2CN_AGREED_TERMS: Dict = {
     {
       description: "Analytics Platform Enterprise",
       quantity: 100,
-      unit_price: 105_000, // cents per seat per year
-      total: 10_500_000,
+      unit_price_minor: 105_000, // minor units per seat per year
+      total_minor: 10_500_000,
     },
   ],
 };

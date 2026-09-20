@@ -23,6 +23,8 @@ from typing import Any
 
 import httpx
 
+from a2cn.line_items import require_minor, to_minor_units
+
 
 _SUBSCRIPTION_KEYWORDS = frozenset({
     "license",
@@ -34,11 +36,8 @@ _SUBSCRIPTION_KEYWORDS = frozenset({
 
 
 def _money_to_cents(value: Any) -> int:
-    if value is None or value == "":
-        return 0
-    if isinstance(value, dict):
-        value = value.get("amount", value.get("value", 0))
-    return int(float(value) * 100)
+    """This platform's decimal amounts, in the integer minor units A2CN carries."""
+    return to_minor_units(value)
 
 
 def _int_value(value: Any, default: int = 0) -> int:
@@ -241,8 +240,8 @@ def conga_quote_to_a2cn_terms(
                 default="",
             ),
             "quantity": quantity,
-            "unit_price": unit_price_cents,
-            "total": line_total,
+            "unit_price_minor": unit_price_cents,
+            "total_minor": line_total,
         }
         uom = _first(item, fm["unit_of_measure_field"], "Uom", "uom", default=None)
         if uom:
@@ -378,8 +377,8 @@ def a2cn_terms_to_conga_quote(
             "productId": item.get("conga_product_id", ""),
             "description": item.get("description", ""),
             "quantity": item.get("quantity", 1),
-            "unitPrice": item.get("unit_price", 0) / 100.0,
-            "totalPrice": item.get("total", 0) / 100.0,
+            "unitPrice": require_minor(item, "unit_price_minor") / 100.0,
+            "totalPrice": require_minor(item, "total_minor") / 100.0,
         }
         if item.get("unit_of_measure"):
             entry["unitOfMeasure"] = item["unit_of_measure"]

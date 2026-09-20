@@ -17,16 +17,12 @@
  * needed when wiring it into a live SAP Ariba environment.
  */
 
+import { requireMinor, toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
+/** This platform's decimal amounts, in the integer minor units A2CN carries. */
 function moneyToCents(value: unknown): number {
-  if (value === null || value === undefined || value === "") {
-    return 0;
-  }
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    value = (value as Dict).amount ?? 0;
-  }
-  return Math.trunc(Number(value) * 100);
+  return toMinorUnits(value);
 }
 
 function intValue(value: unknown, defaultValue = 0): number {
@@ -71,8 +67,8 @@ function normalizeItem(item: Dict, defaultCurrency: string): Dict {
     description: first(item, ["title", "description", "name", "itemName"], ""),
     quantity,
     unit_of_measure: first(item, ["unitOfMeasure", "unit_of_measure", "uom"], "EA"),
-    unit_price: unitPriceCents,
-    total: totalCents,
+    unit_price_minor: unitPriceCents,
+    total_minor: totalCents,
   };
   const internalRef = lotId || itemId;
   if (internalRef) {
@@ -107,7 +103,7 @@ export class AribaEventParser {
     const currency = first(event, ["currency", "currencyCode"], "USD") as string;
     const rawItems = itemsFromPayload(event);
     const lineItems = rawItems.map((item) => normalizeItem(item, currency));
-    const totalCents = lineItems.reduce((sum, item) => sum + (item.total as number), 0);
+    const totalCents = lineItems.reduce((sum, item) => sum + (item.total_minor as number), 0);
     const eventId = first(event, ["eventId", "event_id", "internalId", "rfxId", "id"], "");
 
     return {
@@ -207,8 +203,8 @@ export function a2cnTermsToAribaBid(
       description: item.description ?? "",
       quantity: item.quantity ?? 1,
       unitOfMeasure: item.unit_of_measure ?? "EA",
-      unitPrice: ((item.unit_price as number) ?? 0) / 100.0,
-      totalPrice: ((item.total as number) ?? 0) / 100.0,
+      unitPrice: requireMinor(item, "unit_price_minor") / 100.0,
+      totalPrice: requireMinor(item, "total_minor") / 100.0,
       currency: agreedTerms.currency ?? "USD",
     };
     responseItems.push(

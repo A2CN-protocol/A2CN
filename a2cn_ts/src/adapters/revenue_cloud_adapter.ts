@@ -11,6 +11,7 @@
  *   Quote/Order: POST /services/data/v65.0/connect/qoc/sales-transactions
  */
 
+import { requireMinor, toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 export class RevenueCloudAdapter {
@@ -37,20 +38,20 @@ export class RevenueCloudAdapter {
     let totalCents = 0;
 
     for (const item of lineItemsRaw) {
-      const unitPriceCents = Math.trunc(Number(item.unitPrice ?? 0) * 100);
-      const totalPriceCents = Math.trunc(Number(item.totalPrice ?? 0) * 100);
+      const unitPriceCents = toMinorUnits(item.unitPrice);
+      const totalPriceCents = toMinorUnits(item.totalPrice);
       totalCents += totalPriceCents;
 
       lineItems.push({
         description: item.productName ?? "",
         quantity: Math.trunc(Number(item.quantity ?? 1)),
-        unit_price: unitPriceCents,
-        total: totalPriceCents,
+        unit_price_minor: unitPriceCents,
+        total_minor: totalPriceCents,
       });
     }
 
     const terms: Dict = {
-      total_value: totalCents || Math.trunc(Number(pricingResponse.totalAmount ?? 0) * 100),
+      total_value: totalCents || toMinorUnits(pricingResponse.totalAmount),
       currency: pricingResponse.currency ?? currency,
       line_items: lineItems,
       payment_terms: { net_days: 30 },
@@ -97,7 +98,7 @@ export class RevenueCloudAdapter {
     for (const item of lineItemsRaw) {
       rcLineItems.push({
         quantity: item.quantity ?? 1,
-        unitPrice: ((item.unit_price as number) ?? 0) / 100.0,
+        unitPrice: requireMinor(item, "unit_price_minor") / 100.0,
         // productId would need to be resolved from description
         // in a real integration — omitting here for prototype
       });

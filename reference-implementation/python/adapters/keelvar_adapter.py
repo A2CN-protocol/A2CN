@@ -19,7 +19,7 @@ Field mapping — Keelvar → A2CN goods_procurement:
   event.line_items[].description       line_items[].description
   event.line_items[].quantity          line_items[].quantity
   event.line_items[].unit_of_measure   line_items[].unit_of_measure
-  event.line_items[].unit_price (USD)  line_items[].unit_price (cents)
+  event.line_items[].unit_price (USD)  line_items[].unit_price_minor (minor units)
   event.line_items[].lot_id            line_items[].internal_part_number
   event.currency                       currency
   Computed from line items             total_value (cents)
@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+
+from a2cn.line_items import require_minor, to_minor_units
 
 
 class KeelvarEventParser:
@@ -83,9 +85,7 @@ class KeelvarEventParser:
         for item in line_items_raw:
             unit_price_raw = item.get("unit_price")
             unit_price_cents: int | None = (
-                int(float(unit_price_raw) * 100)
-                if unit_price_raw is not None
-                else None
+                to_minor_units(unit_price_raw) if unit_price_raw is not None else None
             )
             line_items.append({
                 "description": item.get("description", ""),
@@ -132,9 +132,7 @@ class KeelvarEventParser:
         for item in line_items_raw:
             qty = int(float(item.get("quantity", 1)))
             unit_price_raw = item.get("unit_price")
-            unit_price_cents = (
-                int(float(unit_price_raw) * 100) if unit_price_raw is not None else 0
-            )
+            unit_price_cents = to_minor_units(unit_price_raw)
             line_total = qty * unit_price_cents
             total_cents += line_total
 
@@ -142,8 +140,8 @@ class KeelvarEventParser:
                 "description": item.get("description", ""),
                 "quantity": qty,
                 "unit_of_measure": item.get("unit_of_measure", "EA"),
-                "unit_price": unit_price_cents,
-                "total": line_total,
+                "unit_price_minor": unit_price_cents,
+                "total_minor": line_total,
             }
             if item.get("lot_id"):
                 line_item["internal_part_number"] = item["lot_id"]
@@ -184,8 +182,8 @@ class KeelvarEventParser:
                 "description": item.get("description", ""),
                 "quantity": item.get("quantity", 1),
                 "unit_of_measure": item.get("unit_of_measure", "EA"),
-                "unit_price": item.get("unit_price", 0) / 100.0,
-                "total_price": item.get("total", 0) / 100.0,
+                "unit_price": require_minor(item, "unit_price_minor") / 100.0,
+                "total_price": require_minor(item, "total_minor") / 100.0,
             }
             if item.get("internal_part_number"):
                 entry["lot_id"] = item["internal_part_number"]

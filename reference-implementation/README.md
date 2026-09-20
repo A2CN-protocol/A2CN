@@ -62,7 +62,8 @@ The demo (`examples/saas_renewal.py`) is a verbose walkthrough of the Appendix B
   "terms": {
     "total_value": 9500000,
     "currency": "USD",
-    "line_items": [{ "description": "Acme Analytics Platform — 12 months", "total": 9500000 }],
+    "line_items": [{ "description": "Acme Analytics Platform — 12 months", "quantity": 1,
+                     "unit_price_minor": 9500000, "total_minor": 9500000 }],
     "payment_terms": { "net_days": 30 }
   },
   "protocol_act_hash": "CAJSH5sTyYzmlaF9ULieuH1aHSr8ABp14MUS8WF7_Jg",
