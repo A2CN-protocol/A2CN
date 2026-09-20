@@ -278,7 +278,7 @@
 
   "session_currency_rule": "A _minor line-item amount means nothing until the minor-unit exponent of the session currency is known, and this implementation assumes 2. It therefore refuses an offer whose session currency is not one it has declared it can carry, with INVALID_LINE_ITEM, on the offer path and whether or not the offer carries any line items. The refusal is the designed behaviour and it fails CLOSED: a currency whose exponent really is 2 but which is not on the list is refused too, loudly and recoverably, rather than assumed. The inverse shape — listing the currencies known NOT to be 2 and assuming 2 for the rest — fails open the moment the list goes stale, which is the silent hundredfold misread this whole section exists to prevent. Membership is an exact match on the declared spelling: no case folding, because Python and JavaScript do not fold every string identically and a money guard must not differ between them. A2CN itself maintains no currency exponent registry (Section 9A.9); this list is one implementation's declared limit, not a claim about the world.",
 
-  "supported_session_currencies": ["EUR", "GBP", "USD"],
+  "supported_session_currencies": ["CAD", "EUR", "GBP", "USD"],
 
   "session_currency_cases": [
     { "name": "the currency this corpus uses throughout", "currency": "USD", "supported": true },
@@ -296,8 +296,13 @@
       "supported": false
     },
     {
-      "name": "a two-decimal currency this implementation has not declared, refused by design",
+      "name": "also declared, and what this repository's own Conga adapter emits",
       "currency": "CAD",
+      "supported": true
+    },
+    {
+      "name": "a two-decimal currency this build cannot vouch for, refused by design",
+      "currency": "CHF",
       "supported": false
     },
     { "name": "a metal code, which has no minor unit at all", "currency": "XAU", "supported": false },

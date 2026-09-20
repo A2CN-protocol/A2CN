@@ -60,19 +60,23 @@ export const MINOR_UNIT_EXPONENT = 2;
  * build has grounds to assert it for. Measured from the corpus on 2026-09-20,
  * not recalled: across the spec, both implementations, every vector and every
  * adapter, the currency-keyed values are USD (446), EUR (39) and GBP (2), and
- * the only currencies ever fixed as a *session* currency are USD and EUR.
+ * the only currencies ever fixed as a *session* currency are USD and EUR. CAD
+ * is the fourth because this repository itself emits it: the Conga adapter
+ * builds A2CN terms carrying `_minor` line items in CAD, so refusing it would
+ * break our own documented output for nothing gained.
  *
  * **The list is short on purpose and will refuse legitimate two-decimal
- * currencies** — CAD among them, which our own Conga adapter can emit. That
- * refusal is the designed behaviour, not an oversight: it fails CLOSED, loudly
- * and recoverably, exactly as Section 7.2 already does for a bare key name. The
+ * currencies** — CHF among them, which is beyond question a two-decimal
+ * currency and simply one this build has no grounds to vouch for. That refusal
+ * is the designed behaviour, not an oversight: it fails CLOSED, loudly and
+ * recoverably, exactly as Section 7.2 already does for a bare key name. The
  * inverse shape — listing the currencies known *not* to be 2 and assuming 2 for
  * everything else — fails OPEN the moment it falls behind ISO 4217, turning a
  * neglected list into a silent hundredfold misread. Adding a currency here is
  * meant to be a deliberate act with a reason attached, never topping up a list
  * someone assumed was exhaustive.
  */
-export const SUPPORTED_SESSION_CURRENCIES = ["EUR", "GBP", "USD"] as const;
+export const SUPPORTED_SESSION_CURRENCIES = ["CAD", "EUR", "GBP", "USD"] as const;
 
 /**
  * Whether this build can state a line item's money in `currency`.

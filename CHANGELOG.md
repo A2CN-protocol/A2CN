@@ -80,11 +80,13 @@ Section 7.2 already makes for a bare key name.
 **The spec states the rule and does not carry the data.** A2CN still maintains
 no currency exponent registry (Section 9A.9) and nothing normative names a
 currency. Each reference implementation instead declares its own limit,
-`SUPPORTED_SESSION_CURRENCIES` — currently EUR, GBP and USD — as names only,
-with no exponent values attached: the moment such a list maps a currency to a
-number it has become the exponent table, which is separate work. The set is
-deliberately short, measured from this repository rather than recalled, and it
-will refuse legitimate two-decimal currencies. Adding one is meant to be a
+`SUPPORTED_SESSION_CURRENCIES` — currently CAD, EUR, GBP and USD — as names
+only, with no exponent values attached: the moment such a list maps a currency
+to a number it has become the exponent table, which is separate work. The set is
+deliberately short and was measured from this repository rather than recalled:
+those four are the currencies A2CN's own corpus uses, CAD among them because the
+Conga adapter emits terms in it. The set will refuse legitimate two-decimal
+currencies it cannot vouch for, CHF for instance. Adding one is meant to be a
 deliberate act with a reason attached, not a list being topped up.
 
 **A pinned amount is an integer value, not a JSON spelling.** RFC 8785 makes
