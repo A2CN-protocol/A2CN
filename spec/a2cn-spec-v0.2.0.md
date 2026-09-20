@@ -2501,9 +2501,10 @@ outcome is not `COMPLETED`.
 External-channel completion is asymmetric, and this section defines that
 direction only: the A2CN party is the producer and `parties.initiator`, and the
 party with no A2CN identity is `parties.responder`. The mirror case is not
-defined. Section 9A.8 permits an `observed_party` only as `parties.responder`
-and requires `parties.initiator` to be a DID-bearing party, so a record whose
-initiator holds no A2CN identity has no representation in this version.
+defined. Section 9A.8 permits an `observed_party` only as `parties.responder`,
+and Section 9A.2 requires `parties.initiator` to be a DID-bearing party, so a
+record whose initiator holds no A2CN identity has no representation in this
+version.
 
 Such a record is `unilateral` by construction, and the producer is its only
 DID-bearing party: the initiator seals it, and the counterparty side is an
