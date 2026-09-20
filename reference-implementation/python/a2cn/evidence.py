@@ -21,10 +21,15 @@ from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
 
-SESSION_EVIDENCE_RECORD_VERSION = "0.2"
-# The versions a verifier accepts (Section 9A.2). Every other value is rejected,
-# and verification is the same for both.
-RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2")
+SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
+# A record's version follows its content (Section 9A.2): "0.3" exactly when it
+# carries external_commitment_reference (Section 9A.12). Every other record
+# stays "0.2", so a verifier that predates "0.3" still reads it.
+SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3"
+# The versions a verifier accepts (Section 9A.2). Every other value is rejected.
+# Verification is the same for all of them, except that a record carries
+# external_commitment_reference exactly when it is "0.3".
+RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3")
 SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record"
 
 EVIDENCE_BILATERAL = "bilateral"
@@ -69,7 +74,9 @@ _RECORD_FIELDS = frozenset(
         "producer_signature",
     }
 )
-_RECORD_OPTIONAL_FIELDS = frozenset({"extensions"})
+_RECORD_OPTIONAL_FIELDS = frozenset({"extensions", "external_commitment_reference"})
+_EXTERNAL_COMMITMENT_REFERENCE_FIELDS = frozenset({"external_commitment_id"})
+_EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = frozenset({"locator", "reference_note"})
 _ACT_FIELDS = frozenset(
     {
         "sequence_number",
@@ -142,6 +149,7 @@ def generate_session_evidence_record(
     terminal_reason: str | None = None,
     terminal_money_basis: Mapping[str, Any] | None = None,
     extensions: Mapping[str, Any] | None = None,
+    external_commitment_reference: Mapping[str, Any] | None = None,
 ) -> dict:
     """Generate a producer-sealed evidence package for a terminal session.
 
@@ -154,6 +162,12 @@ def generate_session_evidence_record(
     is a producer assertion; no DID is ever fabricated for it.
     ``terminal_outcome`` may assert ``HALTED_BY_CONTROLS`` for a session the
     producer's own controls stopped.
+
+    ``external_commitment_reference`` completes a session whose responder is
+    observed: it names the external order or commitment the deal produced, in
+    place of a TransactionRecord, which is bilateral (Section 9A.12). Such a
+    record is ``"0.3"``. It is required for that session and refused for any
+    other; ``None`` means it is not supplied.
     """
     if session.state not in _TERMINAL_STATES:
         raise ValueError("Session evidence is only available for terminal sessions")
@@ -183,6 +197,26 @@ def generate_session_evidence_record(
         producer_agent_id=producer_agent_id,
     )
 
+    # A COMPLETED session carries exactly one completion witness (Section 9A.2).
+    # A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
+    # completes with one, and an observed responder completes through the
+    # external commitment the deal produced (Section 9A.12).
+    reference = None
+    if external_commitment_reference is not None:
+        if outcome != SessionState.COMPLETED:
+            raise ValueError("external_commitment_reference is only for a COMPLETED session")
+        if observed_responder is None:
+            raise ValueError(
+                "external_commitment_reference requires an observed responder; a "
+                "DID-bearing responder completes with its TransactionRecord"
+            )
+        reference = _validated_external_commitment_reference(external_commitment_reference)
+    elif outcome == SessionState.COMPLETED and observed_responder is not None:
+        raise ValueError(
+            "A COMPLETED session with an observed responder requires "
+            "external_commitment_reference, because a TransactionRecord is bilateral"
+        )
+
     acts = [
         _normalize_evidence_act(message, default_source_protocol="a2cn")
         for message in session._message_log
@@ -195,7 +229,7 @@ def generate_session_evidence_record(
 
     terminal_timestamp = _terminal_timestamp(session)
     transaction_record_hash = None
-    if session.state == SessionState.COMPLETED:
+    if outcome == SessionState.COMPLETED and observed_responder is None:
         transaction_record_hash = generate_transaction_record(session)["record_hash"]
 
     act_chain_hash = hash_bytes(canonicalize([entry["act_hash"] for entry in acts]))
@@ -207,7 +241,11 @@ def generate_session_evidence_record(
 
     record = {
         "record_type": SESSION_EVIDENCE_RECORD_TYPE,
-        "record_version": SESSION_EVIDENCE_RECORD_VERSION,
+        "record_version": (
+            SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
+            if reference is not None
+            else SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT
+        ),
         "evidence_id": str(
             uuid.uuid5(
                 A2CN_NAMESPACE,
@@ -235,10 +273,12 @@ def generate_session_evidence_record(
         record["terminal"]["money_basis"] = copy.deepcopy(dict(terminal_money_basis))
     if extensions is not None:
         record["extensions"] = _validated_extensions(extensions)
+    if reference is not None:
+        record["external_commitment_reference"] = reference
 
     # Refuse to seal a claim the verifier would reject. The generator and the
-    # verifier run the same two rules so a producer cannot emit a record that
-    # only fails once it is somebody else's problem.
+    # verifier run the same rules so a producer cannot emit a record that only
+    # fails once it is somebody else's problem.
     if not _money_basis_claims_verify(record):
         raise ValueError(
             "money_basis does not recompute to the claimed and signed totals, "
@@ -248,6 +288,35 @@ def generate_session_evidence_record(
         raise ValueError(
             "An observed responder requires unsigned counterparty acts and "
             "unilateral evidence"
+        )
+    if not _completion_witness_holds(record):
+        raise ValueError(
+            "A COMPLETED record carries exactly one completion witness, and no "
+            "other outcome carries one"
+        )
+    if not _external_commitment_rules_hold(record):
+        raise ValueError(
+            "An external commitment reference requires an observed responder and "
+            "unilateral evidence"
+        )
+    if not _external_commitment_matches_version(record):
+        raise ValueError(
+            "record_version must be 0.3 exactly when the record carries "
+            "external_commitment_reference"
+        )
+    if not _external_commitment_producer_act_present(record):
+        raise ValueError(
+            "An external commitment reference requires at least one act signed by "
+            "the initiator that seals the record"
+        )
+    if not _external_commitment_sealed_by_initiator(record):
+        raise ValueError(
+            "An external-channel record must be sealed by parties.initiator.did"
+        )
+    if not _bilateral_witness_matches_responder(record):
+        raise ValueError(
+            "A transaction_record_hash requires a DID-bearing responder, and this "
+            "session has none"
         )
 
     record["record_hash"] = hash_object(record)
@@ -285,6 +354,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if record.get("record_version") not in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS:
             return assessment
+        if not _external_commitment_matches_version(record):
+            return assessment
 
         terminal = record["terminal"]
         outcome = terminal["outcome"]
@@ -294,12 +365,7 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         _timestamp_order_key(record["generated_at"])
         _timestamp_order_key(terminal["timestamp"])
-        if outcome == SessionState.COMPLETED:
-            if not isinstance(record.get("transaction_record_hash"), str) or not record.get(
-                "transaction_record_hash"
-            ):
-                return assessment
-        elif record.get("transaction_record_hash") is not None:
+        if not _completion_witness_holds(record):
             return assessment
 
         producer = record["producer"]
@@ -349,6 +415,14 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
         if not _money_basis_claims_verify(record):
             return assessment
         if not _observed_responder_rules_hold(record):
+            return assessment
+        if not _external_commitment_rules_hold(record):
+            return assessment
+        if not _external_commitment_producer_act_present(record):
+            return assessment
+        if not _external_commitment_sealed_by_initiator(record):
+            return assessment
+        if not _bilateral_witness_matches_responder(record):
             return assessment
         if record.get("act_chain_hash") != hash_bytes(canonicalize(computed_act_hashes)):
             return assessment
@@ -498,6 +572,20 @@ def _validated_extensions(extensions: Mapping[str, Any]) -> dict:
     return copy.deepcopy(dict(extensions))
 
 
+def _validated_external_commitment_reference(reference: Any) -> dict:
+    """The caller's external commitment reference, checked and copied before sealing."""
+    if not isinstance(reference, Mapping):
+        raise ValueError("external_commitment_reference must be an object")
+    copied = copy.deepcopy(dict(reference))
+    if not _external_commitment_reference_shape_valid(copied):
+        raise ValueError(
+            "external_commitment_reference must be an object with a non-empty string "
+            "external_commitment_id, an optional non-empty string locator, an optional "
+            "string reference_note, and no other member"
+        )
+    return copied
+
+
 def _exact_fields(
     value: Any,
     required: frozenset[str],
@@ -521,6 +609,10 @@ def _evidence_record_shape_valid(record: dict) -> bool:
             for name in extensions
         ):
             return False
+    if "external_commitment_reference" in record and not (
+        _external_commitment_reference_shape_valid(record["external_commitment_reference"])
+    ):
+        return False
     if not all(
         isinstance(record.get(field), str) and record[field]
         for field in (
@@ -670,6 +762,138 @@ def _observed_responder_rules_hold(record: dict) -> bool:
     # Asserted explicitly rather than inherited from the classifier, so that a
     # future change to classification cannot quietly promote these records.
     return record.get("evidence_level") == EVIDENCE_UNILATERAL
+
+
+def _external_commitment_reference_shape_valid(reference: Any) -> bool:
+    """Shape of the external order or commitment a COMPLETED session produced.
+
+    This checks structure and types, and nothing else (Section 9A.12). The
+    locator is provenance only: a verifier MUST NOT dereference it or contact
+    the counterparty, so it is checked as a non-empty string and no further. A
+    member present with the value null is malformed, never read as absent.
+    """
+    if not _exact_fields(
+        reference,
+        _EXTERNAL_COMMITMENT_REFERENCE_FIELDS,
+        _EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS,
+    ):
+        return False
+    commitment_id = reference["external_commitment_id"]
+    if not isinstance(commitment_id, str) or not commitment_id:
+        return False
+    if "locator" in reference and (
+        not isinstance(reference["locator"], str) or not reference["locator"]
+    ):
+        return False
+    return "reference_note" not in reference or isinstance(reference["reference_note"], str)
+
+
+def _completion_witness_holds(record: dict) -> bool:
+    """A COMPLETED record carries exactly one completion witness (Section 9A.2).
+
+    The witness is a transaction_record_hash, for the bilateral TransactionRecord,
+    or an external_commitment_reference with a null transaction_record_hash
+    (Section 9A.12): never both, and never neither. Every other outcome carries
+    neither. The reference is present by key, whatever its value.
+    """
+    has_reference = "external_commitment_reference" in record
+    transaction_record_hash = record.get("transaction_record_hash")
+    if record["terminal"]["outcome"] == SessionState.COMPLETED:
+        if has_reference:
+            return transaction_record_hash is None
+        return isinstance(transaction_record_hash, str) and bool(transaction_record_hash)
+    return transaction_record_hash is None and not has_reference
+
+
+def _external_commitment_rules_hold(record: dict) -> bool:
+    """Couple an external commitment reference to an observed responder and unilateral evidence.
+
+    A TransactionRecord is bilateral by construction (Section 9.3), so the
+    reference exists for a counterparty with no A2CN identity, and the record
+    represents one DID-bearing party beside an observed reference (Section
+    9A.12). Asserted here rather than left to follow from the observed-responder
+    coupling, for the same reason that coupling is asserted explicitly.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    return (
+        _observed_party_shape_valid(parties.get("responder"))
+        and record.get("evidence_level") == EVIDENCE_UNILATERAL
+    )
+
+
+def _external_commitment_matches_version(record: dict) -> bool:
+    """A record carries external_commitment_reference exactly when it is "0.3" (Section 9A.2).
+
+    This is the one verification rule that depends on the version. The
+    reference is present by key, so one whose value is null counts as carried.
+    """
+    carried = "external_commitment_reference" in record
+    is_0_3 = record.get("record_version") == SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
+    return carried == is_0_3
+
+
+def _bilateral_witness_matches_responder(record: dict) -> bool:
+    """A transaction_record_hash requires a DID-bearing responder (Section 9A.2).
+
+    A TransactionRecord is bilateral by construction (Section 9.3), so a session
+    whose responder is an observed_party has none, and a record claiming one for
+    such a session is rejected at every version. Such a session completes
+    through external_commitment_reference instead (Section 9A.12).
+    """
+    if record.get("transaction_record_hash") is None:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    return _full_party_shape_valid(parties.get("responder"))
+
+
+def _external_commitment_producer_act_present(record: dict) -> bool:
+    """An external-channel record carries at least one act its initiator signed.
+
+    The counterparty attests to nothing in such a record (Section 9A.12). With
+    no signed act of the producer's own, nothing in it would be attributable to
+    any party, and the seal alone would carry the COMPLETED claim.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    initiator = parties.get("initiator")
+    if not isinstance(initiator, dict):
+        return False
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("attribution") == ATTRIBUTION_VERIFIED
+        and entry.get("sender_did") == initiator.get("did")
+        for entry in acts
+    )
+
+
+def _external_commitment_sealed_by_initiator(record: dict) -> bool:
+    """An external-channel record is sealed by its initiator (Section 9A.12).
+
+    The producer's seal is the only cryptographic evidence such a record holds,
+    so the party it names as initiator is the party that must have sealed it.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    producer = record.get("producer")
+    if not isinstance(parties, dict) or not isinstance(producer, dict):
+        return False
+    initiator = parties.get("initiator")
+    if not isinstance(initiator, dict):
+        return False
+    return bool(producer.get("did")) and producer.get("did") == initiator.get("did")
 
 
 def _decimal_to_minor(amount: Any, exponent: int) -> int | None:
@@ -1235,6 +1459,13 @@ def _verification_method_controlled_by(verification_method: str, did: str) -> bo
 
 
 def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -> str:
+    # Section 9A.5: a record whose responder is an observed_party is always
+    # unilateral, asserted rather than derived from the acts below. Deriving it
+    # would call a record whose acts are all the producer's own bilateral, when
+    # the counterparty attested to nothing in it.
+    if isinstance(parties, dict) and _observed_party_shape_valid(parties.get("responder")):
+        return EVIDENCE_UNILATERAL
+
     party_dids = {
         party.get("did")
         for party in parties.values()

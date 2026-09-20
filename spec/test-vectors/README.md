@@ -131,19 +131,66 @@ Sections 9A.8 to 9A.11 (Section 9A.2). The Python suite validates both; the
 TypeScript suite checks that the `"0.1"` schema describes none of the features
 each record uses and the `"0.2"` schema describes all of them.
 
-`record-versions.json` lists the `record_version` values a verifier accepts
-(`"0.1"` and `"0.2"`) and a set it must reject: other versions, strings that
-differ by a space or a prefix, the numbers `0.2` and `0.1`, an array, `null`, and
-an absent key. `producers_emit` is the version each producer writes. For the
-TransactionRecord it follows the record's shape: `"0.1"` for a session that
-fixed no basis and `"0.2"` for one that did. The AuditLog carries its version in
-`log_version`. Both suites set each value on a valid TransactionRecord of each
-shape (the two records `transaction-record-basis.json` replays to) and on a
-valid SessionEvidenceRecord (the record `session-evidence-record-parity.json`
-produces), recompute `record_hash` and, for the evidence record, the producer
-seal, and assert the verdict. Each accepted TransactionRecord version verifies
-on the shape that emits it, and each `transaction_record_cross_shape` case, a
-recognized version on the other shape, fails (Section 9.5, step 7). Every
-rejected value fails verification on both TransactionRecord shapes and on the
-evidence record, and every accepted value verifies on the evidence record
+`record-versions.json` lists, for each record artifact, the `record_version`
+values its verifier accepts and a set it must reject: other versions, strings
+that differ by a space or a prefix, numbers, an array, `null`, and an absent
+key. The TransactionRecord accepts `"0.1"` and `"0.2"` and still rejects
+`"0.3"`; the SessionEvidenceRecord accepts `"0.1"`, `"0.2"`, and `"0.3"` and
+rejects `"0.4"`. `producers_emit` is the version each producer writes, which
+follows the record's shape. For the TransactionRecord: `"0.1"` for a session
+that fixed no basis and `"0.2"` for one that did. For the SessionEvidenceRecord:
+`"0.3"` for a record that carries `external_commitment_reference` and `"0.2"`
+for one that does not. The AuditLog carries its version in `log_version`. Both
+suites set each value on a valid record of each shape of each artifact: the two
+TransactionRecords `transaction-record-basis.json` replays to, the
+SessionEvidenceRecord `session-evidence-record-parity.json` produces (without
+the reference), and the one `session-evidence-record-external-channel.json`
+produces (with it). They recompute `record_hash` and, for an evidence record,
+the producer seal, and assert the verdict. Each accepted version verifies on
+its shape; `"0.1"`, which no current evidence-record producer emits, verifies on
+the shape without the reference. Each `cross_shape` case, a recognized version
+on the other shape of its artifact, fails (Section 9.5, step 7, and Section
+9A.2). Every rejected value fails verification on both shapes of its artifact
 (Sections 9.5 and 9A.6).
+
+`session-evidence-record-external-channel.json` covers Section 9A.12: a
+`COMPLETED` SessionEvidenceRecord whose completion witness is
+`external_commitment_reference`, at `record_version` `"0.3"`. Its session
+negotiates with a seller that holds no A2CN identity. The native log holds the
+producer's signed A2CN Offer; `observed_acts` holds the seller's order
+confirmation as an unsigned observation with a `null` `sender_did`; the
+responder is an `observed_party` with an `observed_credential` digest; and there
+is no SessionAck and no TransactionRecord. Both suites generate the record from
+`options` and must produce `expected.record` exactly, producer seal included:
+the key is Ed25519, whose signatures are deterministic. Each `valid_references`
+case generates the record with another reference (only `external_commitment_id`, a
+numeric-looking string id, an empty `reference_note`, a non-ASCII
+`reference_note`) and must reach its `record_hash` and verify. Each
+`invalid_references` case is a malformed reference: a missing, empty, integer,
+`null`, or array `external_commitment_id`; an empty, `null`, numeric, or array
+`locator`; a numeric or `null` `reference_note`; an extra member; or a reference
+that is `null`, a string, an array, or empty. The generator refuses each one,
+treating a `null` reference as not supplied, and `expected.record` with its
+reference replaced and resealed has `resealed_record_hash` and fails
+verification. Each `valid_variants` case generates the record with another
+act list: `producer-acts-only` has the producer's signed offer and nothing
+observed, and is `unilateral`, because the level of a record whose responder is
+an `observed_party` is asserted rather than derived (Section 9A.5). Each
+`invalid_records` case edits `expected.record` as its `set` and `remove` say,
+and names the rule it breaks: both completion witnesses, neither, a reference on
+another outcome, a DID-bearing responder, `mixed` or `bilateral` evidence, the
+record labelled `"0.2"` or `"0.1"`, `"0.3"` without the reference, an
+`observed_party` responder carrying a `transaction_record_hash` (at `"0.2"` and
+at `"0.1"`), no act the producer signed, no acts at all, and a record sealed by
+a DID that is not its initiator. That last case is sealed with `second_producer`,
+whose `private_jwk` is test-only, as its `sealed_by` says, so its seal verifies
+and only the producer binding refuses it; a case whose `schema_expresses` is
+false states a rule a JSON Schema cannot express, so the `"0.3"` schema accepts
+that record and only the verifier refuses it. Resealed, each has
+`resealed_record_hash` and fails verification. The Python suite validates every
+valid record against `session-evidence-record-0.3.schema.json`, checks that
+every invalid one fails it unless `schema_expresses` says otherwise, and checks
+that the `"0.1"` and `"0.2"` schemas refuse the reference.
+`session_evidence_record_0_2_schema_sha256` pins
+`session-evidence-record-0.2.schema.json`, beside which the `"0.3"` schema is
+published and which is not rewritten (Section 17).

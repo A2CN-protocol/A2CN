@@ -23,7 +23,8 @@ import { expect, test } from "vitest";
 import { hashObject, privateKeyFromJwk, signJws } from "../src/a2cn/crypto.js";
 import {
   RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS,
-  SESSION_EVIDENCE_RECORD_VERSION,
+  SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
+  SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
   generateSessionEvidenceRecord,
   verifySessionEvidenceRecord,
   type GenerateSessionEvidenceOptions,
@@ -323,7 +324,7 @@ test("every evidence record version a verifier recognizes has a schema that name
     expect(found.$id).toBe(`https://a2cn.dev/schemas/session-evidence-record/${version}`);
     expect(((found.properties as Dict).record_version as Dict).const).toBe(version);
   }
-  expect(RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS).toContain(SESSION_EVIDENCE_RECORD_VERSION);
+  expect(RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS).toContain(SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT);
 });
 
 const SER_0_1 = "session-evidence-record.schema.json";
@@ -525,3 +526,234 @@ test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
     expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(true);
   },
 );
+
+// ---------------------------------------------------------------------------
+// SessionEvidenceRecord "0.3": external-channel completion (Section 9A.12)
+// ---------------------------------------------------------------------------
+
+const SER_0_3 = "session-evidence-record-0.3.schema.json";
+const EXTERNAL_CHANNEL_VECTOR = readJson(
+  "spec",
+  "test-vectors",
+  "session-evidence-record-external-channel.json",
+);
+
+/** The record session-evidence-record-external-channel.json generates. */
+function externalChannelEvidenceRecord(): Dict {
+  const fixture = EXTERNAL_CHANNEL_VECTOR;
+  const source = fixture.session as Dict;
+  const session = new Session({
+    session_id: source.session_id as string,
+    state: source.state as string,
+    current_turn: "none",
+    terminal_reason: source.terminal_reason as string,
+    terminal_message_id: source.terminal_message_id as string | null,
+    session_created_at: source.session_created_at as string,
+    state_updated_at: source.state_updated_at as string,
+    session_params: source.session_params as Dict,
+    initiator_mandate: source.initiator_mandate as Dict,
+    responder_mandate: source.responder_mandate as Dict,
+    _session_init: source.session_init as Dict,
+    _session_ack: source.session_ack as Dict | null,
+    _message_log: source.message_log as Dict[],
+  });
+  const options = fixture.options as Dict;
+  expect(Object.keys(options).sort()).toEqual(["external_commitment_reference", "observed_responder"]);
+  const producer = fixture.producer as Dict;
+  return generateSessionEvidenceRecord(session, {
+    producerPrivateKey: privateKeyFromJwk(fixture.producer_private_jwk as Dict),
+    producerDid: producer.did as string,
+    producerAgentId: producer.agent_id as string,
+    producerVerificationMethod: producer.verification_method as string,
+    observedActs: fixture.observed_acts as Dict[],
+    observedResponder: structuredClone(options.observed_responder as Dict),
+    externalCommitmentReference: structuredClone(options.external_commitment_reference as Dict),
+  });
+}
+
+test("the evidence record schemas name the versions the generator emits", () => {
+  expect(SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT).toBe("0.2");
+  expect(SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT).toBe("0.3");
+  for (const [file, version] of [
+    [SER_0_2, SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT],
+    [SER_0_3, SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT],
+  ]) {
+    expect(((schema(file).properties as Dict).record_version as Dict).const).toBe(version);
+  }
+  // A verifier recognizes exactly the versions it has a schema for.
+  expect([...RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS]).toEqual([
+    "0.1",
+    SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
+    SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
+  ]);
+});
+
+test("the 0.3 evidence record schema is the 0.2 schema with external-channel completion", () => {
+  // Only the version, the new member, and the rules that go with it differ.
+  const previous = schema(SER_0_2);
+  const current = schema(SER_0_3);
+  const properties = current.properties as Dict;
+
+  expect(current.$id).toBe("https://a2cn.dev/schemas/session-evidence-record/0.3");
+  expect(properties.record_version).toStrictEqual({ type: "string", const: "0.3" });
+  expect(current.required).toStrictEqual([
+    ...(previous.required as string[]),
+    "external_commitment_reference",
+  ]);
+  expect(properties.external_commitment_reference).toStrictEqual({
+    $ref: "#/$defs/external_commitment_reference",
+  });
+  // An external-channel record carries at least one act its producer signed. The
+  // schema can require a verified act; that its sender is the initiator is a
+  // cross-reference between two members, which a JSON Schema cannot state.
+  expect((properties.acts as Dict).contains).toStrictEqual({
+    properties: { attribution: { const: "verified_signature" } },
+    required: ["attribution"],
+  });
+
+  const everythingElse = (found: Dict): Dict => {
+    const copy = structuredClone(found);
+    delete copy.$id;
+    delete copy.description;
+    delete copy.allOf;
+    delete (copy.properties as Dict).record_version;
+    delete (copy.properties as Dict).acts;
+    delete (copy.properties as Dict).external_commitment_reference;
+    delete (copy.$defs as Dict).external_commitment_reference;
+    copy.required = (copy.required as string[]).filter(
+      (name) => name !== "external_commitment_reference",
+    );
+    return copy;
+  };
+  expect(everythingElse(current)).toStrictEqual(everythingElse(previous));
+});
+
+test("the 0.3 schema admits only a COMPLETED, unilateral record against an observed party", () => {
+  const allOf = schema(SER_0_3).allOf as Dict[];
+
+  // One completion witness: a COMPLETED record whose transaction_record_hash is
+  // null. No other outcome has a completion witness, so no other outcome fits.
+  expect(allOf).toContainEqual(
+    expect.objectContaining({
+      if: {
+        properties: {
+          terminal: { properties: { outcome: { const: "COMPLETED" } }, required: ["outcome"] },
+        },
+      },
+      then: { properties: { transaction_record_hash: { type: "null" } } },
+      else: false,
+    }),
+  );
+  // The coupling: the responder is an observed_party and the evidence is unilateral.
+  expect(allOf).toContainEqual(
+    expect.objectContaining({
+      properties: {
+        parties: { properties: { responder: { $ref: "#/$defs/observed_party" } } },
+        evidence_level: { const: "unilateral" },
+      },
+    }),
+  );
+});
+
+/** Whether `value` fits a closed object definition whose properties are typed strings. */
+function fitsStringObject(definition: Dict, value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const properties = definition.properties as Dict;
+  const object = value as Dict;
+  if (Object.keys(object).some((key) => !Object.prototype.hasOwnProperty.call(properties, key))) {
+    return false;
+  }
+  if ((definition.required as string[]).some((key) => !Object.prototype.hasOwnProperty.call(object, key))) {
+    return false;
+  }
+  return Object.entries(object).every(([key, field]) => {
+    const rule = properties[key] as Dict;
+    return (
+      typeof field === rule.type &&
+      (rule.minLength === undefined || (field as string).length >= (rule.minLength as number))
+    );
+  });
+}
+
+test("the 0.3 schema's external_commitment_reference agrees with the vector", () => {
+  const definition = (schema(SER_0_3).$defs as Dict).external_commitment_reference as Dict;
+  expect(definition.type).toBe("object");
+  expect(definition.additionalProperties).toBe(false);
+  expect(definition.required).toStrictEqual(["external_commitment_id"]);
+  const rules = Object.fromEntries(
+    Object.entries(definition.properties as Dict).map(([name, rule]) => [
+      name,
+      { type: (rule as Dict).type, minLength: (rule as Dict).minLength },
+    ]),
+  );
+  expect(rules).toStrictEqual({
+    external_commitment_id: { type: "string", minLength: 1 },
+    locator: { type: "string", minLength: 1 },
+    reference_note: { type: "string", minLength: undefined },
+  });
+
+  const valid = [
+    (EXTERNAL_CHANNEL_VECTOR.options as Dict).external_commitment_reference,
+    ...(EXTERNAL_CHANNEL_VECTOR.valid_references as Dict[]).map(
+      (entry) => entry.external_commitment_reference,
+    ),
+  ];
+  for (const reference of valid) {
+    expect(fitsStringObject(definition, reference), JSON.stringify(reference)).toBe(true);
+  }
+  for (const entry of EXTERNAL_CHANNEL_VECTOR.invalid_references as Dict[]) {
+    expect(fitsStringObject(definition, entry.external_commitment_reference), entry.name as string).toBe(
+      false,
+    );
+  }
+});
+
+test("an external-channel record uses a member only the 0.3 schema describes", () => {
+  const record = externalChannelEvidenceRecord();
+  const current = schema(SER_0_3);
+
+  expect(record.record_version).toBe("0.3");
+  expect(Object.keys(record).filter((key) => !(key in (current.properties as Dict)))).toEqual([]);
+  expect((current.required as string[]).filter((key) => !(key in record))).toEqual([]);
+  for (const file of [SER_0_1, SER_0_2]) {
+    const earlier = schema(file);
+    expect(earlier.additionalProperties, file).toBe(false);
+    expect(
+      Object.keys(record).filter((key) => !(key in (earlier.properties as Dict))),
+      file,
+    ).toEqual(["external_commitment_reference"]);
+  }
+  expect(
+    verifySessionEvidenceRecord(
+      record,
+      EXTERNAL_CHANNEL_VECTOR.did_documents as Record<string, Dict>,
+    ),
+  ).toBe(true);
+});
+
+test("no record without the reference has every member the 0.3 schema requires", () => {
+  // Every record that does not complete through an external channel stays "0.2".
+  const required = schema(SER_0_3).required as string[];
+  const records = [
+    parityEvidenceRecord(),
+    ...Object.keys(EXTENSIONS_VECTOR.vectors as Dict)
+      .sort()
+      .map((name) => extensionEvidenceRecord(name)),
+  ];
+
+  for (const record of records) {
+    expect(record.record_version).toBe("0.2");
+    expect(required.filter((key) => !(key in record))).toEqual(["external_commitment_reference"]);
+  }
+});
+
+test("the 0.2 evidence record schema is unchanged", () => {
+  // The "0.3" schema is published beside it, and "0.2" is not rewritten (Section 17).
+  const digest = createHash("sha256")
+    .update(readFileSync(join(REPO_ROOT, "spec", "schemas", SER_0_2)))
+    .digest("hex");
+
+  expect(digest).toBe(EXTERNAL_CHANNEL_VECTOR.session_evidence_record_0_2_schema_sha256);
+});

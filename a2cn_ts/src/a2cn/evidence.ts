@@ -27,10 +27,19 @@ import {
 import { SESSION_BASES, SessionState, now } from "./session.js";
 import type { Dict } from "./messages.js";
 
-export const SESSION_EVIDENCE_RECORD_VERSION = "0.2";
-// The versions a verifier accepts (Section 9A.2). Every other value is rejected,
-// and verification is the same for both.
-export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2"];
+export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2";
+// A record's version follows its content (Section 9A.2): "0.3" exactly when it
+// carries external_commitment_reference (Section 9A.12). Every other record
+// stays "0.2", so a verifier that predates "0.3" still reads it.
+export const SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3";
+// The versions a verifier accepts (Section 9A.2). Every other value is rejected.
+// Verification is the same for all of them, except that a record carries
+// external_commitment_reference exactly when it is "0.3".
+export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = [
+  "0.1",
+  "0.2",
+  "0.3",
+];
 export const SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record";
 
 export const EvidenceLevel = {
@@ -102,7 +111,9 @@ const ACT_FIELDS = new Set([
   "signature",
   "attribution",
 ]);
-const RECORD_OPTIONAL_FIELDS = new Set(["extensions"]);
+const RECORD_OPTIONAL_FIELDS = new Set(["extensions", "external_commitment_reference"]);
+const EXTERNAL_COMMITMENT_REFERENCE_FIELDS = new Set(["external_commitment_id"]);
+const EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = new Set(["locator", "reference_note"]);
 const ACT_OPTIONAL_FIELDS = new Set(["money_basis"]);
 const TERMINAL_FIELDS = new Set(["outcome", "reason", "message_id", "timestamp"]);
 const TERMINAL_OPTIONAL_FIELDS = new Set(["money_basis"]);
@@ -163,6 +174,13 @@ export interface GenerateSessionEvidenceOptions {
   terminalReason?: string | null;
   terminalMoneyBasis?: Dict | null;
   extensions?: Dict | null;
+  /**
+   * Completes a session whose responder is observed: the external order or
+   * commitment the deal produced, in place of a TransactionRecord, which is
+   * bilateral (Section 9A.12). Such a record is "0.3". Required for that session
+   * and refused for any other; null or undefined means it is not supplied.
+   */
+  externalCommitmentReference?: Dict | null;
 }
 
 export interface EvidenceAssessment {
@@ -205,12 +223,37 @@ export function generateSessionEvidenceRecord(
     reason = terminalReason;
   }
 
-  const parties = partyMetadata(session, options.observedResponder ?? null);
+  const observedResponder = options.observedResponder ?? null;
+  const parties = partyMetadata(session, observedResponder);
   const producer = producerMetadata(parties, {
     producerVerificationMethod: options.producerVerificationMethod,
     producerDid: options.producerDid ?? null,
     producerAgentId: options.producerAgentId ?? null,
   });
+
+  // A COMPLETED session carries exactly one completion witness (Section 9A.2).
+  // A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
+  // completes with one, and an observed responder completes through the
+  // external commitment the deal produced (Section 9A.12).
+  const externalCommitmentReference = options.externalCommitmentReference ?? null;
+  let reference: Dict | null = null;
+  if (externalCommitmentReference !== null) {
+    if (outcome !== SessionState.COMPLETED) {
+      throw new Error("externalCommitmentReference is only for a COMPLETED session");
+    }
+    if (observedResponder === null) {
+      throw new Error(
+        "externalCommitmentReference requires an observed responder; a " +
+          "DID-bearing responder completes with its TransactionRecord",
+      );
+    }
+    reference = validatedExternalCommitmentReference(externalCommitmentReference);
+  } else if (outcome === SessionState.COMPLETED && observedResponder !== null) {
+    throw new Error(
+      "A COMPLETED session with an observed responder requires " +
+        "externalCommitmentReference, because a TransactionRecord is bilateral",
+    );
+  }
 
   const acts = session._message_log.map((message) =>
     normalizeEvidenceAct(message, "a2cn"),
@@ -222,7 +265,7 @@ export function generateSessionEvidenceRecord(
 
   const terminalTimestamp = terminalTimestampFor(session);
   let transactionRecordHash: string | null = null;
-  if (session.state === SessionState.COMPLETED) {
+  if (outcome === SessionState.COMPLETED && observedResponder === null) {
     transactionRecordHash = generateTransactionRecord(session).record_hash as string;
   }
 
@@ -234,7 +277,10 @@ export function generateSessionEvidenceRecord(
 
   const record: Dict = {
     record_type: SESSION_EVIDENCE_RECORD_TYPE,
-    record_version: SESSION_EVIDENCE_RECORD_VERSION,
+    record_version:
+      reference !== null
+        ? SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
+        : SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
     evidence_id: uuidv5(
       `session-evidence:${session.session_id}:${producerDid}`,
       A2CN_NAMESPACE,
@@ -262,9 +308,12 @@ export function generateSessionEvidenceRecord(
   if (options.extensions != null) {
     record.extensions = validatedExtensions(options.extensions);
   }
+  if (reference !== null) {
+    record.external_commitment_reference = reference;
+  }
 
   // Refuse to seal a claim the verifier would reject. The generator and the
-  // verifier run the same two rules so a producer cannot emit a record that only
+  // verifier run the same rules so a producer cannot emit a record that only
   // fails once it is somebody else's problem.
   if (!moneyBasisClaimsVerify(record)) {
     throw new Error(
@@ -275,6 +324,35 @@ export function generateSessionEvidenceRecord(
   if (!observedResponderRulesHold(record)) {
     throw new Error(
       "An observed responder requires unsigned counterparty acts and unilateral evidence",
+    );
+  }
+  if (!completionWitnessHolds(record)) {
+    throw new Error(
+      "A COMPLETED record carries exactly one completion witness, and no other outcome carries one",
+    );
+  }
+  if (!externalCommitmentRulesHold(record)) {
+    throw new Error(
+      "An external commitment reference requires an observed responder and unilateral evidence",
+    );
+  }
+  if (!externalCommitmentMatchesVersion(record)) {
+    throw new Error(
+      "record_version must be 0.3 exactly when the record carries external_commitment_reference",
+    );
+  }
+  if (!externalCommitmentProducerActPresent(record)) {
+    throw new Error(
+      "An external commitment reference requires at least one act signed by the " +
+        "initiator that seals the record",
+    );
+  }
+  if (!externalCommitmentSealedByInitiator(record)) {
+    throw new Error("An external-channel record must be sealed by parties.initiator.did");
+  }
+  if (!bilateralWitnessMatchesResponder(record)) {
+    throw new Error(
+      "A transaction_record_hash requires a DID-bearing responder, and this session has none",
     );
   }
 
@@ -318,6 +396,9 @@ export function assessSessionEvidenceRecord(
     if (!RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.includes(record.record_version as string)) {
       return assessment;
     }
+    if (!externalCommitmentMatchesVersion(record)) {
+      return assessment;
+    }
 
     const terminal = record.terminal as Dict;
     const outcome = terminal.outcome as string;
@@ -329,11 +410,7 @@ export function assessSessionEvidenceRecord(
     }
     timestampOrderKey(record.generated_at);
     timestampOrderKey(terminal.timestamp);
-    if (outcome === SessionState.COMPLETED) {
-      if (typeof record.transaction_record_hash !== "string" || !record.transaction_record_hash) {
-        return assessment;
-      }
-    } else if (record.transaction_record_hash !== null) {
+    if (!completionWitnessHolds(record)) {
       return assessment;
     }
 
@@ -391,6 +468,18 @@ export function assessSessionEvidenceRecord(
       return assessment;
     }
     if (!observedResponderRulesHold(record)) {
+      return assessment;
+    }
+    if (!externalCommitmentRulesHold(record)) {
+      return assessment;
+    }
+    if (!externalCommitmentProducerActPresent(record)) {
+      return assessment;
+    }
+    if (!externalCommitmentSealedByInitiator(record)) {
+      return assessment;
+    }
+    if (!bilateralWitnessMatchesResponder(record)) {
       return assessment;
     }
     if (record.act_chain_hash !== hashBytes(canonicalize(computedActHashes))) {
@@ -548,6 +637,22 @@ function validatedExtensions(extensions: Dict): Dict {
   return structuredClone(extensions);
 }
 
+/** The caller's external commitment reference, checked and copied before sealing. */
+function validatedExternalCommitmentReference(reference: unknown): Dict {
+  if (typeof reference !== "object" || reference === null || Array.isArray(reference)) {
+    throw new Error("externalCommitmentReference must be an object");
+  }
+  const copied = structuredClone(reference) as Dict;
+  if (!externalCommitmentReferenceShapeValid(copied)) {
+    throw new Error(
+      "externalCommitmentReference must be an object with a non-empty string " +
+        "external_commitment_id, an optional non-empty string locator, an optional " +
+        "string reference_note, and no other member",
+    );
+  }
+  return copied;
+}
+
 function metadataObject(value: unknown, fieldName: string): Dict {
   if (value === undefined) {
     return {};
@@ -591,6 +696,12 @@ function evidenceRecordShapeValid(record: Dict): boolean {
     if (!Object.keys(extensions).every((name) => EXTENSION_NAMESPACE_PATTERN.test(name))) {
       return false;
     }
+  }
+  if (
+    hasOwn(record, "external_commitment_reference") &&
+    !externalCommitmentReferenceShapeValid(record.external_commitment_reference)
+  ) {
+    return false;
   }
   for (const field of [
     "record_type",
@@ -762,6 +873,169 @@ function observedResponderRulesHold(record: Dict): boolean {
   // Asserted explicitly rather than inherited from the classifier, so that a
   // future change to classification cannot quietly promote these records.
   return record.evidence_level === EvidenceLevel.UNILATERAL;
+}
+
+/**
+ * Shape of the external order or commitment a COMPLETED session produced.
+ *
+ * This checks structure and types, and nothing else (Section 9A.12). The locator
+ * is provenance only: a verifier MUST NOT dereference it or contact the
+ * counterparty, so it is checked as a non-empty string and no further. A member
+ * present with the value null, or undefined, is malformed, never read as absent.
+ */
+function externalCommitmentReferenceShapeValid(reference: unknown): boolean {
+  if (
+    !hasFields(
+      reference as Dict,
+      EXTERNAL_COMMITMENT_REFERENCE_FIELDS,
+      EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS,
+    )
+  ) {
+    return false;
+  }
+  const value = reference as Dict;
+  if (typeof value.external_commitment_id !== "string" || !value.external_commitment_id) {
+    return false;
+  }
+  if (hasOwn(value, "locator") && (typeof value.locator !== "string" || !value.locator)) {
+    return false;
+  }
+  return !hasOwn(value, "reference_note") || typeof value.reference_note === "string";
+}
+
+/**
+ * A COMPLETED record carries exactly one completion witness (Section 9A.2).
+ *
+ * The witness is a transaction_record_hash, for the bilateral TransactionRecord,
+ * or an external_commitment_reference with a null transaction_record_hash
+ * (Section 9A.12): never both, and never neither. Every other outcome carries
+ * neither. The reference is present by key, whatever its value.
+ */
+function completionWitnessHolds(record: Dict): boolean {
+  const hasReference = hasOwn(record, "external_commitment_reference");
+  const transactionRecordHash = record.transaction_record_hash;
+  if ((record.terminal as Dict).outcome === SessionState.COMPLETED) {
+    if (hasReference) {
+      return transactionRecordHash === null;
+    }
+    return typeof transactionRecordHash === "string" && transactionRecordHash.length > 0;
+  }
+  return transactionRecordHash === null && !hasReference;
+}
+
+/**
+ * Couple an external commitment reference to an observed responder and
+ * unilateral evidence.
+ *
+ * A TransactionRecord is bilateral by construction (Section 9.3), so the
+ * reference exists for a counterparty with no A2CN identity, and the record
+ * represents one DID-bearing party beside an observed reference (Section 9A.12).
+ * Asserted here rather than left to follow from the observed-responder coupling,
+ * for the same reason that coupling is asserted explicitly.
+ */
+function externalCommitmentRulesHold(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties as Dict;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  return (
+    observedPartyShapeValid(parties.responder) &&
+    record.evidence_level === EvidenceLevel.UNILATERAL
+  );
+}
+
+/**
+ * A record carries external_commitment_reference exactly when it is "0.3"
+ * (Section 9A.2).
+ *
+ * This is the one verification rule that depends on the version. The reference
+ * is present by key, so one whose value is null counts as carried.
+ */
+function externalCommitmentMatchesVersion(record: Dict): boolean {
+  const carried = hasOwn(record, "external_commitment_reference");
+  const is03 = record.record_version === SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT;
+  return carried === is03;
+}
+
+/**
+ * A transaction_record_hash requires a DID-bearing responder (Section 9A.2).
+ *
+ * A TransactionRecord is bilateral by construction (Section 9.3), so a session
+ * whose responder is an observed_party has none, and a record claiming one for
+ * such a session is rejected at every version. Such a session completes through
+ * external_commitment_reference instead (Section 9A.12).
+ */
+function bilateralWitnessMatchesResponder(record: Dict): boolean {
+  if (record.transaction_record_hash === null) {
+    return true;
+  }
+  const parties = record.parties as Dict;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  return fullPartyShapeValid(parties.responder);
+}
+
+/**
+ * An external-channel record carries at least one act its initiator signed.
+ *
+ * The counterparty attests to nothing in such a record (Section 9A.12). With no
+ * signed act of the producer's own, nothing in it would be attributable to any
+ * party, and the seal alone would carry the COMPLETED claim.
+ */
+function externalCommitmentProducerActPresent(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties as Dict;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  const initiator = parties.initiator as Dict;
+  if (typeof initiator !== "object" || initiator === null) {
+    return false;
+  }
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  return (acts as Dict[]).some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      entry.attribution === EvidenceAttribution.VERIFIED &&
+      entry.sender_did === initiator.did,
+  );
+}
+
+/**
+ * An external-channel record is sealed by its initiator (Section 9A.12).
+ *
+ * The producer's seal is the only cryptographic evidence such a record holds, so
+ * the party it names as initiator is the party that must have sealed it.
+ */
+function externalCommitmentSealedByInitiator(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties as Dict;
+  const producer = record.producer as Dict;
+  if (
+    typeof parties !== "object" ||
+    parties === null ||
+    typeof producer !== "object" ||
+    producer === null
+  ) {
+    return false;
+  }
+  const initiator = parties.initiator as Dict;
+  if (typeof initiator !== "object" || initiator === null) {
+    return false;
+  }
+  return Boolean(producer.did) && producer.did === initiator.did;
 }
 
 /**
@@ -1449,6 +1723,18 @@ function verificationMethodControlledBy(verificationMethod: string, did: string)
 }
 
 function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): string {
+  // Section 9A.5: a record whose responder is an observed_party is always
+  // unilateral, asserted rather than derived from the acts below. Deriving it
+  // would call a record whose acts are all the producer's own bilateral, when
+  // the counterparty attested to nothing in it.
+  if (
+    typeof parties === "object" &&
+    parties !== null &&
+    observedPartyShapeValid(parties.responder)
+  ) {
+    return EvidenceLevel.UNILATERAL;
+  }
+
   const partyDids = new Set(
     Object.values(parties)
       .map((party) => (party as Dict).did)

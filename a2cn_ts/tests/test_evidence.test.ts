@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   canonicalize,
@@ -21,7 +21,13 @@ import {
   verifySessionEvidenceRecord,
   type GenerateSessionEvidenceOptions,
 } from "../src/a2cn/evidence.js";
-import { generateTransactionRecord, verifyTransactionRecord } from "../src/a2cn/record.js";
+import { v5 as uuidv5 } from "uuid";
+
+import {
+  A2CN_NAMESPACE,
+  generateTransactionRecord,
+  verifyTransactionRecord,
+} from "../src/a2cn/record.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
@@ -1342,9 +1348,10 @@ test("an observed responder cannot ride a COMPLETED record to bilateral", () => 
   expect(verifySessionEvidenceRecord(bilateral, didDocuments)).toBe(true);
 
   // Strip the counterparty's identity and its signed acceptance. What remains is
-  // one party whose every act is signed, which the classifier still calls
-  // bilateral -- so the explicit unilateral coupling is the only thing that
-  // refuses a COMPLETED record with an unidentified counterparty.
+  // one party whose every act is signed. Two rules refuse it: the level of a
+  // record whose responder is an observed_party is asserted unilateral (Section
+  // 9A.5), so the recomputed level contradicts this claim, and the explicit
+  // unilateral coupling refuses it as well.
   const forged = structuredClone(bilateral);
   (forged.parties as Dict).responder = {
     identity_source: "supplier_ordering_portal",
@@ -1570,4 +1577,802 @@ test.each(
 
   expect(record.record_hash).toBe(moneyBasisCase.resealed_record_hash);
   expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// External-channel completion (Section 9A.12): a COMPLETED record whose
+// completion witness is an external_commitment_reference, at record_version
+// "0.3". The counterparty holds no A2CN identity, so there is no bilateral
+// TransactionRecord to cross-link.
+// ---------------------------------------------------------------------------
+
+const EXTERNAL_COMMITMENT_REFERENCE: Dict = {
+  external_commitment_id: "ORD-2026-000123",
+  locator: "https://shop.example/.well-known/ucp",
+};
+
+function hasKey(object: unknown, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+/** The seller's order confirmation, observed through its commerce API, unsigned. */
+function orderConfirmation(): Dict {
+  return {
+    sequence_number: null,
+    round_number: null,
+    message_type: "order_confirmation",
+    message_id: "order-confirmation-1",
+    sender_did: null,
+    timestamp: "2026-03-24T10:05:00Z",
+    source_protocol: "ucp",
+    act: {
+      message_type: "order_confirmation",
+      message_id: "order-confirmation-1",
+      timestamp: "2026-03-24T10:05:00Z",
+      order: { id: "ORD-2026-000123", status: "confirmed" },
+    },
+  };
+}
+
+function markCompletedExternally(session: Session): void {
+  session.state = SessionState.COMPLETED;
+  session.current_turn = "none";
+  session.terminal_reason = "external_order_confirmed";
+  session.terminal_message_id = "order-confirmation-1";
+  session.state_updated_at = "2026-03-24T10:05:00Z";
+}
+
+/** An identity-light session whose seller confirmed an order outside A2CN. */
+function externalChannelSession(): [Session, Record<string, Dict>] {
+  const [manager, session, didDocuments] = makeIdentityLightSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markCompletedExternally(session);
+  return [session, didDocuments];
+}
+
+function externalChannelRecord(
+  extra: Partial<GenerateSessionEvidenceOptions> = {},
+): [Dict, Record<string, Dict>] {
+  const [session, didDocuments] = externalChannelSession();
+  return [
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+      ...extra,
+    }),
+    didDocuments,
+  ];
+}
+
+function bilateralRecord(): [Dict, Record<string, Dict>, Session] {
+  const [manager, session, didDocuments] = makeSession();
+  const offer = makeOffer(session.session_id);
+  manager.processMessage(session, offer);
+  manager.processMessage(session, makeAcceptance(session.session_id, offer));
+  return [generateEvidence(session), didDocuments, session];
+}
+
+// --- (i) and (ii): each completion witness on its own ------------------------
+
+test("a bilateral COMPLETED record keeps its transaction record hash at 0.2", () => {
+  const [evidence, didDocuments, session] = bilateralRecord();
+
+  expect(evidence.record_version).toBe("0.2");
+  expect(evidence.transaction_record_hash).toBe(generateTransactionRecord(session).record_hash);
+  expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+test("an external-channel COMPLETED record is valid at 0.3", () => {
+  const [session, didDocuments] = externalChannelSession();
+  // No TransactionRecord exists for this session: the counterparty never signed
+  // an A2CN act. So the record below is produced without generating one.
+  expect(() => generateTransactionRecord(session)).toThrow();
+
+  const evidence = generateEvidenceWith(session, [orderConfirmation()], {
+    observedResponder: OBSERVED_RESPONDER,
+    externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+  });
+
+  expect(evidence.record_version).toBe("0.3");
+  expect((evidence.terminal as Dict).outcome).toBe(SessionState.COMPLETED);
+  expect(evidence.transaction_record_hash).toBeNull();
+  expect(evidence.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
+  expect(hasKey((evidence.parties as Dict).responder, "did")).toBe(false);
+  expect(assessSessionEvidenceRecord(evidence, didDocuments)).toEqual({
+    valid: true,
+    evidence_level: "unilateral",
+    verified_acts: 1,
+    unsigned_acts: 1,
+    invalid_acts: 0,
+  });
+});
+
+// --- (iii) to (vi): the completion-witness rule and its coupling -------------
+
+test("a COMPLETED record with both witnesses is rejected", () => {
+  const [healthy, didDocuments] = externalChannelRecord();
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+  // Re-sealing must itself produce a verifiable record, or the red below would
+  // prove only that the reseal helper is broken.
+  expect(verifySessionEvidenceRecord(reseal(structuredClone(healthy)), didDocuments)).toBe(
+    true,
+  );
+
+  const both = structuredClone(healthy);
+  both.transaction_record_hash = hashBytes(new TextEncoder().encode("a transaction record"));
+  reseal(both);
+
+  expect(verifySessionEvidenceRecord(both, didDocuments)).toBe(false);
+});
+
+test("a COMPLETED record with neither witness is rejected", () => {
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const neither = structuredClone(healthy);
+  delete neither.external_commitment_reference;
+  neither.record_version = "0.2";
+  reseal(neither);
+
+  expect(verifySessionEvidenceRecord(neither, didDocuments)).toBe(false);
+
+  // A bilateral record that loses its TransactionRecord hash is refused too.
+  const [bilateral, bilateralDocuments] = bilateralRecord();
+  expect(verifySessionEvidenceRecord(bilateral, bilateralDocuments)).toBe(true);
+  bilateral.transaction_record_hash = null;
+  reseal(bilateral);
+
+  expect(verifySessionEvidenceRecord(bilateral, bilateralDocuments)).toBe(false);
+});
+
+test.each([
+  SessionState.REJECTED_FINAL,
+  SessionState.WITHDRAWN,
+  SessionState.TIMED_OUT,
+  SessionState.IMPASSE,
+  SessionState.ERROR,
+  "HALTED_BY_CONTROLS",
+])("a reference on any other outcome is rejected: %s", (outcome) => {
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const relabelled = structuredClone(healthy);
+  (relabelled.terminal as Dict).outcome = outcome;
+  reseal(relabelled);
+
+  expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(false);
+});
+
+test("a transaction record hash on any other outcome is still rejected", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+  const healthy = generateEvidence(session);
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+
+  const crossLinked = structuredClone(healthy);
+  crossLinked.transaction_record_hash = hashBytes(
+    new TextEncoder().encode("a transaction record"),
+  );
+  reseal(crossLinked);
+
+  expect(verifySessionEvidenceRecord(crossLinked, didDocuments)).toBe(false);
+});
+
+test("a reference with a DID-bearing responder is rejected", () => {
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const identified = structuredClone(healthy);
+  (identified.parties as Dict).responder = {
+    organization_name: "Acme",
+    did: RESPONDER_DID,
+    agent_id: "seller-agent",
+    verification_method: RESPONDER_VM,
+    mandate_type: "declared",
+  };
+  reseal(identified);
+
+  const assessment = assessSessionEvidenceRecord(identified, didDocuments);
+
+  // Assert the reason before the verdict: every act verifies, and with the
+  // seller's act unsigned the record is still unilateral, so what refuses it is
+  // the rule that a reference needs an observed responder.
+  expect(assessment.invalid_acts).toBe(0);
+  expect(assessment.verified_acts).toBe(1);
+  expect(assessment.unsigned_acts).toBe(1);
+  expect(assessment.evidence_level).toBe("unilateral");
+  expect(assessment.valid).toBe(false);
+});
+
+test.each(["mixed", "bilateral"])(
+  "a reference with evidence other than unilateral is rejected: %s",
+  (evidenceLevel) => {
+    const [healthy, didDocuments] = externalChannelRecord();
+
+    const promoted = structuredClone(healthy);
+    promoted.evidence_level = evidenceLevel;
+    reseal(promoted);
+
+    expect(verifySessionEvidenceRecord(promoted, didDocuments)).toBe(false);
+  },
+);
+
+/**
+ * The producer's own signed acts never make an observed-responder record bilateral.
+ *
+ * The level of such a record is asserted unilateral (Section 9A.5), so the
+ * recomputed level contradicts a bilateral claim. Section 9A.8 and the
+ * reference's own coupling (Section 9A.12) refuse it as well.
+ */
+test("a reference cannot ride a fully signed record to bilateral", () => {
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const forged = structuredClone(healthy);
+  forged.acts = [(forged.acts as Dict[])[0]];
+  forged.evidence_level = "bilateral";
+  reseal(forged);
+
+  const assessment = assessSessionEvidenceRecord(forged, didDocuments);
+
+  expect(assessment.invalid_acts).toBe(0);
+  expect(assessment.verified_acts).toBe(1);
+  expect(assessment.valid).toBe(false);
+});
+
+// --- record_version follows the reference, in both directions ----------------
+
+test.each(["0.2", "0.1"])("a reference on a record that is not 0.3 is rejected: %s", (version) => {
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const relabelled = structuredClone(healthy);
+  relabelled.record_version = version;
+  reseal(relabelled);
+
+  expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(false);
+});
+
+test("a 0.3 record without a reference is rejected", () => {
+  const [bilateral, bilateralDocuments] = bilateralRecord();
+  const [timedOut, timedOutDocuments] = mixedRecord();
+
+  for (const [record, didDocuments] of [
+    [bilateral, bilateralDocuments],
+    [timedOut, timedOutDocuments],
+  ] as [Dict, Record<string, Dict>][]) {
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+    const relabelled = structuredClone(record);
+    relabelled.record_version = "0.3";
+    reseal(relabelled);
+    expect(verifySessionEvidenceRecord(relabelled, didDocuments)).toBe(false);
+  }
+});
+
+// --- the seal, and what the verifier must not do ----------------------------
+
+test("editing the reference after sealing invalidates the record", () => {
+  const [healthy, didDocuments] = externalChannelRecord({
+    externalCommitmentReference: { ...EXTERNAL_COMMITMENT_REFERENCE, reference_note: "confirmed" },
+  });
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+
+  for (const [field, value] of [
+    ["external_commitment_id", "ORD-2026-000124"],
+    ["locator", "https://other.example/.well-known/ucp"],
+    ["reference_note", "cancelled"],
+  ]) {
+    const edited = structuredClone(healthy);
+    (edited.external_commitment_reference as Dict)[field] = value;
+    expect(verifySessionEvidenceRecord(edited, didDocuments), field).toBe(false);
+  }
+
+  const dropped = structuredClone(healthy);
+  delete (dropped.external_commitment_reference as Dict).reference_note;
+  expect(verifySessionEvidenceRecord(dropped, didDocuments)).toBe(false);
+});
+
+test("the verifier never dereferences the locator", () => {
+  const [evidence, didDocuments] = externalChannelRecord();
+  const requested: string[] = [];
+  const recordingResolver = (did: string): Dict => {
+    requested.push(did);
+    return didDocuments[did];
+  };
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+    throw new Error("the verifier reached for the network");
+  });
+
+  try {
+    expect(verifySessionEvidenceRecord(evidence, recordingResolver)).toBe(true);
+    expect([...new Set(requested)]).toEqual([INITIATOR_DID]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  } finally {
+    fetchSpy.mockRestore();
+  }
+});
+
+/**
+ * TypeScript can hold a key whose value is undefined. canonicalize drops such a
+ * key, so a record that gains one still matches its seal; only the rules that
+ * look at key presence can refuse it, and they must.
+ */
+test("a reference key that is present but undefined is not read as absent", () => {
+  // An undefined option is not supplied, so the observed completion lacks one.
+  const [session] = externalChannelSession();
+  expect(() =>
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: undefined,
+    }),
+  ).toThrow(/requires externalCommitmentReference/);
+  // An undefined member is a present key whose value is not a string.
+  expect(() =>
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: { external_commitment_id: "ORD-2026-000123", locator: undefined },
+    }),
+  ).toThrow(/must be an object/);
+
+  const [orderIdOnly, didDocuments] = externalChannelRecord({
+    externalCommitmentReference: { external_commitment_id: "ORD-2026-000123" },
+  });
+  expect(verifySessionEvidenceRecord(orderIdOnly, didDocuments)).toBe(true);
+  const undefinedMember = structuredClone(orderIdOnly);
+  (undefinedMember.external_commitment_reference as Dict).locator = undefined;
+  expect(hashObject({ ...undefinedMember, record_hash: "", producer_signature: "" })).toBe(
+    orderIdOnly.record_hash,
+  );
+  expect(verifySessionEvidenceRecord(undefinedMember, didDocuments)).toBe(false);
+
+  const [plain, plainDocuments] = mixedRecord();
+  const undefinedReference = structuredClone(plain);
+  undefinedReference.external_commitment_reference = undefined;
+  expect(hashObject({ ...undefinedReference, record_hash: "", producer_signature: "" })).toBe(
+    plain.record_hash,
+  );
+  expect(verifySessionEvidenceRecord(undefinedReference, plainDocuments)).toBe(false);
+});
+
+// --- what the generator refuses to seal -------------------------------------
+
+test("the generator refuses a reference for a DID-bearing responder", () => {
+  const [manager, session] = makeSession();
+  const offer = makeOffer(session.session_id);
+  manager.processMessage(session, offer);
+  manager.processMessage(session, makeAcceptance(session.session_id, offer));
+
+  expect(() =>
+    generateEvidenceWith(session, null, {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/completes with its TransactionRecord/);
+});
+
+test.each([
+  ["omitted", {}],
+  ["null", { externalCommitmentReference: null }],
+] as [string, Partial<GenerateSessionEvidenceOptions>][])(
+  "the generator refuses an observed completion without a reference: %s",
+  (_name, extra) => {
+    const [session] = externalChannelSession();
+
+    expect(() =>
+      generateEvidenceWith(session, [orderConfirmation()], {
+        observedResponder: OBSERVED_RESPONDER,
+        ...extra,
+      }),
+    ).toThrow(/requires externalCommitmentReference/);
+  },
+);
+
+test("the generator refuses a reference on any other outcome", () => {
+  // An observed responder, so only the outcome is wrong.
+  const [identityLightManager, identityLightSession] = makeIdentityLightSession();
+  identityLightManager.processMessage(
+    identityLightSession,
+    makeOffer(identityLightSession.session_id),
+  );
+  markTimedOut(identityLightSession);
+  expect(() =>
+    generateEvidenceWith(identityLightSession, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/only for a COMPLETED session/);
+
+  // A run the producer's controls halted did not complete either.
+  identityLightSession.state = SessionState.WITHDRAWN;
+  expect(() =>
+    generateEvidenceWith(identityLightSession, null, {
+      observedResponder: OBSERVED_RESPONDER,
+      terminalOutcome: "HALTED_BY_CONTROLS",
+      terminalReason: "buyer_spend_control:max_session_commitment",
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/only for a COMPLETED session/);
+
+  // A DID-bearing responder on another outcome is refused for the outcome.
+  const [manager, session] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+  expect(() =>
+    generateEvidenceWith(session, null, {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/only for a COMPLETED session/);
+});
+
+test("the generator refuses a reference that is not an object", () => {
+  const [session] = externalChannelSession();
+
+  // Anchored, so the refusal is the object check and not the shape check behind it.
+  expect(() =>
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: "ORD-2026-000123" as unknown as Dict,
+    }),
+  ).toThrow(/must be an object$/);
+});
+
+test("the generator seals a copy of the reference", () => {
+  const reference = structuredClone(EXTERNAL_COMMITMENT_REFERENCE);
+  const [evidence, didDocuments] = externalChannelRecord({
+    externalCommitmentReference: reference,
+  });
+
+  reference.external_commitment_id = "ORD-2026-999999";
+
+  expect(evidence.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+test("a null reference is not supplied", () => {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markTimedOut(session);
+
+  const evidence = generateEvidenceWith(session, null, { externalCommitmentReference: null });
+
+  expect(evidence.record_version).toBe("0.2");
+  expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+/**
+ * The completion witness matches the responder in both directions (Section 9A.2).
+ *
+ * A TransactionRecord is bilateral (Section 9.3), so a session whose responder is
+ * an observed_party has none, and a record that claims one for such a session is
+ * refused at every version. The generators that predate the external commitment
+ * reference sealed exactly this record, over a TransactionRecord whose responder
+ * was empty.
+ */
+test.each(["0.2", "0.1"])(
+  "an observed completion with a transaction record hash is rejected: %s",
+  (version) => {
+    const [healthy, didDocuments] = externalChannelRecord();
+
+    const earlierShape = structuredClone(healthy);
+    delete earlierShape.external_commitment_reference;
+    earlierShape.record_version = version;
+    earlierShape.transaction_record_hash = hashBytes(
+      new TextEncoder().encode("a transaction record"),
+    );
+    reseal(earlierShape);
+
+    expect(verifySessionEvidenceRecord(earlierShape, didDocuments)).toBe(false);
+    // A DID-bearing responder carrying the same witness still verifies.
+    const [bilateral, bilateralDocuments] = bilateralRecord();
+    expect(verifySessionEvidenceRecord(bilateral, bilateralDocuments)).toBe(true);
+  },
+);
+
+/**
+ * A responder with no DID signs no TransactionRecord, so none can be cross-linked.
+ *
+ * The generators that predate the external commitment reference sealed this
+ * record anyway, hashing a TransactionRecord whose responder was empty.
+ */
+test("the generator refuses a COMPLETED record whose responder has no DID", () => {
+  const [manager, session] = makeIdentityLightSession();
+  const offer = makeOffer(session.session_id);
+  manager.processMessage(session, offer);
+  manager.processMessage(session, makeAcceptance(session.session_id, offer));
+  expect(session.state).toBe(SessionState.COMPLETED);
+
+  expect(() => generateEvidence(session)).toThrow(/DID-bearing responder/);
+});
+
+// --- the evidence level is asserted, and one producer act is required --------
+
+/**
+ * The producer's signed offer plus the order reference, with nothing observed.
+ *
+ * A record whose responder is an observed_party is unilateral by assertion
+ * (Section 9A.5) rather than by counting acts, so this record has a level it can
+ * carry. Before, the classifier called it bilateral and no level verified.
+ */
+test("an external-channel record of producer acts only is unilateral", () => {
+  const [session, didDocuments] = externalChannelSession();
+
+  const evidence = generateEvidenceWith(session, null, {
+    observedResponder: OBSERVED_RESPONDER,
+    externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+  });
+
+  expect((evidence.acts as Dict[]).map((entry) => entry.attribution)).toEqual([
+    "verified_signature",
+  ]);
+  expect(evidence.evidence_level).toBe("unilateral");
+  expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+test("an external-channel record without a producer-signed act is rejected", () => {
+  // Section 9A.12: at least one act is signed by the initiator that sealed it.
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const actLess = structuredClone(healthy);
+  actLess.acts = [];
+  reseal(actLess);
+
+  const unsignedOnly = structuredClone(healthy);
+  unsignedOnly.acts = [structuredClone((healthy.acts as Dict[])[1])];
+  reseal(unsignedOnly);
+
+  expect(verifySessionEvidenceRecord(actLess, didDocuments)).toBe(false);
+  expect(verifySessionEvidenceRecord(unsignedOnly, didDocuments)).toBe(false);
+});
+
+test("the generator refuses an external-channel record with no producer act", () => {
+  const [session] = externalChannelSession();
+  session._message_log = [];
+
+  expect(() =>
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/at least one act signed by/);
+});
+
+// --- the producer of an external-channel record is its initiator -------------
+
+/** The record resealed by a DID that is not a session party. */
+function sealedByThirdParty(record: Dict): Dict {
+  record.producer = {
+    did: THIRD_PARTY_DID,
+    agent_id: "recorder-agent",
+    verification_method: THIRD_PARTY_VM,
+  };
+  record.evidence_id = uuidv5(
+    `session-evidence:${record.session_id as string}:${THIRD_PARTY_DID}`,
+    A2CN_NAMESPACE,
+  );
+  record.act_chain_hash = hashBytes(
+    canonicalize((record.acts as Dict[]).map((entry) => entry.act_hash)),
+  );
+  record.record_hash = "";
+  record.producer_signature = "";
+  record.record_hash = hashObject(record);
+  record.producer_signature = signJws(
+    record.record_hash as string,
+    THIRD_PARTY_PRIVATE_KEY,
+    THIRD_PARTY_VM,
+  );
+  return record;
+}
+
+test("an external-channel record sealed by a third party is rejected", () => {
+  // Section 9A.12: the seal is the only cryptographic evidence, so it is the initiator's.
+  const [healthy, didDocuments] = externalChannelRecord();
+  didDocuments[THIRD_PARTY_DID] = makeDidDocument(
+    THIRD_PARTY_DID,
+    "key-1",
+    publicKeyToJwk(THIRD_PARTY_PUBLIC_KEY),
+  );
+
+  const reseated = sealedByThirdParty(structuredClone(healthy));
+
+  const assessment = assessSessionEvidenceRecord(reseated, didDocuments);
+
+  // The acts verify and the seal itself is sound, so the producer binding is
+  // what refuses the record.
+  expect(assessment.invalid_acts).toBe(0);
+  expect(assessment.verified_acts).toBe(1);
+  expect(assessment.valid).toBe(false);
+});
+
+test("the generator refuses to seal an external-channel record for another party", () => {
+  const [session] = externalChannelSession();
+
+  expect(() =>
+    generateSessionEvidenceRecord(session, {
+      producerPrivateKey: THIRD_PARTY_PRIVATE_KEY,
+      producerDid: THIRD_PARTY_DID,
+      producerAgentId: "recorder-agent",
+      producerVerificationMethod: THIRD_PARTY_VM,
+      observedActs: [orderConfirmation()],
+      observedResponder: OBSERVED_RESPONDER,
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/sealed by/);
+});
+
+// --- the shared external-channel vector --------------------------------------
+
+const EXTERNAL_CHANNEL_VECTOR = JSON.parse(
+  readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "spec",
+      "test-vectors",
+      "session-evidence-record-external-channel.json",
+    ),
+    "utf-8",
+  ),
+) as Dict;
+const EXTERNAL_CHANNEL_KEY = privateKeyFromJwk(EXTERNAL_CHANNEL_VECTOR.producer_private_jwk as Dict);
+const EXTERNAL_CHANNEL_DID_DOCUMENTS = EXTERNAL_CHANNEL_VECTOR.did_documents as Record<string, Dict>;
+
+/** The record the vector's session generates, optionally with another reference. */
+function externalChannelVectorRecord(
+  reference: unknown = (EXTERNAL_CHANNEL_VECTOR.options as Dict).external_commitment_reference,
+  observedActs: Dict[] = EXTERNAL_CHANNEL_VECTOR.observed_acts as Dict[],
+): Dict {
+  const fixture = EXTERNAL_CHANNEL_VECTOR;
+  const source = fixture.session as Dict;
+  const session = new Session({
+    session_id: source.session_id as string,
+    state: source.state as string,
+    current_turn: "none",
+    terminal_reason: source.terminal_reason as string,
+    terminal_message_id: source.terminal_message_id as string | null,
+    session_created_at: source.session_created_at as string,
+    state_updated_at: source.state_updated_at as string,
+    session_params: source.session_params as Dict,
+    initiator_mandate: source.initiator_mandate as Dict,
+    responder_mandate: source.responder_mandate as Dict,
+    _session_init: source.session_init as Dict,
+    _session_ack: source.session_ack as Dict | null,
+    _message_log: source.message_log as Dict[],
+  });
+  // The Python suite passes the vector's options straight through; each one is
+  // mapped here by name, so a new one would have to be added.
+  const options = fixture.options as Dict;
+  expect(Object.keys(options).sort()).toEqual(["external_commitment_reference", "observed_responder"]);
+  const producer = fixture.producer as Dict;
+  return generateSessionEvidenceRecord(session, {
+    producerPrivateKey: EXTERNAL_CHANNEL_KEY,
+    producerDid: producer.did as string,
+    producerAgentId: producer.agent_id as string,
+    producerVerificationMethod: producer.verification_method as string,
+    observedActs,
+    observedResponder: structuredClone(options.observed_responder as Dict),
+    externalCommitmentReference: structuredClone(reference) as Dict | null,
+  });
+}
+
+/** Reseal, with the producer the case names or the vector's own. */
+function resealExternalChannel(record: Dict, sealingCase: Dict | null = null): Dict {
+  const sealedBy = sealingCase?.sealed_by as string | undefined;
+  const producer = sealedBy
+    ? (EXTERNAL_CHANNEL_VECTOR[sealedBy] as Dict)
+    : (EXTERNAL_CHANNEL_VECTOR.producer as Dict);
+  const key = sealedBy ? privateKeyFromJwk(producer.private_jwk as Dict) : EXTERNAL_CHANNEL_KEY;
+  record.act_chain_hash = hashBytes(
+    canonicalize((record.acts as Dict[]).map((entry) => entry.act_hash)),
+  );
+  record.record_hash = "";
+  record.producer_signature = "";
+  record.record_hash = hashObject(record);
+  record.producer_signature = signJws(
+    record.record_hash as string,
+    key,
+    producer.verification_method as string,
+  );
+  return record;
+}
+
+/** Set each path in `changes.set` to its value and delete each path in `changes.remove`. */
+function applyChanges(record: Dict, changes: Dict): Dict {
+  const holderOf = (path: string[]): Dict =>
+    path.slice(0, -1).reduce((current: Dict, key) => current[key] as Dict, record);
+  for (const change of (changes.set ?? []) as Dict[]) {
+    const path = change.path as string[];
+    let value = change.value;
+    if (value === "OBSERVED_ACTS_ONLY") {
+      // The record's observed act alone, so no act is the producer's.
+      value = [(record.acts as Dict[])[1]];
+    }
+    holderOf(path)[path[path.length - 1]] = structuredClone(value);
+  }
+  for (const path of (changes.remove ?? []) as string[][]) {
+    delete holderOf(path)[path[path.length - 1]];
+  }
+  return record;
+}
+
+test("external-channel vector has Python/TypeScript parity", () => {
+  const expected = EXTERNAL_CHANNEL_VECTOR.expected as Dict;
+
+  const record = externalChannelVectorRecord();
+
+  expect(record.record_version).toBe(expected.record_version);
+  expect(record.evidence_id).toBe(expected.evidence_id);
+  expect(record.generated_at).toBe(expected.generated_at);
+  expect(record.evidence_level).toBe(expected.evidence_level);
+  expect((record.acts as Dict[]).map((entry) => entry.act_hash)).toEqual(expected.act_hashes);
+  expect(record.act_chain_hash).toBe(expected.act_chain_hash);
+  expect(record.record_hash).toBe(expected.record_hash);
+  // Ed25519 signatures are deterministic, so the whole sealed record matches,
+  // the producer seal included.
+  expect(record).toStrictEqual(expected.record);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(true);
+  // Resealing the same bytes reproduces the same record.
+  expect(resealExternalChannel(structuredClone(record))).toStrictEqual(record);
+});
+
+test.each(
+  (EXTERNAL_CHANNEL_VECTOR.valid_references as Dict[]).map((entry): [string, Dict] => [
+    entry.name as string,
+    entry,
+  ]),
+)("external-channel valid reference has Python/TypeScript parity: %s", (_name, entry) => {
+  const record = externalChannelVectorRecord(entry.external_commitment_reference);
+
+  expect(record.external_commitment_reference).toStrictEqual(entry.external_commitment_reference);
+  expect(record.record_hash).toBe(entry.record_hash);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(true);
+});
+
+test.each(
+  (EXTERNAL_CHANNEL_VECTOR.invalid_references as Dict[]).map((entry): [string, Dict] => [
+    entry.name as string,
+    entry,
+  ]),
+)("external-channel malformed reference is refused and rejected: %s", (_name, entry) => {
+  const reference = entry.external_commitment_reference;
+  // null is not supplied, so the generator refuses the session for lacking one.
+  expect(() => externalChannelVectorRecord(reference)).toThrow(
+    reference === null ? /requires externalCommitmentReference/ : /must be an object/,
+  );
+
+  const record = structuredClone((EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict);
+  record.external_commitment_reference = structuredClone(reference);
+  resealExternalChannel(record);
+
+  expect(record.record_hash).toBe(entry.resealed_record_hash);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(false);
+});
+
+test.each(
+  (EXTERNAL_CHANNEL_VECTOR.invalid_records as Dict[]).map((entry): [string, Dict] => [
+    entry.name as string,
+    entry,
+  ]),
+)("external-channel invalid record has Python/TypeScript parity: %s", (_name, entry) => {
+  const record = applyChanges(
+    structuredClone((EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict),
+    entry,
+  );
+  resealExternalChannel(record, entry);
+
+  expect(record.record_hash).toBe(entry.resealed_record_hash);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(false);
+});
+
+test.each(
+  (EXTERNAL_CHANNEL_VECTOR.valid_variants as Dict[]).map((entry): [string, Dict] => [
+    entry.name as string,
+    entry,
+  ]),
+)("external-channel valid variant has Python/TypeScript parity: %s", (_name, entry) => {
+  const record = externalChannelVectorRecord(
+    (EXTERNAL_CHANNEL_VECTOR.options as Dict).external_commitment_reference,
+    entry.observed_acts as Dict[],
+  );
+
+  expect(record.evidence_level).toBe(entry.evidence_level);
+  expect(record.record_hash).toBe(entry.record_hash);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(true);
 });

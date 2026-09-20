@@ -11,7 +11,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 |------|---------|
 | Release | `0.3.0` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.2` |
-| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.2` for a record that carries a basis, `0.1` for one that does not (no basis fixed, or an implementation that predates basis) / `0.1` / `0.2` |
+| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.2` for a record that carries a basis, `0.1` for one that does not (no basis fixed, or an implementation that predates basis) / `0.1` / `0.3` for a record that carries `external_commitment_reference`, `0.2` for one that does not |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0: the minor version moves for substantive additions.
@@ -31,11 +31,12 @@ one that introduced Sections 9A.8 to 9A.11 and the Section 9A.9 rule
 that a `net` or `gross` `money_basis` agrees with the described act's
 `terms.basis`. Sections 9A.8 to 9A.11 are relaxations,
 so a verifier that predates them rejects records that use them, and the basis
-rule adds a rejection. Producers emit `"0.2"`. Verifiers accept `"0.1"` and
-`"0.2"`, apply the same rules to both, and reject any other value;
-verification does not depend on the version. They therefore also accept a
-`"0.1"` record that uses Sections 9A.8 to 9A.11; no released implementation
-produces one, and it does not validate against the `"0.1"` schema.
+rule adds a rejection. Producers emit `"0.2"` for every record that does not
+use Section 9A.12 (below). Verifiers accept `"0.1"` and `"0.2"` and apply the
+same rules to both; apart from Section 9A.12's version rule, verification does
+not depend on the version. They therefore also accept a `"0.1"` record that
+uses Sections 9A.8 to 9A.11; no released implementation produces one, and it
+does not validate against the `"0.1"` schema.
 
 **Session money basis, `session_params.basis`, restated in `terms.basis` and
 recorded in the TransactionRecord at `record_version` `"0.2"` (wire-compatible
@@ -54,9 +55,34 @@ record with it, so the difference between the two records is explicit in
 and hold each version to its shape: a `"0.2"` record carries `basis` and a
 `"0.1"` record does not. AuditLog stays at `"0.1"`: its content does not change.
 An evidence record for a completed session seals whatever TransactionRecord
-hash that session has. The SessionEvidenceRecord stays at `"0.2"` for every
-session, because it is sealed by its producer and need not be identical across
-parties (Section 9A.2).
+hash that session has. The basis does not move the SessionEvidenceRecord
+version, because the record is sealed by its producer and need not be identical
+across parties (Section 9A.2).
+
+**External-channel completion, at SessionEvidenceRecord `record_version`
+`"0.3"` (wire-compatible with 0.2; no signature changes).** A `COMPLETED`
+SessionEvidenceRecord may be backed by an `external_commitment_reference`, the
+external order or commitment the deal produced, instead of a TransactionRecord
+hash. It is for a session whose responder is an `observed_party`, which has no
+TransactionRecord because a TransactionRecord is bilateral (Section 9A.12). A
+`COMPLETED` record carries exactly one completion witness, and any other outcome
+carries neither (Section 9A.2); a record that carries the reference must have an
+`observed_party` responder and `unilateral` evidence. A record carries
+`external_commitment_reference` exactly when it is `"0.3"`. Every other record
+stays `"0.2"`, so a verifier that recognizes only `"0.1"` and `"0.2"` still
+reads it. Verifiers accept `"0.1"`, `"0.2"`, and `"0.3"`, reject any other
+value, and hold `"0.3"` to its shape in both directions. The TransactionRecord,
+its schemas, and its verification are unchanged, and a TransactionRecord
+verifier still rejects `"0.3"`.
+
+Three further rules come with it, and each changes verdicts rather than adding
+a field. The completion witness is bound to the responder in both directions, so
+a `COMPLETED` record with an `observed_party` responder and a
+`transaction_record_hash` is rejected at every version. The evidence-level
+classifier asserts `unilateral` for any record whose responder is an
+`observed_party`, which is what Section 9A.5 always specified, and an
+external-channel record must carry at least one act its initiator signed. And an
+external-channel record must be sealed by `parties.initiator.did`.
 
 ### Added
 
@@ -149,12 +175,13 @@ parties (Section 9A.2).
   whose record is exactly the `"0.1"` record an implementation that predates
   `basis` produced for it. Each record relabelled to the other version fails
   verification.
-- `spec/test-vectors/record-versions.json` — the `record_version` values a
-  TransactionRecord or SessionEvidenceRecord verifier accepts (`"0.1"`, `"0.2"`)
-  and values it must reject, including `"0.3"`, `""`, `"0.2 "`, the number
-  `0.2`, `null`, and an absent key; the TransactionRecord version producers emit
-  for a session with and without a basis; and each recognized version on the
-  other record shape, which fails.
+- `spec/test-vectors/record-versions.json` — for each record artifact, the
+  `record_version` values its verifier accepts (TransactionRecord `"0.1"` and
+  `"0.2"`; SessionEvidenceRecord `"0.1"`, `"0.2"`, and `"0.3"`) and values it
+  must reject, including `"0.3"` for the TransactionRecord, `"0.4"` for the
+  SessionEvidenceRecord, `""`, `"0.2 "`, the number `0.2`, `null`, and an
+  absent key; the version producers emit for each record shape; and each
+  recognized version on the other shape of its artifact, which fails.
 - `spec/conformance-fixtures/offer_basis_diverges_from_session.json` and
   `offer_currency_diverges_from_session.json` — an offer whose `terms.basis` or
   `terms.currency` differs from the session value is rejected with
@@ -180,13 +207,75 @@ parties (Section 9A.2).
   for the vector's session, which validates against the `"0.1"` schema and
   verifies under the current verifiers; and `release_0_3_0_schema_sha256`, which
   pins the `"0.1"` schema file to the bytes release 0.3.0 published.
+- **Section 9A.12 — external-channel completion.** A `COMPLETED`
+  SessionEvidenceRecord whose responder is an `observed_party` completes through
+  `external_commitment_reference` (a required `external_commitment_id`, and an
+  optional `locator` and `reference_note`) with a `null`
+  `transaction_record_hash`. The record is `unilateral` by construction, and the
+  counterparty side is an observed reference, not a verified counterparty. A
+  verifier never dereferences `locator`. A counterparty's transport signature,
+  if captured, belongs in the observed act and is recorded as observed, not
+  verified. Such a record must be sealed by `parties.initiator.did` and must
+  carry at least one act that initiator signed: for the external counterparty's
+  commitment the seal is the only cryptographic evidence the record bears, and
+  the initiator's act signature proves only that the initiator acted.
+- **Section 9A.2 and Section 9A.6, step 9 — exactly one completion witness.** A
+  `COMPLETED` record carries a `transaction_record_hash` or an
+  `external_commitment_reference`, never both and never neither; every other
+  outcome carries neither. Before, a `COMPLETED` record required a
+  `transaction_record_hash`. This relaxation is why the version moves to
+  `"0.3"`.
+- `spec/schemas/session-evidence-record-0.3.schema.json` — the
+  SessionEvidenceRecord schema at `record_version` `"0.3"`: the `"0.2"` schema
+  with `external_commitment_reference`, which it requires, admitting only a
+  `COMPLETED`, `unilateral` record with an `observed_party` responder, a `null`
+  `transaction_record_hash`, and at least one act whose `attribution` is
+  `verified_signature`. The `"0.1"` and `"0.2"` schema files are unchanged, and
+  both refuse the new member.
+- `spec/test-vectors/session-evidence-record-external-channel.json` — a
+  cross-language vector for an external-channel `COMPLETED` record, with valid
+  reference variants, malformed references, and records that break the
+  completion-witness, responder, evidence-level, and version rules.
+- `generate_session_evidence_record(external_commitment_reference=...)`
+  (Python) and `generateSessionEvidenceRecord({ externalCommitmentReference })`
+  (TypeScript), and `SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT`
+  (`"0.3"`) in both reference libraries.
 
 ### Changed
 
+- The reference generators refuse a `COMPLETED` session with an observed
+  responder unless `external_commitment_reference` is given, and never derive a
+  TransactionRecord hash for it; they refuse the reference for a DID-bearing
+  responder or any other outcome. The evidence endpoint, which records only
+  DID-bearing responders, is unchanged.
+- **Sections 9A.2, 9A.6 and 9A.8 — the completion witness matches the
+  responder.** A `COMPLETED` record whose `parties.responder` is an
+  `observed_party` and which carries a `transaction_record_hash` is now
+  rejected, at `"0.1"`, `"0.2"` and `"0.3"` alike, and the generators refuse to
+  seal one. A TransactionRecord is bilateral (Section 9.3), so that combination
+  was never coherent: a generator that produced it hashed a TransactionRecord
+  whose responder was empty, which fails its own verifier and its own schema. No
+  released implementation produces one, because `observed_party` responders
+  arrived after release 0.3.0. Records that an unreleased implementation
+  produced do change verdict.
+- **Sections 9A.5 and 9A.6 step 8 — the evidence level of an observed-responder
+  record is asserted.** `_classify_evidence_level` and `classifyEvidenceLevel`
+  return `unilateral` for any record whose `parties.responder` is an
+  `observed_party`, as Section 9A.5 has always specified. Before, the level was
+  derived from the acts, so an external-channel record whose acts were all the
+  producer's own classified as `bilateral` while Section 9A.8 required
+  `unilateral`, and no `evidence_level` verified: the plainest external-channel
+  record, a signed offer and an order reference, could not be recorded at all.
 - `TRANSACTION_RECORD_VERSION` (Python `a2cn.record`, TypeScript `record.ts`),
   exported in 0.3.0, is replaced by `TRANSACTION_RECORD_VERSION_WITHOUT_BASIS`
   (`"0.1"`) and `TRANSACTION_RECORD_VERSION_WITH_BASIS` (`"0.2"`), because a
   TransactionRecord's version now follows whether it carries `basis`.
+- `SESSION_EVIDENCE_RECORD_VERSION` (Python `a2cn.evidence`, TypeScript
+  `evidence.ts`), exported in 0.3.0, is replaced by
+  `SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT` (`"0.2"`) and
+  `SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT` (`"0.3"`), because
+  a SessionEvidenceRecord's version now follows whether it carries
+  `external_commitment_reference`.
 
 ### Fixed
 
