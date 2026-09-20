@@ -1677,7 +1677,7 @@ def test_money_basis_act_basis_vectors_have_python_typescript_parity(case):
 # ---------------------------------------------------------------------------
 
 EXTERNAL_COMMITMENT_REFERENCE = {
-    "external_order_id": "ORD-2026-000123",
+    "external_commitment_id": "ORD-2026-000123",
     "locator": "https://shop.example/.well-known/ucp",
 }
 
@@ -1942,7 +1942,7 @@ def test_editing_the_reference_after_sealing_invalidates_the_record():
     assert verify_session_evidence_record(healthy, did_documents)
 
     for field, value in (
-        ("external_order_id", "ORD-2026-000124"),
+        ("external_commitment_id", "ORD-2026-000124"),
         ("locator", "https://other.example/.well-known/ucp"),
         ("reference_note", "cancelled"),
     ):
@@ -2053,7 +2053,7 @@ def test_the_generator_seals_a_copy_of_the_reference():
     reference = copy.deepcopy(EXTERNAL_COMMITMENT_REFERENCE)
     evidence, did_documents = _external_channel_record(external_commitment_reference=reference)
 
-    reference["external_order_id"] = "ORD-2026-999999"
+    reference["external_commitment_id"] = "ORD-2026-999999"
 
     assert evidence["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
     assert verify_session_evidence_record(evidence, did_documents)

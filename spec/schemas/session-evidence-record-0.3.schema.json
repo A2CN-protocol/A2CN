@@ -256,9 +256,9 @@
     "external_commitment_reference": {
       "type": "object",
       "description": "The external order or commitment a COMPLETED session produced with a counterparty that holds no A2CN identity (Section 9A.12). Recorded by the producer and not verified: a verifier MUST NOT dereference locator or contact the counterparty. The counterparty's identity is parties.responder.observed_credential and is not repeated here.",
-      "required": ["external_order_id"],
+      "required": ["external_commitment_id"],
       "properties": {
-        "external_order_id": {
+        "external_commitment_id": {
           "type": "string",
           "minLength": 1,
           "description": "The counterparty's identifier for the order or commitment, for example a UCP order id. Always a string, even when it looks numeric."

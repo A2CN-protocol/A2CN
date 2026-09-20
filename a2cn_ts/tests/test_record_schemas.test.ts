@@ -23,7 +23,7 @@ import { expect, test } from "vitest";
 import { hashObject, privateKeyFromJwk, signJws } from "../src/a2cn/crypto.js";
 import {
   RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS,
-  SESSION_EVIDENCE_RECORD_VERSION,
+  SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
   SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
   generateSessionEvidenceRecord,
   verifySessionEvidenceRecord,
@@ -324,7 +324,7 @@ test("every evidence record version a verifier recognizes has a schema that name
     expect(found.$id).toBe(`https://a2cn.dev/schemas/session-evidence-record/${version}`);
     expect(((found.properties as Dict).record_version as Dict).const).toBe(version);
   }
-  expect(RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS).toContain(SESSION_EVIDENCE_RECORD_VERSION);
+  expect(RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS).toContain(SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT);
 });
 
 const SER_0_1 = "session-evidence-record.schema.json";
@@ -572,10 +572,10 @@ function externalChannelEvidenceRecord(): Dict {
 }
 
 test("the evidence record schemas name the versions the generator emits", () => {
-  expect(SESSION_EVIDENCE_RECORD_VERSION).toBe("0.2");
+  expect(SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT).toBe("0.2");
   expect(SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT).toBe("0.3");
   for (const [file, version] of [
-    [SER_0_2, SESSION_EVIDENCE_RECORD_VERSION],
+    [SER_0_2, SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT],
     [SER_0_3, SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT],
   ]) {
     expect(((schema(file).properties as Dict).record_version as Dict).const).toBe(version);
@@ -583,7 +583,7 @@ test("the evidence record schemas name the versions the generator emits", () => 
   // A verifier recognizes exactly the versions it has a schema for.
   expect([...RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS]).toEqual([
     "0.1",
-    SESSION_EVIDENCE_RECORD_VERSION,
+    SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
     SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
   ]);
 });
@@ -681,7 +681,7 @@ test("the 0.3 schema's external_commitment_reference agrees with the vector", ()
   const definition = (schema(SER_0_3).$defs as Dict).external_commitment_reference as Dict;
   expect(definition.type).toBe("object");
   expect(definition.additionalProperties).toBe(false);
-  expect(definition.required).toStrictEqual(["external_order_id"]);
+  expect(definition.required).toStrictEqual(["external_commitment_id"]);
   const rules = Object.fromEntries(
     Object.entries(definition.properties as Dict).map(([name, rule]) => [
       name,
@@ -689,7 +689,7 @@ test("the 0.3 schema's external_commitment_reference agrees with the vector", ()
     ]),
   );
   expect(rules).toStrictEqual({
-    external_order_id: { type: "string", minLength: 1 },
+    external_commitment_id: { type: "string", minLength: 1 },
     locator: { type: "string", minLength: 1 },
     reference_note: { type: "string", minLength: undefined },
   });

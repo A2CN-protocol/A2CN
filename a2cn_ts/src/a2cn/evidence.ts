@@ -27,7 +27,7 @@ import {
 import { SESSION_BASES, SessionState, now } from "./session.js";
 import type { Dict } from "./messages.js";
 
-export const SESSION_EVIDENCE_RECORD_VERSION = "0.2";
+export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2";
 // A record's version follows its content (Section 9A.2): "0.3" exactly when it
 // carries external_commitment_reference (Section 9A.12). Every other record
 // stays "0.2", so a verifier that predates "0.3" still reads it.
@@ -112,7 +112,7 @@ const ACT_FIELDS = new Set([
   "attribution",
 ]);
 const RECORD_OPTIONAL_FIELDS = new Set(["extensions", "external_commitment_reference"]);
-const EXTERNAL_COMMITMENT_REFERENCE_FIELDS = new Set(["external_order_id"]);
+const EXTERNAL_COMMITMENT_REFERENCE_FIELDS = new Set(["external_commitment_id"]);
 const EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = new Set(["locator", "reference_note"]);
 const ACT_OPTIONAL_FIELDS = new Set(["money_basis"]);
 const TERMINAL_FIELDS = new Set(["outcome", "reason", "message_id", "timestamp"]);
@@ -280,7 +280,7 @@ export function generateSessionEvidenceRecord(
     record_version:
       reference !== null
         ? SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
-        : SESSION_EVIDENCE_RECORD_VERSION,
+        : SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
     evidence_id: uuidv5(
       `session-evidence:${session.session_id}:${producerDid}`,
       A2CN_NAMESPACE,
@@ -646,7 +646,7 @@ function validatedExternalCommitmentReference(reference: unknown): Dict {
   if (!externalCommitmentReferenceShapeValid(copied)) {
     throw new Error(
       "externalCommitmentReference must be an object with a non-empty string " +
-        "external_order_id, an optional non-empty string locator, an optional " +
+        "external_commitment_id, an optional non-empty string locator, an optional " +
         "string reference_note, and no other member",
     );
   }
@@ -894,7 +894,7 @@ function externalCommitmentReferenceShapeValid(reference: unknown): boolean {
     return false;
   }
   const value = reference as Dict;
-  if (typeof value.external_order_id !== "string" || !value.external_order_id) {
+  if (typeof value.external_commitment_id !== "string" || !value.external_commitment_id) {
     return false;
   }
   if (hasOwn(value, "locator") && (typeof value.locator !== "string" || !value.locator)) {

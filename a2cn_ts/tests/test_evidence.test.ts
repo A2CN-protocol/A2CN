@@ -1587,7 +1587,7 @@ test.each(
 // ---------------------------------------------------------------------------
 
 const EXTERNAL_COMMITMENT_REFERENCE: Dict = {
-  external_order_id: "ORD-2026-000123",
+  external_commitment_id: "ORD-2026-000123",
   locator: "https://shop.example/.well-known/ucp",
 };
 
@@ -1855,7 +1855,7 @@ test("editing the reference after sealing invalidates the record", () => {
   expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
 
   for (const [field, value] of [
-    ["external_order_id", "ORD-2026-000124"],
+    ["external_commitment_id", "ORD-2026-000124"],
     ["locator", "https://other.example/.well-known/ucp"],
     ["reference_note", "cancelled"],
   ]) {
@@ -1907,12 +1907,12 @@ test("a reference key that is present but undefined is not read as absent", () =
   expect(() =>
     generateEvidenceWith(session, [orderConfirmation()], {
       observedResponder: OBSERVED_RESPONDER,
-      externalCommitmentReference: { external_order_id: "ORD-2026-000123", locator: undefined },
+      externalCommitmentReference: { external_commitment_id: "ORD-2026-000123", locator: undefined },
     }),
   ).toThrow(/must be an object/);
 
   const [orderIdOnly, didDocuments] = externalChannelRecord({
-    externalCommitmentReference: { external_order_id: "ORD-2026-000123" },
+    externalCommitmentReference: { external_commitment_id: "ORD-2026-000123" },
   });
   expect(verifySessionEvidenceRecord(orderIdOnly, didDocuments)).toBe(true);
   const undefinedMember = structuredClone(orderIdOnly);
@@ -2018,7 +2018,7 @@ test("the generator seals a copy of the reference", () => {
     externalCommitmentReference: reference,
   });
 
-  reference.external_order_id = "ORD-2026-999999";
+  reference.external_commitment_id = "ORD-2026-999999";
 
   expect(evidence.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);

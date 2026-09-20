@@ -2459,13 +2459,13 @@ the order id a UCP seller's checkout returned:
 
 ```json
 {
-  "external_order_id": "string",
+  "external_commitment_id": "string",
   "locator": "string",
   "reference_note": "string"
 }
 ```
 
-- `external_order_id` is REQUIRED and is a non-empty string: the
+- `external_commitment_id` is REQUIRED and is a non-empty string: the
   counterparty's own identifier for the order or commitment. It is a string even
   when it looks numeric; a number is rejected, not coerced.
 - `locator` is OPTIONAL and is a non-empty string, typically the counterparty's
@@ -2498,13 +2498,23 @@ A producer MUST NOT attach `external_commitment_reference` to a record whose
 responder is DID-bearing, which completes with its TransactionRecord, or whose
 outcome is not `COMPLETED`.
 
+External-channel completion is asymmetric, and this section defines that
+direction only: the A2CN party is the producer and `parties.initiator`, and the
+party with no A2CN identity is `parties.responder`. The mirror case is not
+defined. Section 9A.8 permits an `observed_party` only as `parties.responder`
+and requires `parties.initiator` to be a DID-bearing party, so a record whose
+initiator holds no A2CN identity has no representation in this version.
+
 Such a record is `unilateral` by construction, and the producer is its only
 DID-bearing party: the initiator seals it, and the counterparty side is an
-observed reference, not a verified counterparty. The producer's seal is the only
+observed reference, not a verified counterparty. For the external-completion
+claim itself, the counterparty's side, the producer's seal is the only
 cryptographic evidence the record carries, which is why the party that sealed it
-MUST be the party the record names as initiator, and why at least one act MUST
-be that initiator's own signed act. A record with neither would attribute
-nothing to anyone, while stating that a deal completed. The seal attests that
+MUST be the party the record names as initiator. The initiator's own act
+signatures are cryptographic evidence too, of the producer's acts rather than of
+any counterparty attestation, and that is why at least one act MUST be one of
+them: a record with neither would attribute nothing to anyone, while stating
+that a deal completed. The seal attests that
 the producer recorded this commitment, and it attributes nothing to the
 counterparty. A verifier MUST NOT resolve or authenticate the reference, exactly
 as it does not resolve an `observed_party`.

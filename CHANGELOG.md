@@ -209,15 +209,16 @@ external-channel record must be sealed by `parties.initiator.did`.
   pins the `"0.1"` schema file to the bytes release 0.3.0 published.
 - **Section 9A.12 — external-channel completion.** A `COMPLETED`
   SessionEvidenceRecord whose responder is an `observed_party` completes through
-  `external_commitment_reference` (a required `external_order_id`, and an
+  `external_commitment_reference` (a required `external_commitment_id`, and an
   optional `locator` and `reference_note`) with a `null`
   `transaction_record_hash`. The record is `unilateral` by construction, and the
   counterparty side is an observed reference, not a verified counterparty. A
   verifier never dereferences `locator`. A counterparty's transport signature,
   if captured, belongs in the observed act and is recorded as observed, not
   verified. Such a record must be sealed by `parties.initiator.did` and must
-  carry at least one act that initiator signed: the seal is the only
-  cryptographic evidence it holds.
+  carry at least one act that initiator signed: for the counterparty's side of
+  the claim the seal is the only cryptographic evidence the record carries, and
+  the initiator's act signature is evidence of the producer's own acts.
 - **Section 9A.2 and Section 9A.6, step 9 — exactly one completion witness.** A
   `COMPLETED` record carries a `transaction_record_hash` or an
   `external_commitment_reference`, never both and never neither; every other
@@ -269,6 +270,12 @@ external-channel record must be sealed by `parties.initiator.did`.
   exported in 0.3.0, is replaced by `TRANSACTION_RECORD_VERSION_WITHOUT_BASIS`
   (`"0.1"`) and `TRANSACTION_RECORD_VERSION_WITH_BASIS` (`"0.2"`), because a
   TransactionRecord's version now follows whether it carries `basis`.
+- `SESSION_EVIDENCE_RECORD_VERSION` (Python `a2cn.evidence`, TypeScript
+  `evidence.ts`), exported in 0.3.0, is replaced by
+  `SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT` (`"0.2"`) and
+  `SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT` (`"0.3"`), because
+  a SessionEvidenceRecord's version now follows whether it carries
+  `external_commitment_reference`.
 
 ### Fixed
 

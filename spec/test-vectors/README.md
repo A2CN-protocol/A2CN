@@ -163,11 +163,11 @@ responder is an `observed_party` with an `observed_credential` digest; and there
 is no SessionAck and no TransactionRecord. Both suites generate the record from
 `options` and must produce `expected.record` exactly, producer seal included:
 the key is Ed25519, whose signatures are deterministic. Each `valid_references`
-case generates the record with another reference (only `external_order_id`, a
+case generates the record with another reference (only `external_commitment_id`, a
 numeric-looking string id, an empty `reference_note`, a non-ASCII
 `reference_note`) and must reach its `record_hash` and verify. Each
 `invalid_references` case is a malformed reference: a missing, empty, integer,
-`null`, or array `external_order_id`; an empty, `null`, numeric, or array
+`null`, or array `external_commitment_id`; an empty, `null`, numeric, or array
 `locator`; a numeric or `null` `reference_note`; an extra member; or a reference
 that is `null`, a string, an array, or empty. The generator refuses each one,
 treating a `null` reference as not supplied, and `expected.record` with its

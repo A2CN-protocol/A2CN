@@ -123,7 +123,7 @@
       "evidence_id": "005ec349-1c60-5db4-b90a-085513160db0",
       "evidence_level": "unilateral",
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
@@ -153,8 +153,8 @@
         "did": "did:example:buyer",
         "verification_method": "did:example:buyer#key-1"
       },
-      "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.a3ItcjRhZ0RuakpNTllqdU9WSzNmXzlfeE1PUG1mbHg2ZlJDYlk4LW9hVQ.XQWKVPB_SXarbg7K-6VGi0JPVpYY9LVNt1cOhNL2td4WEKDjNBTRns2NxHxn4jSGXToTgqfTnb5ZXbv7O3PRBg",
-      "record_hash": "kr-r4agDnjJMNYjuOVK3f_9_xMOPmflx6fRCbY8-oaU",
+      "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.eGZmd0lFaVdOQ0tGUTVHNG43cU91NDZIRDZXbi1ZTzJ3MlFmaWN2eVZJdw.R--uDHIuUVQrJOoTOf6fjP3DZqPFWlZGp64XhIYUVLPZXYNhMb7iR-bihQqpar6txVmGYHk6w_OYlm6aQJ8-Ag",
+      "record_hash": "xffwIEiWNCKFQ5G4n7qOu46HD6Wn-YO2w2QficvyVIw",
       "record_type": "a2cn_session_evidence_record",
       "record_version": "0.3",
       "session_id": "00000000-0000-4000-8000-000000000300",
@@ -166,13 +166,13 @@
       },
       "transaction_record_hash": null
     },
-    "record_hash": "kr-r4agDnjJMNYjuOVK3f_9_xMOPmflx6fRCbY8-oaU",
+    "record_hash": "xffwIEiWNCKFQ5G4n7qOu46HD6Wn-YO2w2QficvyVIw",
     "record_version": "0.3"
   },
   "invalid_records": [
     {
       "name": "both-witnesses",
-      "resealed_record_hash": "vbbAqll0oxQ6cqFc0WbBssWl6zMLrw38H6J1tX-B1N4",
+      "resealed_record_hash": "MvcTqNGT2iNQAnOoQnVePn1aKvOj1gBMVo8PFeQaiBo",
       "rule": "Section 9A.2: a COMPLETED record carries exactly one completion witness, never both.",
       "set": [
         {
@@ -203,7 +203,7 @@
     },
     {
       "name": "reference-on-timed-out",
-      "resealed_record_hash": "IMxdaccTmMQVkKcI2jlPoQXHyM2ZDEKNyanUfpukO0I",
+      "resealed_record_hash": "G32z7izTmfugnzqEdAXLJtUQXeTyCRS0Hl8n6jYkd8I",
       "rule": "Section 9A.2: an outcome other than COMPLETED carries no external_commitment_reference.",
       "set": [
         {
@@ -217,7 +217,7 @@
     },
     {
       "name": "reference-on-halted-by-controls",
-      "resealed_record_hash": "iqqqzjdkkkbQ-Qt7lHCOdn-HPV7T0SQLlQbiP1Ym_Ck",
+      "resealed_record_hash": "q3b_wK7qamDutiit2cEQQeALTjfZOzHeMXO1P2FRgdw",
       "rule": "Section 9A.2: an outcome other than COMPLETED carries no external_commitment_reference.",
       "set": [
         {
@@ -231,7 +231,7 @@
     },
     {
       "name": "reference-with-did-bearing-responder",
-      "resealed_record_hash": "BR3zMPSbohC2-yvGy0hkbdAMzpjDfirpCKIiSsmACJQ",
+      "resealed_record_hash": "T76H8xpwqNwLfnTQVSUCBX3F-pXT7yIYfsN1DmK2Dcc",
       "rule": "Section 9A.12: a record that carries external_commitment_reference has an observed_party responder.",
       "set": [
         {
@@ -251,7 +251,7 @@
     },
     {
       "name": "reference-with-mixed-evidence",
-      "resealed_record_hash": "kZraonlt8aNL0EGZPdr0Tl5YVxNyRK9KHJr3sL5UJPQ",
+      "resealed_record_hash": "neFLKczxLV7_i7h9G0Ybn6mxHXTWK4yk_HxdoXLR7AU",
       "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
       "set": [
         {
@@ -264,7 +264,7 @@
     },
     {
       "name": "reference-with-bilateral-evidence",
-      "resealed_record_hash": "vrx-DjDp006jo18-LHAO565xCENcG-2GX3A67Sc2kGI",
+      "resealed_record_hash": "zEhgBDziCCG9JSDd1cAu0bIeqPjbSSY26Tuic9-Zrhc",
       "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
       "set": [
         {
@@ -277,7 +277,7 @@
     },
     {
       "name": "reference-on-0.2-record",
-      "resealed_record_hash": "WKX0Xkx8DkG62x83Js75U0g_lAm07karsYvLteo2710",
+      "resealed_record_hash": "EvlJNXyj84T57DKxHkdm_yQZzrToazSniI4_hhnEsns",
       "rule": "Section 9A.2: a record that carries external_commitment_reference is \"0.3\".",
       "set": [
         {
@@ -290,7 +290,7 @@
     },
     {
       "name": "reference-on-0.1-record",
-      "resealed_record_hash": "MNrIlAbLxcK4uRWsAb65NEDnOi_GTUOmiSBomPH-eCI",
+      "resealed_record_hash": "DjevgbWyOoZ4I8XV8Ehkolxdn2dH_bf01xkYQOjbAbc",
       "rule": "Section 9A.2: a record that carries external_commitment_reference is \"0.3\".",
       "set": [
         {
@@ -361,7 +361,7 @@
     },
     {
       "name": "no-producer-signed-act",
-      "resealed_record_hash": "TnADf8zrgRADRDygCHSeWjHV5RlBzTsaO5OKu6-Gyss",
+      "resealed_record_hash": "SP6H4gQK3FVsXeYmDZPHmomty5JKoP4R0CFFI9f_pMs",
       "rule": "Section 9A.12: an external-channel record carries at least one act signed by its initiator.",
       "set": [
         {
@@ -374,7 +374,7 @@
     },
     {
       "name": "act-less",
-      "resealed_record_hash": "NZt2YSPsRi9Ujz0OTugIJB2q4e9lP4wm5hFPQ_vVRD0",
+      "resealed_record_hash": "gV8aaLykYTG-Uk4WhkGixRWtE5SQwmFq5_p0_jHefkI",
       "rule": "Section 9A.12: an external-channel record carries at least one act signed by its initiator.",
       "set": [
         {
@@ -387,7 +387,7 @@
     },
     {
       "name": "producer-not-initiator",
-      "resealed_record_hash": "CIQB7Gi14TTNFixw4PT7cl9eMd2M-9LYOwAKjP9rUfE",
+      "resealed_record_hash": "MqK9GlGRaJw3xanSx2ppj4Fh4ObqxdUtApraBfY7mSY",
       "rule": "Section 9A.12: an external-channel record is sealed by parties.initiator.did. A JSON Schema cannot compare two members, so the 0.3 schema accepts this record and only the verifier refuses it.",
       "schema_expresses": false,
       "sealed_by": "second_producer",
@@ -429,112 +429,112 @@
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
-      "name": "order-id-missing",
+      "name": "commitment-id-missing",
       "resealed_record_hash": "hpU69Cw92aMaHVvAfd6YUsBhgBN7QRobICm8aBt3qkU"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "",
+        "external_commitment_id": "",
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
-      "name": "order-id-empty",
-      "resealed_record_hash": "lMMI5CCt4s7_g6cAebl_P76Oi-g8bMHd8E3xG3tlJmI"
+      "name": "commitment-id-empty",
+      "resealed_record_hash": "32bFff6Ejz79NJG3CkV5CRg0KNwhNA4Ajp-CcZwz9yM"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": 2026000123,
+        "external_commitment_id": 2026000123,
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
-      "name": "order-id-integer",
-      "resealed_record_hash": "7KmIaUBaIGI_CDGqlPisdcJkN5fJKStWh_qY90kV04U"
+      "name": "commitment-id-integer",
+      "resealed_record_hash": "JkHhTUPkdnc9dpJFAGHi8U0NL2ydM1MA0uQYNaTHQoM"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": null,
+        "external_commitment_id": null,
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
-      "name": "order-id-null",
-      "resealed_record_hash": "SGeY6smF_YBAzdT53GPxT_fnFSIXCY6htBx9hu92m-U"
+      "name": "commitment-id-null",
+      "resealed_record_hash": "D_tqMefAjgMAYP-eT-M127NbjPlsG8pON00S9FFRVMo"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": [
+        "external_commitment_id": [
           "ORD-2026-000123"
         ],
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
-      "name": "order-id-array",
-      "resealed_record_hash": "bFsKYOfJz1akmYbBK2tUVomhMImXQZ8T-3rN1PWCstU"
+      "name": "commitment-id-array",
+      "resealed_record_hash": "w4jQ1otBX9fyGyvZT12pY2bl9LQjaNYNzyWZClB34MA"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": "",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-empty",
-      "resealed_record_hash": "nUvuatnvi_xLg11PAjTtVr03U-8jUfQ0dCO-0nwmf0U"
+      "resealed_record_hash": "c-GGLEh1TUFFq3DOlYUx1UVCcvyIg79j5E_Jh0_oTQ0"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": null,
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-null",
-      "resealed_record_hash": "j3F4zQqbc6v8iZ0ldemYETnpTqky-aRlmbjzDzW5VnQ"
+      "resealed_record_hash": "TJxtgTbaOEjAMNtZ6Na7sT0O_fBgxRDhx1Pt7cWw4jo"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": 443,
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-number",
-      "resealed_record_hash": "fW6qt6c_Xh2Lh9G7MkCyDKEETn4uVEge_GcI3QIyI2Y"
+      "resealed_record_hash": "QcCEt3IXjx_HVYo43u_PHSTlfLVZzV-O-_J81oL3yrA"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": [
           "https://shop.example/.well-known/ucp"
         ],
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-array",
-      "resealed_record_hash": "V8Os-nC6dZNncRmeIb7d2GKyZ5nSkF5gF5_qqDZv0jM"
+      "resealed_record_hash": "RxCJISgTewrYadE9b_z3fcrDvL9-WTq_xlsZaofmq34"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": 7
       },
       "name": "reference-note-number",
-      "resealed_record_hash": "WgyZ0xm4o20pbMZKz3-hA4K41FZivlMAns_RM9Kd7tU"
+      "resealed_record_hash": "jvv3s9UylO9bPnb_iVKje1cwBhgF61IlrR323aG4qrY"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": "https://shop.example/.well-known/ucp",
         "reference_note": null
       },
       "name": "reference-note-null",
-      "resealed_record_hash": "gqLYyKSsVin4JYv0nKo0gTt51FS0z7jUYOtLwxuRD48"
+      "resealed_record_hash": "Hso4MithkJEYoBF7j3c5JiiMpf4hJE92gp62pUq4zDY"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "locator": "https://shop.example/.well-known/ucp",
         "order_status": "confirmed",
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "extra-key",
-      "resealed_record_hash": "qpRgUQ455iVqirt3o3ZptuU4nNEsaD2IcO4qNAjPGxo"
+      "resealed_record_hash": "eNrYeRnax8mHfrUrhoLNaONDCC5o-M2p2Sa3d33s0ZU"
     },
     {
       "external_commitment_reference": null,
@@ -549,13 +549,13 @@
     {
       "external_commitment_reference": [
         {
-          "external_order_id": "ORD-2026-000123",
+          "external_commitment_id": "ORD-2026-000123",
           "locator": "https://shop.example/.well-known/ucp",
           "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
         }
       ],
       "name": "reference-array",
-      "resealed_record_hash": "GzdrK_1BEZiT92iwnR8hFfHzVvV9gvhGX6xEzPG8As4"
+      "resealed_record_hash": "IFOxm02YGo4nl9xMiaYFuMvt8c-_hw9cmS8o_m8iYHo"
     },
     {
       "external_commitment_reference": {},
@@ -588,7 +588,7 @@
   ],
   "options": {
     "external_commitment_reference": {
-      "external_order_id": "ORD-2026-000123",
+      "external_commitment_id": "ORD-2026-000123",
       "locator": "https://shop.example/.well-known/ucp",
       "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
     },
@@ -689,34 +689,34 @@
   "valid_references": [
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123"
+        "external_commitment_id": "ORD-2026-000123"
       },
-      "name": "order-id-only",
-      "record_hash": "qXx5PXua5bZYCDdyRU6o9LoLdMBdBgdz2ZuMRWYRK14"
+      "name": "commitment-id-only",
+      "record_hash": "tcmKyyt0qRcEoQHf6KwAKZjgB6aGoMd2vUTHACqa5J4"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "2026000123",
+        "external_commitment_id": "2026000123",
         "locator": "https://shop.example/.well-known/ucp"
       },
-      "name": "numeric-string-order-id",
-      "record_hash": "-lLj3n_bfBbTc13sOnZvpHLpV4ehYMl9_gGgr2RcL00"
+      "name": "numeric-string-commitment-id",
+      "record_hash": "YyuIYB-0Twz5Exs3xqj8I-ZUMGTlGAy14ikZ-ooLGDM"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "reference_note": ""
       },
       "name": "empty-reference-note",
-      "record_hash": "X7a8rDhIBzkxQkbEiVivkmOm5XGD3vNyVvF6B9eyWLI"
+      "record_hash": "LcwrTmX7wnUkf7oVDdqMzcH_jmvnLHZ71AiV-oy0jFE"
     },
     {
       "external_commitment_reference": {
-        "external_order_id": "ORD-2026-000123",
+        "external_commitment_id": "ORD-2026-000123",
         "reference_note": "Commande confirmée — référence du vendeur"
       },
       "name": "non-ascii-reference-note",
-      "record_hash": "Niei_BOGcJgyNF8zWTmfgZRjL1i8MxsKsVixodDwKV0"
+      "record_hash": "h8UZ1_Wls0hkV1hqXg_RX-sexBNWud4JN5WXM5N9aek"
     }
   ],
   "valid_references_description": "Each case generates the record with its external_commitment_reference instead of options.external_commitment_reference. The record has record_hash and verifies.",
@@ -725,7 +725,7 @@
       "evidence_level": "unilateral",
       "name": "producer-acts-only",
       "observed_acts": [],
-      "record_hash": "HXoGUC3CZVrfklrTaWMkO8LB23ablRSPJj1UEHbI8QY",
+      "record_hash": "wa9IQYJOQDkX7pvUo7ZJhNIimxMszS_nsR5iNoK48yQ",
       "rule": "Section 9A.5: the level of a record whose responder is an observed_party is asserted unilateral, not derived from the acts."
     }
   ],

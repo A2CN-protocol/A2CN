@@ -21,7 +21,7 @@ from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
 
-SESSION_EVIDENCE_RECORD_VERSION = "0.2"
+SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 # A record's version follows its content (Section 9A.2): "0.3" exactly when it
 # carries external_commitment_reference (Section 9A.12). Every other record
 # stays "0.2", so a verifier that predates "0.3" still reads it.
@@ -75,7 +75,7 @@ _RECORD_FIELDS = frozenset(
     }
 )
 _RECORD_OPTIONAL_FIELDS = frozenset({"extensions", "external_commitment_reference"})
-_EXTERNAL_COMMITMENT_REFERENCE_FIELDS = frozenset({"external_order_id"})
+_EXTERNAL_COMMITMENT_REFERENCE_FIELDS = frozenset({"external_commitment_id"})
 _EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = frozenset({"locator", "reference_note"})
 _ACT_FIELDS = frozenset(
     {
@@ -244,7 +244,7 @@ def generate_session_evidence_record(
         "record_version": (
             SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
             if reference is not None
-            else SESSION_EVIDENCE_RECORD_VERSION
+            else SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT
         ),
         "evidence_id": str(
             uuid.uuid5(
@@ -580,7 +580,7 @@ def _validated_external_commitment_reference(reference: Any) -> dict:
     if not _external_commitment_reference_shape_valid(copied):
         raise ValueError(
             "external_commitment_reference must be an object with a non-empty string "
-            "external_order_id, an optional non-empty string locator, an optional "
+            "external_commitment_id, an optional non-empty string locator, an optional "
             "string reference_note, and no other member"
         )
     return copied
@@ -778,8 +778,8 @@ def _external_commitment_reference_shape_valid(reference: Any) -> bool:
         _EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS,
     ):
         return False
-    order_id = reference["external_order_id"]
-    if not isinstance(order_id, str) or not order_id:
+    commitment_id = reference["external_commitment_id"]
+    if not isinstance(commitment_id, str) or not commitment_id:
         return False
     if "locator" in reference and (
         not isinstance(reference["locator"], str) or not reference["locator"]

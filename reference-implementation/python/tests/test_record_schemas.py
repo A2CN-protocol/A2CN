@@ -518,12 +518,12 @@ def test_the_0_3_schema_is_the_0_2_schema_with_external_channel_completion():
     reference = current["$defs"]["external_commitment_reference"]
     assert reference["type"] == "object"
     assert reference["additionalProperties"] is False
-    assert reference["required"] == ["external_order_id"]
+    assert reference["required"] == ["external_commitment_id"]
     assert {
         name: {key: rule[key] for key in ("type", "minLength") if key in rule}
         for name, rule in reference["properties"].items()
     } == {
-        "external_order_id": {"type": "string", "minLength": 1},
+        "external_commitment_id": {"type": "string", "minLength": 1},
         "locator": {"type": "string", "minLength": 1},
         "reference_note": {"type": "string"},
     }
@@ -553,7 +553,7 @@ def test_the_0_2_evidence_record_schema_is_unchanged():
 
 def test_the_evidence_record_schemas_name_the_versions_the_generator_emits():
     for version, schema_file in (
-        (evidence.SESSION_EVIDENCE_RECORD_VERSION, SER_0_2),
+        (evidence.SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT, SER_0_2),
         (evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT, SER_0_3),
     ):
         schema = json.loads((SCHEMAS / schema_file).read_text())
@@ -561,6 +561,6 @@ def test_the_evidence_record_schemas_name_the_versions_the_generator_emits():
     # A verifier recognizes exactly the versions it has a schema for.
     assert list(evidence.RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS) == [
         "0.1",
-        evidence.SESSION_EVIDENCE_RECORD_VERSION,
+        evidence.SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
         evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
     ]
