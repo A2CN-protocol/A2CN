@@ -24,13 +24,12 @@ from typing import Any
 
 import httpx
 
+from a2cn.line_items import require_minor, to_minor_units
+
 
 def _money_to_cents(value: Any) -> int:
-    if value is None or value == "":
-        return 0
-    if isinstance(value, dict):
-        value = value.get("amount", 0)
-    return int(float(value) * 100)
+    """This platform's decimal amounts, in the integer minor units A2CN carries."""
+    return to_minor_units(value)
 
 
 def _int_value(value: Any, default: int = 0) -> int:
@@ -88,8 +87,8 @@ def _normalize_item(item: dict, default_currency: str) -> dict:
         "description": _first(item, "title", "description", "name", "itemName", default=""),
         "quantity": quantity,
         "unit_of_measure": _first(item, "unitOfMeasure", "unit_of_measure", "uom", default="EA"),
-        "unit_price": unit_price_cents,
-        "total": total_cents,
+        "unit_price_minor": unit_price_cents,
+        "total_minor": total_cents,
     }
     internal_ref = lot_id or item_id
     if internal_ref:
@@ -122,7 +121,7 @@ class AribaEventParser:
         currency = _first(event, "currency", "currencyCode", default="USD")
         raw_items = _items_from_payload(event)
         line_items = [_normalize_item(item, currency) for item in raw_items]
-        total_cents = sum(item["total"] for item in line_items)
+        total_cents = sum(item["total_minor"] for item in line_items)
         event_id = _first(
             event,
             "eventId",
@@ -240,8 +239,8 @@ def a2cn_terms_to_ariba_bid(
             "description": item.get("description", ""),
             "quantity": item.get("quantity", 1),
             "unitOfMeasure": item.get("unit_of_measure", "EA"),
-            "unitPrice": item.get("unit_price", 0) / 100.0,
-            "totalPrice": item.get("total", 0) / 100.0,
+            "unitPrice": require_minor(item, "unit_price_minor") / 100.0,
+            "totalPrice": require_minor(item, "total_minor") / 100.0,
             "currency": agreed_terms.get("currency", "USD"),
         }
         response_items.append({key: value for key, value in entry.items() if value != ""})

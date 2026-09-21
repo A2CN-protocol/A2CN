@@ -30,6 +30,8 @@ from typing import Any
 import httpx
 import jwt as pyjwt
 
+from a2cn.line_items import require_minor
+
 
 DOCUSIGN_JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 DOCUSIGN_DEMO_AUTH_BASE_URI = "https://account-d.docusign.com"
@@ -104,8 +106,8 @@ def _terms_summary_text(record: dict) -> str:
                 "- "
                 f"{item.get('description', '')}: "
                 f"qty {item.get('quantity', 1)}, "
-                f"unit {_money_to_decimal(item.get('unit_price', 0)):.2f}, "
-                f"total {_money_to_decimal(item.get('total', 0)):.2f}"
+                f"unit {_money_to_decimal(require_minor(item, 'unit_price_minor')):.2f}, "
+                f"total {_money_to_decimal(require_minor(item, 'total_minor')):.2f}"
             )
     lines.extend([
         "",

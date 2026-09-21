@@ -13,8 +13,8 @@ describe("GoodsProcurementTerms", () => {
         {
           description: "Hydraulic fluid",
           quantity: 50,
-          unit_price: 36000,
-          total: 1800000,
+          unit_price_minor: 36000,
+          total_minor: 1800000,
           unit_of_measure: "EA",
         },
       ],
@@ -67,7 +67,12 @@ describe("SaaSRenewalTerms", () => {
       total_value: 9500000,
       currency: "USD",
       line_items: [
-        { description: "Analytics Platform", quantity: 100, unit_price: 95000, total: 9500000 },
+        {
+          description: "Analytics Platform",
+          quantity: 100,
+          unit_price_minor: 95000,
+          total_minor: 9500000,
+        },
       ],
       payment_terms: { net_days: 30 },
       seat_count: 100,

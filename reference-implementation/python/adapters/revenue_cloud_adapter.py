@@ -13,6 +13,8 @@ Revenue Cloud API reference (v65.0+):
 
 from __future__ import annotations
 
+from a2cn.line_items import require_minor, to_minor_units
+
 
 class RevenueCloudAdapter:
 
@@ -40,21 +42,19 @@ class RevenueCloudAdapter:
         total_cents = 0
 
         for item in line_items_raw:
-            unit_price_cents = int(float(item.get("unitPrice", 0)) * 100)
-            total_price_cents = int(float(item.get("totalPrice", 0)) * 100)
+            unit_price_cents = to_minor_units(item.get("unitPrice"))
+            total_price_cents = to_minor_units(item.get("totalPrice"))
             total_cents += total_price_cents
 
             line_items.append({
                 "description": item.get("productName", ""),
                 "quantity": int(item.get("quantity", 1)),
-                "unit_price": unit_price_cents,
-                "total": total_price_cents,
+                "unit_price_minor": unit_price_cents,
+                "total_minor": total_price_cents,
             })
 
         terms: dict = {
-            "total_value": total_cents or int(
-                float(pricing_response.get("totalAmount", 0)) * 100
-            ),
+            "total_value": total_cents or to_minor_units(pricing_response.get("totalAmount")),
             "currency": pricing_response.get("currency", currency),
             "line_items": line_items,
             "payment_terms": {"net_days": 30},
@@ -98,7 +98,7 @@ class RevenueCloudAdapter:
         for item in line_items_raw:
             rc_line_items.append({
                 "quantity": item.get("quantity", 1),
-                "unitPrice": item.get("unit_price", 0) / 100.0,
+                "unitPrice": require_minor(item, "unit_price_minor") / 100.0,
                 # productId would need to be resolved from description
                 # in a real integration — omitting here for prototype
             })

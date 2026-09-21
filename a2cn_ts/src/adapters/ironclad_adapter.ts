@@ -17,18 +17,14 @@
 
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 
+import { toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 const SAAS_KEYWORDS = ["renewal", "subscription", "license", "seat", "saas"];
 
+/** This platform's decimal amounts, in the integer minor units A2CN carries. */
 function moneyToCents(value: unknown): number {
-  if (value === null || value === undefined || value === "") {
-    return 0;
-  }
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    value = (value as Dict).amount ?? 0;
-  }
-  return Math.trunc(Number(value) * 100);
+  return toMinorUnits(value);
 }
 
 function intValue(value: unknown, defaultValue = 0): number {
@@ -154,11 +150,11 @@ export class IroncladWebhookParser {
         {
           description: product,
           quantity: dealType === "saas_renewal" ? seatCount : 1,
-          unit_price:
+          unit_price_minor:
             dealType === "saas_renewal"
               ? Math.trunc(totalCents / Math.max(seatCount, 1))
               : totalCents,
-          total: totalCents,
+          total_minor: totalCents,
         },
       ],
       payment_terms: {

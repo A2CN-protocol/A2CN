@@ -18,7 +18,7 @@
  *   ----------------------------------------------------------------------
  *   vendor                              custom_terms.vendr.vendor
  *   product                             subscription_tier / line description
- *   list_price                          line_items[].unit_price (cents)
+ *   list_price                          line_items[].unit_price_minor (minor units)
  *   seat_count                          seat_count / line quantity
  *   term_months                         term_months
  *   currency                            currency
@@ -28,14 +28,12 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
-/** Convert a decimal money value into integer cents. */
+/** This platform's decimal amounts, in the integer minor units A2CN carries. */
 function moneyToCents(value: unknown): number {
-  if (value === null || value === undefined) {
-    return 0;
-  }
-  return Math.trunc(Number(value) * 100);
+  return toMinorUnits(value);
 }
 
 function intValue(value: unknown, defaultValue = 0): number {
@@ -127,8 +125,8 @@ export function vendrPricingToA2cnTerms(pricing: Dict, defaultNetDays = 30): Dic
       {
         description: product || vendor || "Vendr benchmarked subscription",
         quantity: seatCount,
-        unit_price: effectiveUnitPriceCents,
-        total: totalCents,
+        unit_price_minor: effectiveUnitPriceCents,
+        total_minor: totalCents,
       },
     ],
     payment_terms: { net_days: defaultNetDays },

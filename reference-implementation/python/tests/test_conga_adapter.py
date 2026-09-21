@@ -112,8 +112,8 @@ class TestCongaQuoteToTerms:
         assert terms["delivery_days"] == 21
         assert terms["line_items"][0]["description"] == "Hydraulic fluid 200L drums"
         assert terms["line_items"][0]["unit_of_measure"] == "EA"
-        assert terms["line_items"][0]["unit_price"] == 36_000
-        assert terms["line_items"][0]["total"] == 1_800_000
+        assert terms["line_items"][0]["unit_price_minor"] == 36_000
+        assert terms["line_items"][0]["total_minor"] == 1_800_000
         assert validate_deal_type_terms("goods_procurement", terms) == []
 
     def test_header_total_used_when_line_items_have_no_prices(self):
@@ -153,7 +153,7 @@ class TestCongaQuoteToTerms:
         assert terms["currency"] == "GBP"
         assert terms["line_items"][0]["description"] == "Widget Pro"
         assert terms["line_items"][0]["quantity"] == 10
-        assert terms["line_items"][0]["unit_price"] == 50_000
+        assert terms["line_items"][0]["unit_price_minor"] == 50_000
 
     def test_advantage_platform_casing_aliases_supported(self):
         quote = {
@@ -175,7 +175,7 @@ class TestCongaQuoteToTerms:
         assert terms["currency"] == "CAD"
         assert terms["total_value"] == 240_000
         assert terms["seat_count"] == 2
-        assert terms["line_items"][0]["unit_price"] == 120_000
+        assert terms["line_items"][0]["unit_price_minor"] == 120_000
 
 
 class TestCongaSessionAndWriteBack:

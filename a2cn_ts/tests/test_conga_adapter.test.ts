@@ -118,8 +118,8 @@ describe("CongaQuoteToTerms", () => {
     expect(terms.delivery_days).toBe(21);
     expect((terms.line_items as Dict[])[0].description).toBe("Hydraulic fluid 200L drums");
     expect((terms.line_items as Dict[])[0].unit_of_measure).toBe("EA");
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(36_000);
-    expect((terms.line_items as Dict[])[0].total).toBe(1_800_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(36_000);
+    expect((terms.line_items as Dict[])[0].total_minor).toBe(1_800_000);
     expect(validateDealTypeTerms("goods_procurement", terms)).toEqual([]);
   });
 
@@ -157,7 +157,7 @@ describe("CongaQuoteToTerms", () => {
     expect(terms.currency).toBe("GBP");
     expect((terms.line_items as Dict[])[0].description).toBe("Widget Pro");
     expect((terms.line_items as Dict[])[0].quantity).toBe(10);
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(50_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(50_000);
   });
 
   test("advantage platform casing aliases supported", () => {
@@ -180,7 +180,7 @@ describe("CongaQuoteToTerms", () => {
     expect(terms.currency).toBe("CAD");
     expect(terms.total_value).toBe(240_000);
     expect(terms.seat_count).toBe(2);
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(120_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(120_000);
   });
 });
 

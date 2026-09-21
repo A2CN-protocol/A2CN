@@ -19,7 +19,7 @@
  *   event.line_items[].description       line_items[].description
  *   event.line_items[].quantity          line_items[].quantity
  *   event.line_items[].unit_of_measure   line_items[].unit_of_measure
- *   event.line_items[].unit_price (USD)  line_items[].unit_price (cents)
+ *   event.line_items[].unit_price (USD)  line_items[].unit_price_minor (minor units)
  *   event.line_items[].lot_id            line_items[].internal_part_number
  *   event.currency                       currency
  *   Computed from line items             total_value (cents)
@@ -29,6 +29,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { requireMinor, toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 /**
@@ -70,9 +71,7 @@ export class KeelvarEventParser {
     for (const item of lineItemsRaw) {
       const unitPriceRaw = item.unit_price;
       const unitPriceCents =
-        unitPriceRaw !== null && unitPriceRaw !== undefined
-          ? Math.trunc(Number(unitPriceRaw) * 100)
-          : null;
+        unitPriceRaw !== null && unitPriceRaw !== undefined ? toMinorUnits(unitPriceRaw) : null;
       lineItems.push({
         description: item.description ?? "",
         quantity: Math.trunc(Number(item.quantity ?? 1)),
@@ -112,10 +111,7 @@ export class KeelvarEventParser {
     for (const item of lineItemsRaw) {
       const qty = Math.trunc(Number(item.quantity ?? 1));
       const unitPriceRaw = item.unit_price;
-      const unitPriceCents =
-        unitPriceRaw !== null && unitPriceRaw !== undefined
-          ? Math.trunc(Number(unitPriceRaw) * 100)
-          : 0;
+      const unitPriceCents = toMinorUnits(unitPriceRaw);
       const lineTotal = qty * unitPriceCents;
       totalCents += lineTotal;
 
@@ -123,8 +119,8 @@ export class KeelvarEventParser {
         description: item.description ?? "",
         quantity: qty,
         unit_of_measure: item.unit_of_measure ?? "EA",
-        unit_price: unitPriceCents,
-        total: lineTotal,
+        unit_price_minor: unitPriceCents,
+        total_minor: lineTotal,
       };
       if (item.lot_id) {
         lineItem.internal_part_number = item.lot_id;
@@ -161,8 +157,8 @@ export class KeelvarEventParser {
         description: item.description ?? "",
         quantity: item.quantity ?? 1,
         unit_of_measure: item.unit_of_measure ?? "EA",
-        unit_price: ((item.unit_price as number) ?? 0) / 100.0,
-        total_price: ((item.total as number) ?? 0) / 100.0,
+        unit_price: requireMinor(item, "unit_price_minor") / 100.0,
+        total_price: requireMinor(item, "total_minor") / 100.0,
       };
       if (item.internal_part_number) {
         entry.lot_id = item.internal_part_number;

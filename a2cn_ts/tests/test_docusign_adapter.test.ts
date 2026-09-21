@@ -42,14 +42,14 @@ const SAMPLE_RECORD: Dict = {
       {
         description: "Enterprise Subscription",
         quantity: 100,
-        unit_price: 95_000,
-        total: 9_500_000,
+        unit_price_minor: 95_000,
+        total_minor: 9_500_000,
       },
       {
         description: "Premium Support",
         quantity: 1,
-        unit_price: 500_000,
-        total: 500_000,
+        unit_price_minor: 500_000,
+        total_minor: 500_000,
       },
     ],
   },

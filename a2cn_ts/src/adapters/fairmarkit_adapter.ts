@@ -11,6 +11,7 @@
  *   Responses: GET /self-service/api/v3/responses/request/{request_id}/
  */
 
+import { requireMinor, toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 export class FairmakitEventParser {
@@ -68,15 +69,15 @@ export class FairmakitEventParser {
 
     for (const item of items) {
       const qty = Number(item.quantity ?? 1);
-      const unitPriceCents = Math.trunc(Number(item.unit_price ?? 0) * 100);
+      const unitPriceCents = toMinorUnits(item.unit_price);
       const lineTotal = Math.trunc(qty * unitPriceCents);
       totalCents += lineTotal;
 
       const lineItem: Dict = {
         description: item.description ?? "",
         quantity: Math.trunc(qty),
-        unit_price: unitPriceCents,
-        total: lineTotal,
+        unit_price_minor: unitPriceCents,
+        total_minor: lineTotal,
         unit_of_measure: item.uom ?? "EA",
       };
       if (item.mfg_part_number) {
@@ -114,8 +115,8 @@ export class FairmakitEventParser {
       responseItems.push({
         description: item.description ?? "",
         quantity: item.quantity ?? 1,
-        unit_price: ((item.unit_price as number) ?? 0) / 100.0,
-        total_price: ((item.total as number) ?? 0) / 100.0,
+        unit_price: requireMinor(item, "unit_price_minor") / 100.0,
+        total_price: requireMinor(item, "total_minor") / 100.0,
         uom: item.unit_of_measure ?? "EA",
         manufacturer_part_number: item.manufacturer_part_number ?? "",
         internal_part_number: item.internal_part_number ?? "",

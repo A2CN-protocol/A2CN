@@ -17,6 +17,12 @@ from typing import Any
 
 from a2cn.crypto import hash_object, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
+from a2cn.line_items import (
+    SUPPORTED_SESSION_CURRENCIES,
+    line_item_key_violations,
+    session_currency_is_supported,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +213,44 @@ def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
             )
 
 
+def check_offer_line_items(
+    terms: Any,
+    *,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> None:
+    """Hold every line item to the pinned money keys (Section 7.2).
+
+    ``terms.line_items`` is OPTIONAL, but where it is present it is an array,
+    and every entry states its money as integer minor units under
+    ``unit_price_minor`` and ``total_minor``. The bare names ``unit_price`` and
+    ``total`` are refused rather than read: the two conventions differ by a
+    factor of one hundred, so reading one as the other is not a rounding error
+    but a hundredfold one, and it arrives looking like agreement. A line item
+    that omits a pinned key is refused for the same reason — there is no second
+    reading to fall back on, only a guess. Both are INVALID_LINE_ITEM
+    (Section 12.3), and the message names the line and the key, so a sender can
+    fix the one field rather than resend the whole offer blind.
+    """
+    if not isinstance(terms, dict) or "line_items" not in terms:
+        return
+    context = {"session_id": session_id, "message_id": message_id}
+    line_items = terms["line_items"]
+    if not isinstance(line_items, list):
+        raise A2CNError(
+            "INVALID_LINE_ITEM", "terms.line_items must be an array", 400, **context
+        )
+    for index, line_item in enumerate(line_items):
+        violations = line_item_key_violations(line_item)
+        if violations:
+            raise A2CNError(
+                "INVALID_LINE_ITEM",
+                f"terms.line_items[{index}] {'; '.join(violations)}",
+                400,
+                **context,
+            )
+
+
 def check_offer_money_params(
     session_params: dict,
     terms: Any,
@@ -214,7 +258,7 @@ def check_offer_money_params(
     session_id: str | None = None,
     message_id: str | None = None,
 ) -> None:
-    """Hold an offer's terms.currency and terms.basis to the session (Sections 6.3.1, 7.2).
+    """Hold an offer's money to the session, and to Section 7.2's spellings.
 
     ``session_params`` are the parameters the session fixed, as the SessionAck's
     session_params_accepted carries them. A receiver runs this on every offer
@@ -228,6 +272,16 @@ def check_offer_money_params(
     3. When the session fixed a basis, terms.basis must be present and equal
        to it; when the session fixed none, terms.basis must be absent,
        because an offer cannot introduce a basis (SESSION_PARAM_CHANGED).
+    4. The session currency must be one this build can state minor amounts in
+       (INVALID_LINE_ITEM). It runs after the checks above so that a
+       counterparty's own mistake is reported before a limitation of ours, and
+       it runs whether or not the offer carries line items: Section 7.2's money
+       encoding attaches to the offer, and failing at the first offer is more
+       honest than failing at the first line.
+    5. Every line item states its money under the pinned keys
+       (INVALID_LINE_ITEM; see check_offer_line_items). It runs last because
+       the session parameters settle what the amounts are denominated in
+       before there is any point checking how they are spelled.
 
     A terms value that is not an object carries neither field. Nothing here
     converts between currencies or between net and gross. The state machine
@@ -273,8 +327,7 @@ def check_offer_money_params(
                 400,
                 **context,
             )
-        return
-    if offered_basis is _ABSENT or offered_basis != session_basis:
+    elif offered_basis is _ABSENT or offered_basis != session_basis:
         stated = (
             "omits terms.basis"
             if offered_basis is _ABSENT
@@ -286,6 +339,19 @@ def check_offer_money_params(
             400,
             **context,
         )
+
+    if not session_currency_is_supported(session_currency):
+        carried = ", ".join(sorted(SUPPORTED_SESSION_CURRENCIES))
+        raise A2CNError(
+            "INVALID_LINE_ITEM",
+            f"a line item states its money in minor units, and this implementation "
+            f"cannot establish that the minor-unit exponent of session currency "
+            f"{session_currency!r} is 2; it carries {carried} (Section 7.2)",
+            400,
+            **context,
+        )
+
+    check_offer_line_items(terms, session_id=session_id, message_id=message_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1156,41 +1222,11 @@ class SessionManager:
 #                                     basic validation before any protocol logic runs
 
 
-class A2CNError(Exception):
-    """Protocol error with A2CN error code, HTTP status, and context."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        http_status: int = 400,
-        detail: str = "",
-        session_id: str | None = None,
-        message_id: str | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.http_status = http_status
-        self.detail = detail
-        self.session_id = session_id
-        self.message_id = message_id
-
-    def to_dict(self) -> dict:
-        return {
-            "error": {
-                "code": self.code,
-                "message": self.message,
-                "detail": self.detail,
-                "timestamp": _now(),
-                "session_id": self.session_id,
-                "message_id": self.message_id,
-            }
-        }
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# A2CNError and _now live in a2cn.errors, and are imported at the top of this
+# module and re-exported here. They moved so that modules below the state
+# machine — a2cn.line_items first among them — can raise a protocol error
+# without importing the state machine, which would be a cycle.
+# ``from a2cn.session import A2CNError`` still resolves.
 
 
 def _record_impasse_progress(session: Session, sender_role: str, new_total_value: Any) -> bool:

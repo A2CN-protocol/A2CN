@@ -1,0 +1,354 @@
+{
+  "description": "The pinned line-item money keys (Section 7.2). A line item states its money as integer minor units under unit_price_minor and total_minor; the bare names unit_price and total are refused rather than read as major units. Both reference implementations decide accept/reject from this file, and the Python suite also validates every line-item case against spec/schemas/offer.schema.json, so the schema and the two implementations cannot drift apart. A few cases JSON cannot express — NaN, Infinity — are asserted inline in each language's suite instead, and say so there.",
+
+  "offer": {
+    "message_type": "offer",
+    "message_id": "3f9b2c14-7d85-4a61-9e02-5c8a1b6d4e77",
+    "session_id": "a2cn-sess-line-item-keys-0001",
+    "round_number": 1,
+    "sequence_number": 1,
+    "sender_did": "did:web:buyer.example",
+    "sender_agent_id": "procurement-agent-001",
+    "sender_verification_method": "did:web:buyer.example#key-2026-01",
+    "timestamp": "2026-09-19T10:00:00Z",
+    "expires_at": "2026-09-19T10:15:00Z",
+    "terms": {
+      "total_value": 1970000,
+      "currency": "USD",
+      "line_items": [
+        {
+          "id": "li-1",
+          "description": "Hydraulic fluid 200L drums",
+          "quantity": 50,
+          "unit_of_measure": "EA",
+          "unit_price_minor": 36000,
+          "total_minor": 1800000,
+          "internal_part_number": "LOT-HF-001",
+          "manufacturer_part_number": "MFG-HF-77"
+        },
+        {
+          "id": "li-2",
+          "description": "Sealing compound 5kg tubs",
+          "quantity": 20,
+          "unit_of_measure": "KG",
+          "unit_price_minor": 8500,
+          "total_minor": 170000,
+          "internal_part_number": "LOT-SC-002"
+        }
+      ],
+      "delivery_days": 21,
+      "payment_terms": { "net_days": 45 }
+    },
+    "protocol_act_hash": "qVdA8xYw3nU2bK7LpR5eT1hJ0gZcM6sN4fX9yB3aC8E",
+    "protocol_act_signature": "eyJhbGciOiJFUzI1NiJ9.cVZkQTh4WXczblUyYks3THBSNWVUMWhKMGdaY002c040Zlg5eUIzYUM4RQ.MEUCIQDvector"
+  },
+
+  "offer_canonical_hash": "LV5I7fk70Hkqf6PeQs44j-2dxkvxRDWImLuhFYnmZYY",
+
+  "integral_value_rule": "A pinned amount is an integer VALUE, not a particular JSON spelling. RFC 8785 makes 36000 and 36000.0 the same number, and JavaScript cannot tell them apart once parsed, so an integral number is accepted however it was written — 36000, 36000.0, 3.6e4 — and -0.0 normalises to 0. A number with a fractional part is refused, and so are NaN, Infinity, strings, and booleans, which are not numbers at all. The magnitude bound is JavaScript's safe-integer range, 9007199254740991: past it a double can no longer represent adjacent integers distinctly, so the two implementations could read one JSON document as two different amounts. Bounding makes them agree exactly, and no real line states 90 trillion currency units.",
+
+  "max_safe_minor": 9007199254740991,
+
+  "valid_line_items": [
+    {
+      "name": "the two pinned keys and nothing else",
+      "line_item": { "unit_price_minor": 36000, "total_minor": 1800000 }
+    },
+    {
+      "name": "with the descriptive fields Section 7.2 names",
+      "line_item": {
+        "id": "li-1",
+        "description": "Hydraulic fluid 200L drums",
+        "quantity": 50,
+        "unit": "drum",
+        "unit_price_minor": 36000,
+        "total_minor": 1800000
+      }
+    },
+    {
+      "name": "with the goods_procurement deal-type extension fields",
+      "line_item": {
+        "description": "Hydraulic fluid 200L drums",
+        "quantity": 50,
+        "unit_of_measure": "EA",
+        "unit_price_minor": 36000,
+        "total_minor": 1800000,
+        "manufacturer_part_number": "MFG-HF-77",
+        "internal_part_number": "LOT-HF-001"
+      }
+    },
+    {
+      "name": "with a vendor's own namespaced fields",
+      "line_item": {
+        "quantity": 1,
+        "unit_price_minor": 950000,
+        "total_minor": 950000,
+        "ariba_item_id": "10",
+        "ariba_lot_id": "LOT-HF-001",
+        "conga_line_item_id": "qli-001"
+      }
+    },
+    {
+      "name": "zero money, which a buyer sends when it states no benchmark price",
+      "line_item": { "quantity": 100, "unit_price_minor": 0, "total_minor": 0 }
+    },
+    {
+      "name": "a negative line, which a credit or rebate line states",
+      "line_item": { "quantity": 1, "unit_price_minor": -50000, "total_minor": -50000 }
+    },
+    {
+      "name": "a trailing .0, which is how a decimal or money type serialises",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000.0, "total_minor": 1800000.0 }
+    },
+    {
+      "name": "exponent notation, which is still the same integral number",
+      "line_item": { "quantity": 50, "unit_price_minor": 3.6e4, "total_minor": 1.8e6 }
+    },
+    {
+      "name": "an integral quantity written with a trailing .0",
+      "line_item": { "quantity": 50.0, "unit_price_minor": 36000, "total_minor": 1800000 }
+    },
+    {
+      "name": "negative zero, which normalises to zero",
+      "line_item": { "quantity": 0, "unit_price_minor": -0.0, "total_minor": -0.0 }
+    },
+    {
+      "name": "the largest amount both languages can represent exactly",
+      "line_item": {
+        "quantity": 1,
+        "unit_price_minor": 9007199254740991,
+        "total_minor": 9007199254740991
+      }
+    }
+  ],
+
+  "invalid_line_items": [
+    {
+      "name": "the bare names Section 7.2 used to show",
+      "reason": "unit_price and total are refused, never read as major units",
+      "line_item": {
+        "description": "Hydraulic fluid 200L drums",
+        "quantity": 50,
+        "unit_price": 360,
+        "total": 18000
+      }
+    },
+    {
+      "name": "a bare unit_price beside the pinned total_minor",
+      "reason": "one amount may not arrive under two spellings",
+      "line_item": { "quantity": 50, "unit_price": 360, "total_minor": 1800000 }
+    },
+    {
+      "name": "a bare total beside the pinned unit_price_minor",
+      "reason": "one amount may not arrive under two spellings",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000, "total": 18000 }
+    },
+    {
+      "name": "both spellings of both amounts, agreeing on neither",
+      "reason": "the 100x mismatch this rule exists to stop",
+      "line_item": {
+        "quantity": 50,
+        "unit_price": 360,
+        "total": 18000,
+        "unit_price_minor": 36000,
+        "total_minor": 1800000
+      }
+    },
+    {
+      "name": "unit_price_minor absent",
+      "reason": "both pinned keys are REQUIRED",
+      "line_item": { "quantity": 50, "total_minor": 1800000 }
+    },
+    {
+      "name": "total_minor absent",
+      "reason": "both pinned keys are REQUIRED",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000 }
+    },
+    {
+      "name": "neither pinned key",
+      "reason": "a line item that states no money at all is not a priced line",
+      "line_item": { "description": "Hydraulic fluid 200L drums", "quantity": 50 }
+    },
+    {
+      "name": "a fractional unit_price_minor",
+      "reason": "half a minor unit is not expressible; the value must be integral",
+      "line_item": { "quantity": 50, "unit_price_minor": 360.5, "total_minor": 1800000 }
+    },
+    {
+      "name": "a fractional total_minor",
+      "reason": "the value must be integral",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000, "total_minor": 1800000.5 }
+    },
+    {
+      "name": "a barely fractional unit_price_minor",
+      "reason": "a hair off an integer is still not an integer",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000.0001, "total_minor": 1800000 }
+    },
+    {
+      "name": "a string unit_price_minor",
+      "reason": "no coercion: a number written as text is not a number",
+      "line_item": { "quantity": 50, "unit_price_minor": "36000", "total_minor": 1800000 }
+    },
+    {
+      "name": "a null total_minor",
+      "reason": "null is not a number, and absent and null are not the same",
+      "line_item": { "quantity": 50, "unit_price_minor": 36000, "total_minor": null }
+    },
+    {
+      "name": "a boolean unit_price_minor",
+      "reason": "true is not a number, in either language",
+      "line_item": { "quantity": 50, "unit_price_minor": true, "total_minor": 1800000 }
+    },
+    {
+      "name": "a fractional quantity",
+      "reason": "quantity is a whole number of the stated unit (Section 7.2)",
+      "line_item": { "quantity": 50.5, "unit_price_minor": 36000, "total_minor": 1800000 }
+    },
+    {
+      "name": "a negative quantity",
+      "reason": "quantity is non-negative (Section 7.2); a refund is a negative price, not a negative count",
+      "line_item": { "quantity": -5, "unit_price_minor": 36000, "total_minor": 1800000 }
+    },
+    {
+      "name": "an amount past the safe-integer range",
+      "reason": "beyond 9007199254740991 a double cannot represent adjacent integers distinctly, so the two languages could read one document as two amounts",
+      "line_item": { "quantity": 1, "unit_price_minor": 1e21, "total_minor": 1e21 }
+    },
+    {
+      "name": "an amount one past the safe-integer range",
+      "reason": "the bound is inclusive, and the first value past it is refused",
+      "line_item": {
+        "quantity": 1,
+        "unit_price_minor": 9007199254740992,
+        "total_minor": 9007199254740992
+      }
+    },
+    {
+      "name": "not an object",
+      "reason": "every entry in line_items is a line item",
+      "line_item": "Hydraulic fluid 200L drums"
+    }
+  ],
+
+  "minor_unit_conversion_rule": "sign(v) * floor(abs(v) * 100 + 0.5): scale by the currency exponent, then round half AWAY FROM ZERO. Python's math.floor and TypeScript's Math.floor over the same operations in the same order agree bit for bit; every case below was measured in both. Rounding away from zero rather than up is what lets a debit and the credit that offsets it cancel: under half-up, 2.675 and -2.675 converted to 268 and -267, leaving a minor unit behind on every offsetting pair. A vendor amount is a decimal figure, not a numeric literal: a string is accepted only as optional sign, ASCII digits and at most one decimal point, after stripping ASCII space, tab, newline and carriage return. Hex, octal, binary, underscore separators, exponent notation, non-ASCII digits, 'NaN' and 'Infinity' are refused rather than left to each language's parser, which reads several of them differently. A money object contributes its amount member, or its value member when amount is absent OR null, because a present-but-null member states no amount. The result is bounded by the safe-integer range. Rounding to nearest does not make the conversion exact: exactness needs the source as a decimal STRING, because once a float exists the decimal the vendor wrote is already gone. That is a separate change from this one.",
+
+  "minor_unit_conversions": [
+    { "name": "an absent amount", "value": null, "minor": 0 },
+    { "name": "an empty string", "value": "", "minor": 0 },
+    { "name": "whitespace only", "value": "  ", "minor": 0 },
+    { "name": "a tab", "value": "\t", "minor": 0 },
+    { "name": "zero", "value": 0, "minor": 0 },
+    { "name": "negative zero normalises to zero", "value": -0.0, "minor": 0 },
+    { "name": "a whole number of currency units", "value": 360, "minor": 36000 },
+    { "name": "the same with a trailing .0", "value": 360.0, "minor": 36000 },
+    { "name": "the same written as text", "value": "360", "minor": 36000 },
+    { "name": "the same with explicit cents", "value": "360.00", "minor": 36000 },
+    { "name": "the same padded with spaces", "value": " 360.00 ", "minor": 36000 },
+    { "name": "an amount with cents a double holds exactly", "value": 85.25, "minor": 8525 },
+    { "name": "an amount no double holds exactly, rounded to nearest", "value": 1.15, "minor": 115 },
+    { "name": "its negative, rounded away from zero", "value": -1.15, "minor": -115 },
+    { "name": "scaling lands on an exact half, rounded away from zero", "value": 2.675, "minor": 268 },
+    { "name": "its negative, which must cancel it", "value": -2.675, "minor": -268 },
+    { "name": "an amount that only looks like a half", "value": 1.005, "minor": 100 },
+    { "name": "its negative", "value": -1.005, "minor": -100 },
+    { "name": "exactly half a minor unit", "value": 0.005, "minor": 1 },
+    { "name": "its negative, away from zero", "value": -0.005, "minor": -1 },
+    { "name": "a negative amount too small to register", "value": -0.001, "minor": 0 },
+    {
+      "name": "a negative amount as text, a hair under the half that rounds away",
+      "value": "-0.004",
+      "minor": 0
+    },
+    { "name": "a hair under a whole unit", "value": 99.995, "minor": 10000 },
+    { "name": "its negative", "value": -99.995, "minor": -10000 },
+    { "name": "half a minor unit as text", "value": "0.005", "minor": 1 },
+    { "name": "its negative as text", "value": "-0.005", "minor": -1 },
+    { "name": "a leading decimal point", "value": ".5", "minor": 50 },
+    { "name": "an explicit plus sign", "value": "+5", "minor": 500 },
+    { "name": "a money object naming amount", "value": { "amount": 500, "value": 1 }, "minor": 50000 },
+    {
+      "name": "a money object whose amount is null falls through to value",
+      "value": { "amount": null, "value": 500 },
+      "minor": 50000
+    },
+    { "name": "a money object naming only value", "value": { "value": 500 }, "minor": 50000 },
+    { "name": "a money object whose only member is null", "value": { "amount": null }, "minor": 0 },
+    { "name": "an empty money object", "value": {}, "minor": 0 }
+  ],
+
+  "session_currency_rule": "A _minor line-item amount means nothing until the minor-unit exponent of the session currency is known, and this implementation assumes 2. It therefore refuses an offer whose session currency is not one it has declared it can carry, with INVALID_LINE_ITEM, on the offer path and whether or not the offer carries any line items. The refusal is the designed behaviour and it fails CLOSED: a currency whose exponent really is 2 but which is not on the list is refused too, loudly and recoverably, rather than assumed. The inverse shape — listing the currencies known NOT to be 2 and assuming 2 for the rest — fails open the moment the list goes stale, which is the silent hundredfold misread this whole section exists to prevent. Membership is an exact match on the declared spelling: no case folding, because Python and JavaScript do not fold every string identically and a money guard must not differ between them. A2CN itself maintains no currency exponent registry (Section 9A.9); this list is one implementation's declared limit, not a claim about the world.",
+
+  "supported_session_currencies": ["CAD", "EUR", "GBP", "USD"],
+
+  "session_currency_cases": [
+    { "name": "the currency this corpus uses throughout", "currency": "USD", "supported": true },
+    { "name": "also declared", "currency": "EUR", "supported": true },
+    { "name": "also declared", "currency": "GBP", "supported": true },
+    {
+      "name": "a zero-decimal currency, where a _minor amount is wrong by one hundred",
+      "currency": "JPY",
+      "supported": false
+    },
+    { "name": "another zero-decimal currency", "currency": "KRW", "supported": false },
+    {
+      "name": "a three-decimal currency, where a _minor amount is wrong by ten",
+      "currency": "BHD",
+      "supported": false
+    },
+    {
+      "name": "also declared, and what this repository's own Conga adapter emits",
+      "currency": "CAD",
+      "supported": true
+    },
+    {
+      "name": "a two-decimal currency this build cannot vouch for, refused by design",
+      "currency": "CHF",
+      "supported": false
+    },
+    { "name": "a metal code, which has no minor unit at all", "currency": "XAU", "supported": false },
+    { "name": "the no-currency code", "currency": "XXX", "supported": false },
+    {
+      "name": "the right currency in the wrong spelling, not case-folded",
+      "currency": "usd",
+      "supported": false
+    }
+  ],
+
+  "non_string_session_currencies": [
+    { "name": "an array", "currency": ["USD"] },
+    { "name": "an object", "currency": { "code": "USD" } },
+    { "name": "a number", "currency": 840 },
+    { "name": "null", "currency": null },
+    { "name": "a boolean", "currency": true }
+  ],
+
+  "rejected_vendor_amounts": [
+    { "name": "a hexadecimal literal", "value": "0x10" },
+    { "name": "an octal literal", "value": "0o10" },
+    { "name": "a binary literal", "value": "0b11" },
+    { "name": "an underscore separator, which Python parses and JavaScript does not", "value": "1_000" },
+    { "name": "Arabic-Indic digits, which Python parses and JavaScript does not", "value": "٣٦٠" },
+    { "name": "the word Infinity", "value": "Infinity" },
+    { "name": "the word -Infinity", "value": "-Infinity" },
+    { "name": "the word NaN", "value": "NaN" },
+    { "name": "exponent notation as text", "value": "1e3" },
+    { "name": "exponent notation as text, capitalised", "value": "1E3" },
+    { "name": "a trailing decimal point with no digits", "value": "5." },
+    { "name": "a doubled sign", "value": "--5" },
+    { "name": "a comma decimal separator", "value": "12,50" },
+    { "name": "an array", "value": [5] },
+    { "name": "true", "value": true },
+    { "name": "false", "value": false },
+    { "name": "a money object whose amount is not a number", "value": { "amount": "abc" } },
+    { "name": "a magnitude past the safe-integer range", "value": 1e21 },
+    { "name": "its negative", "value": -1e21 },
+    {
+      "name": "a major amount that scales past the safe-integer range",
+      "value": 9007199254740991
+    },
+    {
+      "name": "the same as text",
+      "value": "9007199254740991"
+    }
+  ]
+}

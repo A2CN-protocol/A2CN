@@ -158,13 +158,13 @@ describe("DealHubQuoteToOfferTerms", () => {
     expect((terms.line_items as Dict[])[0].description).toBe("Widget Pro");
     expect((terms.line_items as Dict[])[0].quantity).toBe(10);
     // $500 → 50000 cents
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(50_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(50_000);
   });
 
   test("line items prices converted to cents", () => {
     const terms = DealHubEventParser.quoteToA2cnOfferTerms(SAMPLE_QUOTE_RESPONSE_GOODS);
     // $360.0 → 36000 cents
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(36_000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(36_000);
   });
 
   test("total fallback to header when line items empty", () => {

@@ -56,7 +56,7 @@ class TestVendrPricingToA2CNTerms:
         terms = vendr_pricing_to_a2cn_terms(SAMPLE_VENDR_PRICING)
 
         # $1200 list * 20% midpoint discount = $960 per seat.
-        assert terms["line_items"][0]["unit_price"] == 96_000
+        assert terms["line_items"][0]["unit_price_minor"] == 96_000
         assert terms["total_value"] == 9_600_000
 
     def test_benchmark_range_converted_to_cents(self):
@@ -78,7 +78,7 @@ class TestVendrPricingToA2CNTerms:
 
         terms = vendr_pricing_to_a2cn_terms(pricing)
 
-        assert terms["line_items"][0]["unit_price"] == 85_000
+        assert terms["line_items"][0]["unit_price_minor"] == 85_000
         assert terms["total_value"] == 850_000
 
     def test_flat_observed_discount_field_is_supported(self):
@@ -89,7 +89,7 @@ class TestVendrPricingToA2CNTerms:
             "observed_discount": 0.25,
         })
 
-        assert terms["line_items"][0]["unit_price"] == 150_000
+        assert terms["line_items"][0]["unit_price_minor"] == 150_000
         assert terms["total_value"] == 750_000
         assert terms["custom_terms"]["vendr"]["observed_discount"] == 0.25
 

@@ -18,7 +18,7 @@ Field mapping -- Vendr pricing -> A2CN saas_renewal:
   ----------------------------------------------------------------------
   vendor                              custom_terms.vendr.vendor
   product                             subscription_tier / line description
-  list_price                          line_items[].unit_price (cents)
+  list_price                          line_items[].unit_price_minor (minor units)
   seat_count                          seat_count / line quantity
   term_months                         term_months
   currency                            currency
@@ -33,12 +33,12 @@ import hmac
 import json
 from typing import Any
 
+from a2cn.line_items import to_minor_units
+
 
 def _money_to_cents(value: Any) -> int:
-    """Convert a decimal money value into integer cents."""
-    if value is None:
-        return 0
-    return int(float(value) * 100)
+    """This platform's decimal amounts, in the integer minor units A2CN carries."""
+    return to_minor_units(value)
 
 
 def _int_value(value: Any, default: int = 0) -> int:
@@ -123,8 +123,8 @@ def vendr_pricing_to_a2cn_terms(
             {
                 "description": product or vendor or "Vendr benchmarked subscription",
                 "quantity": seat_count,
-                "unit_price": effective_unit_price_cents,
-                "total": total_cents,
+                "unit_price_minor": effective_unit_price_cents,
+                "total_minor": total_cents,
             }
         ],
         "payment_terms": {"net_days": default_net_days},

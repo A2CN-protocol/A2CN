@@ -76,7 +76,7 @@ describe("FairmakitAdapter", () => {
   test("bid created line item prices in cents", () => {
     const terms = FairmakitEventParser.bidCreatedToGoodsProcurementTerms(SAMPLE_BID_CREATED);
     // $360.0 → 36000 cents
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(36000);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(36000);
   });
 
   test("bid created total value in cents", () => {
@@ -134,7 +134,7 @@ describe("RevenueCloudAdapter", () => {
     const terms = RevenueCloudAdapter.pricingResponseToA2cnTerms(SAMPLE_PRICING_RESPONSE);
     expect((terms.line_items as Dict[]).length).toBe(1);
     expect((terms.line_items as Dict[])[0].description).toBe("Analytics Platform");
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(95000); // $950 in cents
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(95000); // $950 in cents
   });
 
   test("pricing response no seat count for other deal type", () => {
@@ -292,7 +292,7 @@ describe("KeelvarAdapter", () => {
       SAMPLE_SOURCING_EVENT_NO_PRICE,
     );
     expect(terms.total_value).toBe(0);
-    expect((terms.line_items as Dict[])[0].unit_price).toBe(0);
+    expect((terms.line_items as Dict[])[0].unit_price_minor).toBe(0);
   });
 
   test("sourcing event lot id to internal part number", () => {

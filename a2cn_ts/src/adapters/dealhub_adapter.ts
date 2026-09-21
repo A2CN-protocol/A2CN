@@ -27,6 +27,7 @@
  *   DEALHUB_PLAYBOOK_ID: API Playbook ID for headless quote simulation
  */
 
+import { toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 const SUBSCRIPTION_KEYWORDS = ["license", "subscription", "seat"];
@@ -152,15 +153,15 @@ export class DealHubEventParser {
     for (const item of itemsRaw) {
       const productName = String(item[fm.product_name_field] ?? "");
       const qty = Math.trunc(Number(item[fm.quantity_field] ?? 1));
-      const unitPriceCents = Math.trunc(Number(item[fm.unit_price_field] ?? 0) * 100);
+      const unitPriceCents = toMinorUnits(item[fm.unit_price_field]);
       const lineTotal = qty * unitPriceCents;
       totalCents += lineTotal;
 
       const entry: Dict = {
         description: productName,
         quantity: qty,
-        unit_price: unitPriceCents,
-        total: lineTotal,
+        unit_price_minor: unitPriceCents,
+        total_minor: lineTotal,
       };
       const uom = item[fm.unit_of_measure_field];
       if (uom) {
@@ -170,7 +171,7 @@ export class DealHubEventParser {
     }
 
     // Fall back to top-level total_price when line items carry no prices
-    const totalFromHeader = Math.trunc(Number(quoteResponse[fm.total_value_field] ?? 0) * 100);
+    const totalFromHeader = toMinorUnits(quoteResponse[fm.total_value_field]);
     totalCents = totalCents || totalFromHeader;
 
     const currency = String(quoteResponse[fm.currency_field] ?? "USD");
@@ -248,7 +249,7 @@ export class DealHubEventParser {
 
     // FIELD NOTE: total_price field name should be verified against a live
     // DealHub sandbox. Contact DealHub support for exact simulate response schema.
-    const ceilingCents = Math.trunc(Number(data.total_price ?? 0) * 100);
+    const ceilingCents = toMinorUnits(data.total_price);
     const floorCents = Math.trunc(ceilingCents * (1.0 - floorDiscountPct));
 
     return {

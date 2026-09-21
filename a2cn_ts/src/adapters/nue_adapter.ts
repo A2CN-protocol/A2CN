@@ -28,6 +28,7 @@
  *                 sandbox (https://api.sandbox.nue.io)
  */
 
+import { requireMinor } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 /**
@@ -216,7 +217,7 @@ export class NueEventParser {
       lines = lineItems.map((item) => ({
         productId,
         quantity: item.quantity ?? 1,
-        unitPrice: ((item.unit_price as number) ?? 0) / 100.0,
+        unitPrice: requireMinor(item, "unit_price_minor") / 100.0,
         term: termMonths,
       }));
     } else {

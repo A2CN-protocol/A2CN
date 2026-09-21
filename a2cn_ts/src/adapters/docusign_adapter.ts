@@ -21,6 +21,7 @@
 import { createHmac, createPrivateKey, timingSafeEqual } from "node:crypto";
 import { SignJWT } from "jose";
 
+import { requireMinor } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 export const DOCUSIGN_JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
@@ -104,8 +105,8 @@ function termsSummaryText(record: Dict): string {
         "- " +
           `${item.description ?? ""}: ` +
           `qty ${item.quantity ?? 1}, ` +
-          `unit ${moneyToDecimal(item.unit_price ?? 0).toFixed(2)}, ` +
-          `total ${moneyToDecimal(item.total ?? 0).toFixed(2)}`,
+          `unit ${moneyToDecimal(requireMinor(item, "unit_price_minor")).toFixed(2)}, ` +
+          `total ${moneyToDecimal(requireMinor(item, "total_minor")).toFixed(2)}`,
       );
     }
   }

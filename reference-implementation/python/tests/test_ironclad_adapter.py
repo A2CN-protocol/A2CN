@@ -115,7 +115,7 @@ class TestIroncladWebhookParser:
         assert parsed["session_params"]["deal_type"] == "goods_procurement"
         assert parsed["initial_terms"]["currency"] == "EUR"
         assert parsed["initial_terms"]["delivery_days"] == 21
-        assert parsed["initial_terms"]["line_items"][0]["unit_price"] == 1_800_000
+        assert parsed["initial_terms"]["line_items"][0]["unit_price_minor"] == 1_800_000
         assert validate_deal_type_terms("goods_procurement", parsed["initial_terms"]) == []
 
     def test_signed_webhook_verification_accepts_valid_signature(self):

@@ -16,19 +16,14 @@
  * shape used by live Conga integrations.
  */
 
+import { requireMinor, toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
 
 const SUBSCRIPTION_KEYWORDS = ["license", "subscription", "seat", "renewal", "term"];
 
+/** This platform's decimal amounts, in the integer minor units A2CN carries. */
 function moneyToCents(value: unknown): number {
-  if (value === null || value === undefined || value === "") {
-    return 0;
-  }
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const obj = value as Dict;
-    value = obj.amount ?? obj.value ?? 0;
-  }
-  return Math.trunc(Number(value) * 100);
+  return toMinorUnits(value);
 }
 
 function intValue(value: unknown, defaultValue = 0): number {
@@ -223,8 +218,8 @@ export function congaQuoteToA2cnTerms(
         "",
       ),
       quantity,
-      unit_price: unitPriceCents,
-      total: lineTotal,
+      unit_price_minor: unitPriceCents,
+      total_minor: lineTotal,
     };
     const uom = first(item, [fm.unit_of_measure_field, "Uom", "uom"], null);
     if (uom) {
@@ -360,8 +355,8 @@ export function a2cnTermsToCongaQuote(
       productId: item.conga_product_id ?? "",
       description: item.description ?? "",
       quantity: item.quantity ?? 1,
-      unitPrice: ((item.unit_price as number) ?? 0) / 100.0,
-      totalPrice: ((item.total as number) ?? 0) / 100.0,
+      unitPrice: requireMinor(item, "unit_price_minor") / 100.0,
+      totalPrice: requireMinor(item, "total_minor") / 100.0,
     };
     if (item.unit_of_measure) {
       entry.unitOfMeasure = item.unit_of_measure;

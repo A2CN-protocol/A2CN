@@ -23,6 +23,7 @@ const EXPECTED_FIXTURES = new Set([
   "reputation_score_cannot_expand_authority",
   "offer_basis_diverges_from_session",
   "offer_currency_diverges_from_session",
+  "offer_line_item_uses_bare_money_key",
 ]);
 
 function fixtureJsonFiles(): string[] {

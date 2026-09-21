@@ -383,8 +383,8 @@ async def main() -> None:
                     "description": "Hydraulic fluid 200L drums",
                     "quantity": 50,
                     "unit_of_measure": "EA",
-                    "unit_price": 36_000,
-                    "total": 1_800_000,
+                    "unit_price_minor": 36_000,
+                    "total_minor": 1_800_000,
                 }
             ],
             "delivery_days": 14,
@@ -445,8 +445,8 @@ async def main() -> None:
                     "description": "Hydraulic fluid 200L drums",
                     "quantity": 50,
                     "unit_of_measure": "EA",
-                    "unit_price": 40_000,
-                    "total": 2_000_000,
+                    "unit_price_minor": 40_000,
+                    "total_minor": 2_000_000,
                 }
             ],
             "delivery_days": 10,
@@ -473,8 +473,8 @@ async def main() -> None:
                     "description": "Hydraulic fluid 200L drums",
                     "quantity": 50,
                     "unit_of_measure": "EA",
-                    "unit_price": 38_000,
-                    "total": 1_900_000,
+                    "unit_price_minor": 38_000,
+                    "total_minor": 1_900_000,
                 }
             ],
             "delivery_days": 14,

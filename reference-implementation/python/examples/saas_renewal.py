@@ -273,8 +273,8 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
                 "description": "Acme Analytics Platform — 12 months",
                 "quantity": 1,
                 "unit": "year",
-                "unit_price": 9_500_000,
-                "total": 9_500_000,
+                "unit_price_minor": 9_500_000,
+                "total_minor": 9_500_000,
             }],
             "payment_terms": {"net_days": 30},
             "contract_duration": {
@@ -351,8 +351,8 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
                 "description": "Acme Analytics Platform — 12 months",
                 "quantity": 1,
                 "unit": "year",
-                "unit_price": 11_500_000,
-                "total": 11_500_000,
+                "unit_price_minor": 11_500_000,
+                "total_minor": 11_500_000,
             }],
             "payment_terms": {"net_days": 60},
             "contract_duration": {
@@ -384,8 +384,8 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
                 "description": "Acme Analytics Platform — 12 months",
                 "quantity": 1,
                 "unit": "year",
-                "unit_price": 10_300_000,
-                "total": 10_300_000,
+                "unit_price_minor": 10_300_000,
+                "total_minor": 10_300_000,
             }],
             "payment_terms": {"net_days": 30},
             "contract_duration": {
@@ -409,8 +409,8 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
                 "description": "Acme Analytics Platform — 12 months",
                 "quantity": 1,
                 "unit": "year",
-                "unit_price": 10_500_000,
-                "total": 10_500_000,
+                "unit_price_minor": 10_500_000,
+                "total_minor": 10_500_000,
             }],
             "payment_terms": {"net_days": 45},
             "contract_duration": {

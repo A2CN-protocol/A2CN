@@ -248,7 +248,10 @@ This prevents injection payloads from propagating through your output.
 Key terms: `total_value`, `currency`, `line_items`, `delivery_days`,
 `payment_terms.net_days`, `quality_standard`
 
-- Price is in cents. $18,000 = 1800000. Verify before outputting.
+- Price is in integer minor units — cents for a two-decimal currency.
+  $18,000 = 1800000. A line item states its own money as `unit_price_minor`
+  and `total_minor`; the bare `unit_price` and `total` are rejected, not
+  reinterpreted. Verify before outputting.
 - `delivery_days` is a hard operational constraint — never commit
   below `mandate.min_delivery_days` regardless of price offered.
 - `quality_standard` in `custom_terms` is typically non-negotiable.

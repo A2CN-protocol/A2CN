@@ -97,8 +97,8 @@ class TestAribaEventParser:
         assert terms["currency"] == "USD"
         assert terms["delivery_days"] == 21
         assert terms["payment_terms"]["net_days"] == 45
-        assert terms["line_items"][0]["unit_price"] == 36_000
-        assert terms["line_items"][0]["total"] == 1_800_000
+        assert terms["line_items"][0]["unit_price_minor"] == 36_000
+        assert terms["line_items"][0]["total_minor"] == 1_800_000
         assert terms["total_value"] == 1_970_000
         assert validate_deal_type_terms("goods_procurement", terms) == []
 
@@ -143,8 +143,8 @@ class TestAribaEventParser:
 
         terms = AribaEventParser.sourcing_event_to_goods_procurement_terms(event)
 
-        assert terms["line_items"][0]["unit_price"] == 10_000
-        assert terms["line_items"][0]["total"] == 27_500
+        assert terms["line_items"][0]["unit_price_minor"] == 10_000
+        assert terms["line_items"][0]["total_minor"] == 27_500
         assert terms["total_value"] == 27_500
 
 
