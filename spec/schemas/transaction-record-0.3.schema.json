@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/transaction-record/0.3",
+  "title": "A2CN TransactionRecord",
+  "description": "The deterministic record of agreed terms that both parties generate from the protocol messages (Section 9). Version \"0.3\" is the record whose final_offer carries the fields of the Section 7.3.1 protocol act, so a verifier can rebuild that act from the record and recompute the hash the offer's signature already covers, which binds agreed_terms to that signature (Sections 9.3 and 9.5). Nothing new is signed. It carries basis exactly when agreed_terms carries one, and equal to it. Versions \"0.1\" and \"0.2\" are published beside this file as transaction-record.schema.json and transaction-record-0.2.schema.json. This schema constrains what a conformant producer emits (Section 17), and is deliberately stricter than a verifier. A verifier may accept a record this schema rejects, because Section 9.5 step 3 decides on the act rebuilt from the record and the hash it produces, not on field lengths or floors: an act genuinely signed over an empty protocol_version, timestamp or expires_at, or over a zero round_number or sequence_number, still rebinds, and rejecting it would reject a record whose signature covers those bytes.",
+  "type": "object",
+  "required": [
+    "record_type",
+    "record_version",
+    "record_id",
+    "session_id",
+    "generated_at",
+    "parties",
+    "deal_type",
+    "currency",
+    "subject",
+    "subject_reference",
+    "agreed_terms",
+    "negotiation_summary",
+    "final_offer",
+    "final_acceptance",
+    "offer_chain_hash",
+    "record_hash"
+  ],
+  "properties": {
+    "record_type": {
+      "type": "string",
+      "const": "a2cn_transaction_record"
+    },
+    "record_version": {
+      "type": "string",
+      "const": "0.3"
+    },
+    "record_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID v5 of session_id in the A2CN namespace (Appendix A)."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The session's id, and the session_id of the rebuilt protocol act (Section 7.3.1) and of the acceptance payload (Section 7.4)."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The Acceptance message's timestamp."
+    },
+    "parties": {
+      "type": "object",
+      "required": ["initiator", "responder"],
+      "properties": {
+        "initiator": { "$ref": "#/$defs/party" },
+        "responder": { "$ref": "#/$defs/party" }
+      },
+      "additionalProperties": false
+    },
+    "deal_type": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The session currency (Section 6.3.1)."
+    },
+    "basis": {
+      "type": "string",
+      "enum": ["net", "gross"],
+      "description": "The session basis the SessionAck fixed (Sections 6.3.1 and 6.4.1), present exactly when agreed_terms.basis is, and equal to it. A label: it is never converted."
+    },
+    "subject": {
+      "type": "string"
+    },
+    "subject_reference": {
+      "type": ["string", "null"],
+      "description": "The SessionInit's subject_reference, or null when it carried none."
+    },
+    "agreed_terms": {
+      "type": "object",
+      "description": "The accepted offer's terms, verbatim (Section 7.2), and the terms of the protocol act rebuilt from this record (Section 9.5, step 3). When they restate the session basis, basis equals the record's basis.",
+      "properties": {
+        "basis": {
+          "type": "string",
+          "enum": ["net", "gross"]
+        }
+      }
+    },
+    "negotiation_summary": {
+      "type": "object",
+      "required": [
+        "total_rounds",
+        "total_messages",
+        "session_created_at",
+        "first_offer_at",
+        "accepted_at",
+        "initiating_party_did",
+        "accepting_party_did"
+      ],
+      "properties": {
+        "total_rounds": { "type": "integer", "minimum": 0 },
+        "total_messages": { "type": "integer", "minimum": 0 },
+        "session_created_at": { "type": "string", "format": "date-time" },
+        "first_offer_at": { "type": "string", "format": "date-time" },
+        "accepted_at": { "type": "string", "format": "date-time" },
+        "initiating_party_did": { "type": "string", "pattern": "^did:" },
+        "accepting_party_did": { "type": "string", "pattern": "^did:" }
+      },
+      "additionalProperties": false
+    },
+    "final_offer": {
+      "type": "object",
+      "description": "The accepted offer, with the fields of the Section 7.3.1 protocol act its signature covers. The act's remaining fields are elsewhere in the record: session_id at the top level and the act's terms as agreed_terms. This describes what a conformant producer emits (Section 17). A verifier accepts a wider range, because it must be able to rebind a record another implementation produced: Section 9.5 step 3 requires only types it can canonicalize into the act, and lets the hash comparison decide.",
+      "required": [
+        "message_id",
+        "protocol_version",
+        "round_number",
+        "sequence_number",
+        "message_type",
+        "sender_did",
+        "timestamp",
+        "expires_at",
+        "protocol_act_hash",
+        "protocol_act_signature"
+      ],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1 },
+        "protocol_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The wire version the act was hashed under (Section 7.3.1). A verifier rebuilds the act with this value, not its own."
+        },
+        "round_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The act's round number, which a conformant producer numbers from 1 (Section 7.1). A verifier does not impose that floor: Section 9.5 step 3 accepts any integral JSON number and lets the rebuilt hash decide, so 2 and 2.0 are one act in two spellings (RFC 8785)."
+        },
+        "sequence_number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The act's sequence number, which a conformant producer numbers from 1 (Section 7.1); see round_number for how a verifier treats it."
+        },
+        "message_type": { "type": "string", "enum": ["offer", "counteroffer"] },
+        "sender_did": { "type": "string", "pattern": "^did:" },
+        "timestamp": {
+          "type": "string",
+          "description": "The value the signed act carried, which is the offer's timestamp, or \"\" when the offer omitted it: neither field is validated on the wire, and a receiver rebuilding the act defaults a missing one to \"\" (Section 7.3.1). Not constrained to a date-time for that reason."
+        },
+        "expires_at": {
+          "type": "string",
+          "description": "The value the signed act carried, which is the offer's expires_at, or \"\" when the offer omitted it (see timestamp)."
+        },
+        "protocol_act_hash": { "$ref": "#/$defs/hash" },
+        "protocol_act_signature": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "final_acceptance": {
+      "type": "object",
+      "description": "The Acceptance, with every field of the Section 7.4 payload its signature covers except session_id, which is at the record's top level.",
+      "required": [
+        "message_id",
+        "sender_did",
+        "round_number",
+        "sequence_number",
+        "accepted_offer_id",
+        "accepted_protocol_act_hash",
+        "acceptance_signature"
+      ],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1 },
+        "sender_did": { "type": "string", "pattern": "^did:" },
+        "round_number": { "type": "integer", "minimum": 1 },
+        "sequence_number": { "type": "integer", "minimum": 1 },
+        "accepted_offer_id": { "type": "string", "minLength": 1 },
+        "accepted_protocol_act_hash": { "$ref": "#/$defs/hash" },
+        "acceptance_signature": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "offer_chain_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "SHA-256 of the JCS array of every protocol_act_hash, in order."
+    },
+    "record_hash": {
+      "$ref": "#/$defs/hash",
+      "description": "SHA-256 of the JCS record with record_hash set to the empty string."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "basis": { "const": "net" } }, "required": ["basis"] },
+      "then": {
+        "properties": {
+          "agreed_terms": { "required": ["basis"], "properties": { "basis": { "const": "net" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "basis": { "const": "gross" } }, "required": ["basis"] },
+      "then": {
+        "properties": {
+          "agreed_terms": { "required": ["basis"], "properties": { "basis": { "const": "gross" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["agreed_terms"],
+        "properties": { "agreed_terms": { "required": ["basis"] } }
+      },
+      "then": { "required": ["basis"] }
+    }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "Base64url-encoded SHA-256 digest without padding."
+    },
+    "party": {
+      "type": "object",
+      "required": [
+        "organization_name",
+        "did",
+        "agent_id",
+        "verification_method",
+        "mandate_type"
+      ],
+      "properties": {
+        "organization_name": { "type": "string" },
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": { "type": "string" },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mandate_type": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

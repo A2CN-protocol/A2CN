@@ -4,14 +4,16 @@
  * A record artifact's unversioned schema file describes its "0.1" version; each
  * later version is published beside it as <name>-<version>.schema.json, and a
  * published schema file is never rewritten (Section 17). A TransactionRecord's
- * version follows its shape, so the "0.1" schema permits no top-level basis and
- * the "0.2" schema requires it (Sections 9.3 and 9.5). The "0.1"
- * SessionEvidenceRecord schema is the file release 0.3.0 published, which
- * predates Sections 9A.8 to 9A.11; those arrived in "0.2" (Section 9A.2). No
- * JSON Schema validator is a dependency here, so this reads the schemas
- * directly: their versions, fields, closed objects, field types, and basis enums
- * must agree with the implementation's constants and the records it generates.
- * The Python suite runs a full Draft 2020-12 validation over the same records.
+ * version follows its shape: the "0.1" schema permits no top-level basis, the
+ * "0.2" schema requires it, and the "0.3" schema requires the Section 7.3.1 act
+ * fields in final_offer and carries basis exactly when agreed_terms does
+ * (Sections 9.3 and 9.5). The "0.1" SessionEvidenceRecord schema is the file
+ * release 0.3.0 published, which predates Sections 9A.8 to 9A.11; those arrived
+ * in "0.2" (Section 9A.2). No JSON Schema validator is a dependency here, so
+ * this reads the schemas directly: their versions, fields, closed objects, field
+ * types, and basis enums must agree with the implementation's constants and the
+ * records it generates. The Python suite runs a full Draft 2020-12 validation
+ * over the same records.
  */
 
 import { createHash, type KeyObject } from "node:crypto";
@@ -30,7 +32,10 @@ import {
   type GenerateSessionEvidenceOptions,
 } from "../src/a2cn/evidence.js";
 import {
-  RECOGNIZED_TRANSACTION_RECORD_VERSIONS,
+  ACCEPTED_TRANSACTION_RECORD_VERSIONS,
+  FINAL_OFFER_ACT_FIELDS,
+  KNOWN_TRANSACTION_RECORD_VERSIONS,
+  TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
   TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
   TRANSACTION_RECORD_VERSION_WITH_BASIS,
   generateTransactionRecord,
@@ -50,11 +55,21 @@ function schema(file: string): Dict {
 
 const TR_VECTOR = readJson("spec", "test-vectors", "transaction-record-basis.json");
 const WITHOUT_BASIS = TR_VECTOR.without_basis as Dict;
+const EXPECTED_0_2 = (TR_VECTOR.expected as Dict).record_version_0_2 as Dict;
+const EXPECTED_0_3 = (TR_VECTOR.expected as Dict).record_version_0_3 as Dict;
+// A session whose round-1 offer omits expires_at, so its signed act, and the
+// record, carry "". A conformant producer can emit this, so the schema takes it.
+const EMPTY_EXPIRES_AT = TR_VECTOR.empty_expires_at as Dict;
 const PARITY_VECTORS = readJson("a2cn_ts", "parity", "vectors.json");
 
 const TR_0_1 = "transaction-record.schema.json";
 const TR_0_2 = "transaction-record-0.2.schema.json";
-const OTHER_VERSION: Record<string, string> = { [TR_0_1]: TR_0_2, [TR_0_2]: TR_0_1 };
+const TR_0_3 = "transaction-record-0.3.schema.json";
+const TR_SCHEMAS = [TR_0_1, TR_0_2, TR_0_3];
+// Every other version's schema, which the record of one version must not fit.
+const OTHER_VERSIONS: Record<string, string[]> = Object.fromEntries(
+  TR_SCHEMAS.map((file) => [file, TR_SCHEMAS.filter((other) => other !== file)]),
+);
 
 // ---------------------------------------------------------------------------
 // Records the implementation generates, and a structural fit against a schema
@@ -92,12 +107,12 @@ function withoutSubjectReference(): Dict {
 
 /** What an implementation that predates basis records for a session that fixed one. */
 function agreedTermsBasisAlone(): Dict {
-  const record = structuredClone((TR_VECTOR.expected as Dict).full_record as Dict);
+  const record = structuredClone(EXPECTED_0_2.full_record as Dict);
   delete record.basis;
   record.record_version = "0.1";
   record.record_hash = "";
   record.record_hash = hashObject(record);
-  expect(record.record_hash).toBe((TR_VECTOR.expected as Dict).basis_dropped_0_1_record_hash);
+  expect(record.record_hash).toBe(EXPECTED_0_2.basis_dropped_0_1_record_hash);
   return record;
 }
 
@@ -127,10 +142,11 @@ function jsonType(value: unknown): string {
 }
 
 /**
- * Hold `value` to the schema `node`, field by field. A closed object lists
- * exactly the fields the record carries and requires every one of them; every
- * typed, constant, enumerated, or patterned field accepts the value the record
- * holds.
+ * Hold `value` to the schema `node`, field by field. A closed object carries no
+ * field the schema does not declare, and every required field is present; a
+ * declared field the schema does not require is optional, as the "0.3" record's
+ * basis is. Every typed, constant, enumerated, or patterned field accepts the
+ * value the record holds.
  */
 function expectFits(root: Dict, node: Dict, value: unknown, path: string): void {
   const resolved = resolve(root, node);
@@ -153,8 +169,15 @@ function expectFits(root: Dict, node: Dict, value: unknown, path: string): void 
   const required = (resolved.required ?? []) as string[];
   const record = value as Dict;
   if (resolved.additionalProperties === false) {
-    expect(Object.keys(record).sort(), `${path} fields`).toEqual(Object.keys(properties).sort());
-    expect([...required].sort(), `${path} required`).toEqual(Object.keys(properties).sort());
+    const declared = Object.keys(properties);
+    expect(
+      Object.keys(record).filter((key) => !declared.includes(key)),
+      `${path} undeclared fields`,
+    ).toEqual([]);
+    expect(
+      required.filter((key) => !declared.includes(key)),
+      `${path} required but undeclared`,
+    ).toEqual([]);
   }
   for (const key of required) {
     expect(Object.prototype.hasOwnProperty.call(record, key), `${path}.${key} is required`).toBe(
@@ -175,19 +198,29 @@ function expectFits(root: Dict, node: Dict, value: unknown, path: string): void 
 test("the transaction record schemas name the versions the generator emits", () => {
   expect(TRANSACTION_RECORD_VERSION_WITHOUT_BASIS).toBe("0.1");
   expect(TRANSACTION_RECORD_VERSION_WITH_BASIS).toBe("0.2");
+  expect(TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT).toBe("0.3");
   for (const [file, version] of [
     [TR_0_1, TRANSACTION_RECORD_VERSION_WITHOUT_BASIS],
     [TR_0_2, TRANSACTION_RECORD_VERSION_WITH_BASIS],
+    [TR_0_3, TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT],
   ]) {
     const found = schema(file);
     expect(found.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
     expect(found.$id).toBe(`https://a2cn.dev/schemas/transaction-record/${version}`);
     expect(((found.properties as Dict).record_version as Dict).const).toBe(version);
   }
-  // A verifier recognizes exactly the versions it has a schema for.
-  expect([...RECOGNIZED_TRANSACTION_RECORD_VERSIONS].sort()).toEqual(
-    [TRANSACTION_RECORD_VERSION_WITHOUT_BASIS, TRANSACTION_RECORD_VERSION_WITH_BASIS].sort(),
+  // This implementation knows exactly the versions it has a schema for, because
+  // the published files are never rewritten; it accepts only the bound one.
+  expect([...KNOWN_TRANSACTION_RECORD_VERSIONS].sort()).toEqual(
+    [
+      TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
+      TRANSACTION_RECORD_VERSION_WITH_BASIS,
+      TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+    ].sort(),
   );
+  expect([...ACCEPTED_TRANSACTION_RECORD_VERSIONS]).toEqual([
+    TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+  ]);
 });
 
 // Every real TransactionRecord in the vectors, and what the reference
@@ -198,16 +231,32 @@ const TRANSACTION_RECORDS: [string, string, () => Dict][] = [
     TR_0_1,
     () => (WITHOUT_BASIS.record_version_0_1 as Dict).full_record as Dict,
   ],
-  ["0.1 generated for a session without basis", TR_0_1, () => replay(WITHOUT_BASIS)],
+  ["0.1 with agreed_terms.basis alone", TR_0_1, agreedTermsBasisAlone],
   [
-    "0.1 parity vector",
-    TR_0_1,
+    "0.2 from an implementation that predates the act fields",
+    TR_0_2,
+    () => EXPECTED_0_2.full_record as Dict,
+  ],
+  ["0.3 basis vector", TR_0_3, () => EXPECTED_0_3.full_record as Dict],
+  [
+    "0.3 without-basis vector",
+    TR_0_3,
+    () => (WITHOUT_BASIS.record_version_0_3 as Dict).full_record as Dict,
+  ],
+  ["0.3 generated for a basis session", TR_0_3, () => replay(TR_VECTOR)],
+  ["0.3 generated for a session without basis", TR_0_3, () => replay(WITHOUT_BASIS)],
+  [
+    "0.3 parity vector",
+    TR_0_3,
     () => ((PARITY_VECTORS.session as Dict).expected as Dict).full_record as Dict,
   ],
-  ["0.1 generated without subject_reference", TR_0_1, withoutSubjectReference],
-  ["0.1 with agreed_terms.basis alone", TR_0_1, agreedTermsBasisAlone],
-  ["0.2 basis vector", TR_0_2, () => (TR_VECTOR.expected as Dict).full_record as Dict],
-  ["0.2 generated for a basis session", TR_0_2, () => replay(TR_VECTOR)],
+  ["0.3 generated without subject_reference", TR_0_3, withoutSubjectReference],
+  [
+    "0.3 empty expires_at vector",
+    TR_0_3,
+    () => (EMPTY_EXPIRES_AT.record_version_0_3 as Dict).full_record as Dict,
+  ],
+  ["0.3 generated with an empty expires_at", TR_0_3, () => replay(EMPTY_EXPIRES_AT)],
 ];
 
 test.each(TRANSACTION_RECORDS)(
@@ -217,8 +266,10 @@ test.each(TRANSACTION_RECORDS)(
     const own = schema(file);
     expectFits(own, own, record, "record");
     // And no other version's schema.
-    const other = schema(OTHER_VERSION[file]);
-    expect(() => expectFits(other, other, record, "record")).toThrow();
+    for (const otherFile of OTHER_VERSIONS[file]) {
+      const other = schema(otherFile);
+      expect(() => expectFits(other, other, record, "record"), otherFile).toThrow();
+    }
   },
 );
 
@@ -253,11 +304,43 @@ test("the 0.1 schema permits no top-level basis and leaves agreed_terms open", (
   expect((agreedTerms.required ?? []) as string[]).not.toContain("basis");
 });
 
+test("the 0.3 schema requires every act field and carries basis with agreed_terms", () => {
+  const found = schema(TR_0_3);
+  const properties = found.properties as Dict;
+  const finalOffer = properties.final_offer as Dict;
+
+  for (const name of FINAL_OFFER_ACT_FIELDS) {
+    expect(Object.keys(finalOffer.properties as Dict), name).toContain(name);
+    expect(finalOffer.required as string[], name).toContain(name);
+  }
+  // basis is the one declared top-level field a "0.3" record may leave out.
+  const optional = Object.keys(properties).filter(
+    (name) => !(found.required as string[]).includes(name),
+  );
+  expect(optional).toEqual(["basis"]);
+  expect((properties.basis as Dict).enum).toEqual([...SESSION_BASES]);
+  // A basis implies the same agreed_terms.basis, and an agreed_terms.basis implies a basis.
+  for (const basis of SESSION_BASES) {
+    expect(found.allOf).toContainEqual({
+      if: { properties: { basis: { const: basis } }, required: ["basis"] },
+      then: {
+        properties: {
+          agreed_terms: { required: ["basis"], properties: { basis: { const: basis } } },
+        },
+      },
+    });
+  }
+  expect(found.allOf).toContainEqual({
+    if: { required: ["agreed_terms"], properties: { agreed_terms: { required: ["basis"] } } },
+    then: { required: ["basis"] },
+  });
+});
+
 // Every object the generator fills in full is closed; agreed_terms, the accepted
 // offer's terms, stays open (Section 7.2).
 const CLOSED_OBJECTS = ["parties", "negotiation_summary", "final_offer", "final_acceptance"];
 
-test.each([TR_0_1, TR_0_2])("%s is closed except agreed_terms", (file) => {
+test.each(TR_SCHEMAS)("%s is closed except agreed_terms", (file) => {
   const found = schema(file);
   const properties = found.properties as Dict;
 
@@ -278,7 +361,8 @@ test.each([TR_0_1, TR_0_2])("%s is closed except agreed_terms", (file) => {
 // The healthy record of each version, and each closed object an extra field can go in.
 const HEALTHY_TRANSACTION_RECORDS: Record<string, () => Dict> = {
   [TR_0_1]: () => (WITHOUT_BASIS.record_version_0_1 as Dict).full_record as Dict,
-  [TR_0_2]: () => (TR_VECTOR.expected as Dict).full_record as Dict,
+  [TR_0_2]: () => EXPECTED_0_2.full_record as Dict,
+  [TR_0_3]: () => EXPECTED_0_3.full_record as Dict,
 };
 const EXTRA_FIELD_PLACES: [string, (record: Dict) => Dict][] = [
   ["the record", (record) => record],
@@ -288,13 +372,12 @@ const EXTRA_FIELD_PLACES: [string, (record: Dict) => Dict][] = [
   ["final_offer", (record) => record.final_offer as Dict],
   ["final_acceptance", (record) => record.final_acceptance as Dict],
 ];
-const EXTRA_FIELD_CASES: [string, string, (record: Dict) => Dict][] = [TR_0_1, TR_0_2].flatMap(
-  (file) =>
-    EXTRA_FIELD_PLACES.map(([place, locate]): [string, string, (record: Dict) => Dict] => [
-      file,
-      place,
-      locate,
-    ]),
+const EXTRA_FIELD_CASES: [string, string, (record: Dict) => Dict][] = TR_SCHEMAS.flatMap((file) =>
+  EXTRA_FIELD_PLACES.map(([place, locate]): [string, string, (record: Dict) => Dict] => [
+    file,
+    place,
+    locate,
+  ]),
 );
 
 test.each(EXTRA_FIELD_CASES)(
@@ -306,6 +389,18 @@ test.each(EXTRA_FIELD_CASES)(
     expectFits(own, own, record, "record");
 
     locate(record).note = "unsealed";
+    expect(() => expectFits(own, own, record, "record")).toThrow();
+  },
+);
+
+test.each(FINAL_OFFER_ACT_FIELDS)(
+  "a 0.3 record missing an act field does not fit its schema: %s",
+  (fieldName) => {
+    const own = schema(TR_0_3);
+    const record = structuredClone(EXPECTED_0_3.full_record as Dict);
+    expectFits(own, own, record, "record");
+
+    delete (record.final_offer as Dict)[fieldName];
     expect(() => expectFits(own, own, record, "record")).toThrow();
   },
 );

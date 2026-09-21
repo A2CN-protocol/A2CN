@@ -29,6 +29,66 @@ export function dropNone(d: Dict): Dict {
 }
 
 // ---------------------------------------------------------------------------
+// The signed protocol act (Section 7.3.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The wire version the protocol act object states. It is the a2cn_version /
+ * protocol_version of Section 6.3.1, and it is part of what the signature
+ * covers, so a signer and a verifier must use the same value.
+ */
+export const PROTOCOL_ACT_VERSION = "0.2";
+
+/**
+ * The protocol act object's fields, in the order Section 7.3.1 lists them. JCS
+ * sorts keys before hashing, so the order is for readers.
+ */
+export const PROTOCOL_ACT_FIELDS: readonly string[] = [
+  "protocol_version",
+  "session_id",
+  "round_number",
+  "sequence_number",
+  "message_type",
+  "sender_did",
+  "timestamp",
+  "expires_at",
+  "terms",
+];
+
+/**
+ * The object a protocol_act_signature covers (Section 7.3.1).
+ *
+ * One definition for every site that builds it: a client signing an offer, the
+ * state machine checking one it received, the evidence record rebuilding an act
+ * it holds, and the TransactionRecord rebuilding the act from the record
+ * (Section 9.5). Every value is the caller's, and nothing is defaulted here, so
+ * each caller keeps its own handling of an absent field.
+ */
+export function protocolActObject(act: {
+  protocol_version: string;
+  session_id: unknown;
+  round_number: unknown;
+  sequence_number: unknown;
+  message_type: unknown;
+  sender_did: unknown;
+  timestamp: unknown;
+  expires_at: unknown;
+  terms: unknown;
+}): Dict {
+  return {
+    protocol_version: act.protocol_version,
+    session_id: act.session_id,
+    round_number: act.round_number,
+    sequence_number: act.sequence_number,
+    message_type: act.message_type,
+    sender_did: act.sender_did,
+    timestamp: act.timestamp,
+    expires_at: act.expires_at,
+    terms: act.terms,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Sub-objects
 // ---------------------------------------------------------------------------
 
@@ -440,8 +500,10 @@ export class Offer {
   /** Return the protocol act object used for signing (Section 7.3.1). */
   protocolActObject(): Dict {
     const termsDict = hasToDict(this.terms) ? this.terms.toDict() : this.terms;
-    return {
-      protocol_version: "0.2",
+    // The module-level builder of the same name; this method supplies the
+    // offer's own values.
+    return protocolActObject({
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_id: this.session_id,
       round_number: this.round_number,
       sequence_number: this.sequence_number,
@@ -450,7 +512,7 @@ export class Offer {
       timestamp: this.timestamp,
       expires_at: this.expires_at,
       terms: termsDict,
-    };
+    });
   }
 }
 
