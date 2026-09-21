@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vector for the TransactionRecord's money basis (Section 9.3) and for the binding of agreed_terms to the signed final offer (Sections 9.3 and 9.5). The session fixed session_params.basis \"gross\" and every offer restates it in terms.basis (Section 7.2). Replaying the signed messages through either reference implementation, or building the record on the client side from the same messages, must produce expected.record_version_0_3.full_record and its record_hash, and that record must verify. A \"0.3\" record carries the Section 7.3.1 act fields in final_offer, so a verifier rebuilds the signed act from the record — its terms are agreed_terms, its session_id the record's — and requires the rebuilt hash to equal final_offer.protocol_act_hash, which the offer's signature already covers. Nothing new is signed. expected.record_version_0_3.agreed_terms_tampered_record_hash is the hash after setting agreed_terms.total_value to agreed_terms_tampered_total_value and recomputing record_hash: both signatures still verify, so only the rebuilt act hash rejects it. basis_flipped_record_hash sets the top-level basis to tampered_basis, act_fields_dropped_record_hash removes every act field from final_offer while the record stays \"0.3\", and relabelled_0_2_record_hash relabels the record \"0.2\" with its act fields kept; each must fail verification. expected.record_version_0_2 is the record an implementation that predates the binding produced for this session, with the bytes and record_hash it had. It carries no act fields and still verifies, and so does every negative derived from it: tampered_record_hash sets the top-level basis to tampered_basis, basis_dropped_record_hash removes the top-level basis from the \"0.2\" record, basis_dropped_0_1_record_hash is that record at \"0.1\" (what an implementation that predates basis records for this session, agreed_terms.basis alone, which verifies), and relabelled_0_1_record_hash is the \"0.2\" record at \"0.1\" with its basis kept. Except for basis_dropped_0_1_record_hash, each must fail verification. The evidence record for the completed session, sealed with producer_private_jwk, must have expected.record_version_0_3.evidence_record_hash and verify; an evidence record seals whatever TransactionRecord hash its session has. record_version_0_3_binding holds the shared act-integer-spelling and top-level-currency cases both suites apply to the \"0.3\" record. Keys are test-only public fixtures and MUST NOT be used outside tests. ES256 signatures are randomized, so they are recorded here rather than recomputed. without_basis is a session that fixed no basis, and empty_expires_at is a session whose offer omits expires_at, so its signed act carries \"\".",
+  "description": "Cross-language vector for the TransactionRecord's money basis (Section 9.3) and for the binding of agreed_terms to the signed final offer (Sections 9.3 and 9.5). The session fixed session_params.basis \"gross\" and every offer restates it in terms.basis (Section 7.2). Replaying the signed messages through either reference implementation, or building the record on the client side from the same messages, must produce expected.record_version_0_3.full_record and its record_hash, and that record must verify. A \"0.3\" record carries the Section 7.3.1 act fields in final_offer, so a verifier rebuilds the signed act from the record — its terms are agreed_terms, its session_id the record's — and requires the rebuilt hash to equal final_offer.protocol_act_hash, which the offer's signature already covers. Nothing new is signed. expected.record_version_0_3.agreed_terms_tampered_record_hash is the hash after setting agreed_terms.total_value to agreed_terms_tampered_total_value and recomputing record_hash: both signatures still verify, so only the rebuilt act hash rejects it. basis_flipped_record_hash sets the top-level basis to tampered_basis, act_fields_dropped_record_hash removes every act field from final_offer while the record stays \"0.3\", and relabelled_0_2_record_hash relabels the record \"0.2\" with its act fields kept; each must fail verification. expected.record_version_0_2 is the record an implementation that predates the binding produced for this session, with the bytes and record_hash it had. It carries no act fields and still verifies, and so does every negative derived from it: tampered_record_hash sets the top-level basis to tampered_basis, basis_dropped_record_hash removes the top-level basis from the \"0.2\" record, basis_dropped_0_1_record_hash is that record at \"0.1\" (what an implementation that predates basis records for this session, agreed_terms.basis alone, which verifies), and relabelled_0_1_record_hash is the \"0.2\" record at \"0.1\" with its basis kept. Except for basis_dropped_0_1_record_hash, each must fail verification. The evidence record for the completed session, sealed with producer_private_jwk, must have expected.record_version_0_3.evidence_record_hash and verify; an evidence record seals whatever TransactionRecord hash its session has. record_version_0_3_binding holds the shared act-integer-spelling and top-level-currency cases both suites apply to the \"0.3\" record. Keys are test-only public fixtures and MUST NOT be used outside tests. ES256 signatures are randomized, so they are recorded here rather than recomputed. without_basis is a session that fixed no basis, and empty_expires_at is a session whose offer omits expires_at, so its signed act carries \"\". This file is verifiable but NOT byte-reproducible: ES256 signatures carry a random nonce, so re-running a generator over the same session yields different signature values and a different record_hash every time. The recorded values are to verify against, never to reproduce. The session was re-keyed for record_version \"0.4\": a private key for did:web:techcorp.example was never stored, so re-signing its acts under the changed acceptance scope required minting one, and it is stored at .private_jwks as TEST-ONLY vector key material that MUST NOT be used outside spec/test-vectors/. A consequence: the historical \"0.1\", \"0.2\" and \"0.3\" records are now UNVERIFIABLE rather than merely unbound, because did_documents no longer publishes the key that signed them. That is not corruption -- a verifier refuses them at the version check long before a signature is examined, which is what they exist to demonstrate, and re-signing them with today's key would make them verify, which is the opposite of their purpose. No hashed artifact moved in the re-key: an act's hash is computed over the act, never over the key.",
   "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
   "did_documents": {
     "did:web:techcorp.example": {
@@ -16,8 +16,8 @@
           "publicKeyJwk": {
             "kty": "EC",
             "crv": "P-256",
-            "x": "ptPTh0ZVngWl-mOcivGjmhw90R8VqN35HPPAHBWi8T0",
-            "y": "QuSfnKR6KP3itYqz9JZtuZ9xwc0LC5wVdFJVRoKdNTA"
+            "x": "VTRCSSp-es1I4SnQogKE2a01sYabWsd6_bNcSWeCJz0",
+            "y": "6OjmdVwUT57a22bfeNKHfE9ZM6mRk0xEz2JFtZl0Gvc"
           }
         }
       ],
@@ -138,7 +138,7 @@
         "seat_count": 100
       },
       "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
-      "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ._ThY7apcfwmnaVr36E5esZdlxuvYiW6C_6UxwBEf9y_uClSQFm8W43lMf9wXM1Hzsg2yqSRlFHNFA6dvupJ4Vg"
+      "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.EQwR_y7dTX6MCPxEBV1PLYFw8lmwl5SJTnogA1aGfmopOkyMO_72NiPGnpa7hxCSnnBtqt30jMixLlAfQw4c5w"
     },
     {
       "message_type": "counteroffer",
@@ -174,7 +174,7 @@
       "sender_agent_id": "basis-agent",
       "sender_verification_method": "did:web:techcorp.example#key-1",
       "timestamp": "2026-03-24T10:03:00Z",
-      "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+      "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
     }
   ],
   "expected": {
@@ -323,6 +323,83 @@
       "basis_flipped_record_hash": "QGYqdqEgxmaK_-grVsOXhCPXrlWy4uD2HE07vQgIXdo",
       "act_fields_dropped_record_hash": "iuvQvYTlF29yzzMr8RDjVsZf0eqB86z_P_8KZMOeups",
       "relabelled_0_2_record_hash": "ZBGzD71Oll07xm4HbYMM17jWeKUk_8P7GJO2oMHnHqE"
+    },
+    "record_version_0_4": {
+      "record_hash": "ijObY9oAD-eiu-SfniEFFZ1dZMMDvIuL1QphS8i2Xso",
+      "full_record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 10000000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 2,
+          "total_messages": 3,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:techcorp.example"
+        },
+        "final_offer": {
+          "message_id": "basis-counter-1",
+          "protocol_version": "0.2",
+          "round_number": 2,
+          "sequence_number": 2,
+          "message_type": "counteroffer",
+          "sender_did": "did:web:acme-corp.com",
+          "timestamp": "2026-03-24T10:02:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw"
+        },
+        "final_acceptance": {
+          "message_id": "basis-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:techcorp.example",
+          "round_number": 2,
+          "sequence_number": 3,
+          "timestamp": "2026-03-24T10:03:00Z",
+          "accepted_offer_id": "basis-counter-1",
+          "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
+        },
+        "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
+        "record_hash": "ijObY9oAD-eiu-SfniEFFZ1dZMMDvIuL1QphS8i2Xso"
+      },
+      "agreed_terms_tampered_record_hash": "WlAzJDyr7vLWTD8KcN-HkRRC_cGIROuLbjGeCdR-sqQ",
+      "basis_flipped_record_hash": "K_0NEMa-CAs-eujo3MSPcFYW7DAjdYMhhg5MUpMTYbk",
+      "act_fields_dropped_record_hash": "xqzlZ4FO8B12_tC60n4pmmGWZ7VoUqp5mdsvYsYGWoE",
+      "relabelled_0_3_record_hash": "43Dm9hEk_54ic3v2ItlT-NA4h-uZ65q-d6OnWpKV7WA",
+      "evidence_record_hash": "K0V7a0nJxU0SIMadwS7eyUlK_qa-70GpgW_rJwnrrlA"
     }
   },
   "without_basis": {
@@ -485,7 +562,7 @@
         "sender_agent_id": "parity-agent",
         "sender_verification_method": "did:web:techcorp.example#key-1",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.c040SmtNbjRRUkpNR1dLS2Nmbmp2ckZyTy1VYVlROGh6S0hYRmpmUUFDZw.K031YpTSQEIIC9Yt3NeEvcOYjaVBnFB6zUpA0cG6xy_EQMNvOaKDpPWqOUXAdoLZsaaMgoZFTGE6o_M_DImFyQ"
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.S3hKUjVWVGFWSk8wV0dLUjQzRHhWZnNyZkctdFNNcmE3TTJQOGxyTlMtUQ.tsi9foemz2b_H0dIectodW9I-cMsAbZVifk3kOXBnuTYIYHR1eimriImOnfTJCaoQjnqM22bTPmbZoeFcFnrPA"
       }
     ],
     "record_version_0_1": {
@@ -621,7 +698,93 @@
     "unechoed_proposed_bases": [
       "net",
       "gross"
-    ]
+    ],
+    "private_jwks": {
+      "did:web:techcorp.example": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "yBqAozmK34lgmawkZJiql8cV8mBdLvmyVH8AHrThJHo",
+        "y": "YlgfTYFme_XeFKLxzh0LLOKi-q7x6sqZAyGBVbglaX4",
+        "d": "XZJC7OiOPA9RvV6yobPgm1kZdg9htDWgIxXP0wDT6b0"
+      },
+      "did:web:acme-corp.com": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "6vLBotDYauSe6zbkEWMLxM84MYXIXbsvqRU-yfvdOAM",
+        "y": "iENZCpZVUyC63C9Y7fhtZ6z367TNAm1Iebia49zfGzY",
+        "d": "Fp0yOmzWBBlaSTbhggddYAZEt97_mGyjSI6BUBywS9k"
+      }
+    },
+    "record_version_0_4": {
+      "record_hash": "_SUkNphHeH0xKH7wScf8al-NrA1AdkWSQgSyvzF2hMA",
+      "full_record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "4f713752-0571-53ba-8e98-ca5b803e2bd8",
+        "session_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "parity-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "parity-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Parity Vector Session",
+        "subject_reference": "PARITY-REF-001",
+        "agreed_terms": {
+          "total_value": 10500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 2,
+          "total_messages": 3,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:techcorp.example"
+        },
+        "final_offer": {
+          "message_id": "parity-counter-1",
+          "protocol_version": "0.2",
+          "round_number": 2,
+          "sequence_number": 2,
+          "message_type": "counteroffer",
+          "sender_did": "did:web:acme-corp.com",
+          "timestamp": "2026-03-24T10:02:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMSJ9.dUxyeFhoRHoycEpOSnFJVFVlRmN5RjdNaTRaT0xZYkhEVlFoUUFlbUZNWQ.DedceuvDNWnXBksIHB_jOoptvxr_cdUrEXFFLyJXfG-7O5KZFP6rkzY-5fL7IfeUrYccBmi2uQ9I3bKl_C2cNQ"
+        },
+        "final_acceptance": {
+          "message_id": "parity-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:techcorp.example",
+          "round_number": 2,
+          "sequence_number": 3,
+          "timestamp": "2026-03-24T10:03:00Z",
+          "accepted_offer_id": "parity-counter-1",
+          "accepted_protocol_act_hash": "uLrxXhDz2pJNJqITUeFcyF7Mi4ZOLYbHDVQhQAemFMY",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.S3hKUjVWVGFWSk8wV0dLUjQzRHhWZnNyZkctdFNNcmE3TTJQOGxyTlMtUQ.tsi9foemz2b_H0dIectodW9I-cMsAbZVifk3kOXBnuTYIYHR1eimriImOnfTJCaoQjnqM22bTPmbZoeFcFnrPA"
+        },
+        "offer_chain_hash": "G62YFpjrcHudRj233WHd0dZ6IZ-nnpntSKe9-ZvArK8",
+        "record_hash": "_SUkNphHeH0xKH7wScf8al-NrA1AdkWSQgSyvzF2hMA"
+      }
+    }
   },
   "empty_expires_at": {
     "description": "A completed session whose round-1 offer omits expires_at. Neither expires_at nor timestamp is validated on the wire, and a receiver rebuilding the Section 7.3.1 act to check its hash defaults a missing one to \"\", so the offer is signed, accepted and recorded with \"\" inside the signed act. Both suites replay these messages and must produce record_version_0_3.full_record with its record_hash, and that record must VERIFY: Section 9.5 step 3 rebuilds the act from the record and compares hashes, and a verifier that demanded a non-empty expires_at would reject a record whose signature genuinely covers those bytes. private_jwks are test-only fixtures and MUST NOT be used outside tests; ES256 signatures are randomized, so they are recorded here rather than recomputed.",
@@ -779,7 +942,7 @@
         "sender_agent_id": "empty-exp-agent",
         "sender_verification_method": "did:web:acme-corp.com#key-2026-01",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.Z2dFeTBPYlprMDRiXzN4VncycTQ5SmJzcU10b0ZPVlVJRkVaejdLVlFTVQ.AnGXCNMnZ_xsBzBgHQyG5wlYR-DxUyBnx9Mxg8TX9-6nlMeEnaCk7H9BUg6yetT_qhs_7-tW4tEsP1xQc5oWgg"
+        "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.RFpwUVhTMkNKaHpGNWpSQTZpZ01EaXA2ZGVYMGxYelVILXJ5SXpJbmdMYw.Tquef2LbReEioUViIkhUttAy-K51kKalCVRhAKDgZFTJ9drVGqpfcxUXZUaNYq2Rg5_CBauCN8NsO_b-CJQ_9g"
       }
     ],
     "record_version_0_3": {
@@ -848,90 +1011,80 @@
         "offer_chain_hash": "61qnoDCo12i7-YgxVgYEsy9J7zHtqR-4-ZNwbBfMZpQ",
         "record_hash": "5Hq1KMl4V4ZNL4g9tZDR6GGkZBJsKtIsF573yXyek_8"
       }
+    },
+    "record_version_0_4": {
+      "record_hash": "gyZ0Id9jM4PqgMhHFoGjdbiI82rbaJwoUFQk2IQzPbE",
+      "full_record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "87875527-1cde-589c-ac4f-6916683bc800",
+        "session_id": "8f2c4d1a-6b7e-4c3d-9a0f-5e1b2c3d4e5f",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "empty-exp-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "empty-exp-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "subject": "Empty expires_at vector",
+        "subject_reference": "EMPTY-EXP-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "empty-exp-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "",
+          "protocol_act_hash": "CHmxvpNHiaxJSjsKhftLR3ibvTjJKN-c2yRv6kB71Mg",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.Q0hteHZwTkhpYXhKU2pzS2hmdExSM2lidlRqSktOLWMyeVJ2NmtCNzFNZw.eSpOf-XzHNdInq-w0oe4nejItL8y5L8PtmeKQWwh3xj5Gjq_O-ZLbnIC1urWgbPCtgyiulZUvYioHpqEPeEUSA"
+        },
+        "final_acceptance": {
+          "message_id": "empty-exp-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:03:00Z",
+          "accepted_offer_id": "empty-exp-offer-1",
+          "accepted_protocol_act_hash": "CHmxvpNHiaxJSjsKhftLR3ibvTjJKN-c2yRv6kB71Mg",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.RFpwUVhTMkNKaHpGNWpSQTZpZ01EaXA2ZGVYMGxYelVILXJ5SXpJbmdMYw.Tquef2LbReEioUViIkhUttAy-K51kKalCVRhAKDgZFTJ9drVGqpfcxUXZUaNYq2Rg5_CBauCN8NsO_b-CJQ_9g"
+        },
+        "offer_chain_hash": "61qnoDCo12i7-YgxVgYEsy9J7zHtqR-4-ZNwbBfMZpQ",
+        "record_hash": "gyZ0Id9jM4PqgMhHFoGjdbiI82rbaJwoUFQk2IQzPbE"
+      }
     }
   },
-  "record_version_0_3_binding": {
-    "description": "Cases both suites apply to expected.record_version_0_3.full_record, so the two implementations read byte-identical JSON and must reach identical verdicts. act_integer_spellings restate final_offer's round_number or sequence_number, whose genuine value is 2. RFC 8785 serializes 2.0 and 2 as the same number, so an integral float is the same signed act in a different JSON spelling: the rebuilt act hash and the record_hash are unchanged and the record must verify. A fractional, string, boolean or null value, or an absent key (a case with no value key), is a different act or no act at all and must be rejected. currency_cases set the record's top-level currency, or drop agreed_terms.currency, on the record of the given record_version. A \"0.3\" record's top-level currency must equal the signature-bound agreed_terms.currency (Section 9.5, step 8); a \"0.1\" or \"0.2\" record's is not checked, because per-offer currency consistency was only required from the version that added terms.basis onward, so an older genuine record may legitimately differ and must keep verifying. Each case's record_hash is recomputed before verifying, so only the rule under test decides.",
-    "act_integer_spellings": [
-      {
-        "name": "integral-float-round_number",
-        "field": "round_number",
-        "value": 2.0,
-        "verifies": true,
-        "record_hash_unchanged": true
-      },
-      {
-        "name": "integral-float-sequence_number",
-        "field": "sequence_number",
-        "value": 2.0,
-        "verifies": true,
-        "record_hash_unchanged": true
-      },
-      {
-        "name": "fractional",
-        "field": "round_number",
-        "value": 2.5,
-        "verifies": false,
-        "record_hash_unchanged": false
-      },
-      {
-        "name": "string",
-        "field": "round_number",
-        "value": "2",
-        "verifies": false,
-        "record_hash_unchanged": false
-      },
-      {
-        "name": "boolean",
-        "field": "round_number",
-        "value": true,
-        "verifies": false,
-        "record_hash_unchanged": false
-      },
-      {
-        "name": "null",
-        "field": "round_number",
-        "value": null,
-        "verifies": false,
-        "record_hash_unchanged": false
-      },
-      {
-        "name": "absent",
-        "field": "round_number",
-        "verifies": false,
-        "record_hash_unchanged": false
-      }
-    ],
-    "currency_cases": [
-      {
-        "name": "0.3-currency-matches",
-        "record_version": "0.3",
-        "verifies": true
-      },
-      {
-        "name": "0.3-currency-differs",
-        "record_version": "0.3",
-        "currency": "EUR",
-        "verifies": false
-      },
-      {
-        "name": "0.3-agreed-terms-currency-absent",
-        "record_version": "0.3",
-        "drop_agreed_terms_currency": true,
-        "verifies": false
-      },
-      {
-        "name": "0.2-currency-differs",
-        "record_version": "0.2",
-        "currency": "EUR",
-        "verifies": false,
-        "expected_reason": "UNBOUND_RECORD_VERSION",
-        "note": "Before the clean break this verified, because a \"0.2\" record's top-level currency was not checked. It is refused now for a different reason: no \"0.2\" record is accepted, bound or not."
-      }
-    ]
-  },
   "reason_api": {
-    "description": "Cases both suites apply to expected.record_version_0_3.full_record, so the two implementations read byte-identical JSON and must name the same cause. Each case names one mutation; reseal says whether record_hash is recomputed afterwards, which decides whether the record fails at the hash or reaches the check the case is about. Together the cases reach every reason code a verifier can return, so a code that stops being reachable is a failing test rather than dead code. A reason is always a string, or absent when the record verifies; it is never a boolean.",
+    "description": "Cases both suites apply to expected.record_version_0_4.full_record, so the two implementations read byte-identical JSON and must name the same cause. Each case names one mutation; reseal says whether record_hash is recomputed afterwards, which decides whether the record fails at the hash or reaches the check the case is about. Together the cases reach every reason code a verifier can return, so a code that stops being reachable is a failing test rather than dead code. A reason is always a string, or absent when the record verifies; it is never a boolean.",
     "tampered_signature_suffix": "AAAAAA",
     "cases": [
       {
@@ -961,7 +1114,7 @@
       {
         "name": "unknown-version",
         "mutation": "set_record_version",
-        "value": "0.4",
+        "value": "0.5",
         "reseal": true,
         "expected_reason": "UNRECOGNIZED_RECORD_VERSION"
       },
@@ -1015,7 +1168,7 @@
     ]
   },
   "downgrade_attack": {
-    "description": "The downgrade a verifier must refuse. Each case starts from expected.record_version_0_3.full_record, strips the six Section 7.3.1 act fields from final_offer, relabels the record to a version that predates them, optionally alters agreed_terms, and recomputes record_hash. Both signatures still verify and the record keeps the genuine record_id, so a verifier that accepted an unbound version would report a forgery as genuine. A verifier accepts only the bound version, so every case must be REJECTED, and a verifier that reports a reason must give expected_reason rather than the generic unrecognized-version reason: the version here is a version this implementation knows, it is simply one that cannot be rebound. Keys are test-only public fixtures and MUST NOT be used outside tests.",
+    "description": "The downgrade a verifier must refuse. Each case starts from expected.record_version_0_4.full_record, strips act fields from final_offer and/or final_acceptance, relabels the record to a version that predates them, optionally alters agreed_terms, and recomputes record_hash. Both signatures still verify and the record keeps its genuine record_id, so a verifier that accepted an unbound version would report a forgery as genuine. Every case must be REJECTED with expected_reason rather than the generic unrecognized-version reason: these are versions this implementation knows and cannot rebind. The acceptance-stripped case is what \"0.4\" adds — a record may bind its offer and still be unbound, because half a bound record is not a bound record. Keys are test-only public fixtures and MUST NOT be used outside tests.",
     "altered_total_value": 10500000,
     "cases": [
       {
@@ -1025,7 +1178,7 @@
         "alter_terms": true,
         "drop_basis": false,
         "expected_reason": "UNBOUND_RECORD_VERSION",
-        "record_hash": "vB0Uhgm3U6VYwfXu5C3VARXuW-EoWEIDnmIYpix8Kpg",
+        "record_hash": "Atg7rhFgFW3_DXRAjlb_cZkWviWQ0sQoilsqTILTXOA",
         "full_record": {
           "record_type": "a2cn_transaction_record",
           "record_version": "0.2",
@@ -1081,10 +1234,10 @@
             "sequence_number": 3,
             "accepted_offer_id": "basis-counter-1",
             "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
-            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
           },
           "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
-          "record_hash": "vB0Uhgm3U6VYwfXu5C3VARXuW-EoWEIDnmIYpix8Kpg"
+          "record_hash": "Atg7rhFgFW3_DXRAjlb_cZkWviWQ0sQoilsqTILTXOA"
         }
       },
       {
@@ -1094,7 +1247,7 @@
         "alter_terms": true,
         "drop_basis": true,
         "expected_reason": "UNBOUND_RECORD_VERSION",
-        "record_hash": "tp0Ely68Id_Nv2Lv15a3E0AgPkuWv_ItRRHKoTP3S4Q",
+        "record_hash": "KM2PO27V6SNOW65uRbCsmFgUlhlogFLBbCLFh6og7do",
         "full_record": {
           "record_type": "a2cn_transaction_record",
           "record_version": "0.1",
@@ -1148,10 +1301,10 @@
             "sequence_number": 3,
             "accepted_offer_id": "basis-counter-1",
             "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
-            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
           },
           "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
-          "record_hash": "tp0Ely68Id_Nv2Lv15a3E0AgPkuWv_ItRRHKoTP3S4Q"
+          "record_hash": "KM2PO27V6SNOW65uRbCsmFgUlhlogFLBbCLFh6og7do"
         }
       },
       {
@@ -1161,7 +1314,7 @@
         "alter_terms": false,
         "drop_basis": false,
         "expected_reason": "UNBOUND_RECORD_VERSION",
-        "record_hash": "_0lDVSppRFYQmBiELHhjf2PMHpgpPZvcstr0phOZRyQ",
+        "record_hash": "_W6XTGN9TpJbiSFrgde-WLCfXPo_r_5tMKlbP3HitUw",
         "full_record": {
           "record_type": "a2cn_transaction_record",
           "record_version": "0.2",
@@ -1217,10 +1370,10 @@
             "sequence_number": 3,
             "accepted_offer_id": "basis-counter-1",
             "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
-            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
           },
           "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
-          "record_hash": "_0lDVSppRFYQmBiELHhjf2PMHpgpPZvcstr0phOZRyQ"
+          "record_hash": "_W6XTGN9TpJbiSFrgde-WLCfXPo_r_5tMKlbP3HitUw"
         }
       },
       {
@@ -1230,7 +1383,7 @@
         "alter_terms": true,
         "drop_basis": false,
         "expected_reason": "UNBOUND_RECORD_VERSION",
-        "record_hash": "_J6l2_x7l2NZqFVp6xSJPtUJNQ43lRPwWex8UgQvo1E",
+        "record_hash": "awbNKC8C2wN2_-mdNdZbKM4ffw2NMElgDSaYEp9otos",
         "full_record": {
           "record_type": "a2cn_transaction_record",
           "record_version": "0.3",
@@ -1286,11 +1439,193 @@
             "sequence_number": 3,
             "accepted_offer_id": "basis-counter-1",
             "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
-            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.cnNHU1ZSYmpUMnFnb0h4Sk9teVZsUnZ3VlkzRXFXcnlkZ3RVRnl3THhrMA.2yxuzwjttOQeqQzumvszLNYGsUpqppHSU52gLQkp8QLsHvL47cvEjT4yq8u4ntmXmxnEnOniHjEBVXwD5KtIzw"
+            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
           },
           "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
-          "record_hash": "_J6l2_x7l2NZqFVp6xSJPtUJNQ43lRPwWex8UgQvo1E"
+          "record_hash": "awbNKC8C2wN2_-mdNdZbKM4ffw2NMElgDSaYEp9otos"
         }
+      },
+      {
+        "name": "0.4-with-acceptance-act-fields-stripped",
+        "record_version": "0.4",
+        "strip_act": false,
+        "strip_acceptance_act": true,
+        "alter_terms": false,
+        "drop_basis": false,
+        "expected_reason": "UNBOUND_RECORD_VERSION",
+        "record_hash": "auZX2SqQgrQUggApp8UAcfIhhGjvMd-8ZmT6l5mt7is",
+        "full_record": {
+          "record_type": "a2cn_transaction_record",
+          "record_version": "0.4",
+          "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+          "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+          "generated_at": "2026-03-24T10:03:00Z",
+          "parties": {
+            "initiator": {
+              "organization_name": "TechCorp Inc",
+              "did": "did:web:techcorp.example",
+              "agent_id": "basis-buyer-agent",
+              "verification_method": "did:web:techcorp.example#key-1",
+              "mandate_type": "declared"
+            },
+            "responder": {
+              "organization_name": "Acme Corp",
+              "did": "did:web:acme-corp.com",
+              "agent_id": "basis-seller-agent",
+              "verification_method": "did:web:acme-corp.com#key-2026-01",
+              "mandate_type": "declared"
+            }
+          },
+          "deal_type": "saas_renewal",
+          "currency": "USD",
+          "basis": "gross",
+          "subject": "Basis record vector",
+          "subject_reference": "BASIS-REF-001",
+          "agreed_terms": {
+            "total_value": 10000000,
+            "currency": "USD",
+            "basis": "gross",
+            "seat_count": 100
+          },
+          "negotiation_summary": {
+            "total_rounds": 2,
+            "total_messages": 3,
+            "session_created_at": "2026-03-24T10:00:00Z",
+            "first_offer_at": "2026-03-24T10:01:00Z",
+            "accepted_at": "2026-03-24T10:03:00Z",
+            "initiating_party_did": "did:web:techcorp.example",
+            "accepting_party_did": "did:web:techcorp.example"
+          },
+          "final_offer": {
+            "message_id": "basis-counter-1",
+            "protocol_version": "0.2",
+            "round_number": 2,
+            "sequence_number": 2,
+            "message_type": "counteroffer",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "expires_at": "2030-01-01T00:00:00Z",
+            "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+            "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw"
+          },
+          "final_acceptance": {
+            "message_id": "basis-acc-1",
+            "sender_did": "did:web:techcorp.example",
+            "round_number": 2,
+            "sequence_number": 3,
+            "accepted_offer_id": "basis-counter-1",
+            "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+            "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA"
+          },
+          "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
+          "record_hash": "auZX2SqQgrQUggApp8UAcfIhhGjvMd-8ZmT6l5mt7is"
+        }
+      }
+    ]
+  },
+  "private_jwks": {
+    "did:web:techcorp.example": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "VTRCSSp-es1I4SnQogKE2a01sYabWsd6_bNcSWeCJz0",
+      "y": "6OjmdVwUT57a22bfeNKHfE9ZM6mRk0xEz2JFtZl0Gvc",
+      "d": "BFejsEw9TaZG4aCLoiVg3mw1J7ml-iAd2meImlizE4s",
+      "note": "TEST-ONLY vector key material for spec/test-vectors/. MUST NOT be used outside tests."
+    },
+    "did:web:acme-corp.com": {
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "lP-m1JyHCMulOoIIhY1YjQioPd9HEqU7Q8We4mgHz3k",
+      "y": "6gJiemj_qJ74GZbqnk_ADkL73Dq0sO6-PhoVBkRMrNQ",
+      "d": "-ZlmVd_2cmn1i0lV2gGwoe4nbemb5a39Uo7YM5gjaEc",
+      "note": "TEST-ONLY vector key material for spec/test-vectors/. MUST NOT be used outside tests."
+    }
+  },
+  "record_version_0_4_binding": {
+    "description": "Cases both suites apply to expected.record_version_0_4.full_record, so the two implementations read byte-identical JSON and must reach identical verdicts. act_integer_spellings restate final_offer's round_number or sequence_number, whose genuine value is 2. RFC 8785 serializes 2.0 and 2 as the same number, so an integral float is the same signed act in a different JSON spelling: the rebuilt act hash and the record_hash are unchanged and the record must verify. A fractional, string, boolean or null value, or an absent key (a case with no value key), is a different act or no act at all and must be rejected. currency_cases set the record's top-level currency, or drop agreed_terms.currency, on the record of the given record_version. A \"0.3\" record's top-level currency must equal the signature-bound agreed_terms.currency (Section 9.5, step 8); a \"0.1\" or \"0.2\" record's is not checked, because per-offer currency consistency was only required from the version that added terms.basis onward, so an older genuine record may legitimately differ and must keep verifying. Each case's record_hash is recomputed before verifying, so only the rule under test decides.",
+    "act_integer_spellings": [
+      {
+        "name": "integral-float-round_number",
+        "field": "round_number",
+        "value": 2.0,
+        "verifies": true,
+        "record_hash_unchanged": true
+      },
+      {
+        "name": "integral-float-sequence_number",
+        "field": "sequence_number",
+        "value": 2.0,
+        "verifies": true,
+        "record_hash_unchanged": true
+      },
+      {
+        "name": "fractional",
+        "field": "round_number",
+        "value": 2.5,
+        "verifies": false,
+        "record_hash_unchanged": false
+      },
+      {
+        "name": "string",
+        "field": "round_number",
+        "value": "2",
+        "verifies": false,
+        "record_hash_unchanged": false
+      },
+      {
+        "name": "boolean",
+        "field": "round_number",
+        "value": true,
+        "verifies": false,
+        "record_hash_unchanged": false
+      },
+      {
+        "name": "null",
+        "field": "round_number",
+        "value": null,
+        "verifies": false,
+        "record_hash_unchanged": false
+      },
+      {
+        "name": "absent",
+        "field": "round_number",
+        "verifies": false,
+        "record_hash_unchanged": false
+      }
+    ],
+    "currency_cases": [
+      {
+        "name": "0.4-currency-matches",
+        "record_version": "0.4",
+        "verifies": true
+      },
+      {
+        "name": "0.4-currency-differs",
+        "record_version": "0.4",
+        "currency": "EUR",
+        "verifies": false
+      },
+      {
+        "name": "0.4-agreed-terms-currency-absent",
+        "record_version": "0.4",
+        "drop_agreed_terms_currency": true,
+        "verifies": false
+      },
+      {
+        "name": "0.2-currency-differs",
+        "record_version": "0.2",
+        "currency": "EUR",
+        "verifies": false,
+        "expected_reason": "UNBOUND_RECORD_VERSION",
+        "note": "Before the clean break this verified, because a \"0.2\" record's top-level currency was not checked. It is refused now for a different reason: no \"0.2\" record is accepted, bound or not."
+      },
+      {
+        "name": "0.3-currency-differs",
+        "record_version": "0.3",
+        "currency": "EUR",
+        "verifies": false,
+        "expected_reason": "UNBOUND_RECORD_VERSION",
+        "note": "A \"0.3\" record is refused before currency is reached: its final_acceptance carries none of the acceptance's act fields, so the acceptance cannot be rebound from the record."
       }
     ]
   }

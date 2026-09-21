@@ -19,7 +19,13 @@ import {
 } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  isActInteger,
+  protocolActObject,
+  rebuildSignedAct,
+  type Dict,
+} from "./messages.js";
 
 /**
  * Structural view of a Session sufficient for record/audit generation.
@@ -55,10 +61,16 @@ export const A2CN_NAMESPACE = "f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c";
 export const TRANSACTION_RECORD_VERSION_WITHOUT_BASIS = "0.1";
 export const TRANSACTION_RECORD_VERSION_WITH_BASIS = "0.2";
 export const TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT = "0.3";
+// "0.4" is the version whose final_acceptance carries the fields the
+// acceptance's own signature covers, so both sides of the record rebind from
+// the record alone. A "0.3" record cannot: the acceptance's signed scope is the
+// Section 7.3.1 envelope, and "0.3" stored none of protocol_version,
+// message_type or timestamp, leaving a verifier to invent or borrow them.
+export const TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE = "0.4";
 export const AUDIT_LOG_VERSION = "0.1";
 // The record shapes this implementation knows, which is what the published
 // schema files describe. Knowing a shape is not accepting it.
-export const KNOWN_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2", "0.3"];
+export const KNOWN_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2", "0.3", "0.4"];
 // The versions a verifier accepts (Section 9.5 step 1): only the bound one, the
 // version whose final_offer carries the act fields, so the record can be rebound
 // to the offering party's signature from the record alone. record_version is
@@ -67,7 +79,7 @@ export const KNOWN_TRANSACTION_RECORD_VERSIONS: readonly string[] = ["0.1", "0.2
 // presenter strip the act fields, relabel the record and alter agreed_terms with
 // both signatures still verifying.
 export const ACCEPTED_TRANSACTION_RECORD_VERSIONS: readonly string[] = [
-  TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+  TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
 ];
 
 // Why a record failed (Section 9.5). verifyTransactionRecord returns a boolean;
@@ -98,6 +110,19 @@ export const FINAL_OFFER_ACT_FIELDS: readonly string[] = [
   "message_type",
   "timestamp",
   "expires_at",
+];
+
+// The act fields final_acceptance carries beyond those it always held, so the
+// acceptance's signed object can be rebuilt from the record alone. It already
+// carried round_number, sequence_number, accepted_offer_id,
+// accepted_protocol_act_hash and sender_did; session_id is at the record's top
+// level. These three are what the envelope added to the acceptance's signed
+// scope and the record did not store, and carrying them is what makes the
+// acceptance bound rather than merely present.
+export const FINAL_ACCEPTANCE_ACT_FIELDS: readonly string[] = [
+  "protocol_version",
+  "message_type",
+  "timestamp",
 ];
 
 export type DidResolver = Record<string, Dict> | ((did: string) => Dict);
@@ -151,9 +176,9 @@ export function generateTransactionRecord(session: RecordSession): Dict {
 
   const record: Dict = {
     record_type: "a2cn_transaction_record",
-    // Every record this implementation produces carries the act fields, so
-    // every one is "0.3" (Section 9.3).
-    record_version: TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+    // Every record this implementation produces carries both acts' fields, so
+    // every one is "0.4" (Section 9.3).
+    record_version: TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
     record_id: recordId,
     session_id: session.session_id,
     generated_at: generatedAt,
@@ -203,11 +228,18 @@ export function generateTransactionRecord(session: RecordSession): Dict {
       protocol_act_hash: (finalOffer.protocol_act_hash as string) ?? "",
       protocol_act_signature: (finalOffer.protocol_act_signature as string) ?? "",
     },
+    // The acceptance's signed act, beside its hash-bearing fields. An
+    // acceptance message carries no protocol_version of its own, so the record
+    // states the wire version its signer hashed the act under, as final_offer
+    // already does.
     final_acceptance: {
       message_id: (finalAcceptance.message_id as string) ?? "",
+      protocol_version: PROTOCOL_ACT_VERSION,
+      message_type: (finalAcceptance.message_type as string) ?? "",
       sender_did: (finalAcceptance.sender_did as string) ?? "",
       round_number: finalAcceptance.round_number ?? null,
       sequence_number: finalAcceptance.sequence_number ?? null,
+      timestamp: (finalAcceptance.timestamp as string) ?? "",
       accepted_offer_id: (finalAcceptance.accepted_offer_id as string) ?? "",
       accepted_protocol_act_hash: (finalAcceptance.accepted_protocol_act_hash as string) ?? "",
       acceptance_signature: (finalAcceptance.acceptance_signature as string) ?? "",
@@ -257,12 +289,6 @@ function isNonemptyString(value: unknown): value is string {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
-}
-
-// typeof already excludes a boolean here; Python must exclude it explicitly, so
-// the two implementations reach the same verdict.
-function isActInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value);
 }
 
 function isJsonObject(value: unknown): value is Dict {
@@ -338,18 +364,50 @@ function finalOfferActHash(record: Dict): string | null {
  * would fail the comparison anyway.
  */
 /**
+ * Rebuild the acceptance's Section 7.3.1 act from the record alone.
+ *
+ * Reads final_acceptance and the record's session_id, and nothing else. It
+ * never reads final_offer: an acceptance that can only be rebuilt by borrowing
+ * another act's values is not bound by its own signature, and substituting one
+ * is not a shortcut but the defect — an empty string and then the offer's
+ * timestamp each produced a plausible, wrong hash before this version existed.
+ */
+function finalAcceptanceAct(record: Dict): Dict | null {
+  const finalAcceptance = record.final_acceptance;
+  if (!isJsonObject(finalAcceptance)) {
+    return null;
+  }
+  return rebuildSignedAct({
+    protocol_version: finalAcceptance.protocol_version,
+    session_id: record.session_id,
+    round_number: finalAcceptance.round_number,
+    sequence_number: finalAcceptance.sequence_number,
+    message_type: finalAcceptance.message_type,
+    sender_did: finalAcceptance.sender_did,
+    timestamp: finalAcceptance.timestamp,
+    accepted_offer_id: finalAcceptance.accepted_offer_id,
+    accepted_protocol_act_hash: finalAcceptance.accepted_protocol_act_hash,
+  });
+}
+
+/**
  * Whether the record carries every Section 7.3.1 act field to rebuild from.
  *
  * A record that does not is unbound: there is nothing to rebind it to, whether
  * because it is an older shape or because a presenter stripped the fields and
- * relabelled it. Presence is by key.
+ * relabelled it. Presence is by key, and both acts must be rebuildable — a
+ * record that binds its offer but not its acceptance is half a proof.
  */
 function recordCarriesActFields(record: Dict): boolean {
   const finalOffer = record.final_offer;
-  if (!isJsonObject(finalOffer)) {
+  const finalAcceptance = record.final_acceptance;
+  if (!isJsonObject(finalOffer) || !isJsonObject(finalAcceptance)) {
     return false;
   }
-  return FINAL_OFFER_ACT_FIELDS.every((name) => finalOffer[name] !== undefined);
+  if (!FINAL_OFFER_ACT_FIELDS.every((name) => finalOffer[name] !== undefined)) {
+    return false;
+  }
+  return FINAL_ACCEPTANCE_ACT_FIELDS.every((name) => finalAcceptance[name] !== undefined);
 }
 
 function recordActIsBound(record: Dict): boolean {
@@ -491,17 +549,15 @@ export function verifyTransactionRecordReason(
       return REASON_OFFER_SIGNATURE_INVALID;
     }
 
+    const acceptanceAct = finalAcceptanceAct(record);
+    if (acceptanceAct === null) {
+      return REASON_UNBOUND_RECORD_VERSION;
+    }
     if (
       !verifyRecordSignature(didResolver, record, {
         did: finalAcceptance.sender_did as string,
         signature: finalAcceptance.acceptance_signature as string,
-        expectedPayload: hashObject({
-          session_id: record.session_id,
-          round_number: finalAcceptance.round_number,
-          sequence_number: finalAcceptance.sequence_number,
-          accepted_offer_id: finalAcceptance.accepted_offer_id,
-          accepted_protocol_act_hash: acceptedHash,
-        }),
+        expectedPayload: hashObject(acceptanceAct),
       })
     ) {
       return REASON_ACCEPTANCE_SIGNATURE_INVALID;

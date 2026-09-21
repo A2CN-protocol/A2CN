@@ -22,6 +22,7 @@ from a2cn.messages import (
     DisputeNoticeMessage,
     DisputeResolvedMessage,
     FulfillmentAttestation,
+    signed_act_hash,
 )
 from tests.conftest import make_session_init, INITIATOR_DID, RESPONDER_DID
 
@@ -602,13 +603,6 @@ async def _complete_session(
     assert r.status_code == 200, r.text
 
     acc_id = str(uuid.uuid4())
-    acceptance_payload = {
-        "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": offer_id,
-        "accepted_protocol_act_hash": pah,
-    }
     responder_private_key = responder_client.auth._private_key
     acceptance = {
         "message_type": "acceptance",
@@ -623,12 +617,14 @@ async def _complete_session(
         "sender_agent_id": "test-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
         "timestamp": "2026-04-01T10:01:00Z",
-        "acceptance_signature": sign_jws(
-            hash_object(acceptance_payload),
-            responder_private_key,
-            kid=f"{RESPONDER_DID}#key-2026-01",
-        ),
     }
+    # Signed over the act's own envelope (Section 7.3.1), built from the very
+    # message that goes on the wire.
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance),
+        responder_private_key,
+        kid=f"{RESPONDER_DID}#key-2026-01",
+    )
     r = await responder_client.post(
         f"/sessions/{session_id}/messages", json=acceptance, headers=_h(acc_id)
     )

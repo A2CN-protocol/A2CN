@@ -43,13 +43,17 @@ is the most common source of confusion, so they are stated separately here.
    `protocol_version` is the first field of the signed protocol act (Section 7.3.1),
    moving it invalidates every existing signature and hash chain.
 3. **`record_version`** — one per terminal artifact, each independent of the others
-   and of the two versions above: TransactionRecord `"0.2"` for a record that
-   carries a basis and `"0.1"` for one that does not, from a session that fixed no
-   basis or from an implementation that predates basis (Section 9.3), AuditLog
-   `"0.1"`, SessionEvidenceRecord `"0.3"` for a record that carries
-   `external_commitment_reference` and `"0.2"` for one that does not (Section
-   9A.2). Each moves only when that artifact's own shape or canonical meaning
-   changes; see Section 9A.1.
+   and of the two versions above: TransactionRecord `"0.4"`, the only version a
+   verifier accepts, whose `final_offer` **and** `final_acceptance` each carry
+   their signed act's fields, with `"0.3"`, `"0.2"` and `"0.1"` known but no
+   longer accepted (Section 9.3); AuditLog `"0.1"`; SessionEvidenceRecord
+   `"0.4"`, the version every producer emits, with `"0.1"`, `"0.2"` and `"0.3"`
+   still accepted (Section 9A.2). The two artifacts reach `"0.4"` by opposite
+   routes — the TransactionRecord by rejecting its predecessors, the
+   SessionEvidenceRecord by accepting them — because every evidence record is
+   producer-sealed and so has no unbound tier to be downgraded to. Each moves
+   only when that artifact's own shape or canonical meaning changes; see Section
+   9A.1.
 
 A schema's `$id` version is the version of the thing that schema describes — the
 wire version for wire messages, the artifact's `record_version` for record
@@ -1310,27 +1314,83 @@ field MUST be treated as untrusted input. See Section 13.7 on prompt injection.
 
 #### 7.3.1 What Is Signed
 
-The signed scope covers the full protocol act — not only the terms. This prevents
-cross-session and cross-round replay of valid offer signatures.
+The signed scope covers the full act — not only the terms. This prevents
+cross-session and cross-round replay of valid signatures.
 
-The **protocol act object** used for signing is:
+All five act types — Offer, Counteroffer, Acceptance, Rejection and Withdrawal —
+are signed under one **signed act object**: a common header, followed by the
+payload for that act type, with every field at the **top level**. The object is
+flat; there is no nested `payload` member.
+
+The **common header** is seven fields, in this order:
 
 ```json
 {
-  "protocol_version": "0.1",
+  "protocol_version": "0.2",
   "session_id": "string",
   "round_number": "integer",
   "sequence_number": "integer",
   "message_type": "string",
   "sender_did": "string",
-  "timestamp": "string",
-  "expires_at": "string",
-  "terms": {}
+  "timestamp": "string"
 }
 ```
 
-`terms.basis` (Section 7.2), when present, is inside `terms`, so it is signed like
-the rest of the terms; the protocol act object is unchanged.
+The **payload** is the act type's own:
+
+| `message_type` | Payload fields | Signature field |
+|---|---|---|
+| `offer`, `counteroffer` | `expires_at`, `terms` | `protocol_act_signature` |
+| `acceptance` | `accepted_offer_id`, `accepted_protocol_act_hash` | `acceptance_signature` |
+| `rejection` | `rejected_offer_id`, `reason_code` | `rejection_signature` |
+| `withdrawal` | `reason_code` | `withdrawal_signature` |
+
+An Offer's signed act object is therefore the header plus `expires_at` and
+`terms` — the same nine fields, with the same names, that this section has always
+specified. **An offer's signed bytes and its `protocol_act_hash` are unchanged**,
+which matters because a TransactionRecord rebinds `agreed_terms` to that hash
+(Section 9.5).
+
+`expires_at` is a payload field of Offer and Counteroffer, **not** a header
+field. An Acceptance, Rejection or Withdrawal has no deadline of its own, and a
+signed act MUST NOT carry an empty string standing in for a field the act does
+not have.
+
+Each act type has its **own** signature field. A signature field names the act
+type it was made under, so a signature cannot be carried across a relabelled act.
+
+`terms.basis` (Section 7.2), when present, is inside `terms`, so it is signed
+like the rest of the terms; the signed act object is unchanged.
+
+`protocol_version` states the wire version the act was hashed under. Wire
+messages do not carry it as a field (Section 7.1), so a verifier rebuilding an
+act from a message uses its own wire version; an act that does carry one is
+rebuilt under the version it states, so an act produced under a later wire
+version still recomputes.
+
+#### 7.3.1.1 Verification Is by Rebuild, and Is Mandatory
+
+A verifier MUST NOT trust a hash an act states about itself. It MUST reconstruct
+the signed act object from the act's **own fields** as specified above,
+canonicalize and hash it per Section 7.3.2, and require the act's signature to be
+over that hash.
+
+An act that cannot be rebuilt — one whose `message_type` is not a signed act
+type, or which is missing a field its payload names, or whose field cannot be
+canonicalized — MUST be rejected. A verifier MUST NOT substitute a default, an
+empty string, or a value taken from another act in place of a field the act does
+not carry.
+
+This check is **mandatory and non-downgradeable**. No `record_version`, schema
+version, protocol version, or the presence or absence of any field may decide
+whether the check runs. An act carrying members this section does not name still
+rebuilds from the ones it does, and those extra members are not covered by the
+signature.
+
+Signing a Rejection or a Withdrawal is OPTIONAL — an unsigned decline is a
+conformant message and is attributed as an unsigned observation. Verifying one is
+not optional: once an act carries a signature field, the rebuild decides, and
+nothing in the act's own content can turn the check off.
 
 #### 7.3.2 Signing Procedure
 
@@ -1392,27 +1452,47 @@ Schema: `spec/schemas/acceptance.schema.json`
 accepted offer. This binds the acceptance to the specific protocol act.
 
 **`acceptance_signature`** — JWS over the base64url SHA-256 hash of the
-JCS-canonicalized form of:
+JCS-canonicalized signed act object of Section 7.3.1. An acceptance's payload is
+`accepted_offer_id` and `accepted_protocol_act_hash`, so the signed object is:
 ```json
 {
+  "protocol_version": "0.2",
   "session_id": "...",
-  "round_number": "...",
-  "sequence_number": "...",
+  "round_number": 2,
+  "sequence_number": 3,
+  "message_type": "acceptance",
+  "sender_did": "...",
+  "timestamp": "...",
   "accepted_offer_id": "...",
   "accepted_protocol_act_hash": "..."
 }
 ```
 using the accepting party's private key. Including `round_number` and
-`sequence_number` in the signed payload closes the narrow edge case where an
-acceptance could be replayed within the same session against a different offer
-at the same round position. Both signatures (the offer's `protocol_act_signature`
-and the acceptance's `acceptance_signature`) together form the dual-signature
-basis of the transaction record.
+`sequence_number` closes the narrow edge case where an acceptance could be
+replayed within the same session against a different offer at the same round
+position. Including `sender_did` makes the acceptance attest who accepted, under
+that party's own signature — an offer has always signed its own `sender_did`,
+and an acceptance now does the same. Both signatures (the offer's
+`protocol_act_signature` and the acceptance's `acceptance_signature`) together
+form the dual-signature basis of the transaction record.
+
+An acceptance signs no `expires_at`. The deadline belongs to the offer, and a
+terminal act MUST NOT sign an empty string in place of one it does not have
+(Section 7.3.1).
 
 Like `protocol_act_signature`, `acceptance_signature` uses attached JWS Compact
 Serialization and signs the hash string for this canonical acceptance object as
 the JWS payload bytes. The payload segment MUST be
 `base64url(ASCII(acceptance_payload_hash))`, not a JWT claim set.
+
+> **This changes what an acceptance signs, and is not backward compatible.**
+> The signed scope previously covered only `session_id`, `round_number`,
+> `sequence_number`, `accepted_offer_id` and `accepted_protocol_act_hash`. It now
+> covers the common header as well, gaining `protocol_version`, `message_type`,
+> `sender_did` and `timestamp`, and dropping nothing. An `acceptance_signature`
+> produced under the previous scope does NOT verify under this one, and an
+> acceptance signed under this scope does not verify against an implementation
+> that predates it. The offer's signed bytes are unchanged.
 
 Receivers MUST reject acceptances of expired offers (`expires_at` in the past).
 
@@ -1431,9 +1511,11 @@ Schema: `spec/schemas/rejection.schema.json`
   "rejected_offer_id": "string",
   "sender_did": "string",
   "sender_agent_id": "string",
+  "sender_verification_method": "string",
   "timestamp": "string",
   "reason_code": "string",
-  "reason_description": "string"
+  "reason_description": "string",
+  "rejection_signature": "string"
 }
 ```
 
@@ -1444,6 +1526,45 @@ Counteroffer (incrementing the round), or MAY send a Withdrawal.
 **`reason_code`** values:
 - `"PRICE_TOO_HIGH"` | `"PRICE_TOO_LOW"` | `"TERMS_UNACCEPTABLE"`
 - `"OUTSIDE_MANDATE"` | `"NO_REASON_GIVEN"`
+
+**`rejection_signature`** (string, OPTIONAL) — JWS over the base64url SHA-256
+hash of the JCS-canonicalized signed act object of Section 7.3.1. A rejection's
+payload is `rejected_offer_id` and `reason_code`, so the signed object is:
+```json
+{
+  "protocol_version": "0.2",
+  "session_id": "...",
+  "round_number": 3,
+  "sequence_number": 5,
+  "message_type": "rejection",
+  "sender_did": "...",
+  "timestamp": "...",
+  "rejected_offer_id": "...",
+  "reason_code": "..."
+}
+```
+Like `protocol_act_signature`, `rejection_signature` uses attached JWS Compact
+Serialization and signs the hash string for the canonical object above as the
+JWS payload bytes. The payload segment MUST be
+`base64url(ASCII(rejection_payload_hash))`, not a JWT claim set.
+
+Signing a Rejection is OPTIONAL, and an unsigned Rejection remains a conformant
+message. Verifying one is NOT optional: a Rejection that carries
+`rejection_signature` MUST be verified against the object above, and MUST be
+rejected if it does not rebuild to the signed hash (Section 7.3.1). A party that
+signs MUST also send `sender_verification_method`.
+
+`rejected_offer_id` is signed for the same reason §7.4 binds an acceptance to the
+offer it accepts: it ties the refusal to one specific act. `reason_code` is
+signed because it is the substance of a decline and the field a later dispute
+turns on; an unsigned one would let either party restate why the deal died with
+the signature still verifying.
+
+`reason_description` is deliberately NOT signed. It is OPTIONAL and absent when
+unset, so signing it would make the signed field set depend on whether the sender
+filled it in, and it is untrusted free text (Section 13.7). It is covered by the
+evidence record's act hash like any other field of the message, but not by the
+sender's signature.
 
 A Rejection does NOT terminate the session unless `round_number` equals
 `max_rounds`. After a max-rounds Rejection, the session transitions to
@@ -1475,12 +1596,15 @@ Schema: `spec/schemas/withdrawal.schema.json`
   "message_id": "string",
   "session_id": "string",
   "in_reply_to": "string",
+  "round_number": "integer",
   "sequence_number": "integer",
   "sender_did": "string",
   "sender_agent_id": "string",
+  "sender_verification_method": "string",
   "timestamp": "string",
   "reason_code": "string",
-  "reason_description": "string"
+  "reason_description": "string",
+  "withdrawal_signature": "string"
 }
 ```
 
@@ -1490,9 +1614,50 @@ party may withdraw regardless of current turn ownership.
 `in_reply_to` — the `message_id` of the most recent message received, if any.
 OPTIONAL if withdrawing before any offers are exchanged.
 
+**`round_number`** (integer, REQUIRED) — the round the session stands at when the
+Withdrawal is sent. A Withdrawal does not advance the round.
+
+> **Additive wire change.** A Withdrawal did not previously carry
+> `round_number`. It is REQUIRED now because `round_number` is part of the common
+> header every signed act covers (Section 7.3.1), and a verifier rebuilds that
+> header from the act's own fields: without it, a Withdrawal could not be signed
+> or verified like every other act. A receiver that predates this field ignores
+> it, so an emitting implementation is compatible with one that has not updated;
+> a Withdrawal that omits it cannot be signed.
+
 **`reason_code`** values:
 - `"OUTSIDE_MANDATE"` | `"COUNTERPARTY_UNREACHABLE"` | `"STRATEGY_DECISION"`
 - `"COMPLIANCE_FAILURE"` | `"NO_REASON_GIVEN"`
+
+**`withdrawal_signature`** (string, OPTIONAL) — JWS over the base64url SHA-256
+hash of the JCS-canonicalized signed act object of Section 7.3.1. A withdrawal's
+payload is `reason_code`, so the signed object is:
+```json
+{
+  "protocol_version": "0.2",
+  "session_id": "...",
+  "round_number": 3,
+  "sequence_number": 6,
+  "message_type": "withdrawal",
+  "sender_did": "...",
+  "timestamp": "...",
+  "reason_code": "..."
+}
+```
+Like `protocol_act_signature`, `withdrawal_signature` uses attached JWS Compact
+Serialization and signs the hash string for the canonical object above as the
+JWS payload bytes. The payload segment MUST be
+`base64url(ASCII(withdrawal_payload_hash))`, not a JWT claim set.
+
+Signing a Withdrawal is OPTIONAL, and an unsigned Withdrawal remains a conformant
+message. Verifying one is NOT optional: a Withdrawal that carries
+`withdrawal_signature` MUST be verified against the object above, and MUST be
+rejected if it does not rebuild to the signed hash (Section 7.3.1). A party that
+signs MUST also send `sender_verification_method`.
+
+`in_reply_to` is not signed, because it is OPTIONAL and a signed act's field set
+does not vary with what the sender chose to fill in. `reason_description` is not
+signed either, for the reasons given in Section 7.5.
 
 ---
 
@@ -1760,13 +1925,14 @@ reads or local state that could differ between parties.
 ### 9.3 Transaction Record Structure
 
 Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`),
-`spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`), and
-`spec/schemas/transaction-record-0.3.schema.json` (`"0.3"`)
+`spec/schemas/transaction-record-0.2.schema.json` (`"0.2"`),
+`spec/schemas/transaction-record-0.3.schema.json` (`"0.3"`), and
+`spec/schemas/transaction-record-0.4.schema.json` (`"0.4"`)
 
 ```json
 {
   "record_type": "a2cn_transaction_record",
-  "record_version": "0.1 | 0.2 | 0.3",
+  "record_version": "0.1 | 0.2 | 0.3 | 0.4",
   "record_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -1815,9 +1981,12 @@ Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`)
   },
   "final_acceptance": {
     "message_id": "string",
+    "protocol_version": "string",
+    "message_type": "acceptance",
     "sender_did": "string",
     "round_number": "integer",
     "sequence_number": "integer",
+    "timestamp": "string",
     "accepted_offer_id": "string",
     "accepted_protocol_act_hash": "string",
     "acceptance_signature": "string"
@@ -1827,13 +1996,24 @@ Schema: `spec/schemas/transaction-record.schema.json` (`record_version` `"0.1"`)
 }
 ```
 
-**`record_version`** — `"0.3"`. A producer MUST emit `"0.3"`, which it can
-always do, because `final_offer` carries the protocol act fields below. `"0.2"`
-and `"0.1"` describe what earlier producers emitted — a record carrying the
-top-level `basis` and no act fields, and one carrying neither — and a verifier
-**does not accept them** (Section 9.5, step 1). Their schema files stay
-published, so a reader can still parse and inspect such a record; parsing it is
-not accepting it.
+**`record_version`** — `"0.4"`. A producer MUST emit `"0.4"`, which it can
+always do, because `final_offer` carries the protocol act fields and
+`final_acceptance` carries the acceptance's. `"0.3"`, `"0.2"` and `"0.1"`
+describe what earlier producers emitted — a record whose `final_offer` carries
+the act fields but whose `final_acceptance` does not, one carrying the top-level
+`basis` and no act fields, and one carrying neither — and a verifier **does not
+accept any of them** (Section 9.5, step 1). Their schema files stay published, so
+a reader can still parse and inspect such a record; parsing it is not accepting
+it.
+
+`"0.3"` is refused for the same reason `"0.2"` is, one act later. The
+acceptance's signed scope is the Section 7.3.1 signed act object, which covers
+`protocol_version`, `message_type`, `sender_did` and `timestamp`; a `"0.3"`
+record stored only `sender_did` of those four, so its acceptance cannot be
+rebuilt from the record at all. A verifier faced with that could only invent the
+missing fields or borrow them from `final_offer`, and both produce a plausible
+hash that is not the one the accepting party signed. Half a bound record is not
+a bound record.
 
 Two parties on the same version derive the same record for a session, byte for
 byte (Section 9.2). A party whose implementation predates the act fields
@@ -1928,7 +2108,7 @@ Using JCS-serialized array eliminates the ambiguity of bare concatenation.
 ### 9.5 Record Verification
 
 Any party verifying a transaction record MUST:
-1. Verify that `record_version` is `"0.3"`, and reject the record otherwise. A
+1. Verify that `record_version` is `"0.4"`, and reject the record otherwise. A
    verifier MUST NOT attempt best-effort parsing of any other value.
 
    `record_version` is covered by no signature. A verifier therefore refuses any
@@ -1941,9 +2121,9 @@ Any party verifying a transaction record MUST:
 
    Two rejections are distinguished, because they are different facts. A record
    whose version this implementation knows but cannot rebind — `"0.1"`, `"0.2"`,
-   or a `"0.3"` record whose `final_offer` does not carry every act field — is
-   refused as **unbound**. Any other value, including one that is absent, `null`,
-   a number, or a string differing by so much as a space, is refused as
+   `"0.3"`, or a `"0.4"` record that does not carry every act field of both acts
+   — is refused as **unbound**. Any other value, including one that is absent,
+   `null`, a number, or a string differing by so much as a space, is refused as
    **unrecognized**. Reporting the reason is RECOMMENDED; the reason codes are a
    library concern and are not wire error codes (Section 12.3).
 
@@ -1956,9 +2136,9 @@ Any party verifying a transaction record MUST:
 2. Compute `record_hash` independently and compare
 3. Verify that `final_offer` carries the protocol act fields — `protocol_version`,
    `round_number`, `sequence_number`, `message_type`, `timestamp`, `expires_at` —
-   exactly when `record_version` is `"0.3"`. Presence is by key: a `"0.3"` record
+   exactly when `record_version` is `"0.4"`. Presence is by key: a `"0.4"` record
    MUST carry all six and a `"0.1"` or `"0.2"` record none of them, so a partial
-   set is rejected rather than read as far as it goes. For a `"0.3"` record,
+   set is rejected rather than read as far as it goes. For a `"0.4"` record,
    reconstruct the protocol act object of Section 7.3.1 from the record — those
    six fields and `sender_did` from `final_offer`, `session_id` from the record's
    top level, and `terms` from `agreed_terms` — compute its hash exactly as
@@ -1979,7 +2159,22 @@ Any party verifying a transaction record MUST:
    this is the object `final_offer.protocol_act_signature` already covers — so
    step 4 then binds `agreed_terms` to that signature.
 4. Verify `final_offer.protocol_act_signature` against the offering party's key
-5. Verify `final_acceptance.acceptance_signature` against the accepting party's key
+5. Verify that `final_acceptance` carries the acceptance's act fields —
+   `protocol_version`, `message_type`, `timestamp` — beside the `round_number`,
+   `sequence_number`, `accepted_offer_id`, `accepted_protocol_act_hash` and
+   `sender_did` it has always carried. Presence is by key, and a `"0.4"` record
+   MUST carry all of them. Reconstruct the acceptance's signed act object of
+   Section 7.3.1 from those fields and `session_id` from the record's top level,
+   hash it exactly as Section 7.3.2 step 3 does, and verify
+   `final_acceptance.acceptance_signature` against the accepting party's key over
+   that hash.
+
+   A verifier **MUST NOT** derive any of those fields from `final_offer`, from
+   the record's other members, or from its own defaults. The acceptance is a
+   different act by a different party at a different moment: its `timestamp` is
+   not the offer's, and substituting one produces a well-formed hash that the
+   accepting party never signed. A record that does not carry these fields is
+   unbound under step 1, not repairable by inference.
 6. Verify `final_acceptance.accepted_protocol_act_hash` matches
    `final_offer.protocol_act_hash`
 7. Recompute `offer_chain_hash` from the session message history and compare
@@ -2004,16 +2199,21 @@ Any party verifying a transaction record MUST:
      differ, and a verifier must not begin rejecting records that verified
      before.
 
-Both sides of a `"0.3"` record are recomputable from the record alone. The
-offering party's signature covers the protocol act step 3 rebuilds, whose `terms`
-are `agreed_terms`; the accepting party's signature covers the payload of
-Section 7.4, whose five fields the record has always carried — `session_id` at
-the top level and `round_number`, `sequence_number`, `accepted_offer_id` and
-`accepted_protocol_act_hash` in `final_acceptance`. A third party can therefore
-rebuild both signed objects and check both signatures against the record's own
-content, without the original messages. A record whose `agreed_terms` differ
-from the terms that were signed fails step 3 even when `record_hash` has been
-recomputed and both signatures still verify.
+Both sides of a `"0.4"` record are recomputable from the record alone, each from
+its own stored fields. The offering party's signature covers the protocol act
+step 3 rebuilds, whose `terms` are `agreed_terms`; the accepting party's
+signature covers the signed act object step 5 rebuilds, from `final_acceptance`
+and the record's top-level `session_id`. Neither rebuild reads the other act. A
+third party can therefore rebuild both signed objects and check both signatures
+against the record's own content, without the original messages.
+
+This is what `"0.4"` adds. A `"0.3"` record satisfied step 3 but not step 5: it
+carried the offer's act fields and none of the acceptance's, so its
+`agreed_terms` were bound while the acceptance was merely present, and a
+verifier could only complete the check by inventing or borrowing what the record
+did not hold. A record whose `agreed_terms` differ from the terms that were
+signed fails step 3, and one whose acceptance fields have been altered fails
+step 5, in both cases even when `record_hash` has been recomputed.
 
 > **OPEN QUESTION OQ-006:** Should the transaction record be submitted to a
 > neutral third-party registry for authoritative storage in v0.1? Proposed:
@@ -2064,13 +2264,16 @@ attribution of an individual party's protocol act and are the preferred evidence
 
 Schema: `spec/schemas/session-evidence-record.schema.json` (`record_version`
 `"0.1"`, as published in release 0.3.0),
-`spec/schemas/session-evidence-record-0.2.schema.json` (`"0.2"`), and
-`spec/schemas/session-evidence-record-0.3.schema.json` (`"0.3"`)
+`spec/schemas/session-evidence-record-0.2.schema.json` (`"0.2"`),
+`spec/schemas/session-evidence-record-0.3.schema.json` (`"0.3"`), and
+`spec/schemas/session-evidence-record-0.4.schema.json` (`"0.4"`, the version a
+producer emits). A verifier accepts all four: the earlier three describe records
+an implementation has already produced, and stay accepted.
 
 ```json
 {
   "record_type": "a2cn_session_evidence_record",
-  "record_version": "0.2 | 0.3",
+  "record_version": "0.4",
   "evidence_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -2117,7 +2320,7 @@ Schema: `spec/schemas/session-evidence-record.schema.json` (`record_version`
       "act_hash": "string",
       "money_basis": {},
       "sender_verification_method": "string | null",
-      "signature_type": "protocol_act_signature | acceptance_signature | null",
+      "signature_type": "protocol_act_signature | acceptance_signature | rejection_signature | withdrawal_signature | null",
       "signature": "string | null",
       "attribution": "verified_signature | unsigned_observation"
     }
@@ -2141,9 +2344,9 @@ Apart from these named optional members, the record and every object inside it
 remain closed to additional properties.
 
 `record_version` is the version of the SessionEvidenceRecord artifact and is
-independent of the TransactionRecord version. A producer MUST emit `"0.3"`
-exactly when the record carries `external_commitment_reference` (Section
-9A.12), and `"0.2"` otherwise. A verifier MUST reject an unrecognized
+independent of the TransactionRecord version. A producer MUST emit `"0.4"` for
+every record it produces, whether or not that record carries
+`external_commitment_reference` (Section 9A.12). A verifier MUST reject an unrecognized
 SessionEvidenceRecord version rather than attempt best-effort parsing. After a
 version is published, any incompatible shape or canonical meaning change MUST
 increment `record_version` and the version in the schema `$id`; the schema,
@@ -2165,7 +2368,8 @@ Version `"0.2"` is the version that introduced Sections 9A.8, 9A.9, 9A.10, and
 with the `terms.basis` of the act it describes. Its schema `$id` ends in `/0.2`.
 Sections 9A.8 to 9A.11 are relaxations, so a verifier that predates them
 rejects records that use them, and the basis rule adds a rejection. Apart from
-the rule below that ties `external_commitment_reference` to `"0.3"`,
+the historical rule below that ties `external_commitment_reference` to `"0.3"`
+for records below `"0.4"`,
 verification does not depend on the version: Section 9A.6, with Sections 9A.8
 to 9A.11 and the basis rule, applies to a `"0.1"` record exactly as to a
 `"0.2"` or `"0.3"` record. A verifier therefore also accepts a `"0.1"` record
@@ -2178,14 +2382,34 @@ completion: a `COMPLETED` record whose completion witness is
 `external_commitment_reference` rather than `transaction_record_hash`. Its
 schema `$id` ends in `/0.3`. Section 9A.12 is a relaxation, so a verifier that
 predates it rejects a `COMPLETED` record whose `transaction_record_hash` is
-`null`. A verifier recognizes `"0.1"`, `"0.2"`, and `"0.3"` and MUST reject any
-other value. It MUST hold `"0.3"` to its shape in both directions: a record that
-carries `external_commitment_reference` MUST be `"0.3"`, and a `"0.3"` record
-MUST carry it. Presence is by key, so an `external_commitment_reference` whose
-value is `null` counts as carried, and is malformed. This is the only
-verification rule that depends on the version. A record that does not carry
-`external_commitment_reference` stays `"0.2"`, so a verifier that recognizes
-only `"0.1"` and `"0.2"` still reads every such record.
+`null`.
+
+Version `"0.4"` is the version every producer emits, and the first whose acts
+may carry a signed Rejection or Withdrawal (Sections 7.5 and 7.6). Its schema
+`$id` ends in `/0.4`. A verifier recognizes `"0.1"`, `"0.2"`, `"0.3"` and
+`"0.4"`, and MUST reject any other value. That set is additive — a version is
+added and none removed — so a record sealed under an earlier version stays
+valid, and a verifier MUST NOT refuse one on account of its version alone.
+
+`external_commitment_reference` is OPTIONAL at `"0.4"`: such a record carries it
+exactly when a `COMPLETED` session settled through an external channel. The
+two-way rule is therefore historical, about `"0.3"` alone: a `"0.3"` record
+carries `external_commitment_reference`, and a record carrying one that is not
+`"0.4"` MUST be `"0.3"`. Presence is by key, so an
+`external_commitment_reference` whose value is `null` counts as carried, and is
+malformed. At `"0.4"` no verification rule depends on the version at all; the
+completion witness is governed by Section 9A.6 step 9, which holds at every
+`record_version`.
+
+> **A compatibility property ends here, deliberately.** Before `"0.4"`, a record
+> that did not carry `external_commitment_reference` stayed `"0.2"`, so a
+> verifier recognizing only `"0.1"` and `"0.2"` still read every such record.
+> That property was chosen when `"0.3"` was introduced, and it does not survive:
+> every record emitted from this version on is `"0.4"`, so a verifier predating
+> `"0.4"` reads none of them. It is given up to bring the TransactionRecord and
+> the SessionEvidenceRecord to one version number, ending the collision between
+> a TransactionRecord `"0.3"` and a SessionEvidenceRecord `"0.3"` and leaving a
+> single scheme for later work to extend.
 
 `parties` uses the same SessionInit and SessionAck metadata sources as the
 TransactionRecord. Informational names and agent identifiers do not acquire
@@ -2248,8 +2472,9 @@ MUST be valid RFC 3339. Missing or malformed fields do not permit a claimed
 signed act to bypass the signed-payload requirements below.
 
 An implementation MUST NOT fabricate `protocol_act_hash`,
-`protocol_act_signature`, or `acceptance_signature` for an external observation.
-An unsigned observation MUST use:
+`protocol_act_signature`, `acceptance_signature`, `rejection_signature`, or
+`withdrawal_signature` for an external observation. An unsigned observation MUST
+use:
 
 ```json
 {
@@ -2262,10 +2487,16 @@ An unsigned observation MUST use:
 
 A signed A2CN Offer or Counteroffer uses `signature_type` =
 `"protocol_act_signature"`. A signed Acceptance uses `signature_type` =
-`"acceptance_signature"`. In either case, `signature` MUST reproduce the
-corresponding signature from the complete `act`, and `attribution` MUST be
-`"verified_signature"`. The record verifies only if that claimed signature
-successfully verifies; an invalid claim cannot be downgraded.
+`"acceptance_signature"`. A signed Rejection uses `"rejection_signature"`, and a
+signed Withdrawal `"withdrawal_signature"`. In every case, `signature` MUST
+reproduce the corresponding signature from the complete `act`, and `attribution`
+MUST be `"verified_signature"`. The record verifies only if that claimed
+signature successfully verifies; an invalid claim cannot be downgraded.
+
+Signing a Rejection or Withdrawal is OPTIONAL: a decline carrying no signature
+is conformant and is recorded as an unsigned observation. A decline that does
+carry one is verified exactly as any other act is — the signature's presence,
+not the act's type, is what makes the check mandatory.
 
 Every act claimed as carrying an A2CN signature MUST contain a `session_id` equal
 to the SessionEvidenceRecord `session_id`. A verifier MUST enforce this binding
@@ -2336,11 +2567,14 @@ act, nor an external commitment reference into a counterparty attestation.
 presence does not by itself make a record invalid.
 
 **`bilateral`** means all material acts needed to substantiate the represented
-terminal outcome are cryptographically attributable to the claimed parties. In
-the v0.2 signing model, a normal fully signed Offer/Counteroffer/Acceptance path
-ending in `COMPLETED` is bilateral when both session party DIDs have at least one
-verified material act and no included act is unsigned. The producer seal alone
-MUST NOT cause bilateral classification.
+terminal outcome are cryptographically attributable to the claimed parties **and
+the outcome is `COMPLETED`**. A record with any other outcome MUST NOT be
+classified `bilateral`, however completely its acts are signed: a terminal fact
+the producer observed locally is not one the counterparty attested to. A normal
+fully signed Offer/Counteroffer/Acceptance path ending in `COMPLETED` is
+bilateral when both session party DIDs have at least one verified material act
+and no included act is unsigned. The producer seal alone MUST NOT cause
+bilateral classification.
 
 **`mixed`** means the package combines at least one verified per-act signature
 with an unsigned observation or locally observed terminal fact, and the included
@@ -2350,8 +2584,8 @@ does not satisfy this condition. Examples include:
 
 - a signed local A2CN Offer plus an unsigned external counterparty Counteroffer;
 - signed acts from both parties followed by a locally detected impasse; or
-- a signed Offer followed by an unsigned Rejection or Withdrawal from the other
-  party under the current v0.2 message-signing coverage.
+- a signed Offer followed by a Rejection or Withdrawal from the other party,
+  whether or not that decline is itself signed.
 
 **`unilateral`** means the evidence has no verified counterparty perspective
 sufficient for mixed or bilateral classification. A signed local Offer followed
@@ -2368,17 +2602,28 @@ The classification counts only DID-bearing parties. An act whose `sender_did` is
 `null`, or whose sender is not a session party, contributes to no party's
 representation.
 
-Because v0.2 does not define protocol-act signatures for Rejection or Withdrawal,
-implementations MUST preserve those messages as unsigned observations. They MUST
-NOT classify those terminal messages as bilaterally attributable. Expanding
-per-message signing coverage requires a separate protocol change.
+A Rejection or Withdrawal MAY carry its own signature (Sections 7.5 and 7.6), and
+a signed one is recorded as a verified act like any other. Implementations MUST
+preserve an *unsigned* decline as an unsigned observation, rather than inferring
+attribution from the message alone. Either way, they MUST NOT classify those
+terminal messages as bilaterally attributable — and that conclusion no longer
+rests on the absence of a decline signature, but on the terminal outcome:
+`bilateral` requires `COMPLETED`, so even a fully signed decline path classifies
+`mixed`, through its locally observed terminal fact. A signed decline therefore
+costs verification and buys no classification credit: a cryptographically
+attested rejection classifies exactly as one the producer merely observed.
 
 ### 9A.6 Verification
 
-A verifier MUST reject a `record_version` other than `"0.1"`, `"0.2"`, or
-`"0.3"`. It MUST also reject a record that carries
+A verifier MUST reject a `record_version` other than `"0.1"`, `"0.2"`, `"0.3"`
+or `"0.4"`. Below `"0.4"` it MUST also reject a record that carries
 `external_commitment_reference` but is not `"0.3"`, and a `"0.3"` record that
-does not carry it (Section 9A.2). It then:
+does not carry it; at `"0.4"` that reference is OPTIONAL and no verification rule
+depends on the version (Section 9A.2). It MUST reject a record any of whose acts
+carries a `rejection_signature` or a `withdrawal_signature` unless that record is
+`"0.4"` or later, because no earlier version's vocabulary admits those signature
+types. That rule is one-directional: the vocabulary requires the version, while a
+`"0.4"` record is under no obligation to carry a decline. It then:
 
 1. Validate the record structure, including `external_commitment_reference`
    when present (Section 9A.12), and terminal outcome.
@@ -2391,8 +2636,12 @@ does not carry it (Section 9A.2). It then:
    that DID, and verify `producer_signature` over `record_hash`.
 7. Verify every signature the record claims is present. Offer and Counteroffer
    signatures MUST use the protocol-act payload rules in Section 7.3; Acceptance
-   signatures MUST use the Acceptance payload rules in Section 7.4. Every such
-   signed act MUST bind to the record's `session_id`.
+   signatures MUST use the Acceptance payload rules in Section 7.4; Rejection
+   signatures MUST use the Rejection payload rules in Section 7.5; and Withdrawal
+   signatures MUST use the Withdrawal payload rules in Section 7.6. Each act type
+   has its own signature field, so a verifier MUST NOT accept a signature carried
+   in another type's slot, and an act relabelled as another type MUST fail the
+   rebuild. Every such signed act MUST bind to the record's `session_id`.
 8. Recompute the evidence level from the verified and unsigned acts and compare
    it with `evidence_level`. For a record whose `parties.responder` is an
    `observed_party`, the recomputed level is `unilateral` by assertion (Sections
@@ -2666,7 +2915,9 @@ and a verifier MUST reject it otherwise:
    (Section 9A.2).
 2. `parties.responder` is an `observed_party`, so Section 9A.8 applies to it.
 3. `evidence_level` is `unilateral`.
-4. `record_version` is `"0.3"` (Section 9A.2).
+4. `record_version` is `"0.4"`, or `"0.3"` for a record sealed before `"0.4"`
+   (Section 9A.2). At `"0.4"` the reference is OPTIONAL, so carrying one no
+   longer fixes the version.
 5. `producer.did` equals `parties.initiator.did`.
 6. At least one act claims `verified_signature` with a `sender_did` equal to
    `parties.initiator.did`.
@@ -4656,10 +4907,15 @@ schemas. The following schema files are defined:
 | `timeout-notification.schema.json` | Timeout notification |
 | `transaction-record.schema.json` | Transaction record, `record_version` `"0.1"` — historical shape, not accepted for verification |
 | `transaction-record-0.2.schema.json` | Transaction record, `record_version` `"0.2"` — historical shape, not accepted for verification |
-| `transaction-record-0.3.schema.json` | Transaction record, `record_version` `"0.3"` |
-| `session-evidence-record.schema.json` | Session Evidence Record, `record_version` `"0.1"` |
-| `session-evidence-record-0.2.schema.json` | Session Evidence Record, `record_version` `"0.2"` |
-| `session-evidence-record-0.3.schema.json` | Session Evidence Record, `record_version` `"0.3"` |
+| `transaction-record-0.3.schema.json` | Transaction record, `record_version` `"0.3"` — historical shape, not accepted for verification |
+| `transaction-record-0.4.schema.json` | Transaction record, `record_version` `"0.4"` |
+| `acceptance.schema.json` | Acceptance |
+| `rejection.schema.json` | Rejection |
+| `withdrawal.schema.json` | Withdrawal |
+| `session-evidence-record.schema.json` | Session Evidence Record, `record_version` `"0.1"` — earlier shape, still accepted for verification |
+| `session-evidence-record-0.2.schema.json` | Session Evidence Record, `record_version` `"0.2"` — earlier shape, still accepted for verification |
+| `session-evidence-record-0.3.schema.json` | Session Evidence Record, `record_version` `"0.3"` — earlier shape, still accepted for verification |
+| `session-evidence-record-0.4.schema.json` | Session Evidence Record, `record_version` `"0.4"` |
 | `audit-log.schema.json` | Audit log |
 | `session-object.schema.json` | Session state object |
 | `error.schema.json` | Error response |

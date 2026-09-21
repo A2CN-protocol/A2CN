@@ -42,9 +42,11 @@ SER_VECTOR = json.loads((VECTORS / "session-evidence-record-parity.json").read_t
 TR_0_1 = "transaction-record.schema.json"
 TR_0_2 = "transaction-record-0.2.schema.json"
 TR_0_3 = "transaction-record-0.3.schema.json"
+TR_0_4 = "transaction-record-0.4.schema.json"
 SER_0_1 = "session-evidence-record.schema.json"
 SER_0_2 = "session-evidence-record-0.2.schema.json"
-TR_SCHEMAS = (TR_0_1, TR_0_2, TR_0_3)
+SER_0_4 = "session-evidence-record-0.4.schema.json"
+TR_SCHEMAS = (TR_0_1, TR_0_2, TR_0_3, TR_0_4)
 # Every other version's schema, which the record of one version must not fit.
 OTHER_VERSIONS = {
     **{name: [other for other in TR_SCHEMAS if other != name] for name in TR_SCHEMAS},
@@ -119,21 +121,21 @@ TRANSACTION_RECORDS = [
         TR_0_3, lambda: WITHOUT_BASIS["record_version_0_3"]["full_record"],
         id="0.3-without-basis-vector",
     ),
-    pytest.param(TR_0_3, lambda: _replay(TR_VECTOR), id="0.3-generated-for-a-basis-session"),
+    pytest.param(TR_0_4, lambda: _replay(TR_VECTOR), id="0.4-generated-for-a-basis-session"),
     pytest.param(
-        TR_0_3, lambda: _replay(WITHOUT_BASIS), id="0.3-generated-for-a-session-without-basis"
+        TR_0_4, lambda: _replay(WITHOUT_BASIS), id="0.4-generated-for-a-session-without-basis"
     ),
     pytest.param(
-        TR_0_3, lambda: PARITY_VECTORS["session"]["expected"]["full_record"],
-        id="0.3-parity-vector",
+        TR_0_4, lambda: PARITY_VECTORS["session"]["expected"]["full_record"],
+        id="0.4-parity-vector",
     ),
-    pytest.param(TR_0_3, _without_subject_reference, id="0.3-generated-without-subject-reference"),
+    pytest.param(TR_0_4, _without_subject_reference, id="0.4-generated-without-subject-reference"),
     pytest.param(
         TR_0_3, lambda: EMPTY_EXPIRES_AT["record_version_0_3"]["full_record"],
         id="0.3-empty-expires-at-vector",
     ),
     pytest.param(
-        TR_0_3, lambda: _replay(EMPTY_EXPIRES_AT), id="0.3-generated-with-an-empty-expires-at"
+        TR_0_4, lambda: _replay(EMPTY_EXPIRES_AT), id="0.4-generated-with-an-empty-expires-at"
     ),
 ]
 
@@ -400,17 +402,19 @@ def _extension_record(name: str) -> dict:
 
 
 @pytest.mark.parametrize("name", sorted(EXTENSIONS_VECTOR["vectors"]))
-def test_a_record_that_uses_sections_9a_8_to_9a_11_fits_only_the_0_2_schema(name):
+def test_a_record_that_uses_sections_9a_8_to_9a_11_fits_its_own_versions_schema(name):
     """Sections 9A.8 to 9A.11 arrived in "0.2", so the released "0.1" schema refuses them.
 
-    Verification does not depend on the version (Section 9A.2), so the record
-    still verifies when it is relabelled "0.1".
+    Every producer now emits "0.4" (Section 9A.2), so the generated record fits
+    that version's schema; the features themselves are unchanged since "0.2".
+    Verification does not depend on the version, so the record still verifies
+    when it is relabelled "0.1".
     """
     record = _extension_record(name)
     did_documents = EXTENSIONS_VECTOR["did_documents"]
 
-    assert record["record_version"] == "0.2"
-    assert _errors(SER_0_2, record) == []
+    assert record["record_version"] == "0.4"
+    assert _errors(SER_0_4, record) == []
     assert verify_session_evidence_record(record, did_documents)
 
     relabelled = copy.deepcopy(record)
@@ -517,12 +521,17 @@ EXTERNAL_CHANNEL_RECORDS = [
 
 
 @pytest.mark.parametrize("record", EXTERNAL_CHANNEL_RECORDS)
-def test_an_external_channel_record_fits_only_the_0_3_schema(record):
-    """Section 9A.12 arrived in "0.3"; the earlier schemas are closed where it goes."""
+def test_an_external_channel_record_fits_only_the_later_schema(record):
+    """Section 9A.12 arrived in "0.3"; the earlier schemas are closed where it goes.
+
+    Every producer now emits "0.4" (Section 9A.2), where the reference is
+    OPTIONAL rather than definitional, so these records fit that version's
+    schema. "0.1" and "0.2" still have nowhere to put the reference.
+    """
     record = record()
 
-    assert record["record_version"] == "0.3"
-    assert _errors(SER_0_3, record) == []
+    assert record["record_version"] == "0.4"
+    assert _errors(SER_0_4, record) == []
     for earlier in (SER_0_1, SER_0_2):
         assert _names_the_reference(_errors(earlier, record)), earlier
 
@@ -539,40 +548,45 @@ def test_the_earlier_schemas_refuse_the_reference_under_their_own_version(schema
 @pytest.mark.parametrize(
     "case", EXTERNAL_CHANNEL_VECTOR["invalid_records"], ids=lambda case: case["name"]
 )
-def test_the_0_3_schema_refuses_every_invalid_external_channel_record(case):
+def test_the_0_4_schema_refuses_every_invalid_external_channel_record(case):
     """The healthy record goes first: a schema that refused everything would pass every case."""
     record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
-    assert _errors(SER_0_3, record) == []
+    assert _errors(SER_0_4, record) == []
 
     _resealed_external_channel_record(_with_changes(record, case))
     if case.get("schema_expresses") is False:
         # A JSON Schema cannot compare two members, so the schema accepts this
         # record and only the verifier refuses it.
-        assert _errors(SER_0_3, record) == []
+        assert _errors(SER_0_4, record) == []
     else:
-        assert _errors(SER_0_3, record) != []
+        assert _errors(SER_0_4, record) != []
 
 
 @pytest.mark.parametrize(
     "case", EXTERNAL_CHANNEL_VECTOR["invalid_references"], ids=lambda case: case["name"]
 )
-def test_the_0_3_schema_refuses_every_malformed_reference(case):
+def test_the_0_4_schema_refuses_every_malformed_reference(case):
     record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
-    assert _errors(SER_0_3, record) == []
+    assert _errors(SER_0_4, record) == []
 
     record["external_commitment_reference"] = copy.deepcopy(case["external_commitment_reference"])
     _resealed_external_channel_record(record)
-    assert _errors(SER_0_3, record) != []
+    assert _errors(SER_0_4, record) != []
 
 
 def test_no_record_without_the_reference_fits_the_0_3_schema():
-    """Every record that does not complete through an external channel stays "0.2"."""
-    records = [_session_evidence_record("0.2")] + [
+    """A record that does not complete through an external channel is never "0.3".
+
+    "0.3" requires the reference by definition, so no record without one fits it
+    under any label. The records themselves are "0.4", the version every producer
+    now emits, where that reference is OPTIONAL.
+    """
+    records = [_session_evidence_record("0.4")] + [
         _extension_record(name) for name in sorted(EXTENSIONS_VECTOR["vectors"])
     ]
 
     for record in records:
-        assert _errors(SER_0_2, record) == []
+        assert _errors(SER_0_4, record) == []
         assert _errors(SER_0_3, record) != []
         relabelled = copy.deepcopy(record)
         relabelled["record_version"] = "0.3"
@@ -633,16 +647,62 @@ def test_the_0_2_evidence_record_schema_is_unchanged():
     assert digest == EXTERNAL_CHANNEL_VECTOR["session_evidence_record_0_2_schema_sha256"]
 
 
+def test_a_stored_0_3_record_still_verifies_and_fits_its_own_schema():
+    """The additive recognizer, which nothing else in either suite pins.
+
+    Section 9A.2: the SessionEvidenceRecord's accepted set GREW to include "0.4"
+    and lost nothing, so a record sealed under an earlier version stays valid.
+    That is the deliberate opposite of the TransactionRecord's clean break in the
+    same release, and it is the single most load-bearing untested claim of the
+    change -- the recognizer could have been narrowed to ("0.4",) and every other
+    test would still have passed.
+
+    This record is loaded, never generated: it is the record this vector's
+    session produced before universal "0.4", with the bytes it had. Regenerating
+    it would destroy the only thing it proves.
+    """
+    record = EXTERNAL_CHANNEL_VECTOR["historical_0_3_record"]
+
+    assert record["record_version"] == "0.3"
+    assert verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
+    assert _errors(SER_0_3, record) == []
+    # And it is not mistaken for the version that superseded it.
+    assert _errors(SER_0_4, record) != []
+
+
+def test_the_stored_0_3_record_is_todays_record_apart_from_its_version():
+    """The two differ in the version, the hash over it, and the seal over that.
+
+    A guard on the pair: if they drifted in any other member, the test above
+    would be verifying an unrelated artifact while appearing to prove the
+    recognizer.
+    """
+    historical = EXTERNAL_CHANNEL_VECTOR["historical_0_3_record"]
+    current = EXTERNAL_CHANNEL_VECTOR["expected"]["record"]
+
+    assert current["record_version"] == "0.4"
+    differing = {
+        name
+        for name in set(historical) | set(current)
+        if historical.get(name) != current.get(name)
+    }
+    assert differing == {"record_version", "record_hash", "producer_signature"}
+
+
 def test_the_evidence_record_schemas_name_the_versions_the_generator_emits():
     for version, schema_file in (
         (evidence.SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT, SER_0_2),
         (evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT, SER_0_3),
+        (evidence.SESSION_EVIDENCE_RECORD_VERSION_CURRENT, SER_0_4),
     ):
         schema = json.loads((SCHEMAS / schema_file).read_text())
         assert schema["properties"]["record_version"]["const"] == version
-    # A verifier recognizes exactly the versions it has a schema for.
+    # A verifier recognizes exactly the versions it has a schema for, and that
+    # set is additive: "0.4" was added and none removed, so a record sealed
+    # under an earlier version stays valid.
     assert list(evidence.RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS) == [
         "0.1",
         evidence.SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
         evidence.SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
+        evidence.SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
     ]

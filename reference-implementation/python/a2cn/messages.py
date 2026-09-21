@@ -8,9 +8,12 @@ omitting None fields (optional fields that were not set).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any
+
+from a2cn.crypto import hash_object
 
 
 def _drop_none(d: dict) -> dict:
@@ -37,9 +40,9 @@ def _drop_none(d: dict) -> dict:
 # covers, so a signer and a verifier must use the same value.
 PROTOCOL_ACT_VERSION = "0.2"
 
-# The protocol act object's fields, in the order Section 7.3.1 lists them. JCS
-# sorts keys before hashing, so the order is for readers.
-PROTOCOL_ACT_FIELDS = (
+# The header every signed act carries, whatever its type, in the order Section
+# 7.3.1 lists them. JCS sorts keys before hashing, so the order is for readers.
+SIGNED_ACT_HEADER_FIELDS = (
     "protocol_version",
     "session_id",
     "round_number",
@@ -47,9 +50,88 @@ PROTOCOL_ACT_FIELDS = (
     "message_type",
     "sender_did",
     "timestamp",
-    "expires_at",
-    "terms",
 )
+
+# What each act type signs beside the header. expires_at belongs to the offer
+# and counteroffer rather than to the header: an acceptance, rejection or
+# withdrawal has no deadline of its own, and putting it in the header would make
+# all three sign an empty string as a stand-in for one. Keeping it here also
+# leaves the offer's signed object exactly the nine flat keys it has always had,
+# so no stored record's protocol_act_hash moves.
+SIGNED_ACT_PAYLOAD_FIELDS = {
+    "offer": ("expires_at", "terms"),
+    "counteroffer": ("expires_at", "terms"),
+    "acceptance": ("accepted_offer_id", "accepted_protocol_act_hash"),
+    "rejection": ("rejected_offer_id", "reason_code"),
+    "withdrawal": ("reason_code",),
+}
+
+# The field each act type carries its signature in. Offer and counteroffer share
+# one, because they are one act under two names. Rejection and withdrawal get
+# their own rather than reusing another type's: a signature field that means one
+# act type is what lets a verifier refuse an act relabelled as another, because
+# the rebuild then demands the type the signature was made under.
+SIGNED_ACT_SIGNATURE_FIELDS = {
+    "offer": "protocol_act_signature",
+    "counteroffer": "protocol_act_signature",
+    "acceptance": "acceptance_signature",
+    "rejection": "rejection_signature",
+    "withdrawal": "withdrawal_signature",
+}
+
+# The offer's signed object, still named for readers of Section 7.3.1: the
+# common header followed by the offer's own payload.
+PROTOCOL_ACT_FIELDS = SIGNED_ACT_HEADER_FIELDS + SIGNED_ACT_PAYLOAD_FIELDS["offer"]
+
+# The covered fields that are numbers, and the one that is an object. Every
+# other covered field is a string.
+_ACT_INTEGER_FIELDS = frozenset({"round_number", "sequence_number"})
+_ACT_OBJECT_FIELDS = frozenset({"terms"})
+
+# The offer path's own rule: a missing timestamp or expires_at rebuilds as "".
+# Neither is validated on the wire, and both state machines have always rebuilt
+# an offer's act that way, so an offer that omits one is signed over "" and is
+# recorded that way (Section 9.5). Demanding more would refuse an act whose
+# signature genuinely covers those bytes.
+#
+# This belongs to offer and counteroffer alone. An acceptance carries a REQUIRED
+# timestamp of its own, so defaulting one for it would let an acceptance sign the
+# empty filler that moving expires_at out of the header exists to prevent.
+_OFFER_DEFAULTED_FIELDS = frozenset({"timestamp", "expires_at"})
+_NO_DEFAULTED_FIELDS: frozenset[str] = frozenset()
+
+
+def signed_act_object(
+    *,
+    protocol_version: str,
+    session_id: Any,
+    round_number: Any,
+    sequence_number: Any,
+    message_type: Any,
+    sender_did: Any,
+    timestamp: Any,
+    payload: Mapping[str, Any],
+) -> dict:
+    """The flat object a signed act's signature covers (Section 7.3.1).
+
+    One envelope for all five act types: the common header, then the type's own
+    payload, every field at the top level. Flat rather than nested, because a
+    nested payload would add a level and bytes to the offer's signed object and
+    so could never reproduce the hash the offer's signature already covers.
+
+    Every value is the caller's, and nothing is defaulted here, so each caller
+    keeps its own handling of an absent field.
+    """
+    return {
+        "protocol_version": protocol_version,
+        "session_id": session_id,
+        "round_number": round_number,
+        "sequence_number": sequence_number,
+        "message_type": message_type,
+        "sender_did": sender_did,
+        "timestamp": timestamp,
+        **payload,
+    }
 
 
 def protocol_act_object(
@@ -66,23 +148,107 @@ def protocol_act_object(
 ) -> dict:
     """The object a protocol_act_signature covers (Section 7.3.1).
 
-    One definition for every site that builds it: a client signing an offer, the
-    state machine checking one it received, the evidence record rebuilding an act
-    it holds, and the TransactionRecord rebuilding the act from the record
-    (Section 9.5). Every value is the caller's, and nothing is defaulted here, so
-    each caller keeps its own handling of an absent field.
+    The offer and counteroffer's envelope, named for the sites that build it: a
+    client signing an offer, the state machine checking one it received, the
+    evidence record rebuilding an act it holds, and the TransactionRecord
+    rebuilding the act from the record (Section 9.5). It is the envelope with
+    the offer's payload, not a second recipe beside it — which is what keeps the
+    offer's signed bytes identical without a legacy branch to maintain.
     """
-    return {
-        "protocol_version": protocol_version,
-        "session_id": session_id,
-        "round_number": round_number,
-        "sequence_number": sequence_number,
-        "message_type": message_type,
-        "sender_did": sender_did,
-        "timestamp": timestamp,
-        "expires_at": expires_at,
-        "terms": terms,
-    }
+    return signed_act_object(
+        protocol_version=protocol_version,
+        session_id=session_id,
+        round_number=round_number,
+        sequence_number=sequence_number,
+        message_type=message_type,
+        sender_did=sender_did,
+        timestamp=timestamp,
+        payload={"expires_at": expires_at, "terms": terms},
+    )
+
+
+def _is_act_integer(value: Any) -> bool:
+    """An integral JSON number, as an act's round and sequence numbers are.
+
+    RFC 8785 serializes 2.0 and 2 as the same number, so the two are one signed
+    act in different JSON spellings and must be judged alike. A bool is an int
+    in Python but is not a number in JSON, so it is excluded here; TypeScript's
+    typeof excludes it on its own.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and value.is_integer()
+
+
+def rebuild_signed_act(act: Mapping[str, Any]) -> dict | None:
+    """Rebuild the object an act's signature covers, from the act's own fields.
+
+    The shared verify primitive: a caller hashes what this returns and requires
+    the act's signature to be over that hash. Returns None when the act cannot
+    be rebuilt — an act type the envelope does not name, or a covered field that
+    is missing or of a type that cannot be canonicalized — so an act that cannot
+    be rebound is refused rather than hashed best-effort over a filled-in blank.
+
+    The rebuild is gated on nothing. No record_version, schema version or field
+    presence decides whether it runs, and an act carrying members the envelope
+    does not name still rebuilds from the ones it does: a verifier must never
+    read a label and skip the binding check.
+
+    protocol_version is the one covered field an act may omit. A wire message
+    does not carry one (Section 7.1) — the act states the wire version — so an
+    act without it is rebuilt under this implementation's version, and one that
+    carries it under its own, so an act produced under a later wire version
+    still recomputes.
+
+    Values are constrained only so far as the act can be canonicalized from
+    them. An empty string is rebuilt as it stands, because the hash comparison,
+    not a field's length, is what decides: an offer may genuinely be signed over
+    an empty timestamp or expires_at (Section 9.5), and demanding more here
+    would refuse an act whose signature covers exactly those bytes.
+    """
+    if not isinstance(act, Mapping):
+        return None
+    message_type = act.get("message_type")
+    if not isinstance(message_type, str):
+        return None
+    payload_fields = SIGNED_ACT_PAYLOAD_FIELDS.get(message_type)
+    if payload_fields is None:
+        return None
+
+    defaulted_fields = (
+        _OFFER_DEFAULTED_FIELDS
+        if message_type in ("offer", "counteroffer")
+        else _NO_DEFAULTED_FIELDS
+    )
+    rebuilt: dict = {}
+    for name in SIGNED_ACT_HEADER_FIELDS + payload_fields:
+        if name == "protocol_version" and name not in act:
+            rebuilt[name] = PROTOCOL_ACT_VERSION
+            continue
+        if name not in act:
+            if name in defaulted_fields:
+                rebuilt[name] = ""
+                continue
+            return None
+        value = act[name]
+        if name in _ACT_INTEGER_FIELDS:
+            if not _is_act_integer(value):
+                return None
+        elif name in _ACT_OBJECT_FIELDS:
+            if not isinstance(value, dict):
+                return None
+        elif not isinstance(value, str):
+            return None
+        rebuilt[name] = value
+    return rebuilt
+
+
+def signed_act_hash(act: Mapping[str, Any]) -> str | None:
+    """The hash an act's signature must be over, or None if it cannot be rebuilt."""
+    rebuilt = rebuild_signed_act(act)
+    return None if rebuilt is None else hash_object(rebuilt)
 
 
 # ---------------------------------------------------------------------------
@@ -376,14 +542,26 @@ class Acceptance:
         }
 
     def acceptance_payload(self) -> dict:
-        """The object signed to produce acceptance_signature (Section 7.4)."""
-        return {
-            "session_id": self.session_id,
-            "round_number": self.round_number,
-            "sequence_number": self.sequence_number,
-            "accepted_offer_id": self.accepted_offer_id,
-            "accepted_protocol_act_hash": self.accepted_protocol_act_hash,
-        }
+        """The object signed to produce acceptance_signature (Section 7.3.1).
+
+        The acceptance's envelope: the common header plus its own payload, the
+        offer it accepts and that offer's act hash. It is the envelope with the
+        acceptance's payload, not a second recipe beside it — the same
+        arrangement protocol_act_object has for the offer.
+        """
+        return signed_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,
+            session_id=self.session_id,
+            round_number=self.round_number,
+            sequence_number=self.sequence_number,
+            message_type=self.message_type,
+            sender_did=self.sender_did,
+            timestamp=self.timestamp,
+            payload={
+                "accepted_offer_id": self.accepted_offer_id,
+                "accepted_protocol_act_hash": self.accepted_protocol_act_hash,
+            },
+        )
 
 
 @dataclass

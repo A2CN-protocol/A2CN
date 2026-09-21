@@ -13,7 +13,7 @@ import { randomUUID, type KeyObject } from "node:crypto";
 import { hashObject, signJws } from "./crypto.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
 import { A2CNError, SessionState, checkFixedMoneyParams, checkOfferMoneyParams } from "./session.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
+import { PROTOCOL_ACT_VERSION, protocolActObject, signedActHash, type Dict } from "./messages.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
 
@@ -272,21 +272,6 @@ export class A2CNClient {
     const acceptedOfferId = offer.message_id as string;
     const acceptedHash = offer.protocol_act_hash as string;
 
-    // Build acceptance payload for signing (Section 7.4)
-    const acceptancePayload = {
-      session_id: sessionId,
-      round_number: roundNumber,
-      sequence_number: sequenceNumber,
-      accepted_offer_id: acceptedOfferId,
-      accepted_protocol_act_hash: acceptedHash,
-    };
-
-    const acceptanceSignature = signJws(
-      hashObject(acceptancePayload),
-      this.privateKey,
-      this.agentInfo.verification_method as string,
-    );
-
     const acceptance: Dict = {
       message_type: "acceptance",
       message_id: messageId,
@@ -300,8 +285,17 @@ export class A2CNClient {
       sender_agent_id: this.agentInfo.agent_id,
       sender_verification_method: this.agentInfo.verification_method,
       timestamp,
-      acceptance_signature: acceptanceSignature,
     };
+
+    // Signed over the act's own envelope (Section 7.3.1): the common header plus
+    // an acceptance's payload, accepted_offer_id and accepted_protocol_act_hash.
+    // The act is built first so that what is signed is rebuilt from the very
+    // message that goes on the wire.
+    acceptance.acceptance_signature = signJws(
+      signedActHash(acceptance) as string,
+      this.privateKey,
+      this.agentInfo.verification_method as string,
+    );
 
     const headers = {
       "Content-Type": A2CN_CONTENT_TYPE,

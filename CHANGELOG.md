@@ -11,7 +11,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 |------|---------|
 | Release | `0.3.0` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.2` |
-| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.3` for a record whose `final_offer` carries the signed protocol act's fields, with `0.2` (a basis and no act fields) and `0.1` (neither) still accepted / `0.1` / `0.3` for a record that carries `external_commitment_reference`, `0.2` for one that does not |
+| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.4` for every record, with `0.1`, `0.2` and `0.3` still accepted |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0: the minor version moves for substantive additions.
@@ -19,6 +19,104 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+**One uniform signed-act envelope across all five act types, and a
+TransactionRecord that rebinds both signatures (wire-visible, record-breaking).**
+
+Every act type — offer, counteroffer, acceptance, rejection and withdrawal — now
+signs one flat object: a common seven-field header (`protocol_version`,
+`session_id`, `round_number`, `sequence_number`, `message_type`, `sender_did`,
+`timestamp`) plus a type-specific payload, with `expires_at` belonging to the
+offer and counteroffer rather than to the header, so a terminal act never signs
+an empty-string filler for a deadline it does not have (Section 7.3.1).
+
+**The offer's signed bytes are unchanged.** Flattened, the envelope is exactly
+the nine fields Section 7.3.1 always specified, so `protocol_act_hash` does not
+move and every record that rebinds against it is unaffected.
+
+**The acceptance's signed scope changed, and is not backward compatible.** It
+gains `protocol_version`, `message_type`, `sender_did` and `timestamp` over the
+five fields Section 7.4 used to sign, and drops none. An `acceptance_signature`
+made under the old scope does not verify under this one. Signing `sender_did`
+also means an acceptance now attests who accepted, which it never did.
+
+**Rejection and withdrawal can be signed in band for the first time**, via
+`rejection_signature` and `withdrawal_signature`. Each act type has its own
+signature field, so a signature cannot travel across a relabelled act. Signing a
+decline is OPTIONAL; verifying one is not. `reason_code` is inside the signed
+scope because it is what a later dispute turns on; `reason_description` is
+deliberately outside it, being OPTIONAL free text whose presence would otherwise
+make the signed field set vary (Sections 7.5, 7.6).
+
+**A Withdrawal now carries `round_number`, REQUIRED — an additive wire change.**
+It is part of the header every signed act covers, and without it a Withdrawal
+could not be rebuilt and verified like every other act. A receiver that predates
+the field ignores it.
+
+**The SessionEvidenceRecord moves to `record_version` `"0.4"`, emitted
+universally, and its accepted set is ADDITIVE — no stored record is invalidated.**
+
+Every evidence record a producer emits is now `"0.4"`, whether or not it carries
+`external_commitment_reference`, and `spec/schemas/session-evidence-record-0.4.schema.json`
+is published beside the earlier three, which are unchanged. A verifier
+recognizes `"0.1"`, `"0.2"`, `"0.3"` and `"0.4"`: a version was added and none
+removed, so every record sealed under an earlier version stays valid and a
+verifier MUST NOT refuse one on account of its version alone.
+
+**This is the deliberate opposite of the TransactionRecord's clean break in the
+same release, and the difference is not an inconsistency.** A TransactionRecord
+carries no seal of its own, so a relabelled one can be downgraded to a version
+whose rules bind less — the hazard that forced `"0.3"` and earlier to be
+refused. Every SessionEvidenceRecord is producer-sealed over its own
+`record_version`, so there is no unbound tier to downgrade *to*, and refusing
+older records would destroy evidence for no security gain. The two artifacts
+reach `"0.4"` together, which ends the collision between a TransactionRecord
+`"0.3"` and a SessionEvidenceRecord `"0.3"` and leaves one version scheme.
+
+`"0.4"` is also the first version whose acts may carry a signed Rejection or
+Withdrawal: no earlier version's schema admits `rejection_signature` or
+`withdrawal_signature` in `acts[].signature_type`. Because a producer seals its
+own record, nothing would otherwise stop one emitting the new vocabulary under
+an old label and re-sealing, producing a record that verifies while validating
+against no published schema. A verifier therefore rejects any record carrying
+decline vocabulary that is not `"0.4"` or later. The rule is one-directional —
+the vocabulary requires the version, while a `"0.4"` record is under no
+obligation to carry a decline — and no existing record changes verdict, because
+declines were unsignable before this release.
+
+**`external_commitment_reference` is OPTIONAL at `"0.4"`.** The two-way rule
+tying it to `"0.3"` is now historical, about records below `"0.4"` alone. At
+`"0.4"` no verification rule depends on the version: the completion witness is
+governed by Section 9A.6 step 9, which has always held at every `record_version`
+and which the `"0.4"` schema states structurally for the first time, including
+that a non-null `transaction_record_hash` requires a DID-bearing responder.
+
+**A compatibility property is given up deliberately.** Before `"0.4"`, a record
+without an external commitment reference stayed `"0.2"`, so a verifier that knew
+only `"0.1"` and `"0.2"` still read every ordinary record. Every record emitted
+from this release on is `"0.4"`, so a verifier predating it reads none of them.
+
+**A signed decline costs verification and buys no classification credit.** A
+cryptographically attested Rejection or Withdrawal classifies exactly as one the
+producer merely observed: `bilateral` requires a `COMPLETED` outcome, so a fully
+signed decline path classifies `mixed` through its locally observed terminal
+fact. Section 9A.5's rule that decline messages are never bilaterally
+attributable survives this release, but it now rests on the terminal outcome
+rather than on declines being unsignable.
+
+**`record_version` moves to `"0.4"`, and `"0.3"` is no longer accepted.**
+`final_acceptance` now carries `protocol_version`, `message_type` and
+`timestamp` beside the fields it already held, so both sides of a record rebind
+from the record alone, each from its own stored fields. A `"0.3"` record bound
+its offer but stored none of the acceptance's act fields, so a verifier could
+only complete the check by inventing or borrowing them — both of which produce a
+plausible hash the accepting party never signed. A verifier **MUST NOT** derive
+those fields from `final_offer` (Section 9.5, step 5). `transaction-record-0.4.schema.json`
+is published; `0.3` and its file are unchanged, as published schemas always are.
+
+`acceptance.schema.json`, `rejection.schema.json` and `withdrawal.schema.json`
+are published for the first time; Sections 7.4, 7.5, 7.6 and 17 have always
+named them.
 
 **Line-item money keys are pinned, and the bare spellings are now rejected
 (wire-visible).**

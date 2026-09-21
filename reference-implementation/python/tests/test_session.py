@@ -5,6 +5,7 @@ import pytest
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError
 from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
+from a2cn.messages import signed_act_hash
 from a2cn.record import generate_audit_log
 from tests.conftest import make_did_document
 
@@ -151,15 +152,10 @@ def _make_acceptance(sess: Session, offer: dict, *, msg_id="acc-1") -> dict:
         "sender_verification_method": verification_method,
         "timestamp": "2026-03-24T10:05:00Z",
     }
-    payload = {
-        "session_id": acceptance["session_id"],
-        "round_number": acceptance["round_number"],
-        "sequence_number": acceptance["sequence_number"],
-        "accepted_offer_id": acceptance["accepted_offer_id"],
-        "accepted_protocol_act_hash": acceptance["accepted_protocol_act_hash"],
-    }
+    # Signed over the act's own envelope (Section 7.3.1), built from the very
+    # message the state machine receives.
     acceptance["acceptance_signature"] = sign_jws(
-        hash_object(payload),
+        signed_act_hash(acceptance),
         RESPONDER_PRIVATE_KEY,
         kid=verification_method,
     )

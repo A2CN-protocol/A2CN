@@ -202,10 +202,17 @@ def test_acceptance_payload():
         acceptance_signature="eyJ...",
     )
     payload = acc.acceptance_payload()
+    # The Section 7.3.1 envelope: the common header plus the acceptance's own
+    # payload. It gained protocol_version, message_type, sender_did and
+    # timestamp over the five fields Section 7.4 used to sign, and dropped none.
     assert set(payload.keys()) == {
-        "session_id", "round_number", "sequence_number",
+        "protocol_version", "session_id", "round_number", "sequence_number",
+        "message_type", "sender_did", "timestamp",
         "accepted_offer_id", "accepted_protocol_act_hash",
     }
+    assert payload["message_type"] == "acceptance"
+    assert payload["sender_did"] == "did:web:buyer.example"
+    assert payload["timestamp"] == "2026-03-24T10:05:00Z"
 
 
 def test_none_fields_omitted():

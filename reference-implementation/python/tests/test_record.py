@@ -4,6 +4,7 @@ import copy
 import uuid
 
 from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
+from a2cn.messages import signed_act_hash
 from a2cn.record import generate_transaction_record, verify_transaction_record
 from a2cn.session import SessionManager
 from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
@@ -151,14 +152,7 @@ def _acceptance(
     else:
         private_key = RESPONDER_PRIVATE_KEY
         verification_method = f"{RESPONDER_DID}#key-2026-01"
-    payload = {
-        "session_id": session_id,
-        "round_number": offer["round_number"],
-        "sequence_number": sequence_number,
-        "accepted_offer_id": offer["message_id"],
-        "accepted_protocol_act_hash": offer["protocol_act_hash"],
-    }
-    return {
+    acceptance = {
         "message_type": "acceptance",
         "message_id": message_id,
         "session_id": session_id,
@@ -171,12 +165,14 @@ def _acceptance(
         "sender_agent_id": "seller-agent",
         "sender_verification_method": verification_method,
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": sign_jws(
-            hash_object(payload),
-            private_key,
-            kid=verification_method,
-        ),
     }
+    # Signed over the act's own envelope (Section 7.3.1).
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance),
+        private_key,
+        kid=verification_method,
+    )
+    return acceptance
 
 
 def _completed_record():

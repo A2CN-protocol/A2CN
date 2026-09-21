@@ -18,7 +18,7 @@ import {
 import { generateTransactionRecord } from "../../src/a2cn/record.js";
 import { A2CN_NAMESPACE } from "../../src/a2cn/record.js";
 import { SessionManager, SessionState } from "../../src/a2cn/session.js";
-import type { Dict } from "../../src/a2cn/messages.js";
+import { signedActHash, type Dict } from "../../src/a2cn/messages.js";
 import { v5 as uuidv5 } from "uuid";
 import {
   INITIATOR_DID,
@@ -329,13 +329,6 @@ test("transaction record deterministic", async () => {
     protocol_act_signature: signJws(offerPah, INITIATOR_PRIVATE_KEY, `${INITIATOR_DID}#key-1`),
   };
 
-  const acceptancePayload = {
-    session_id: sessionId,
-    round_number: 1,
-    sequence_number: 2,
-    accepted_offer_id: "offer-1",
-    accepted_protocol_act_hash: offerPah,
-  };
   const acceptanceMsg: Dict = {
     message_type: "acceptance",
     message_id: "acc-1",
@@ -349,12 +342,13 @@ test("transaction record deterministic", async () => {
     sender_agent_id: "seller-agent",
     sender_verification_method: `${RESPONDER_DID}#key-2026-01`,
     timestamp: "2026-03-24T10:03:00Z",
-    acceptance_signature: signJws(
-      hashObject(acceptancePayload),
-      RESPONDER_PRIVATE_KEY,
-      `${RESPONDER_DID}#key-2026-01`,
-    ),
   };
+  // Signed over the act's own envelope (Section 7.3.1).
+  acceptanceMsg.acceptance_signature = signJws(
+    signedActHash(acceptanceMsg) as string,
+    RESPONDER_PRIVATE_KEY,
+    `${RESPONDER_DID}#key-2026-01`,
+  );
 
   mgr.processMessage(sess, offerMsg);
   mgr.processMessage(sess, acceptanceMsg);

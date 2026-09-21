@@ -43,7 +43,7 @@ import {
   verifyTransactionRecordReason,
 } from "../src/a2cn/record.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { signedActHash, type Dict } from "../src/a2cn/messages.js";
 import {
   INITIATOR_DID,
   RESPONDER_DID,
@@ -64,6 +64,7 @@ const WITHOUT_BASIS = VECTOR.without_basis as Dict;
 const EXPECTED = VECTOR.expected as Dict;
 // The record this implementation produces for the basis session, and the "0.2"
 // record an implementation that predates the agreed_terms binding produced.
+const EXPECTED_0_4 = EXPECTED.record_version_0_4 as Dict;
 const EXPECTED_0_3 = EXPECTED.record_version_0_3 as Dict;
 const EXPECTED_0_2 = EXPECTED.record_version_0_2 as Dict;
 const DID_DOCUMENTS = VECTOR.did_documents as Record<string, Dict>;
@@ -245,28 +246,28 @@ function locallySignedBasisRecord(): [Dict, Record<string, Dict>] {
     protocol_act_hash: actHash,
     protocol_act_signature: signJws(actHash, BASIS_INITIATOR.privateKey, BASIS_INITIATOR_VM),
   });
-  const payload = {
+  const acceptance: Dict = {
+    message_type: "acceptance",
+    message_id: "basis-local-acc",
+    in_reply_to: "basis-local-offer",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 2,
     accepted_offer_id: "basis-local-offer",
     accepted_protocol_act_hash: actHash,
-  };
-  manager.processMessage(session, {
-    message_type: "acceptance",
-    message_id: "basis-local-acc",
-    in_reply_to: "basis-local-offer",
-    ...payload,
     sender_did: RESPONDER_DID,
     sender_agent_id: "seller-agent",
     sender_verification_method: BASIS_RESPONDER_VM,
     timestamp: "2026-03-24T10:03:00Z",
-    acceptance_signature: signJws(
-      hashObject(payload),
-      BASIS_RESPONDER.privateKey,
-      BASIS_RESPONDER_VM,
-    ),
-  });
+  };
+  // Signed over the act's own envelope (Section 7.3.1), built from the very
+  // message the state machine receives.
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance) as string,
+    BASIS_RESPONDER.privateKey,
+    BASIS_RESPONDER_VM,
+  );
+  manager.processMessage(session, acceptance);
   expect(session.state).toBe(SessionState.COMPLETED);
   return [generateTransactionRecord(session), didDocuments];
 }
@@ -299,11 +300,17 @@ function resignedOverItsAct(record: Dict): [Dict, string[]] {
   );
   const acceptance = value.final_acceptance as Dict;
   acceptance.accepted_protocol_act_hash = actHash;
+  // The acceptance's own Section 7.3.1 envelope, rebuilt from the fields the
+  // record stores for it. Nothing is read from final_offer.
   acceptance.acceptance_signature = signJws(
     hashObject({
+      protocol_version: acceptance.protocol_version,
       session_id: value.session_id,
       round_number: acceptance.round_number,
       sequence_number: acceptance.sequence_number,
+      message_type: acceptance.message_type,
+      sender_did: acceptance.sender_did,
+      timestamp: acceptance.timestamp,
       accepted_offer_id: acceptance.accepted_offer_id,
       accepted_protocol_act_hash: actHash,
     }),
@@ -352,8 +359,8 @@ test("basis record vector replays to the expected record", () => {
   expect(record.basis).toBe(((VECTOR.session_ack as Dict).session_params_accepted as Dict).basis);
   // agreed_terms is the final offer's terms, which restate the basis.
   expect((record.agreed_terms as Dict).basis).toBe(record.basis);
-  expect(record).toStrictEqual(EXPECTED_0_3.full_record);
-  expect(record.record_hash).toBe(EXPECTED_0_3.record_hash);
+  expect(record).toStrictEqual(EXPECTED_0_4.full_record);
+  expect(record.record_hash).toBe(EXPECTED_0_4.record_hash);
   expect(verifies(record)).toBe(true);
 });
 
@@ -381,16 +388,16 @@ test("client side record matches the vector", () => {
     client.processIncoming(sessionId, message);
   }
 
-  expect(client.buildClientSideRecord(sessionId)).toStrictEqual(EXPECTED_0_3.full_record);
+  expect(client.buildClientSideRecord(sessionId)).toStrictEqual(EXPECTED_0_4.full_record);
 });
 
-test("a session without basis replays to its 0.3 record", () => {
+test("a session without basis replays to its bound record", () => {
   // A session that fixed no basis carries no basis, at whatever version.
   const record = generateTransactionRecord(replayWithoutBasis());
-  const current = WITHOUT_BASIS.record_version_0_3 as Dict;
+  const current = WITHOUT_BASIS.record_version_0_4 as Dict;
 
   expect("basis" in record).toBe(false);
-  expect(record.record_version).toBe("0.3");
+  expect(record.record_version).toBe("0.4");
   // The same fields in the same order: the same bytes, so the same hash (Section 9.2).
   expect(JSON.stringify(record)).toBe(JSON.stringify(current.full_record));
   expect(record.record_hash).toBe(current.record_hash);
@@ -401,7 +408,7 @@ test("client side record for a session without basis matches the vector", () => 
   const record = clientSideRecord(WITHOUT_BASIS);
 
   expect(JSON.stringify(record)).toBe(
-    JSON.stringify((WITHOUT_BASIS.record_version_0_3 as Dict).full_record),
+    JSON.stringify((WITHOUT_BASIS.record_version_0_4 as Dict).full_record),
   );
 });
 
@@ -500,7 +507,7 @@ test.each(UNECHOED_CASES)(
   (basis, builder) => {
     // Section 9.3: the record's basis follows the SessionAck.
     const record = RECORD_BUILDERS[builder](withoutBasisProposing(basis));
-    const current = WITHOUT_BASIS.record_version_0_3 as Dict;
+    const current = WITHOUT_BASIS.record_version_0_4 as Dict;
 
     expect("basis" in record).toBe(false);
     expect(JSON.stringify(record)).toBe(JSON.stringify(current.full_record));
@@ -549,28 +556,26 @@ test("client side record matches the server record", async () => {
   const offer = client._sessions[sessionId].latest_offer as Dict;
 
   const responderVm = `${RESPONDER_DID}#key-2026-01`;
-  const payload = {
+  const acceptance: Dict = {
+    message_type: "acceptance",
+    message_id: randomUUID(),
+    in_reply_to: offer.message_id,
     session_id: sessionId,
     round_number: 1,
     sequence_number: 2,
     accepted_offer_id: offer.message_id,
     accepted_protocol_act_hash: offer.protocol_act_hash,
-  };
-  const acceptance: Dict = {
-    message_type: "acceptance",
-    message_id: randomUUID(),
-    in_reply_to: offer.message_id,
-    ...payload,
     sender_did: RESPONDER_DID,
     sender_agent_id: "sales-agent-acme-007",
     sender_verification_method: responderVm,
     timestamp: offer.timestamp,
-    acceptance_signature: signJws(
-      hashObject(payload),
-      fixture.responderKeypair.privateKey,
-      responderVm,
-    ),
   };
+  // Signed over the act's own envelope (Section 7.3.1).
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance) as string,
+    fixture.responderKeypair.privateKey,
+    responderVm,
+  );
   const posted = await responderClient.post(`/sessions/${sessionId}/messages`, {
     json: acceptance,
     headers: {
@@ -777,7 +782,7 @@ test("basis-fixed session evidence record seals the record and verifies", () => 
     producerVerificationMethod: producer.verification_method as string,
   });
 
-  expect(evidence.transaction_record_hash).toBe(EXPECTED_0_3.record_hash);
-  expect(evidence.record_hash).toBe(EXPECTED_0_3.evidence_record_hash);
+  expect(evidence.transaction_record_hash).toBe(EXPECTED_0_4.record_hash);
+  expect(evidence.record_hash).toBe(EXPECTED_0_4.evidence_record_hash);
   expect(verifySessionEvidenceRecord(evidence, DID_DOCUMENTS)).toBe(true);
 });

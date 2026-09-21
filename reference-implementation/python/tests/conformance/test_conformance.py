@@ -10,6 +10,7 @@ import pytest
 import pytest_asyncio
 
 from a2cn.crypto import generate_keypair, hash_object, sign_jws, create_jwt
+from a2cn.messages import signed_act_hash
 from a2cn.record import generate_transaction_record
 from a2cn.session import SessionManager, SessionState, A2CNError
 from tests.conftest import (
@@ -313,13 +314,6 @@ def test_transaction_record_deterministic():
         ),
     }
 
-    acceptance_payload = {
-        "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": "offer-1",
-        "accepted_protocol_act_hash": _offer_pah,
-    }
     acceptance_msg = {
         "message_type": "acceptance",
         "message_id": "acc-1",
@@ -333,12 +327,13 @@ def test_transaction_record_deterministic():
         "sender_agent_id": "seller-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": sign_jws(
-            hash_object(acceptance_payload),
-            RESPONDER_PRIVATE_KEY,
-            kid=f"{RESPONDER_DID}#key-2026-01",
-        ),
     }
+    # Signed over the act's own envelope (Section 7.3.1).
+    acceptance_msg["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance_msg),
+        RESPONDER_PRIVATE_KEY,
+        kid=f"{RESPONDER_DID}#key-2026-01",
+    )
 
     mgr.process_message(sess, offer_msg)
     mgr.process_message(sess, acceptance_msg)

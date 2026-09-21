@@ -22,6 +22,7 @@ import {
   DisputeNoticeMessage,
   DisputeResolvedMessage,
   FulfillmentAttestation,
+  signedActHash,
   type Dict,
 } from "../src/a2cn/messages.js";
 import {
@@ -366,14 +367,7 @@ async function completeSession(clients: CompletionClients): Promise<[string, str
   expect(r1.statusCode, r1.body).toBe(200);
 
   const accId = randomUUID();
-  const acceptancePayload = {
-    session_id: sessionId,
-    round_number: 1,
-    sequence_number: 2,
-    accepted_offer_id: offerId,
-    accepted_protocol_act_hash: pah,
-  };
-  const acceptance = {
+  const acceptance: Dict = {
     message_type: "acceptance",
     message_id: accId,
     session_id: sessionId,
@@ -386,12 +380,14 @@ async function completeSession(clients: CompletionClients): Promise<[string, str
     sender_agent_id: "test-agent",
     sender_verification_method: `${RESPONDER_DID}#key-2026-01`,
     timestamp: "2026-04-01T10:01:00Z",
-    acceptance_signature: signJws(
-      hashObject(acceptancePayload),
-      responderPrivateKey,
-      `${RESPONDER_DID}#key-2026-01`,
-    ),
   };
+  // Signed over the act's own envelope (Section 7.3.1), built from the very
+  // message that goes on the wire.
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance) as string,
+    responderPrivateKey,
+    `${RESPONDER_DID}#key-2026-01`,
+  );
   const r2 = await responderClient.post(`/sessions/${sessionId}/messages`, {
     json: acceptance,
     headers: h(accId),

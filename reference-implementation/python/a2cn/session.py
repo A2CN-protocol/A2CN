@@ -23,7 +23,12 @@ from a2cn.line_items import (
     line_item_key_violations,
     session_currency_is_supported,
 )
-from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    SIGNED_ACT_SIGNATURE_FIELDS,
+    protocol_act_object,
+    signed_act_hash,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1042,17 +1047,24 @@ class SessionManager:
         # Sequence check
         self._check_sequence(session, message)
 
-        acceptance_payload = {
-            "session_id": message.get("session_id", ""),
-            "round_number": message.get("round_number"),
-            "sequence_number": message.get("sequence_number"),
-            "accepted_offer_id": accepted_offer_id,
-            "accepted_protocol_act_hash": accepted_hash,
-        }
+        # The acceptance's signed act (Section 7.3.1), rebuilt from the message's
+        # own fields by the same primitive the evidence and record verifiers use,
+        # so all three agree on what a signature covers. An acceptance that does
+        # not carry those fields cannot be rebound, and is refused rather than
+        # checked against a payload assembled out of defaults.
+        acceptance_payload_hash = signed_act_hash(message)
+        if acceptance_payload_hash is None:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                "Acceptance does not carry the fields its signature must cover",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
         self._verify_sender_signature(
             session,
             message,
-            payload_hash=hash_object(acceptance_payload),
+            payload_hash=acceptance_payload_hash,
             signature_field="acceptance_signature",
         )
 
@@ -1131,11 +1143,50 @@ class SessionManager:
 
         return session.to_state_dict()
 
+    def _verify_decline_signature(self, session: Session, message: dict) -> None:
+        """Verify a decline's signature when it carries one (Sections 7.5, 7.6).
+
+        Signing a decline is optional: an act carrying no signature is a
+        conformant message and is left alone, to be recorded later as an
+        unsigned observation. Once a signature is present the check is
+        mandatory and nothing about the act's own content can turn it off —
+        including an act that cannot be rebuilt, which is refused rather than
+        skipped. Treating unrebuildable as unsigned would hand an attacker the
+        whole check for the price of deleting one field, while the act still
+        carries a signature and still claims to be signed.
+
+        This runs on handler entry, ahead of the state and sequence guards. A
+        withdrawal is dispatched before the turn and approval guards and its
+        sequence check is conditional, so a check placed after them would miss
+        the shortest path into the handler.
+        """
+        signature_field = SIGNED_ACT_SIGNATURE_FIELDS.get(message.get("message_type", ""))
+        if signature_field is None or not message.get(signature_field):
+            return
+
+        payload_hash = signed_act_hash(message)
+        if payload_hash is None:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"Act does not carry the fields its {signature_field} must cover",
+                400,
+                session_id=session.session_id,
+                message_id=message.get("message_id"),
+            )
+        self._verify_sender_signature(
+            session,
+            message,
+            payload_hash=payload_hash,
+            signature_field=signature_field,
+        )
+
     def _handle_rejection(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
         sender_did = message.get("sender_did", "")
         round_number = message.get("round_number")
         sequence_number = message.get("sequence_number")
+
+        self._verify_decline_signature(session, message)
 
         # State guard: rejection only valid in NEGOTIATING (finding 2.8)
         if session.state != SessionState.NEGOTIATING:
@@ -1178,6 +1229,8 @@ class SessionManager:
     def _handle_withdrawal(self, session: Session, message: dict) -> dict:
         message_id = message.get("message_id", "")
         sequence_number = message.get("sequence_number")
+
+        self._verify_decline_signature(session, message)
 
         # Sequence check for withdrawal (if applicable)
         if sequence_number is not None:

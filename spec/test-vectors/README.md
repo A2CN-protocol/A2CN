@@ -75,12 +75,13 @@ implementations produce now and what earlier ones produced for the same session.
 
 Both suites replay the messages through the session state machine, and build the
 record on the client side from the same messages; both must produce
-`expected.record_version_0_3.full_record` and its `record_hash`, and that record
-must verify. It is a `"0.3"` record because its `final_offer` carries the Section
-7.3.1 act fields, so a verifier rebuilds the signed act from the record — its
-`terms` are `agreed_terms`, its `session_id` the record's — and requires the
-rebuilt hash to equal `final_offer.protocol_act_hash`, which the offer's
-signature already covers (Sections 9.3 and 9.5). Nothing new is signed. It also
+`expected.record_version_0_4.full_record` and its `record_hash`, and that record
+must verify. It is a `"0.4"` record because `final_offer` carries the Section
+7.3.1 act fields **and** `final_acceptance` carries the acceptance's, so a
+verifier rebuilds each signed act from the record — the offer's `terms` are
+`agreed_terms` and its `session_id` the record's; the acceptance's fields are its
+own — and requires each rebuilt hash to equal the hash that act's signature
+covers (Sections 9.3 and 9.5). Neither rebuild reads the other act. It also
 carries a top-level `basis` equal to `agreed_terms.basis`, since the session
 fixed one. Its negatives, each resealed with `record_hash` recomputed, must all
 fail verification: `agreed_terms_tampered_record_hash` sets
@@ -88,12 +89,18 @@ fail verification: `agreed_terms_tampered_record_hash` sets
 where both signatures still verify and only the rebuilt act hash rejects it;
 `basis_flipped_record_hash` sets the top-level `basis` to
 `expected.tampered_basis`; `act_fields_dropped_record_hash` removes every act
-field while the record stays `"0.3"`; and `relabelled_0_2_record_hash` relabels
-it `"0.2"` with its act fields kept, where its basis shape already fits `"0.2"`,
-so only the act fields can be what rejects it. The evidence record sealed over
-the session with `producer_private_jwk` must have
-`expected.record_version_0_3.evidence_record_hash` and verify; an evidence record
-seals whatever TransactionRecord hash its session has.
+field of both acts while the record stays `"0.4"`; and
+`relabelled_0_3_record_hash` relabels it `"0.3"` with its act fields kept, where
+its offer already rebinds, so only the acceptance's fields can be what rejects
+it. The evidence record sealed over the session with `producer_private_jwk` must
+have `expected.record_version_0_4.evidence_record_hash` and verify; an evidence
+record seals whatever TransactionRecord hash its session has.
+
+`expected.record_version_0_3` is the record an implementation that bound only the
+offer produced for this session. It carries the offer's act fields and none of
+the acceptance's, so its acceptance cannot be rebuilt from the record at all, and
+a verifier refuses it as unbound rather than inventing or borrowing the missing
+fields (Section 9.5, step 5).
 
 `expected.record_version_0_2` is the record an implementation that predates the
 act fields produced for the same session, with the bytes and `record_hash` it
@@ -110,14 +117,14 @@ randomized, so they are recorded rather than recomputed.
 
 Its `without_basis` entry is a completed session that fixed no basis.
 `record_version_0_1` is the record an implementation that predates `basis`
-produced for it, and `record_version_0_3` is the record both reference
-implementations produce now: the same fields, plus the act fields in
-`final_offer`, and still no top-level `basis`, because the session fixed none.
+produced for it, and `record_version_0_4` is the record both reference
+implementations produce now: the same fields, plus both acts' fields, and still
+no top-level `basis`, because the session fixed none.
 Both suites replay its messages, and build the record on the client side from
 them, and assert that the record they produce is exactly
-`record_version_0_3.full_record`, with the same bytes and `record_hash`, and that
+`record_version_0_4.full_record`, with the same bytes and `record_hash`, and that
 it verifies; the Python suite also validates it against
-`transaction-record-0.3.schema.json`. `record_version_0_1.full_record` still
+`transaction-record-0.4.schema.json`. `record_version_0_1.full_record` still
 verifies untouched, with the `record_hash` it has always had.
 `without_basis.relabelled_0_2_record_hash` is that `"0.1"` record at
 `record_version` `"0.2"`, resealed; a `"0.2"` record must carry `basis`, so it
@@ -129,7 +136,7 @@ basis that the SessionAck, from a responder that predates `basis`, omitted, so
 the session's basis is unstated (Section 6.4.1). Both suites replay the messages
 with `session_init.session_params.basis` set to each value and the SessionAck
 unchanged, on the server side and on the client side, and assert that the record
-is still exactly `record_version_0_3.full_record` and carries no `basis`, because
+is still exactly `record_version_0_4.full_record` and carries no `basis`, because
 a record's `basis` follows the SessionAck (Section 9.3). No signed act contains
 the SessionInit, so the recorded signatures still verify.
 
@@ -137,20 +144,22 @@ Its `empty_expires_at` entry is a completed session whose round-1 offer omits
 `expires_at`. Neither `expires_at` nor `timestamp` is validated on the wire, and
 a receiver rebuilding the Section 7.3.1 act to check its hash defaults a missing
 one to `""`, so the offer is signed, accepted and recorded with `""` inside the
-signed act. Both suites replay its messages and must produce
-`record_version_0_3.full_record` with its `record_hash`, and that record must
+signed act. That defaulting is the offer path's own rule: an acceptance carries a
+REQUIRED `timestamp`, and one that omits it cannot be rebuilt. Both suites replay
+its messages and must produce
+`record_version_0_4.full_record` with its `record_hash`, and that record must
 **verify**: Section 9.5 step 3 rebuilds the act from the record and compares
 hashes, and a verifier that demanded a non-empty `expires_at` would reject a
 record whose signature genuinely covers those bytes. `act_expires_at` is the
 value the act carried. The block ships `private_jwks` for both parties, so a
 reader can re-sign it; they are test-only fixtures and MUST NOT be used outside
-tests. The record also validates against `transaction-record-0.3.schema.json`,
+tests. The record also validates against `transaction-record-0.4.schema.json`,
 which constrains what a conformant producer emits and therefore permits the
 empty value, while leaving a verifier free to accept the wider range Section 9.5
 step 3 defines.
 
-Its `record_version_0_3_binding` entry holds the cases both suites apply to
-`expected.record_version_0_3.full_record`, so the two implementations read
+Its `record_version_0_4_binding` entry holds the cases both suites apply to
+`expected.record_version_0_4.full_record`, so the two implementations read
 byte-identical JSON and must reach identical verdicts. `act_integer_spellings`
 restate `final_offer.round_number` or `sequence_number`, whose genuine value is
 `2`. RFC 8785 serializes `2.0` and `2` as the same number, so an integral float
@@ -167,16 +176,63 @@ decides.
 
 Its `downgrade_attack` entry is the forgery a verifier must refuse, and the
 reason the accepted set is a single version. Each case starts from
-`expected.record_version_0_3.full_record`, strips the six act fields from
-`final_offer`, relabels the record to a version that predates them, optionally
-alters `agreed_terms`, and recomputes `record_hash`. Both signatures still
-verify and the record keeps the genuine `record_id`, so a verifier that accepted
-an unbound version would report a forgery as genuine. Every case must be
-REJECTED, with `expected_reason` rather than the generic unrecognized-version
-reason. One case is worth reading twice: `stripped-and-relabelled-0.2-terms-untouched`
-has the same `record_hash` as `expected.record_version_0_2.full_record`, so the
-downgrade of an untouched record *is* the historical artifact, byte for byte.
-Accepting one meant accepting the other.
+`expected.record_version_0_4.full_record`, strips the act fields from
+`final_offer` and `final_acceptance`, relabels the record to a version that
+predates them, optionally alters `agreed_terms`, and recomputes `record_hash`.
+Both signatures still verify and the record keeps the genuine `record_id`, so a
+verifier that accepted an unbound version would report a forgery as genuine.
+Every case must be REJECTED, with `expected_reason` rather than the generic
+unrecognized-version reason. `0.4-with-acceptance-act-fields-stripped` is the
+case this version adds: a record whose **offer** still rebinds and whose
+acceptance does not, because half a bound record is not a bound record.
+
+One case is worth reading twice.
+`stripped-and-relabelled-0.2-terms-untouched` and
+`expected.record_version_0_2.full_record` differ in exactly two paths —
+`final_acceptance.acceptance_signature` and the `record_hash` that covers it —
+and in nothing else: no path exists on one side only, and `agreed_terms`,
+`final_offer` in full including its `protocol_act_signature`, `record_id` and
+`record_version` are identical. So the downgrade of an untouched record is the
+historical artifact bar one signature, and an unbound-accepting verifier would
+have nothing that matters to tell them apart by. Accepting one meant accepting
+the other. Both suites assert that differing-path set, with the
+`…-with-altered-terms` case as the control: it must show a third path,
+`agreed_terms.total_value`, so the comparison is known to be sensitive rather
+than blind.
+
+Two properties of this file are worth stating so a later reader does not mistake
+them for damage. **These artifacts are verifiable but not byte-reproducible.**
+ES256 signatures carry a random nonce, so re-running a generator over the same
+session yields different signature values and therefore a different
+`record_hash` every time; the recorded values are the ones to verify against,
+never ones to reproduce. And the **historical `"0.1"`, `"0.2"` and `"0.3"`
+records are now unverifiable, not merely unbound.** The session was re-keyed — a
+private key for the initiator was never stored, so re-signing its acts under the
+changed acceptance scope required minting one — and `did_documents` no longer
+publishes the key those older records were signed with. They never surface it,
+because a verifier refuses them at the version check long before a signature is
+examined, which is exactly what they exist to demonstrate. Re-signing them with
+today's key would make them verify, which is the opposite of their purpose.
+
+`signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
+7.6), which had no in-band signature slot before this version. Each case states
+the act, whether it rebuilds, and — when it does — the `signed_object` its
+signature covers, that object's `canonical_bytes`, and its `signed_act_hash`.
+Stating the signed object outright means a scope change in either implementation
+shows up as a field diff and a byte count, not only as an opaque hash mismatch.
+`header_fields`, `payload_fields` and `signature_fields` restate the envelope, and
+both suites assert them against their own constants, so the vector and the code
+cannot drift apart about the shape itself. `withdrawal_round_number` is the case
+that pins the additive wire change: a Withdrawal that omits `round_number` cannot
+be rebuilt, so it can be neither signed nor verified, and its own schema refuses
+it. `rejection_missing_reason_code` and `unknown_act_type` are the other
+refusals. `unsigned_field_is_not_covered` pins that `reason_description` sits
+outside every signed scope — altering it or removing it leaves the signed act
+byte-identical — because it is OPTIONAL, and signing it would make the signed
+field set depend on whether the sender filled it in. `relabel_cases` relabel one
+decline as the other: a rejection relabelled a withdrawal rebuilds to a different
+hash, while a withdrawal relabelled a rejection cannot rebuild at all, since a
+rejection's payload names `rejected_offer_id`, which a withdrawal does not carry.
 
 `session-evidence-record-extensions.json` covers the Section 9A extensions. Its
 `money_basis_act_basis_cases` apply the Section 9A.9 rule that a `money_basis`
@@ -204,25 +260,40 @@ each record uses and the `"0.2"` schema describes all of them.
 `record-versions.json` lists, for each record artifact, the `record_version`
 values its verifier accepts and the values it must reject. The two artifacts are
 kept apart, because each versions its own shape, and one artifact's rules never
-decide the other's. A TransactionRecord verifier accepts `"0.3"` alone: the
-version whose `final_offer` carries the Section 7.3.1 act fields, so the record
-can be rebound to the offering party's signature from the record alone.
+decide the other's. A TransactionRecord verifier accepts `"0.4"` alone: the
+version whose `final_offer` carries the Section 7.3.1 act fields **and** whose
+`final_acceptance` carries the acceptance's, so both acts rebind from the record
+alone, each from its own stored fields.
 `transaction_record.unbound` holds the versions this implementation knows but
-cannot rebind — `"0.1"`, `"0.2"`, and a `"0.3"` whose act fields are missing —
-each rejected with `unbound_reason` rather than the generic `unrecognized_reason`
-that `transaction_record.rejected` gets, since those values are no version at
-all. A SessionEvidenceRecord is untouched by that rule: it accepts `"0.1"`,
-`"0.2"` and `"0.3"`, where `"0.3"` is the record that carries
-`external_commitment_reference` (Section 9A.2), and rejects `"0.4"`.
+cannot rebind — `"0.1"`, `"0.2"`, `"0.3"`, and a `"0.4"` whose act fields are
+missing — each rejected with `unbound_reason` rather than the generic
+`unrecognized_reason` that `transaction_record.rejected` gets, since those values
+are no version at all. `"0.3"` is refused for the same reason `"0.2"` is, one act
+later: it bound its offer and stored none of the acceptance's act fields. A SessionEvidenceRecord is untouched by that rule: it accepts `"0.1"`,
+`"0.2"`, `"0.3"` and `"0.4"`, and rejects `"0.5"`. That set is **additive** —
+`"0.4"` was added and none removed — so a record sealed under an earlier version
+stays valid. This is deliberately the opposite of the TransactionRecord's clean
+break above: every evidence record is producer-sealed, so there is no unbound
+tier for a relabelled record to be downgraded to.
 `producers_emit` is the version each producer writes: one value for every
 TransactionRecord, since every record the reference implementations produce
-carries the act fields, and a per-shape value for the SessionEvidenceRecord. The
-AuditLog carries its version in `log_version`.
+carries the act fields, and — since `"0.4"` — one value for the
+SessionEvidenceRecord too. The two-key map is kept rather than flattened so that
+both shapes are *asserted* to emit the same version instead of that being
+assumed. The AuditLog carries its version in `log_version`.
 
-Each artifact's `shapes` (TransactionRecord) or accepted `shape` names
-(SessionEvidenceRecord) say which record each case is applied to. The three
-TransactionRecord shapes come from `transaction-record-basis.json`: `"0.3"` is
-the record its basis session replays to, `"0.2"` is
+Each artifact's `shapes` (TransactionRecord) or per-case `shape` names
+(SessionEvidenceRecord) say which record each case is applied to. Every
+SessionEvidenceRecord case carries its own `shape` — in `accepted`,
+`additional_accepted_shapes` and `cross_shape` alike — because from `"0.4"` a
+version no longer picks out a single shape: `"0.4"` appears with
+`without_external_commitment` in `accepted` and with `with_external_commitment`
+in `additional_accepted_shapes`. The mapping is one-to-many from that version on,
+so the `shape` named on the case, never the version, decides which record is
+used. The four
+TransactionRecord shapes come from `transaction-record-basis.json`: `"0.4"` is
+the record its basis session replays to, `"0.3"` is
+`expected.record_version_0_3.full_record`, `"0.2"` is
 `expected.record_version_0_2.full_record`, and `"0.1"` is
 `without_basis.record_version_0_1.full_record`. The SessionEvidenceRecord shapes
 are the record `session-evidence-record-parity.json` produces (without the
@@ -230,9 +301,16 @@ reference) and the one `session-evidence-record-external-channel.json` produces
 (with it). Both suites set each value on a record of each shape of each
 artifact, recompute `record_hash` and, for an evidence record, the producer
 seal, and assert the verdict. Each accepted version verifies on a shape that
-carries it, and each `cross_shape` case puts a recognized version on another
-shape of the same artifact and fails. Every value in an artifact's `rejected`
-list fails on every shape of that artifact, instead of being parsed best-effort
+carries it. Each `cross_shape` case puts a recognized version on another shape of
+the same artifact and fails — for the SessionEvidenceRecord that biconditional
+governs only *below* `"0.4"`, where a version and a shape still imply each other.
+At `"0.4"` the external commitment reference is OPTIONAL, so both shapes are
+legal at that one version and the combination is no longer a violation;
+`session_evidence_record.additional_accepted_shapes` records the accepted
+version/shape pairs that `accepted` cannot express, because `accepted` is
+simultaneously the ordered version list a verifier's recognizer must equal and so
+carries only one row per version. Every value in an artifact's `rejected` list
+fails on every shape of that artifact, instead of being parsed best-effort
 (Sections 9.5 and 9A.6).
 
 `session-evidence-record-external-channel.json` covers Section 9A.12: a

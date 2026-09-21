@@ -4,13 +4,16 @@
  * spec/test-vectors/record-versions.json lists them per artifact, because each
  * versions its own shape. Both suites reseal a valid record of each shape of
  * each artifact with each value and must reach the same verdict. A
- * TransactionRecord verifier accepts "0.3" alone: the version whose final_offer
- * carries the Section 7.3.1 act fields, so the record can be rebound to the
- * offering party's signature (Section 9.5, step 1). A version it knows but
+ * TransactionRecord verifier accepts "0.4" alone: the version whose final_offer
+ * and final_acceptance each carry their signed act's fields, so both acts rebind
+ * from the record alone, each from its own stored fields (Section 9.5). A
+ * version it knows but
  * cannot rebind is unbound; anything else is unrecognized. A "0.3"
- * SessionEvidenceRecord carries external_commitment_reference and no other
- * version does (Section 9A.2); that artifact is unaffected by the
- * TransactionRecord's rule and keeps its own set.
+ * SessionEvidenceRecord carries external_commitment_reference; at "0.4", the
+ * version every producer now emits, that reference is OPTIONAL, so both shapes
+ * are legal at one version (Section 9A.2). That artifact is unaffected by the
+ * TransactionRecord's rule and keeps its own set, which is additive: a record
+ * sealed under an earlier version stays valid.
  */
 
 import { readFileSync } from "node:fs";
@@ -60,6 +63,7 @@ const SHAPE_VECTOR: Record<string, Dict> = {
   "0.1": WITHOUT_BASIS,
   "0.2": TR_VECTOR,
   "0.3": TR_VECTOR,
+  "0.4": TR_VECTOR,
 };
 const TR_EMITTED = (RECORD_VERSIONS.producers_emit as Dict).transaction_record as string;
 
@@ -103,6 +107,18 @@ const SER_CASES: [string, string, Dict, boolean][] = [
     accepted,
     true,
   ]),
+  // accepted carries one row per version, because it is also the ordered version
+  // list the recognizer must equal. "0.4" is the first version at which both
+  // shapes are legal, so the accepted combination it cannot express lives beside
+  // it rather than in cross_shape, which means violation.
+  ...(SER_VERSIONS.additional_accepted_shapes as Dict[]).map(
+    (extra): [string, string, Dict, boolean] => [
+      extra.name as string,
+      extra.shape as string,
+      extra,
+      true,
+    ],
+  ),
   ...(SER_VERSIONS.cross_shape as Dict[]).map((crossShape): [string, string, Dict, boolean] => [
     crossShape.name as string,
     crossShape.shape as string,
@@ -159,13 +175,19 @@ function transactionRecordSession(vector: Dict): Session {
 }
 
 /**
- * A valid TransactionRecord whose content fits `version`. "0.3" is what this
- * implementation produces; "0.2" and "0.1" are the records earlier
- * implementations produced for the same two sessions.
+ * A valid TransactionRecord whose content fits `version`. "0.4" is what this
+ * implementation produces; "0.3", "0.2" and "0.1" are the records earlier
+ * implementations produced for the same two sessions, kept in the vector so a
+ * case can assert what a verifier now does with each of them.
  */
 function shapedRecord(version: string): Dict {
-  if (version === "0.3") {
+  if (version === "0.4") {
     return generateTransactionRecord(transactionRecordSession(TR_VECTOR));
+  }
+  if (version === "0.3") {
+    return structuredClone(
+      ((TR_VECTOR.expected as Dict).record_version_0_3 as Dict).full_record as Dict,
+    );
   }
   if (version === "0.2") {
     return structuredClone(
@@ -266,8 +288,8 @@ test.each([
   ["with basis", TR_VECTOR],
   ["without basis", WITHOUT_BASIS],
 ] as [string, Dict][])("producers emit the transaction record version: %s", (_name, vector) => {
-  // Every record this implementation produces carries the act fields, so every
-  // one is "0.3", whether or not the session fixed a basis (Section 9.3).
+  // Every record this implementation produces carries both acts' fields, so
+  // every one is "0.4", whether or not the session fixed a basis (Section 9.3).
   expect(TR_VERSIONS.accepted).toContain(TR_EMITTED);
   expect(generateTransactionRecord(transactionRecordSession(vector)).record_version).toBe(
     TR_EMITTED,
@@ -309,15 +331,20 @@ test("each verifier accepts exactly the versions the vector accepts", () => {
 
 test("each artifact's version set is its own", () => {
   // "0.3" means a different thing to each artifact, and neither set is merged.
-  // For the TransactionRecord it is the record whose final_offer carries the act
-  // fields, and the only version a verifier accepts (Section 9.3); for the
-  // SessionEvidenceRecord it is the record that carries
-  // external_commitment_reference, one of three it accepts (Section 9A.2). One
+  // For the TransactionRecord it is one of three versions it no longer accepts
+  // (Section 9.3); for the SessionEvidenceRecord it is the record that carries
+  // external_commitment_reference, one of four it accepts (Section 9A.2). One
   // artifact's rules never decide the other's.
-  expect(TR_VERSIONS.accepted).toEqual(["0.3"]);
+  //
+  // Each accepted list is asserted against its implementation's own recognizer
+  // in "each verifier accepts exactly the versions the vector accepts".
+  // Restating the literals here would be a second copy of the same list, free
+  // to drift.
   const serAccepted = (SER_VERSIONS.accepted as Dict[]).map((entry) => entry.record_version);
-  expect(serAccepted).toEqual(["0.1", "0.2", "0.3"]);
-  expect(SER_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.4" });
+  // Not redundant with the parametrized rejected cases: those assert that every
+  // entry in the list fails, which passes vacuously if the list is emptied.
+  // This membership assertion is what keeps the list non-empty.
+  expect(SER_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.5" });
   // The versions the TransactionRecord refuses as unbound are still accepted by
   // the evidence record, which is the point of keeping the two sets apart.
   const unbound = (TR_VERSIONS.unbound as Dict[]).map((entry) => entry.record_version);

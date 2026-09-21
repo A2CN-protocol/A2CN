@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/acceptance/0.2",
+  "title": "A2CN Acceptance",
+  "description": "The Section 7.4 act that accepts a specific offer. It carries no terms: the offer it accepts was already checked, and accepted_protocol_act_hash binds the acceptance to that offer's signed protocol act. acceptance_signature covers the signed act object of Section 7.3.1 — the common header plus this act's payload, accepted_offer_id and accepted_protocol_act_hash — and NOT the whole message: message_id, in_reply_to and sender_agent_id are outside the signed scope. The message object stays open so vendor fields pass through.",
+  "type": "object",
+  "required": [
+    "message_type",
+    "message_id",
+    "session_id",
+    "round_number",
+    "sequence_number",
+    "accepted_offer_id",
+    "accepted_protocol_act_hash",
+    "sender_did",
+    "sender_verification_method",
+    "timestamp",
+    "acceptance_signature"
+  ],
+  "properties": {
+    "message_type": {
+      "type": "string",
+      "const": "acceptance"
+    },
+    "message_id": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string", "minLength": 1 },
+    "in_reply_to": {
+      "type": "string",
+      "description": "The message_id of the offer or counteroffer being accepted (Section 7.4)."
+    },
+    "round_number": { "type": "integer", "minimum": 1 },
+    "sequence_number": { "type": "integer", "minimum": 1 },
+    "accepted_offer_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The message_id of the accepted offer or counteroffer."
+    },
+    "accepted_protocol_act_hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "MUST equal the protocol_act_hash of the accepted offer (Section 7.4)."
+    },
+    "sender_did": { "type": "string", "pattern": "^did:" },
+    "sender_agent_id": { "type": "string" },
+    "sender_verification_method": {
+      "type": "string",
+      "minLength": 1,
+      "description": "DID URL of the verification method used to sign this message (Section 7.4)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Inside the signed scope (Section 7.3.1): the acceptance's own timestamp, not the offer's."
+    },
+    "protocol_version": {
+      "type": "string",
+      "description": "Not carried on the wire by this implementation. A verifier rebuilding the signed act uses its own wire version unless the act states one (Section 7.3.1)."
+    },
+    "acceptance_signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
+    }
+  }
+}

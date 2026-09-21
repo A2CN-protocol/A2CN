@@ -6,6 +6,8 @@
  * omitting null/undefined fields (optional fields that were not set).
  */
 
+import { hashObject } from "./crypto.js";
+
 export type Dict = Record<string, unknown>;
 
 /** Recursively remove null/undefined values from a dict. */
@@ -40,10 +42,10 @@ export function dropNone(d: Dict): Dict {
 export const PROTOCOL_ACT_VERSION = "0.2";
 
 /**
- * The protocol act object's fields, in the order Section 7.3.1 lists them. JCS
- * sorts keys before hashing, so the order is for readers.
+ * The header every signed act carries, whatever its type, in the order Section
+ * 7.3.1 lists them. JCS sorts keys before hashing, so the order is for readers.
  */
-export const PROTOCOL_ACT_FIELDS: readonly string[] = [
+export const SIGNED_ACT_HEADER_FIELDS: readonly string[] = [
   "protocol_version",
   "session_id",
   "round_number",
@@ -51,18 +53,130 @@ export const PROTOCOL_ACT_FIELDS: readonly string[] = [
   "message_type",
   "sender_did",
   "timestamp",
-  "expires_at",
-  "terms",
 ];
+
+/**
+ * What each act type signs beside the header. expires_at belongs to the offer
+ * and counteroffer rather than to the header: an acceptance, rejection or
+ * withdrawal has no deadline of its own, and putting it in the header would
+ * make all three sign an empty string as a stand-in for one. Keeping it here
+ * also leaves the offer's signed object exactly the nine flat keys it has
+ * always had, so no stored record's protocol_act_hash moves.
+ */
+export const SIGNED_ACT_PAYLOAD_FIELDS: Record<string, readonly string[]> = {
+  offer: ["expires_at", "terms"],
+  counteroffer: ["expires_at", "terms"],
+  acceptance: ["accepted_offer_id", "accepted_protocol_act_hash"],
+  rejection: ["rejected_offer_id", "reason_code"],
+  withdrawal: ["reason_code"],
+};
+
+/**
+ * The field each act type carries its signature in. Offer and counteroffer
+ * share one, because they are one act under two names. Rejection and withdrawal
+ * get their own rather than reusing another type's: a signature field that
+ * means one act type is what lets a verifier refuse an act relabelled as
+ * another, because the rebuild then demands the type the signature was made
+ * under.
+ */
+export const SIGNED_ACT_SIGNATURE_FIELDS: Record<string, string> = {
+  offer: "protocol_act_signature",
+  counteroffer: "protocol_act_signature",
+  acceptance: "acceptance_signature",
+  rejection: "rejection_signature",
+  withdrawal: "withdrawal_signature",
+};
+
+/**
+ * The offer's signed object, still named for readers of Section 7.3.1: the
+ * common header followed by the offer's own payload.
+ */
+export const PROTOCOL_ACT_FIELDS: readonly string[] = [
+  ...SIGNED_ACT_HEADER_FIELDS,
+  ...SIGNED_ACT_PAYLOAD_FIELDS.offer,
+];
+
+// The covered fields that are numbers, and the one that is an object. Every
+// other covered field is a string.
+const ACT_INTEGER_FIELDS = new Set(["round_number", "sequence_number"]);
+const ACT_OBJECT_FIELDS = new Set(["terms"]);
+
+/**
+ * The offer path's own rule: a missing timestamp or expires_at rebuilds as "".
+ * Neither is validated on the wire, and both state machines have always rebuilt
+ * an offer's act that way, so an offer that omits one is signed over "" and is
+ * recorded that way (Section 9.5). Demanding more would refuse an act whose
+ * signature genuinely covers those bytes.
+ *
+ * This belongs to offer and counteroffer alone. An acceptance carries a REQUIRED
+ * timestamp of its own, so defaulting one for it would let an acceptance sign
+ * the empty filler that moving expires_at out of the header exists to prevent.
+ */
+const OFFER_DEFAULTED_FIELDS: ReadonlySet<string> = new Set(["timestamp", "expires_at"]);
+const NO_DEFAULTED_FIELDS: ReadonlySet<string> = new Set();
+
+function hasOwnField(obj: Dict, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function isJsonObject(value: unknown): value is Dict {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * An integral JSON number, as an act's round and sequence numbers are.
+ *
+ * RFC 8785 serializes 2.0 and 2 as the same number, so the two are one signed
+ * act in different JSON spellings and must be judged alike. typeof excludes a
+ * boolean here; Python must exclude it explicitly, so the two implementations
+ * reach the same verdict.
+ */
+export function isActInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+/**
+ * The flat object a signed act's signature covers (Section 7.3.1).
+ *
+ * One envelope for all five act types: the common header, then the type's own
+ * payload, every field at the top level. Flat rather than nested, because a
+ * nested payload would add a level and bytes to the offer's signed object and
+ * so could never reproduce the hash the offer's signature already covers.
+ *
+ * Every value is the caller's, and nothing is defaulted here, so each caller
+ * keeps its own handling of an absent field.
+ */
+export function signedActObject(act: {
+  protocol_version: string;
+  session_id: unknown;
+  round_number: unknown;
+  sequence_number: unknown;
+  message_type: unknown;
+  sender_did: unknown;
+  timestamp: unknown;
+  payload: Dict;
+}): Dict {
+  return {
+    protocol_version: act.protocol_version,
+    session_id: act.session_id,
+    round_number: act.round_number,
+    sequence_number: act.sequence_number,
+    message_type: act.message_type,
+    sender_did: act.sender_did,
+    timestamp: act.timestamp,
+    ...act.payload,
+  };
+}
 
 /**
  * The object a protocol_act_signature covers (Section 7.3.1).
  *
- * One definition for every site that builds it: a client signing an offer, the
- * state machine checking one it received, the evidence record rebuilding an act
- * it holds, and the TransactionRecord rebuilding the act from the record
- * (Section 9.5). Every value is the caller's, and nothing is defaulted here, so
- * each caller keeps its own handling of an absent field.
+ * The offer and counteroffer's envelope, named for the sites that build it: a
+ * client signing an offer, the state machine checking one it received, the
+ * evidence record rebuilding an act it holds, and the TransactionRecord
+ * rebuilding the act from the record (Section 9.5). It is the envelope with the
+ * offer's payload, not a second recipe beside it — which is what keeps the
+ * offer's signed bytes identical without a legacy branch to maintain.
  */
 export function protocolActObject(act: {
   protocol_version: string;
@@ -75,7 +189,7 @@ export function protocolActObject(act: {
   expires_at: unknown;
   terms: unknown;
 }): Dict {
-  return {
+  return signedActObject({
     protocol_version: act.protocol_version,
     session_id: act.session_id,
     round_number: act.round_number,
@@ -83,9 +197,87 @@ export function protocolActObject(act: {
     message_type: act.message_type,
     sender_did: act.sender_did,
     timestamp: act.timestamp,
-    expires_at: act.expires_at,
-    terms: act.terms,
-  };
+    payload: { expires_at: act.expires_at, terms: act.terms },
+  });
+}
+
+/**
+ * Rebuild the object an act's signature covers, from the act's own fields.
+ *
+ * The shared verify primitive: a caller hashes what this returns and requires
+ * the act's signature to be over that hash. Returns null when the act cannot be
+ * rebuilt — an act type the envelope does not name, or a covered field that is
+ * missing or of a type that cannot be canonicalized — so an act that cannot be
+ * rebound is refused rather than hashed best-effort over a filled-in blank.
+ *
+ * The rebuild is gated on nothing. No record_version, schema version or field
+ * presence decides whether it runs, and an act carrying members the envelope
+ * does not name still rebuilds from the ones it does: a verifier must never
+ * read a label and skip the binding check.
+ *
+ * protocol_version is the one covered field an act may omit. A wire message
+ * does not carry one (Section 7.1) — the act states the wire version — so an
+ * act without it is rebuilt under this implementation's version, and one that
+ * carries it under its own, so an act produced under a later wire version still
+ * recomputes.
+ *
+ * Values are constrained only so far as the act can be canonicalized from them.
+ * An empty string is rebuilt as it stands, because the hash comparison, not a
+ * field's length, is what decides: an offer may genuinely be signed over an
+ * empty timestamp or expires_at (Section 9.5), and demanding more here would
+ * refuse an act whose signature covers exactly those bytes.
+ */
+export function rebuildSignedAct(act: unknown): Dict | null {
+  if (!isJsonObject(act)) {
+    return null;
+  }
+  const messageType = act.message_type;
+  if (typeof messageType !== "string") {
+    return null;
+  }
+  const payloadFields: readonly string[] | undefined = SIGNED_ACT_PAYLOAD_FIELDS[messageType];
+  if (payloadFields === undefined) {
+    return null;
+  }
+
+  const defaultedFields =
+    messageType === "offer" || messageType === "counteroffer"
+      ? OFFER_DEFAULTED_FIELDS
+      : NO_DEFAULTED_FIELDS;
+  const rebuilt: Dict = {};
+  for (const name of [...SIGNED_ACT_HEADER_FIELDS, ...payloadFields]) {
+    if (name === "protocol_version" && !hasOwnField(act, name)) {
+      rebuilt[name] = PROTOCOL_ACT_VERSION;
+      continue;
+    }
+    if (!hasOwnField(act, name)) {
+      if (defaultedFields.has(name)) {
+        rebuilt[name] = "";
+        continue;
+      }
+      return null;
+    }
+    const value = act[name];
+    if (ACT_INTEGER_FIELDS.has(name)) {
+      if (!isActInteger(value)) {
+        return null;
+      }
+    } else if (ACT_OBJECT_FIELDS.has(name)) {
+      if (!isJsonObject(value)) {
+        return null;
+      }
+    } else if (typeof value !== "string") {
+      return null;
+    }
+    rebuilt[name] = value;
+  }
+  return rebuilt;
+}
+
+/** The hash an act's signature must be over, or null if it cannot be rebuilt. */
+export function signedActHash(act: unknown): string | null {
+  const rebuilt = rebuildSignedAct(act);
+  return rebuilt === null ? null : hashObject(rebuilt);
 }
 
 // ---------------------------------------------------------------------------
@@ -579,15 +771,28 @@ export class Acceptance {
     };
   }
 
-  /** The object signed to produce acceptance_signature (Section 7.4). */
+  /**
+   * The object signed to produce acceptance_signature (Section 7.3.1).
+   *
+   * The acceptance's envelope: the common header plus its own payload, the
+   * offer it accepts and that offer's act hash. It is the envelope with the
+   * acceptance's payload, not a second recipe beside it — the same arrangement
+   * protocolActObject has for the offer.
+   */
   acceptancePayload(): Dict {
-    return {
+    return signedActObject({
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_id: this.session_id,
       round_number: this.round_number,
       sequence_number: this.sequence_number,
-      accepted_offer_id: this.accepted_offer_id,
-      accepted_protocol_act_hash: this.accepted_protocol_act_hash,
-    };
+      message_type: this.message_type,
+      sender_did: this.sender_did,
+      timestamp: this.timestamp,
+      payload: {
+        accepted_offer_id: this.accepted_offer_id,
+        accepted_protocol_act_hash: this.accepted_protocol_act_hash,
+      },
+    });
   }
 }
 

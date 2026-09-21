@@ -17,7 +17,12 @@ from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
 from a2cn.did import get_public_key, get_verification_method
-from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    _is_act_integer,
+    protocol_act_object,
+    rebuild_signed_act,
+)
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
 # A2CN namespace UUID for record_id (UUID v5) — Appendix A
@@ -32,10 +37,16 @@ A2CN_NAMESPACE = uuid.UUID("f4a2c1e0-8b3d-4f7a-9c2e-1d5b6a8f3e7c")
 TRANSACTION_RECORD_VERSION_WITHOUT_BASIS = "0.1"
 TRANSACTION_RECORD_VERSION_WITH_BASIS = "0.2"
 TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT = "0.3"
+# "0.4" is the version whose final_acceptance carries the fields the
+# acceptance's own signature covers, so both sides of the record rebind from the
+# record alone. A "0.3" record cannot: the acceptance's signed scope is the
+# Section 7.3.1 envelope, and "0.3" stored none of protocol_version,
+# message_type or timestamp, leaving a verifier to invent or borrow them.
+TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE = "0.4"
 AUDIT_LOG_VERSION = "0.1"
 # The record shapes this implementation knows, which is what the published
 # schema files describe. Knowing a shape is not accepting it.
-KNOWN_TRANSACTION_RECORD_VERSIONS = ("0.1", "0.2", "0.3")
+KNOWN_TRANSACTION_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4")
 # The versions a verifier accepts (Section 9.5 step 1): only the bound one, the
 # version whose final_offer carries the act fields, so the record can be rebound
 # to the offering party's signature from the record alone. record_version is
@@ -43,7 +54,7 @@ KNOWN_TRANSACTION_RECORD_VERSIONS = ("0.1", "0.2", "0.3")
 # rather than trusting the label; accepting an unbound version would let a
 # presenter strip the act fields, relabel the record and alter agreed_terms with
 # both signatures still verifying.
-ACCEPTED_TRANSACTION_RECORD_VERSIONS = (TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,)
+ACCEPTED_TRANSACTION_RECORD_VERSIONS = (TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,)
 
 # Why a record failed (Section 9.5). verify_transaction_record returns a bool;
 # verify_transaction_record_reason returns one of these, or None when the record
@@ -73,6 +84,19 @@ FINAL_OFFER_ACT_FIELDS = (
     "message_type",
     "timestamp",
     "expires_at",
+)
+
+# The act fields final_acceptance carries beyond those it always held, so the
+# acceptance's signed object can be rebuilt from the record alone. It already
+# carried round_number, sequence_number, accepted_offer_id,
+# accepted_protocol_act_hash and sender_did; session_id is at the record's top
+# level. These three are what the envelope added to the acceptance's signed
+# scope and the record did not store, and carrying them is what makes the
+# acceptance bound rather than merely present.
+FINAL_ACCEPTANCE_ACT_FIELDS = (
+    "protocol_version",
+    "message_type",
+    "timestamp",
 )
 
 
@@ -123,9 +147,9 @@ def generate_transaction_record(session: Session) -> dict:
 
     record: dict = {
         "record_type": "a2cn_transaction_record",
-        # Every record this implementation produces carries the act fields, so
-        # every one is "0.3" (Section 9.3).
-        "record_version": TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+        # Every record this implementation produces carries both acts' fields,
+        # so every one is "0.4" (Section 9.3).
+        "record_version": TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
         "record_id": record_id,
         "session_id": session.session_id,
         "generated_at": generated_at,
@@ -175,11 +199,18 @@ def generate_transaction_record(session: Session) -> dict:
             "protocol_act_hash": final_offer.get("protocol_act_hash", ""),
             "protocol_act_signature": final_offer.get("protocol_act_signature", ""),
         },
+        # The acceptance's signed act, beside its hash-bearing fields. An
+        # acceptance message carries no protocol_version of its own, so the
+        # record states the wire version its signer hashed the act under, as
+        # final_offer already does.
         "final_acceptance": {
             "message_id": final_acceptance.get("message_id", ""),
+            "protocol_version": PROTOCOL_ACT_VERSION,
+            "message_type": final_acceptance.get("message_type", ""),
             "sender_did": final_acceptance.get("sender_did", ""),
             "round_number": final_acceptance.get("round_number"),
             "sequence_number": final_acceptance.get("sequence_number"),
+            "timestamp": final_acceptance.get("timestamp", ""),
             "accepted_offer_id": final_acceptance.get("accepted_offer_id", ""),
             "accepted_protocol_act_hash": final_acceptance.get("accepted_protocol_act_hash", ""),
             "acceptance_signature": final_acceptance.get("acceptance_signature", ""),
@@ -218,22 +249,6 @@ def _record_version_reason(record: dict) -> str | None:
     if isinstance(version, str) and version in KNOWN_TRANSACTION_RECORD_VERSIONS:
         return REASON_UNBOUND_RECORD_VERSION
     return REASON_UNRECOGNIZED_RECORD_VERSION
-
-
-def _is_act_integer(value: object) -> bool:
-    """An integral JSON number, as the act's round and sequence numbers are.
-
-    RFC 8785 serializes 2.0 and 2 as the same number, so the two are one signed
-    act in different JSON spellings and must be judged alike: a parser that hands
-    back a float where another hands back an int must not change the verdict. A
-    bool is an int in Python but is not a number in JSON, so it is excluded here;
-    TypeScript's typeof excludes it on its own.
-    """
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, int):
-        return True
-    return isinstance(value, float) and value.is_integer()
 
 
 def _final_offer_act_hash(record: dict) -> str | None:
@@ -288,17 +303,48 @@ def _final_offer_act_hash(record: dict) -> str | None:
     )
 
 
+def _final_acceptance_act(record: dict) -> dict | None:
+    """Rebuild the acceptance's Section 7.3.1 act from the record alone.
+
+    Reads final_acceptance and the record's session_id, and nothing else. It
+    never reads final_offer: an acceptance that can only be rebuilt by borrowing
+    another act's values is not bound by its own signature, and substituting one
+    is not a shortcut but the defect — an empty string and then the offer's
+    timestamp each produced a plausible, wrong hash before this version existed.
+    """
+    final_acceptance = record.get("final_acceptance")
+    if not isinstance(final_acceptance, dict):
+        return None
+    return rebuild_signed_act(
+        {
+            "protocol_version": final_acceptance.get("protocol_version"),
+            "session_id": record.get("session_id"),
+            "round_number": final_acceptance.get("round_number"),
+            "sequence_number": final_acceptance.get("sequence_number"),
+            "message_type": final_acceptance.get("message_type"),
+            "sender_did": final_acceptance.get("sender_did"),
+            "timestamp": final_acceptance.get("timestamp"),
+            "accepted_offer_id": final_acceptance.get("accepted_offer_id"),
+            "accepted_protocol_act_hash": final_acceptance.get("accepted_protocol_act_hash"),
+        }
+    )
+
+
 def _record_carries_act_fields(record: dict) -> bool:
     """Whether the record carries every Section 7.3.1 act field to rebuild from.
 
     A record that does not is unbound: there is nothing to rebind it to, whether
     because it is an older shape or because a presenter stripped the fields and
-    relabelled it. Presence is by key.
+    relabelled it. Presence is by key, and both acts must be rebuildable — a
+    record that binds its offer but not its acceptance is half a proof.
     """
     final_offer = record.get("final_offer")
-    if not isinstance(final_offer, dict):
+    final_acceptance = record.get("final_acceptance")
+    if not isinstance(final_offer, dict) or not isinstance(final_acceptance, dict):
         return False
-    return all(name in final_offer for name in FINAL_OFFER_ACT_FIELDS)
+    if not all(name in final_offer for name in FINAL_OFFER_ACT_FIELDS):
+        return False
+    return all(name in final_acceptance for name in FINAL_ACCEPTANCE_ACT_FIELDS)
 
 
 def _record_act_is_bound(record: dict) -> bool:
@@ -440,18 +486,15 @@ def verify_transaction_record_reason(
         ):
             return REASON_OFFER_SIGNATURE_INVALID
 
+        acceptance_act = _final_acceptance_act(record)
+        if acceptance_act is None:
+            return REASON_UNBOUND_RECORD_VERSION
         if not _verify_record_signature(
             did_resolver,
             record,
             did=final_acceptance["sender_did"],
             signature=final_acceptance["acceptance_signature"],
-            expected_payload=hash_object({
-                "session_id": record["session_id"],
-                "round_number": final_acceptance["round_number"],
-                "sequence_number": final_acceptance["sequence_number"],
-                "accepted_offer_id": final_acceptance["accepted_offer_id"],
-                "accepted_protocol_act_hash": accepted_hash,
-            }),
+            expected_payload=hash_object(acceptance_act),
         ):
             return REASON_ACCEPTANCE_SIGNATURE_INVALID
 

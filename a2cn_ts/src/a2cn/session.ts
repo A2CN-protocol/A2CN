@@ -17,7 +17,13 @@ import {
   lineItemKeyViolations,
   sessionCurrencyIsSupported,
 } from "./line_items.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  protocolActObject,
+  signedActHash,
+  type Dict,
+} from "./messages.js";
 
 // Re-exported: see the note beside their old home further down this file.
 export { A2CNError, now };
@@ -1033,14 +1039,21 @@ export class SessionManager {
     // Sequence check
     this.checkSequence(session, message);
 
-    const acceptancePayload = {
-      session_id: (message.session_id as string) ?? "",
-      round_number: message.round_number,
-      sequence_number: message.sequence_number,
-      accepted_offer_id: acceptedOfferId,
-      accepted_protocol_act_hash: acceptedHash,
-    };
-    this.verifySenderSignature(session, message, hashObject(acceptancePayload), "acceptance_signature");
+    // The acceptance's signed act (Section 7.3.1), rebuilt from the message's
+    // own fields by the same primitive the evidence and record verifiers use, so
+    // all three agree on what a signature covers. An acceptance that does not
+    // carry those fields cannot be rebound, and is refused rather than checked
+    // against a payload assembled out of defaults.
+    const acceptancePayloadHash = signedActHash(message);
+    if (acceptancePayloadHash === null) {
+      throw new A2CNError(
+        "INVALID_SIGNATURE",
+        "Acceptance does not carry the fields its signature must cover",
+        400,
+        { sessionId: session.session_id, messageId },
+      );
+    }
+    this.verifySenderSignature(session, message, acceptancePayloadHash, "acceptance_signature");
 
     // Offer hash match
     if (acceptedOfferId !== session.latest_offer_id) {
@@ -1110,10 +1123,50 @@ export class SessionManager {
     return session.toStateDict();
   }
 
+  /**
+   * Verify a decline's signature when it carries one (Sections 7.5, 7.6).
+   *
+   * Signing a decline is optional: an act carrying no signature is a
+   * conformant message and is left alone, to be recorded later as an unsigned
+   * observation. Once a signature is present the check is mandatory and
+   * nothing about the act's own content can turn it off — including an act
+   * that cannot be rebuilt, which is refused rather than skipped. Treating
+   * unrebuildable as unsigned would hand an attacker the whole check for the
+   * price of deleting one field, while the act still carries a signature and
+   * still claims to be signed.
+   *
+   * This runs on handler entry, ahead of the state and sequence guards. A
+   * withdrawal is dispatched before the turn and approval guards and its
+   * sequence check is conditional, so a check placed after them would miss the
+   * shortest path into the handler.
+   */
+  private verifyDeclineSignature(session: Session, message: Dict): void {
+    const signatureField = SIGNED_ACT_SIGNATURE_FIELDS[message.message_type as string];
+    if (signatureField === undefined || !message[signatureField]) {
+      return;
+    }
+
+    const payloadHash = signedActHash(message);
+    if (payloadHash === null) {
+      throw new A2CNError(
+        "INVALID_SIGNATURE",
+        `Act does not carry the fields its ${signatureField} must cover`,
+        400,
+        {
+          sessionId: session.session_id,
+          messageId: message.message_id as string | undefined,
+        },
+      );
+    }
+    this.verifySenderSignature(session, message, payloadHash, signatureField);
+  }
+
   private handleRejection(session: Session, message: Dict): Dict {
     const messageId = (message.message_id as string) ?? "";
     const senderDid = (message.sender_did as string) ?? "";
     const sequenceNumber = message.sequence_number as number;
+
+    this.verifyDeclineSignature(session, message);
 
     // State guard: rejection only valid in NEGOTIATING (finding 2.8)
     if (session.state !== SessionState.NEGOTIATING) {
@@ -1156,6 +1209,8 @@ export class SessionManager {
   private handleWithdrawal(session: Session, message: Dict): Dict {
     const messageId = (message.message_id as string) ?? "";
     const sequenceNumber = message.sequence_number as number | undefined;
+
+    this.verifyDeclineSignature(session, message);
 
     // Sequence check for withdrawal (if applicable)
     if (sequenceNumber !== undefined && sequenceNumber !== null) {

@@ -25,20 +25,26 @@ import {
   type RecordSession,
 } from "./record.js";
 import { SESSION_BASES, SessionState, now } from "./session.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
+import { isActInteger, rebuildSignedAct, type Dict } from "./messages.js";
 
 export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2";
 // A record's version follows its content (Section 9A.2): "0.3" exactly when it
 // carries external_commitment_reference (Section 9A.12). Every other record
 // stays "0.2", so a verifier that predates "0.3" still reads it.
 export const SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3";
+// Every record a producer emits is "0.4" (Section 9A.2). The two constants
+// above name versions that only historical records carry; they stay so those
+// records can still be read, because the SER recognizer is additive — a
+// version is added and none removed, and an older sealed record stays valid.
+export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4";
 // The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-// Verification is the same for all of them, except that a record carries
+// Verification is the same for all of them, except that a "0.3" record carries
 // external_commitment_reference exactly when it is "0.3".
 export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = [
   "0.1",
   "0.2",
   "0.3",
+  "0.4",
 ];
 export const SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record";
 
@@ -57,7 +63,19 @@ export const EvidenceAttribution = {
 export const EvidenceSignatureType = {
   PROTOCOL_ACT: "protocol_act_signature",
   ACCEPTANCE: "acceptance_signature",
+  REJECTION: "rejection_signature",
+  WITHDRAWAL: "withdrawal_signature",
 } as const;
+
+// The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+// signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
+// no earlier version's schema lists these values and no earlier record can
+// legitimately carry one.
+const DECLINE_SIGNATURE_TYPES = new Set<string>([
+  EvidenceSignatureType.REJECTION,
+  EvidenceSignatureType.WITHDRAWAL,
+]);
+const VERSIONS_ADMITTING_DECLINE_VOCABULARY = new Set<string>(["0.4"]);
 
 export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
 
@@ -79,6 +97,20 @@ const EVIDENCE_TERMINAL_OUTCOMES = new Set<string>([
 const SIGNED_MESSAGE_FIELDS: Record<string, string> = {
   [EvidenceSignatureType.PROTOCOL_ACT]: "protocol_act_signature",
   [EvidenceSignatureType.ACCEPTANCE]: "acceptance_signature",
+  [EvidenceSignatureType.REJECTION]: "rejection_signature",
+  [EvidenceSignatureType.WITHDRAWAL]: "withdrawal_signature",
+};
+// The act types each signature slot may appear on. A slot that names one act
+// type is what lets a verifier refuse an act relabelled as another: the rebuild
+// then demands the scope the signature was made under, while the signature is
+// still sitting in the slot of the type it was made for. Before the declines
+// had slots of their own, a rejection or withdrawal carrying a signature was
+// read as an unsigned observation and its signature was never checked at all.
+const SIGNATURE_TYPE_MESSAGE_TYPES: Record<string, readonly string[]> = {
+  [EvidenceSignatureType.PROTOCOL_ACT]: ["offer", "counteroffer"],
+  [EvidenceSignatureType.ACCEPTANCE]: ["acceptance"],
+  [EvidenceSignatureType.REJECTION]: ["rejection"],
+  [EvidenceSignatureType.WITHDRAWAL]: ["withdrawal"],
 };
 const RECORD_FIELDS = new Set([
   "record_type",
@@ -177,8 +209,10 @@ export interface GenerateSessionEvidenceOptions {
   /**
    * Completes a session whose responder is observed: the external order or
    * commitment the deal produced, in place of a TransactionRecord, which is
-   * bilateral (Section 9A.12). Such a record is "0.3". Required for that session
-   * and refused for any other; null or undefined means it is not supplied.
+   * bilateral (Section 9A.12). Such a record is "0.4", like every record this
+   * generator emits; the reference is OPTIONAL at that version (Section 9A.2).
+   * Required for that session and refused for any other; null or undefined
+   * means it is not supplied.
    */
   externalCommitmentReference?: Dict | null;
 }
@@ -277,10 +311,7 @@ export function generateSessionEvidenceRecord(
 
   const record: Dict = {
     record_type: SESSION_EVIDENCE_RECORD_TYPE,
-    record_version:
-      reference !== null
-        ? SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
-        : SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
+    record_version: SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
     evidence_id: uuidv5(
       `session-evidence:${session.session_id}:${producerDid}`,
       A2CN_NAMESPACE,
@@ -336,11 +367,23 @@ export function generateSessionEvidenceRecord(
       "An external commitment reference requires an observed responder and unilateral evidence",
     );
   }
-  if (!externalCommitmentMatchesVersion(record)) {
-    throw new Error(
-      "record_version must be 0.3 exactly when the record carries external_commitment_reference",
-    );
-  }
+  // externalCommitmentMatchesVersion03 was checked here, and is not any more. It
+  // cannot fire on anything this function builds: record_version is assigned
+  // SESSION_EVIDENCE_RECORD_VERSION_CURRENT once, unconditionally, above, and
+  // nothing mutates it in between, so the predicate always returns at its
+  // `version === CURRENT` branch. Its message ("record_version must be 0.3
+  // exactly when the record carries external_commitment_reference") also states
+  // a rule that no longer holds for an emitted record, which is worse than
+  // merely unreachable.
+  //
+  // The predicate itself is NOT dead — the verifier still calls it, where it
+  // governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
+  // live again the moment emission stops being universally "0.4". So if a later
+  // change makes the emitted version conditional, this site needs a guard AND A
+  // NEW MESSAGE, because the old one asserted a rule that is no longer true of
+  // anything we emit — restoring it verbatim would be worse than the deletion it
+  // undoes. An unreachable guard is merely dead; a guard whose failure message
+  // states a false rule misleads whoever revives it.
   if (!externalCommitmentProducerActPresent(record)) {
     throw new Error(
       "An external commitment reference requires at least one act signed by the " +
@@ -396,7 +439,10 @@ export function assessSessionEvidenceRecord(
     if (!RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.includes(record.record_version as string)) {
       return assessment;
     }
-    if (!externalCommitmentMatchesVersion(record)) {
+    if (!declineVocabularyRequires04(record)) {
+      return assessment;
+    }
+    if (!externalCommitmentMatchesVersion03(record)) {
       return assessment;
     }
 
@@ -954,10 +1000,61 @@ function externalCommitmentRulesHold(record: Dict): boolean {
  * This is the one verification rule that depends on the version. The reference
  * is present by key, so one whose value is null counts as carried.
  */
-function externalCommitmentMatchesVersion(record: Dict): boolean {
+function externalCommitmentMatchesVersion03(record: Dict): boolean {
+  const version = record.record_version;
+  if (version === SESSION_EVIDENCE_RECORD_VERSION_CURRENT) {
+    // "0.4" carries no version-keyed witness rule at all: the reference is
+    // OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule —
+    // which holds at every record_version and is enforced independently of any
+    // version — carries the weight instead. Keeping the biconditional would
+    // refuse every external-channel record, by demanding the version be "0.3"
+    // in order to carry a reference.
+    return true;
+  }
   const carried = hasOwn(record, "external_commitment_reference");
-  const is03 = record.record_version === SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT;
-  return carried === is03;
+  return carried === (version === SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT);
+}
+
+/**
+ * An act carrying a decline signature makes the record "0.4" or later.
+ *
+ * ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
+ * version, never the reverse. An ordinary "0.4" record carries no decline at
+ * all, so this must not be read as "0.4" implying the vocabulary.
+ *
+ * Keyed on signature_type rather than on a signature field inside acts[].act.
+ * That object is open, so a field there violates no published schema, and a
+ * rule keyed on it would refuse a record valid at its own version -- an old
+ * record may legitimately carry a vendor field of that name, since the decline
+ * schemas keep the message object open. signature_type is coextensive with the
+ * schema violation instead: the enum is the only place an earlier version's
+ * schema names the vocabulary.
+ *
+ * NOTE the polarity, which is the opposite of the rule above: that one goes
+ * quiet at "0.4" and governs only historical records; this one fires only below
+ * "0.4" and governs only new vocabulary.
+ */
+function declineVocabularyRequires04(record: Dict): boolean {
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return true; // shape is decided elsewhere; this rule judges vocabulary
+  }
+  const carriesDecline = acts.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      // typeof [] is "object", so without this an array reaches the lookup and
+      // fails it on a missing signature_type — the same verdict Python reaches,
+      // but by a different route, since isinstance(entry, dict) refuses the
+      // entry outright. Agreeing by accident survives exactly until the
+      // downstream check it depends on moves, and this is a signing path.
+      !Array.isArray(entry) &&
+      DECLINE_SIGNATURE_TYPES.has((entry as Dict).signature_type as string),
+  );
+  if (!carriesDecline) {
+    return true;
+  }
+  return VERSIONS_ADMITTING_DECLINE_VOCABULARY.has(record.record_version as string);
 }
 
 /**
@@ -1194,7 +1291,12 @@ function evidenceActShapeValid(entry: Dict): boolean {
   }
   for (const field of ["sequence_number", "round_number"]) {
     const value = entry[field];
-    if (value !== null && (!Number.isInteger(value) || (value as number) < 1)) {
+    // Judged by value through the shared primitive, like every other act
+    // counter. An entry may omit a counter, so null stays permitted. This side
+    // already accepted the integral float 2.0; Python's isinstance refused it,
+    // so the two reached opposite verdicts on the same bytes. Routing both
+    // through isActInteger is what keeps them one rule.
+    if (value !== null && !(isActInteger(value) && (value as number) >= 1)) {
       return false;
     }
   }
@@ -1395,7 +1497,9 @@ function orderEvidenceActs(acts: Dict[]): Dict[] {
     index,
     timestampKey: entry.timestamp === null ? null : timestampOrderKey(entry.timestamp),
   }));
-  const allSequenced = acts.every((entry) => Number.isInteger(entry.sequence_number));
+  // Judged by value here too, through the shared primitive, so ordering and
+  // validity cannot disagree about what a counter is.
+  const allSequenced = acts.every((entry) => isActInteger(entry.sequence_number));
   if (allSequenced) {
     indexed.sort(
       (left, right) =>
@@ -1490,8 +1594,8 @@ function compareTimestampOrderKeys(
 }
 
 function compareOptionalSequence(left: unknown, right: unknown): number {
-  const leftSequence = Number.isInteger(left) ? (left as number) : null;
-  const rightSequence = Number.isInteger(right) ? (right as number) : null;
+  const leftSequence = isActInteger(left) ? (left as number) : null;
+  const rightSequence = isActInteger(right) ? (right as number) : null;
   if (leftSequence !== null && rightSequence !== null) {
     return leftSequence - rightSequence;
   }
@@ -1609,87 +1713,86 @@ function verifyEvidenceAct(
   }
 }
 
+/**
+ * The hash an act's signature must cover, or null if it cannot be rebound.
+ *
+ * One rebuild for every act type (Section 7.3.1), taken from messages.ts and
+ * shared with the record verifier rather than re-derived here, so the two
+ * cannot drift apart. What this adds is the evidence record's own, stricter
+ * reading of an act it is about to vouch for.
+ *
+ * A signature slot names the act type it was made under, so an act relabelled
+ * as another type is refused before its signature is ever checked.
+ */
 function signedActPayloadHash(act: Dict, signatureType: string): string | null {
-  if (signatureType === EvidenceSignatureType.PROTOCOL_ACT) {
-    if (act.message_type !== "offer" && act.message_type !== "counteroffer") {
-      return null;
-    }
-    if (
-      ![
-        "session_id",
-        "message_type",
-        "sender_did",
-        "timestamp",
-        "expires_at",
-      ].every((fieldName) => isNonemptyString(act[fieldName]))
-    ) {
-      return null;
-    }
-    if (
-      !["round_number", "sequence_number"].every((fieldName) =>
-        isPositiveInteger(act[fieldName]),
-      )
-    ) {
-      return null;
-    }
-    if (typeof act.terms !== "object" || act.terms === null || Array.isArray(act.terms)) {
-      return null;
-    }
-    const protocolAct = protocolActObject({
-      protocol_version: PROTOCOL_ACT_VERSION,
-      session_id: act.session_id,
-      round_number: act.round_number,
-      sequence_number: act.sequence_number,
-      message_type: act.message_type,
-      sender_did: act.sender_did,
-      timestamp: act.timestamp,
-      expires_at: act.expires_at,
-      terms: act.terms,
-    });
-    const expectedHash = hashObject(protocolAct);
-    if (act.protocol_act_hash !== expectedHash) {
-      return null;
-    }
-    return expectedHash;
+  const allowedMessageTypes: readonly string[] | undefined =
+    SIGNATURE_TYPE_MESSAGE_TYPES[signatureType];
+  if (allowedMessageTypes === undefined) {
+    return null;
+  }
+  if (
+    typeof act.message_type !== "string" ||
+    !allowedMessageTypes.includes(act.message_type)
+  ) {
+    return null;
   }
 
-  if (signatureType === EvidenceSignatureType.ACCEPTANCE) {
-    if (act.message_type !== "acceptance") {
-      return null;
-    }
-    if (
-      !["session_id", "accepted_offer_id", "accepted_protocol_act_hash"].every(
-        (fieldName) => isNonemptyString(act[fieldName]),
-      ) ||
-      !HASH_PATTERN.test(act.accepted_protocol_act_hash as string)
-    ) {
-      return null;
-    }
-    if (
-      !["round_number", "sequence_number"].every((fieldName) =>
-        isPositiveInteger(act[fieldName]),
-      )
-    ) {
-      return null;
-    }
-    return hashObject({
-      session_id: act.session_id,
-      round_number: act.round_number,
-      sequence_number: act.sequence_number,
-      accepted_offer_id: act.accepted_offer_id,
-      accepted_protocol_act_hash: act.accepted_protocol_act_hash,
-    });
+  const rebuilt = rebuildSignedAct(act);
+  if (rebuilt === null) {
+    return null;
   }
 
-  return null;
+  // A producer states every covered field outright. The hash would happily
+  // cover a blank string or a zero counter — Section 9.5 lets a record rebind
+  // one, because there the hash alone decides — but an evidence record does not
+  // vouch for an act that leaves one of them empty.
+  for (const [fieldName, value] of Object.entries(rebuilt)) {
+    if (fieldName === "terms") {
+      continue;
+    }
+    if (fieldName === "round_number" || fieldName === "sequence_number") {
+      if (!isPositiveInteger(value)) {
+        return null;
+      }
+    } else if (!isNonemptyString(value)) {
+      return null;
+    }
+  }
+
+  if (
+    signatureType === EvidenceSignatureType.ACCEPTANCE &&
+    !HASH_PATTERN.test(act.accepted_protocol_act_hash as string)
+  ) {
+    return null;
+  }
+
+  const expectedHash = hashObject(rebuilt);
+  // An offer states the hash its signature covers, so the two must agree. The
+  // other act types carry no such field; their hash is the rebuild alone.
+  if (
+    signatureType === EvidenceSignatureType.PROTOCOL_ACT &&
+    act.protocol_act_hash !== expectedHash
+  ) {
+    return null;
+  }
+  return expectedHash;
 }
 
 function isNonemptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+/**
+ * An act's counter, judged by value rather than by spelling.
+ *
+ * RFC 8785 serializes 2.0 and 2 as the same number, so they are one signed act
+ * in two JSON spellings and must reach one verdict. This defers to the shared
+ * primitive's isActInteger so the record, evidence and act paths run the same
+ * rule; Python judged 2.0 invalid here while this path accepted it, and the two
+ * now agree. typeof excludes a boolean, which stays refused.
+ */
 function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) >= 1;
+  return isActInteger(value) && (value as number) >= 1;
 }
 
 function verifySignature(

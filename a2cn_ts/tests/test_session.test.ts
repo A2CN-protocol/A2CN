@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { Session, SessionManager, SessionState, A2CNError } from "../src/a2cn/session.js";
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import { generateAuditLog } from "../src/a2cn/record.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { makeDidDocument } from "./conftest.js";
 
 const INITIATOR_DID = "did:web:techcorp.example";
@@ -148,15 +148,10 @@ function makeAcceptance(sess: Session, offer: Dict, msgId = "acc-1"): Dict {
     sender_verification_method: verificationMethod,
     timestamp: "2026-03-24T10:05:00Z",
   };
-  const payload = {
-    session_id: acceptance.session_id,
-    round_number: acceptance.round_number,
-    sequence_number: acceptance.sequence_number,
-    accepted_offer_id: acceptance.accepted_offer_id,
-    accepted_protocol_act_hash: acceptance.accepted_protocol_act_hash,
-  };
+  // Signed over the act's own envelope (Section 7.3.1), built from the very
+  // message the state machine receives.
   acceptance.acceptance_signature = signJws(
-    hashObject(payload),
+    signedActHash(acceptance) as string,
     RESPONDER_PRIVATE_KEY,
     verificationMethod,
   );

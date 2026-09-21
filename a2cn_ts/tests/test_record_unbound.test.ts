@@ -27,7 +27,7 @@ import {
   KNOWN_TRANSACTION_RECORD_VERSIONS,
   REASON_UNBOUND_RECORD_VERSION,
   REASON_UNRECOGNIZED_RECORD_VERSION,
-  TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+  TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
   verifyTransactionRecord,
   verifyTransactionRecordReason,
 } from "../src/a2cn/record.js";
@@ -45,7 +45,7 @@ const RECORD_VERSIONS = readJson("spec", "test-vectors", "record-versions.json")
 const TR_VERSIONS = RECORD_VERSIONS.transaction_record as Dict;
 const WITHOUT_BASIS = VECTOR.without_basis as Dict;
 const DOWNGRADE = VECTOR.downgrade_attack as Dict;
-const BOUND = ((VECTOR.expected as Dict).record_version_0_3 as Dict).full_record as Dict;
+const BOUND = ((VECTOR.expected as Dict).record_version_0_4 as Dict).full_record as Dict;
 // The cases both suites apply to that record, one for each reason a verifier can
 // give, so the two implementations must name the same cause for the same bytes.
 const REASON_API = VECTOR.reason_api as Dict;
@@ -65,6 +65,7 @@ const SHAPE_VECTOR: Record<string, Dict> = {
   "0.1": WITHOUT_BASIS,
   "0.2": VECTOR,
   "0.3": VECTOR,
+  "0.4": VECTOR,
 };
 
 function offerHashes(vector: Dict): string[] {
@@ -75,8 +76,13 @@ function offerHashes(vector: Dict): string[] {
 
 /** A valid record of the given shape, as its producer emitted it. */
 function shapedRecord(version: string): Dict {
-  if (version === "0.3") {
+  if (version === "0.4") {
     return structuredClone(BOUND);
+  }
+  if (version === "0.3") {
+    return structuredClone(
+      ((VECTOR.expected as Dict).record_version_0_3 as Dict).full_record as Dict,
+    );
   }
   if (version === "0.2") {
     return structuredClone(
@@ -94,7 +100,7 @@ function resealed(record: Dict): Dict {
 }
 
 /** The boolean and the reason, which must always agree. */
-function verdict(record: Dict, shape = "0.3"): [boolean, string | null] {
+function verdict(record: Dict, shape = "0.4"): [boolean, string | null] {
   const vector = SHAPE_VECTOR[shape];
   const dids = vector.did_documents as Record<string, Dict>;
   const hashes = offerHashes(vector);
@@ -126,16 +132,68 @@ test.each(
   expect(reason).toBe(REASON_UNBOUND_RECORD_VERSION);
 });
 
-test("the untouched downgrade is the historical record itself", () => {
-  // Stripping the act fields and relabelling reproduces the "0.2" record
-  // exactly. That is what made the unbound tier a downgrade oracle: the forged
-  // shape and the genuine older artifact are the same bytes.
-  const untouched = (DOWNGRADE.cases as Dict[]).find(
-    (c) => c.name === "stripped-and-relabelled-0.2-terms-untouched",
-  ) as Dict;
+/** Every leaf of a record, as a dotted path. */
+function flatten(node: unknown, prefix = "", out: Map<string, unknown> = new Map()) {
+  if (node !== null && typeof node === "object" && !Array.isArray(node)) {
+    for (const [key, value] of Object.entries(node as Dict)) {
+      flatten(value, prefix ? `${prefix}.${key}` : key, out);
+    }
+  } else if (Array.isArray(node)) {
+    node.forEach((value, index) => flatten(value, `${prefix}[${index}]`, out));
+  } else {
+    out.set(prefix, node);
+  }
+  return out;
+}
 
-  expect(untouched.record_hash).toBe(
-    ((VECTOR.expected as Dict).record_version_0_2 as Dict).record_hash,
+/** The paths whose values differ, or that only one side carries. */
+function differingPaths(left: Dict, right: Dict): string[] {
+  const a = flatten(left);
+  const b = flatten(right);
+  const differing: string[] = [];
+  for (const path of new Set([...a.keys(), ...b.keys()])) {
+    if (!a.has(path) || !b.has(path) || a.get(path) !== b.get(path)) {
+      differing.push(path);
+    }
+  }
+  return differing.sort();
+}
+
+function findDowngradeCase(name: string): Dict {
+  return (DOWNGRADE.cases as Dict[]).find((c) => c.name === name) as Dict;
+}
+
+test("the untouched downgrade differs from the historical record in one signature", () => {
+  // The forgery and the genuine older artifact are the same record but for a
+  // signature. That is what made the unbound tier a downgrade oracle: a
+  // verifier that accepted an unbound version could not tell them apart by
+  // anything that matters, so accepting one accepted the other.
+  //
+  // This used to assert byte-equality. That held only while both artifacts were
+  // signed by the same key, and the key that signed the historical record was
+  // never stored — the fact that forced this vector's session to be re-keyed —
+  // so the claim is stated as the exact difference instead. Naming the
+  // differing paths is sharper than the byte-equality was: it says precisely
+  // what an unbound-accepting verifier would have to distinguish them by, and
+  // it fails loudly if anything else ever diverges. A key-set or shape
+  // comparison would pass even with agreed_terms corrupted; this does not.
+  const untouched = findDowngradeCase("stripped-and-relabelled-0.2-terms-untouched");
+  const historical = ((VECTOR.expected as Dict).record_version_0_2 as Dict).full_record as Dict;
+
+  expect(differingPaths(untouched.full_record as Dict, historical)).toEqual(
+    ["final_acceptance.acceptance_signature", "record_hash"].sort(),
+  );
+});
+
+test("the downgrade diff is sensitive rather than blind", () => {
+  // The positive control for the test above. A diff that reported "only the
+  // signature differs" for every case would prove nothing. The case that alters
+  // the terms must show the extra path, exactly where the alteration is.
+  const altered = findDowngradeCase("stripped-and-relabelled-0.2-with-altered-terms");
+  const historical = ((VECTOR.expected as Dict).record_version_0_2 as Dict).full_record as Dict;
+
+  expect(differingPaths(altered.full_record as Dict, historical)).toEqual(
+    ["agreed_terms.total_value", "final_acceptance.acceptance_signature", "record_hash"].sort(),
   );
 });
 
@@ -145,11 +203,11 @@ test("the untouched downgrade is the historical record itself", () => {
 
 test("only the bound version is accepted", () => {
   expect([...ACCEPTED_TRANSACTION_RECORD_VERSIONS]).toEqual([
-    TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+    TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
   ]);
   expect([...ACCEPTED_TRANSACTION_RECORD_VERSIONS]).toEqual(TR_VERSIONS.accepted);
   // The older shapes are still known, because their schema files are published.
-  expect([...KNOWN_TRANSACTION_RECORD_VERSIONS].sort()).toEqual(["0.1", "0.2", "0.3"]);
+  expect([...KNOWN_TRANSACTION_RECORD_VERSIONS].sort()).toEqual(["0.1", "0.2", "0.3", "0.4"]);
   for (const version of ACCEPTED_TRANSACTION_RECORD_VERSIONS) {
     expect(KNOWN_TRANSACTION_RECORD_VERSIONS).toContain(version);
   }
@@ -159,7 +217,7 @@ test("only the bound version is accepted", () => {
 });
 
 test("the bound record still verifies", () => {
-  const [verified, reason] = verdict(shapedRecord("0.3"));
+  const [verified, reason] = verdict(shapedRecord("0.4"));
 
   expect(verified).toBe(true);
   expect(reason).toBeNull();
@@ -182,7 +240,7 @@ test.each(
   (TR_VERSIONS.rejected as Dict[]).map((c) => [c.name as string, c] as [string, Dict]),
 )("a value that is not a known version is rejected as unrecognized: %s", (_name, rejectedCase) => {
   // The generic rejection stays, and is distinct from the unbound one.
-  const record = shapedRecord("0.3");
+  const record = shapedRecord("0.4");
   if (Object.prototype.hasOwnProperty.call(rejectedCase, "record_version")) {
     record.record_version = structuredClone(rejectedCase.record_version);
   } else {
@@ -202,7 +260,7 @@ test.each(
 
 test("the boolean verifier keeps its signature and return type", () => {
   // Callers that only want a verdict are untouched by the reason API.
-  const record = shapedRecord("0.3");
+  const record = shapedRecord("0.4");
   const dids = VECTOR.did_documents as Record<string, Dict>;
 
   expect(verifyTransactionRecord(record, dids)).toBe(false);
@@ -217,8 +275,8 @@ test("the reason is null exactly when the boolean is true", () => {
   // verdict right while the diagnostic lies. Pinning only the agreement cannot
   // see that; pinning the type can.
   const records: Dict[] = [
-    shapedRecord("0.3"),
-    resealed({ ...shapedRecord("0.3"), record_version: "0.2" }),
+    shapedRecord("0.4"),
+    resealed({ ...shapedRecord("0.4"), record_version: "0.2" }),
     (DOWNGRADE.cases as Dict[])[0].full_record as Dict,
     ...REASON_CASES.map((c) => mutated(c)),
   ];
@@ -237,7 +295,7 @@ test("the reason is null exactly when the boolean is true", () => {
 
 /** Apply one shared case to the bound record, resealing when it says to. */
 function mutated(useCase: Dict): Dict {
-  const record = shapedRecord("0.3");
+  const record = shapedRecord("0.4");
   const mutation = useCase.mutation as string;
   const value = useCase.value;
   const finalOffer = record.final_offer as Dict;
