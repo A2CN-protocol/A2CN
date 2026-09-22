@@ -1,5 +1,8 @@
 """Tests for a2cn.did — using respx to mock HTTPS fetches."""
 
+import json
+from pathlib import Path
+
 import pytest
 import respx
 import httpx
@@ -84,6 +87,21 @@ def test_get_verification_method_found():
     vm_id = f"{INITIATOR_DID}#key-1"
     vm = get_verification_method(did_doc, vm_id)
     assert vm["id"] == vm_id
+
+
+def test_public_did_authorizes_transport_key_for_assertion():
+    repository_root = Path(__file__).resolve().parents[3]
+    did_document = json.loads(
+        (repository_root / ".well-known" / "did.json").read_text()
+    )
+    transport_method = "did:web:a2cn.io#a2cn-buyer-agent-transport-av1"
+
+    assert transport_method in did_document["assertionMethod"]
+    assert get_verification_method(
+        did_document,
+        transport_method,
+        allowed_relationships=("assertionMethod",),
+    )["id"] == transport_method
 
 
 def test_get_verification_method_rejects_key_agreement_only_key():
