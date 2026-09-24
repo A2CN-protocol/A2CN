@@ -47,13 +47,15 @@ is the most common source of confusion, so they are stated separately here.
    verifier accepts, whose `final_offer` **and** `final_acceptance` each carry
    their signed act's fields, with `"0.3"`, `"0.2"` and `"0.1"` known but no
    longer accepted (Section 9.3); AuditLog `"0.1"`; SessionEvidenceRecord
-   `"0.4"`, the version every producer emits, with `"0.1"`, `"0.2"` and `"0.3"`
-   still accepted (Section 9A.2). The two artifacts reach `"0.4"` by opposite
-   routes — the TransactionRecord by rejecting its predecessors, the
-   SessionEvidenceRecord by accepting them — because every evidence record is
-   producer-sealed and so has no unbound tier to be downgraded to. Each moves
-   only when that artifact's own shape or canonical meaning changes; see Section
-   9A.1.
+   `"0.5"`, the version every producer emits, with `"0.1"`, `"0.2"`, `"0.3"` and
+   `"0.4"` still accepted (Section 9A.2). The two record artifacts moved through
+   `"0.4"` by opposite routes — the TransactionRecord by rejecting its
+   predecessors, the SessionEvidenceRecord by accepting them — because every
+   evidence record is producer-sealed and so has no unbound tier to be
+   downgraded to. They no longer share a number, and are not meant to: each
+   moves only when that artifact's own shape or canonical meaning changes, so
+   the numbers align only by coincidence and a reader MUST NOT infer anything
+   about one artifact from the other's version. See Section 9A.1.
 
 A schema's `$id` version is the version of the thing that schema describes — the
 wire version for wire messages, the artifact's `record_version` for record
@@ -2293,15 +2295,16 @@ attribution of an individual party's protocol act and are the preferred evidence
 Schema: `spec/schemas/session-evidence-record.schema.json` (`record_version`
 `"0.1"`, as published in release 0.3.0),
 `spec/schemas/session-evidence-record-0.2.schema.json` (`"0.2"`),
-`spec/schemas/session-evidence-record-0.3.schema.json` (`"0.3"`), and
-`spec/schemas/session-evidence-record-0.4.schema.json` (`"0.4"`, the version a
-producer emits). A verifier accepts all four: the earlier three describe records
+`spec/schemas/session-evidence-record-0.3.schema.json` (`"0.3"`),
+`spec/schemas/session-evidence-record-0.4.schema.json` (`"0.4"`), and
+`spec/schemas/session-evidence-record-0.5.schema.json` (`"0.5"`, the version a
+producer emits). A verifier accepts all five: the earlier four describe records
 an implementation has already produced, and stay accepted.
 
 ```json
 {
   "record_type": "a2cn_session_evidence_record",
-  "record_version": "0.4",
+  "record_version": "0.5",
   "evidence_id": "string",
   "session_id": "string",
   "generated_at": "string",
@@ -2372,7 +2375,7 @@ Apart from these named optional members, the record and every object inside it
 remain closed to additional properties.
 
 `record_version` is the version of the SessionEvidenceRecord artifact and is
-independent of the TransactionRecord version. A producer MUST emit `"0.4"` for
+independent of the TransactionRecord version. A producer MUST emit `"0.5"` for
 every record it produces, whether or not that record carries
 `external_commitment_reference` (Section 9A.12). A verifier MUST reject an unrecognized
 SessionEvidenceRecord version rather than attempt best-effort parsing. After a
@@ -2412,32 +2415,45 @@ schema `$id` ends in `/0.3`. Section 9A.12 is a relaxation, so a verifier that
 predates it rejects a `COMPLETED` record whose `transaction_record_hash` is
 `null`.
 
-Version `"0.4"` is the version every producer emits, and the first whose acts
-may carry a signed Rejection or Withdrawal (Sections 7.5 and 7.6). Its schema
-`$id` ends in `/0.4`. A verifier recognizes `"0.1"`, `"0.2"`, `"0.3"` and
-`"0.4"`, and MUST reject any other value. That set is additive — a version is
-added and none removed — so a record sealed under an earlier version stays
-valid, and a verifier MUST NOT refuse one on account of its version alone.
+Version `"0.4"` is the first whose acts may carry a signed Rejection or
+Withdrawal (Sections 7.5 and 7.6). Its schema `$id` ends in `/0.4`.
 
-`external_commitment_reference` is OPTIONAL at `"0.4"`: such a record carries it
-exactly when a `COMPLETED` session settled through an external channel. The
-two-way rule is therefore historical, about `"0.3"` alone: a `"0.3"` record
-carries `external_commitment_reference`, and a record carrying one that is not
-`"0.4"` MUST be `"0.3"`. Presence is by key, so an
+Version `"0.5"` is the version every producer emits, and the first that admits
+the external-channel completion witness for a DID-bearing responder whose acts
+are unsigned (Section 9A.12). Its schema `$id` ends in `/0.5`. A verifier
+recognizes `"0.1"`, `"0.2"`, `"0.3"`, `"0.4"` and `"0.5"`, and MUST reject any
+other value. That set is additive — a version is added and none removed — so a
+record sealed under an earlier version stays valid, and a verifier MUST NOT
+refuse one on account of its version alone. Section 9A.12 at `"0.5"` is a
+relaxation, so a verifier that predates it rejects a `COMPLETED` record that
+carries `external_commitment_reference` against a DID-bearing responder.
+
+`external_commitment_reference` is OPTIONAL from `"0.4"` on: such a record
+carries it exactly when a `COMPLETED` session settled through an external
+channel. The two-way rule is therefore historical, about `"0.3"` alone: a
+`"0.3"` record carries `external_commitment_reference`, and a record carrying
+one that is below `"0.4"` MUST be `"0.3"`. Presence is by key, so an
 `external_commitment_reference` whose value is `null` counts as carried, and is
-malformed. At `"0.4"` no verification rule depends on the version at all; the
-completion witness is governed by Section 9A.6 step 9, which holds at every
-`record_version`.
+malformed. From `"0.4"` on no verification rule depends on the version at all;
+the completion witness is governed by Section 9A.6 step 9, which holds at every
+`record_version`. A rule that means "this version or later" MUST be written as a
+floor rather than as the set of versions that exist when it is written, or it
+states the opposite of itself as soon as the next version ships.
 
 > **A compatibility property ends here, deliberately.** Before `"0.4"`, a record
 > that did not carry `external_commitment_reference` stayed `"0.2"`, so a
 > verifier recognizing only `"0.1"` and `"0.2"` still read every such record.
-> That property was chosen when `"0.3"` was introduced, and it does not survive:
-> every record emitted from this version on is `"0.4"`, so a verifier predating
-> `"0.4"` reads none of them. It is given up to bring the TransactionRecord and
-> the SessionEvidenceRecord to one version number, ending the collision between
-> a TransactionRecord `"0.3"` and a SessionEvidenceRecord `"0.3"` and leaving a
-> single scheme for later work to extend.
+> That property was chosen when `"0.3"` was introduced, and it did not survive
+> `"0.4"`: every record emitted from that version on carries the current
+> version, so a verifier predating it reads none of them. It was given up to
+> end the collision between a TransactionRecord `"0.3"` and a
+> SessionEvidenceRecord `"0.3"`, which named different shapes under one number,
+> and to leave a single scheme for later work to extend. Bringing the two
+> artifacts to the same number was the means, not the goal, and it did not
+> outlast `"0.4"`: the SessionEvidenceRecord moved to `"0.5"` for a change that
+> does not touch the TransactionRecord. Two artifacts at different numbers
+> cannot collide, so nothing is lost — but a reader MUST NOT read either
+> artifact's version as saying anything about the other's.
 
 `parties` uses the same SessionInit and SessionAck metadata sources as the
 TransactionRecord. Informational names and agent identifiers do not acquire
@@ -2457,14 +2473,17 @@ carries both, and never neither. For every other terminal outcome,
 `transaction_record_hash` MUST be `null` and `external_commitment_reference`
 MUST be absent.
 
-The witness matches the responder, in both directions. A
+The witness matches what the counterparty actually attested. A
 `transaction_record_hash` requires a DID-bearing `parties.responder`, because a
 TransactionRecord is bilateral by construction (Section 9.3), and an
-`external_commitment_reference` requires an `observed_party` responder (Section
-9A.12). A verifier MUST therefore reject a `COMPLETED` record whose responder is
-an `observed_party` and which carries a `transaction_record_hash`, at every
-`record_version`: no such TransactionRecord can exist, so the hash names nothing
-any verifier could obtain.
+`external_commitment_reference` requires a session whose counterparty signed no
+act — whether because it holds no A2CN identity or because its verified identity
+never signed one (Section 9A.12). A verifier MUST therefore reject a `COMPLETED`
+record whose responder is an `observed_party` and which carries a
+`transaction_record_hash`, at every `record_version`: no such TransactionRecord
+can exist, so the hash names nothing any verifier could obtain. That direction is
+unchanged by the `"0.5"` relaxation, which widens only which responders may carry
+the external reference.
 
 ### 9A.3 Evidence Acts and External Observations
 
@@ -2659,15 +2678,18 @@ exactly as one the producer merely observed.
 
 ### 9A.6 Verification
 
-A verifier MUST reject a `record_version` other than `"0.1"`, `"0.2"`, `"0.3"`
-or `"0.4"`. Below `"0.4"` it MUST also reject a record that carries
+A verifier MUST reject a `record_version` other than `"0.1"`, `"0.2"`, `"0.3"`,
+`"0.4"` or `"0.5"`. Below `"0.4"` it MUST also reject a record that carries
 `external_commitment_reference` but is not `"0.3"`, and a `"0.3"` record that
-does not carry it; at `"0.4"` that reference is OPTIONAL and no verification rule
-depends on the version (Section 9A.2). It MUST reject a record any of whose acts
-carries a `rejection_signature` or a `withdrawal_signature` unless that record is
-`"0.4"` or later, because no earlier version's vocabulary admits those signature
-types. That rule is one-directional: the vocabulary requires the version, while a
-`"0.4"` record is under no obligation to carry a decline. It then:
+does not carry it; from `"0.4"` on that reference is OPTIONAL and no verification
+rule depends on the version (Section 9A.2). It MUST reject a record any of whose
+acts carries a `rejection_signature` or a `withdrawal_signature` unless that
+record is `"0.4"` or later, because no earlier version's vocabulary admits those
+signature types. That rule is one-directional: the vocabulary requires the
+version, while a `"0.4"` or later record is under no obligation to carry a
+decline. Both of these version-keyed rules are floors, not memberships of a fixed
+set: "or later" includes every version published after this text was written. It
+then:
 
 1. Validate the record structure, including `external_commitment_reference`
    when present (Section 9A.12), and terminal outcome.
@@ -2699,11 +2721,16 @@ types. That rule is one-directional: the vocabulary requires the version, while 
 10. When `parties.responder` is an `observed_party`, enforce Section 9A.8: no act
     other than the initiator's may claim `verified_signature`, and
     `evidence_level` MUST be `unilateral`. Do not resolve the observed identity.
-    When the record carries `external_commitment_reference`, enforce Section
-    9A.12: `parties.responder` MUST be an `observed_party`, `evidence_level`
-    MUST be `unilateral`, `producer.did` MUST equal `parties.initiator.did`, and
-    at least one act MUST claim `verified_signature` with a `sender_did` equal
-    to `parties.initiator.did`. Do not dereference its `locator`.
+    Separately, and keyed on the witness rather than on the responder: when the
+    record carries `external_commitment_reference`, enforce Section 9A.12.
+    `parties.responder` MUST be an `observed_party` or a DID-bearing party,
+    `evidence_level` MUST be `unilateral` or `mixed` and never `bilateral`,
+    `producer.did` MUST equal `parties.initiator.did`, and at least one act MUST
+    claim `verified_signature` with a `sender_did` equal to
+    `parties.initiator.did`. Do not dereference its `locator`. These two rules
+    are stated apart deliberately: fusing them is what once made the external
+    witness depend on the responder's identity shape rather than on the property
+    that no counterparty signature witnesses the completion.
 11. Recompute every `money_basis` present under Section 9A.9 and reject the
     record if any of them does not reproduce both the claimed
     `normalized_total_minor` and the total inside the act it describes, or if it
@@ -2793,7 +2820,9 @@ session and attributes nothing to the observed counterparty.
 A session with an `observed_party` responder has no TransactionRecord, which is
 bilateral by construction (Section 9.3). When such a session completes, its
 record carries `external_commitment_reference` as its completion witness
-instead; see Section 9A.12. A verifier MUST reject a record whose responder is
+instead; see Section 9A.12. That witness is not exclusive to this section: from
+`"0.5"` a session whose responder's identity verifies but whose acts are unsigned
+completes the same way, having no TransactionRecord for the same reason. A verifier MUST reject a record whose responder is
 an `observed_party` and which carries a `transaction_record_hash`, whatever its
 `record_version` (Section 9A.2).
 
@@ -2948,27 +2977,68 @@ the order id a UCP seller's checkout returned:
 The object is closed to additional properties. A member whose value is `null` is
 malformed, and so is an `external_commitment_reference` whose value is `null`:
 neither is read as absent. The counterparty's identity is not repeated here; it
-is the `observed_credential` of `parties.responder` (Section 9A.8).
+is `parties.responder` — either the `observed_credential` of an `observed_party`
+(Section 9A.8), or the `did` of a party whose identity verifies although its acts
+are unsigned.
 
 `external_commitment_reference` is the completion witness of a `COMPLETED`
-session whose responder is an `observed_party` and which therefore has no
-TransactionRecord. A record that carries it MUST satisfy all of the following,
-and a verifier MUST reject it otherwise:
+session that produced no TransactionRecord, because its counterparty never
+signed an A2CN act. **The property this witness carries is that no counterparty
+signature witnesses the completion**: the completion is attested by the
+producer's external-order reference, not by any act of the counterparty's.
+That property, not the counterparty's identity shape, is what the conditions
+below enforce. A record that carries the reference MUST satisfy all of the
+following, and a verifier MUST reject it otherwise:
 
 1. `terminal.outcome` is `COMPLETED` and `transaction_record_hash` is `null`
    (Section 9A.2).
-2. `parties.responder` is an `observed_party`, so Section 9A.8 applies to it.
-3. `evidence_level` is `unilateral`.
-4. `record_version` is `"0.4"`, or `"0.3"` for a record sealed before `"0.4"`
-   (Section 9A.2). At `"0.4"` the reference is OPTIONAL, so carrying one no
-   longer fixes the version.
+2. `parties.responder` is either an `observed_party`, so Section 9A.8 applies to
+   it, or a DID-bearing party whose acts are unsigned.
+3. `evidence_level` is `unilateral` or `mixed`. It is never `bilateral`: that
+   level asserts both parties' material acts are attributable, which is exactly
+   what a session completing through an external reference cannot claim. Which
+   of the two a record carries follows from how the producer projects the
+   counterparty's act — no `sender_did` gives one represented party and so
+   `unilateral`, the counterparty's verified DID on an `unsigned_observation`
+   gives two and so `mixed` (Section 9A.5) — and **both are honest records**.
+4. `record_version` is `"0.5"`, or `"0.4"` or `"0.3"` for a record sealed before
+   `"0.5"` (Section 9A.2). From `"0.4"` the reference is OPTIONAL, so carrying
+   one no longer fixes the version.
 5. `producer.did` equals `parties.initiator.did`.
 6. At least one act claims `verified_signature` with a `sender_did` equal to
    `parties.initiator.did`.
 
+Conditions 2 and 3 were narrower before `"0.5"`: they required an
+`observed_party` responder at `unilateral`. That pair is an **identity proxy**
+for the property stated above, and narrower than it. Written for a counterparty
+with no A2CN identity, it incidentally excluded one whose DID and mandate
+verify but whose negotiation acts are unsigned — a counterparty that satisfies
+the property just as fully, and that an `observed_party` cannot even describe,
+since that descriptor requires `did_declared`, `a2cn_endpoint_declared` and
+`mandate_declared` to be literally `false` (Section 9A.8). Condition 6 is what
+holds the property in both cases, and it did not move.
+
+> **Section 9A.8's coupling SHADOWS the conditions above, and that has hidden
+> what they cover.** Section 9A.8 requires an `observed_party` responder to be
+> `unilateral`, and a verifier enforces that *before* it reaches the conditions
+> of this section. So for every record whose responder is an `observed_party` —
+> which, before `"0.5"`, was every record this section could describe — a
+> violation of condition 3 is refused by Section 9A.8 and this section's own
+> exclusion is never consulted. A reader **cannot tell from a case's name
+> whether it exercises this section**; only its responder shape decides. Three
+> consequences were found together, all from the same seam: a conformance case
+> that appeared to cover the `bilateral` exclusion and could never reach it, a
+> test asserting a rule it never exercised, and a schema *enforcing* a rule it
+> never stated — the `"0.4"` schema refused an `observed_party` at `mixed`
+> through condition 3's wording rather than through Section 9A.8's, so relaxing
+> condition 3 removed an enforcement that was only ever incidental. The `"0.5"`
+> schema states Section 9A.8's coupling in a clause of its own for that reason.
+> **A case that means to exercise this section's exclusions needs a DID-bearing
+> responder**, since only then does Section 9A.8 stand aside.
+
 A producer MUST NOT attach `external_commitment_reference` to a record whose
-responder is DID-bearing, which completes with its TransactionRecord, or whose
-outcome is not `COMPLETED`.
+counterparty signed an act that verifies — such a session completes with its
+TransactionRecord — or whose outcome is not `COMPLETED`.
 
 External-channel completion is asymmetric, and this section defines that
 direction only: the A2CN party is the producer and `parties.initiator`, and the
@@ -2978,12 +3048,28 @@ and Section 9A.2 requires `parties.initiator` to be a DID-bearing party, so a
 record whose initiator holds no A2CN identity has no representation in this
 version.
 
-Such a record is `unilateral` by construction, and the producer is its only
-DID-bearing party: the initiator seals it, and the counterparty side is an
-observed reference, not a verified counterparty. For the external counterparty's
-commitment, the producer's seal is the only cryptographic evidence the record
-bears, which is why the party that sealed it MUST be the party the record names
-as initiator. The initiator's act signatures prove that the initiator acted;
+Such a record is **producer-attested**: the initiator seals it, and the
+completion is witnessed by the producer's external-order reference rather than
+by any counterparty signature. Either way the counterparty side is observed, not
+attested: a verified identity is not a signed act, and a record MUST NOT present
+one as the other.
+
+> **Both `unilateral` and `mixed` satisfy the property, and which one a record
+> carries is a fact about the producer rather than about its honesty.** A
+> producer that records the counterparty's act with no `sender_did` yields one
+> represented party, so `unilateral`; one that carries the counterparty's
+> verified DID on an act attributed `unsigned_observation` yields two, so
+> `mixed` (Section 9A.5). **Neither is more truthful than the other, and the
+> spec does not prefer one.** Admitting `unilateral` alone would oblige a
+> producer to omit a DID it has verified — to record less than it knows in
+> order to reach an admitted classification — which is the same defect, one
+> level up, that widening the responder condition removes. `bilateral` remains
+> excluded, because it asserts both parties' material acts are attributable,
+> the one claim such a record cannot make.
+For the external counterparty's commitment, the producer's seal is the only
+cryptographic evidence the record bears, which is why the party that sealed it
+MUST be the party the record names as initiator. The initiator's act signatures
+prove that the initiator acted;
 nothing in the record attests that the counterparty did, and that is why at
 least one act MUST be one of the initiator's own: a record with neither would
 attribute nothing to anyone, while stating that a deal completed. The seal
@@ -4967,7 +5053,8 @@ schemas. The following schema files are defined:
 | `session-evidence-record.schema.json` | Session Evidence Record, `record_version` `"0.1"` — earlier shape, still accepted for verification |
 | `session-evidence-record-0.2.schema.json` | Session Evidence Record, `record_version` `"0.2"` — earlier shape, still accepted for verification |
 | `session-evidence-record-0.3.schema.json` | Session Evidence Record, `record_version` `"0.3"` — earlier shape, still accepted for verification |
-| `session-evidence-record-0.4.schema.json` | Session Evidence Record, `record_version` `"0.4"` |
+| `session-evidence-record-0.4.schema.json` | Session Evidence Record, `record_version` `"0.4"` — earlier shape, still accepted for verification |
+| `session-evidence-record-0.5.schema.json` | Session Evidence Record, `record_version` `"0.5"` |
 | `audit-log.schema.json` | Audit log |
 | `session-object.schema.json` | Session state object |
 | `error.schema.json` | Error response |

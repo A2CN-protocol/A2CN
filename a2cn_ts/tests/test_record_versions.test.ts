@@ -344,7 +344,7 @@ test("each artifact's version set is its own", () => {
   // Not redundant with the parametrized rejected cases: those assert that every
   // entry in the list fails, which passes vacuously if the list is emptied.
   // This membership assertion is what keeps the list non-empty.
-  expect(SER_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.5" });
+  expect(SER_VERSIONS.rejected).toContainEqual({ name: "next-minor", record_version: "0.6" });
   // The versions the TransactionRecord refuses as unbound are still accepted by
   // the evidence record, which is the point of keeping the two sets apart.
   const unbound = (TR_VERSIONS.unbound as Dict[]).map((entry) => entry.record_version);

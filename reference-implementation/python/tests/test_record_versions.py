@@ -286,7 +286,7 @@ def test_each_artifacts_version_set_is_its_own():
     # Not redundant with the parametrized rejected cases: those assert that every
     # entry in the list fails, which passes vacuously if the list is emptied.
     # This membership assertion is what keeps the list non-empty.
-    assert {"name": "next-minor", "record_version": "0.5"} in SER_VERSIONS["rejected"]
+    assert {"name": "next-minor", "record_version": "0.6"} in SER_VERSIONS["rejected"]
     # The versions the TransactionRecord refuses as unbound are still accepted by
     # the evidence record, which is the point of keeping the two sets apart.
     unbound = {case["record_version"] for case in TR_VERSIONS["unbound"]}

@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vectors for the additive Section 9A extensions: an identity-light observed_party responder, a recomputable money_basis, and the HALTED_BY_CONTROLS terminal outcome, all at record_version \"0.2\"; and money_basis_act_basis_cases, where a money_basis label agrees with or contradicts the terms.basis of the act it describes. The private JWK is test-only.",
+  "description": "Cross-language vectors for the additive Section 9A extensions: an identity-light observed_party responder, a recomputable money_basis, and the HALTED_BY_CONTROLS terminal outcome -- all three arrived in record_version \"0.2\", and all three records here are GENERATED, so they carry whatever version a producer emits today (\"0.5\"), not the version that introduced them; and money_basis_act_basis_cases, where a money_basis label agrees with or contradicts the terms.basis of the act it describes. The private JWK is test-only.",
   "did_documents": {
     "did:example:buyer": {
       "@context": [
@@ -34,7 +34,7 @@
         "money_basis_basis": "net",
         "name": "net-over-gross-act",
         "placement": "act",
-        "resealed_record_hash": "8nzYTJFwIPdpLN7-u4Ld9TTAyuRKl0rFlqGTOvFJfk8",
+        "resealed_record_hash": "89Hv1oI9j76QOVNyWmVQPxwavkae3ouxrJ-GPoyazKQ",
         "valid": false
       },
       {
@@ -42,7 +42,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-net-act",
         "placement": "act",
-        "resealed_record_hash": "WavERl8JPgvY6qdRXBgQbZHnVno-BrI0d9yqXhWU4ak",
+        "resealed_record_hash": "GLebwfQtJz4kBAsDRzkZ0DG-x-AhxgLwYmX8AY5whCo",
         "valid": false
       },
       {
@@ -50,7 +50,7 @@
         "money_basis_basis": "net",
         "name": "net-over-gross-act-terminal",
         "placement": "terminal",
-        "resealed_record_hash": "Pg_jO9hSG557GQ8O2JbsFgR5ebNUrv5D31fcQrYUBDs",
+        "resealed_record_hash": "K5wD15p2yb9buXnzX0VkaIpMHC6B42yIQN00T0TJFlY",
         "valid": false
       },
       {
@@ -58,7 +58,7 @@
         "money_basis_basis": "net",
         "name": "net-over-null-act-basis",
         "placement": "act",
-        "resealed_record_hash": "7KRcPAH0pXsK3W8Vj2jVhGHKkUztnSiXi0_jgq8SyPw",
+        "resealed_record_hash": "fIbxpdYbHS8Qs6lR8nXLQ2NeVmW8W5KOceQNeOxah9c",
         "valid": false
       },
       {
@@ -66,7 +66,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-uppercase-act-basis",
         "placement": "act",
-        "resealed_record_hash": "ZkqIcz3UKrDTvF1xFTnABpdaLw6X9qTGX10pfdxiEds",
+        "resealed_record_hash": "LIcuW6_13OitKdNOF3FQI65qULq-riQZ1SNYifaXwD4",
         "valid": false
       },
       {
@@ -74,7 +74,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-gross-act",
         "placement": "act",
-        "record_hash": "IPU31XRbzDKIfXSGbQY0O6xDho7-31vciPCGALR_iVQ",
+        "record_hash": "FS9s4yK4A3l5onFdbfzKhl2atnlhj_CGTZ7HjphgUYw",
         "valid": true
       },
       {
@@ -82,7 +82,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-gross-act-terminal",
         "placement": "terminal",
-        "record_hash": "p55qgn2Rob-uoji6k7W2rWU5NNOdlsXe_SQC0OPtHA4",
+        "record_hash": "CK244MqFjClclra38swouAtqBvpnL3MJ7migGU7XyoM",
         "valid": true
       },
       {
@@ -90,7 +90,7 @@
         "money_basis_basis": "unspecified",
         "name": "unspecified-over-gross-act",
         "placement": "act",
-        "record_hash": "fPczANdU9xhIyTsi6l-3e6ysm53v9K5eyL3XRZDV0Jk",
+        "record_hash": "zExa0XADL0R2lJqj8D3TWo82r-aVqnKU1jwPlf5D7PY",
         "valid": true
       },
       {
@@ -98,14 +98,14 @@
         "money_basis_basis": "per_unit",
         "name": "per-unit-over-net-act",
         "placement": "act",
-        "record_hash": "RYSnj32oF0DDjbPSgqznEBw7ACqpL0itTdsL5a-pwM8",
+        "record_hash": "qoqWgksPnAA8AGrA5v7fQDNOAVSgSfe1CCC0j0jI8iY",
         "valid": true
       },
       {
         "money_basis_basis": "net",
         "name": "net-over-act-without-basis",
         "placement": "act",
-        "record_hash": "iQNfjSKMRB-i0I6T2vCYEXfgk-1mB50C8koWwc9hcNA",
+        "record_hash": "egHqqb6Ih0e334TqFugSFL8p40-zvP-cMwZoDpJxSxM",
         "valid": true
       }
     ],
@@ -207,7 +207,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "qKNwJoH5QUZrjhvidSNFOlI4aDNr-jznF1Je7XE9Tns",
+        "record_hash": "zHDwGQFQE1kwWp9V1zoMlxVOTtTvyQnZz4zXaFmJ52Y",
         "terminal_outcome": "HALTED_BY_CONTROLS"
       },
       "message_log": [
@@ -256,7 +256,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "mixed",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "WlDMbJT3ZSi16vBlipn6PAoUmnOuq_w9Zko18b6Bj-g",
+        "record_hash": "HedIi8kLkzgjLw5y4Xi8qdng1X944cRn2szD47l_KuM",
         "terminal_outcome": "IMPASSE"
       },
       "message_log": [
@@ -337,7 +337,7 @@
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "XrRBkUcva4adQvXYMhDuUNyvJtOnnyGEuU3GnwyjXrM",
+        "record_hash": "iOcYO9gEQtbU1jhdwm_xLq7Q84ew_Rt2jsPsvm8iqTw",
         "terminal_outcome": "TIMED_OUT"
       },
       "message_log": [

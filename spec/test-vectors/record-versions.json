@@ -1,10 +1,10 @@
 {
-  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Each artifact has its own set, because each versions its own shape, and the two are never merged. A TransactionRecord verifier accepts ONLY the bound version, \"0.4\": the one whose final_offer carries the Section 7.3.1 act fields AND whose final_acceptance carries the acceptance's, so BOTH acts rebind from the record alone, each from its own stored fields. record_version is covered by no signature, so a verifier refuses any version it cannot rebind rather than trusting the label. \"0.3\" bound its offer but stored none of the acceptance's protocol_version, message_type or timestamp, so its acceptance could only be rebuilt by inventing or borrowing them; \"0.2\" carried the session's basis and no act fields, and \"0.1\" neither. All three are listed in transaction_record.unbound and are REJECTED with unbound_reason rather than the generic unrecognized_reason, because they are versions this implementation knows and cannot rebind. A \"0.4\" record missing either act's fields is unbound for the same reason. Values in transaction_record.rejected are no version at all and get unrecognized_reason. A SessionEvidenceRecord is unaffected by that rule: it accepts \"0.1\", \"0.2\", \"0.3\" and \"0.4\", and rejects \"0.5\". That set is ADDITIVE \u2014 \"0.4\" was added and none removed \u2014 so a record sealed under an earlier version stays valid, which is the opposite of the TransactionRecord's clean break above: every evidence record is producer-sealed, so there is no unbound tier to downgrade to. \"0.4\" is the version every producer emits, for BOTH record shapes, and the first whose acts may carry a signed Rejection or Withdrawal (Sections 7.5 and 7.6). \"0.3\" is the historical record that carries external_commitment_reference (Section 9A.2); at \"0.4\" that reference is OPTIONAL, so for the first time both shapes are legal at one version. accepted therefore names one shape per version, because it is also the ordered version list a verifier's recognizer must equal, and additional_accepted_shapes records the accepted version/shape pair it cannot express: at \"0.4\" the external-channel shape, which is accepted and is NOT a cross_shape violation. The two artifacts' version lines are independent and a TransactionRecord \"0.4\" says nothing about the evidence record. producers_emit is the version each producer writes. The AuditLog carries its version in log_version. The four TransactionRecord shapes come from transaction-record-basis.json: \"0.4\" is the record its basis session replays to, \"0.3\" is expected.record_version_0_3.full_record, \"0.2\" is expected.record_version_0_2.full_record, and \"0.1\" is without_basis.record_version_0_1.full_record.",
+  "description": "record_version values a verifier accepts or rejects, for the TransactionRecord (Section 9.5) and the SessionEvidenceRecord (Sections 9A.2 and 9A.6). Each artifact has its own set, because each versions its own shape, and the two are never merged. A TransactionRecord verifier accepts ONLY the bound version, \"0.4\": the one whose final_offer carries the Section 7.3.1 act fields AND whose final_acceptance carries the acceptance's, so BOTH acts rebind from the record alone, each from its own stored fields. record_version is covered by no signature, so a verifier refuses any version it cannot rebind rather than trusting the label. \"0.3\" bound its offer but stored none of the acceptance's protocol_version, message_type or timestamp, so its acceptance could only be rebuilt by inventing or borrowing them; \"0.2\" carried the session's basis and no act fields, and \"0.1\" neither. All three are listed in transaction_record.unbound and are REJECTED with unbound_reason rather than the generic unrecognized_reason, because they are versions this implementation knows and cannot rebind. A \"0.4\" record missing either act's fields is unbound for the same reason. Values in transaction_record.rejected are no version at all and get unrecognized_reason. A SessionEvidenceRecord is unaffected by that rule: it accepts \"0.1\", \"0.2\", \"0.3\", \"0.4\" and \"0.5\", and rejects \"0.6\". That set is ADDITIVE \u2014 \"0.5\" was added and none removed \u2014 so a record sealed under an earlier version stays valid, which is the opposite of the TransactionRecord's clean break above: every evidence record is producer-sealed, so there is no unbound tier to downgrade to. \"0.5\" is the version every producer emits, for BOTH record shapes. \"0.4\" is the first whose acts may carry a signed Rejection or Withdrawal (Sections 7.5 and 7.6) and remains the FLOOR that rule is keyed on -- the emitted version and the vocabulary floor are different numbers now, and a substitution that moves both turns this sentence into a lie. \"0.3\" is the historical record that carries external_commitment_reference (Section 9A.2); at \"0.4\" that reference is OPTIONAL, so for the first time both shapes are legal at one version. accepted therefore names one shape per version, because it is also the ordered version list a verifier's recognizer must equal, and additional_accepted_shapes records the accepted version/shape pair it cannot express: at \"0.4\" the external-channel shape, which is accepted and is NOT a cross_shape violation. The two artifacts' version lines are independent and a TransactionRecord \"0.4\" says nothing about the evidence record. producers_emit is the version each producer writes. The AuditLog carries its version in log_version. The four TransactionRecord shapes come from transaction-record-basis.json: \"0.4\" is the record its basis session replays to, \"0.3\" is expected.record_version_0_3.full_record, \"0.2\" is expected.record_version_0_2.full_record, and \"0.1\" is without_basis.record_version_0_1.full_record.",
   "producers_emit": {
     "transaction_record": "0.4",
     "session_evidence_record": {
-      "without_external_commitment": "0.4",
-      "with_external_commitment": "0.4"
+      "without_external_commitment": "0.5",
+      "with_external_commitment": "0.5"
     },
     "audit_log": "0.1"
   },
@@ -170,6 +170,10 @@
       {
         "record_version": "0.4",
         "shape": "without_external_commitment"
+      },
+      {
+        "record_version": "0.5",
+        "shape": "without_external_commitment"
       }
     ],
     "additional_accepted_shapes": [
@@ -177,6 +181,11 @@
         "name": "0.4-with-external-commitment",
         "shape": "with_external_commitment",
         "record_version": "0.4"
+      },
+      {
+        "name": "0.5-with-external-commitment",
+        "shape": "with_external_commitment",
+        "record_version": "0.5"
       }
     ],
     "cross_shape": [
@@ -199,7 +208,7 @@
     "rejected": [
       {
         "name": "next-minor",
-        "record_version": "0.5"
+        "record_version": "0.6"
       },
       {
         "name": "next-major",

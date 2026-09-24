@@ -72,11 +72,17 @@ def _relabelled(record: dict, version: str) -> dict:
     return _reseal(relabelled)
 
 
-def test_a_signed_decline_is_emitted_at_0_4():
-    """The control for everything below: the vocabulary and the version agree."""
+def test_a_signed_decline_is_emitted_at_0_5():
+    """The control for everything below: the vocabulary and the version agree.
+
+    Named for the EMITTED version, which is "0.5". The binding FLOOR is still
+    "0.4" and the refusals below are keyed on it -- the two are different
+    numbers now, and conflating them is how this test would come to assert a
+    version nobody emits.
+    """
     record, did_documents = _decline_record(signed=True)
 
-    assert record["record_version"] == "0.4"
+    assert record["record_version"] == "0.5"
     assert record["acts"][0]["signature_type"] == "rejection_signature"
     assert verify_session_evidence_record(record, did_documents)
 
@@ -118,10 +124,14 @@ def test_a_0_3_relabel_is_refused_for_its_own_reason():
 
 
 def test_the_binding_is_one_directional():
-    """"0.4" does not imply the vocabulary: an ordinary record carries no decline."""
+    """A version at or above the floor does not imply the vocabulary.
+
+    An ordinary record carries no decline at all. The assertion below is on the
+    EMITTED version, "0.5"; the floor the binding is keyed on is still "0.4".
+    """
     record, did_documents = _decline_record(signed=False)
 
-    assert record["record_version"] == "0.4"
+    assert record["record_version"] == "0.5"
     assert all(entry["signature_type"] is None for entry in record["acts"])
     assert verify_session_evidence_record(record, did_documents)
 

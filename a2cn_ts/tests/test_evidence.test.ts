@@ -742,7 +742,7 @@ test("the decline parity vector actually carries decline vocabulary", () => {
 
   const signatureTypes = (record.acts as Dict[]).map((entry) => entry.signature_type);
   expect(signatureTypes).toContain("rejection_signature");
-  expect(record.record_version).toBe("0.4");
+  expect(record.record_version).toBe("0.5");
   expect((record.acts as Dict[]).every((e) => e.attribution === "verified_signature")).toBe(true);
 });
 
@@ -1744,7 +1744,7 @@ function bilateralRecord(): [Dict, Record<string, Dict>, Session] {
 test("a bilateral COMPLETED record keeps its transaction record hash", () => {
   const [evidence, didDocuments, session] = bilateralRecord();
 
-  expect(evidence.record_version).toBe("0.4");
+  expect(evidence.record_version).toBe("0.5");
   expect(evidence.transaction_record_hash).toBe(generateTransactionRecord(session).record_hash);
   expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
@@ -1761,7 +1761,7 @@ test("an external-channel COMPLETED record is valid", () => {
     externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
   });
 
-  expect(evidence.record_version).toBe("0.4");
+  expect(evidence.record_version).toBe("0.5");
   expect((evidence.terminal as Dict).outcome).toBe(SessionState.COMPLETED);
   expect(evidence.transaction_record_hash).toBeNull();
   expect(evidence.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
@@ -1812,14 +1812,16 @@ test("a COMPLETED record with neither witness is rejected", () => {
   expect(verifySessionEvidenceRecord(bilateral, bilateralDocuments)).toBe(false);
 });
 
-test("a 0.4 COMPLETED record with neither witness is rejected", () => {
+test("a 0.5 COMPLETED record with neither witness is rejected", () => {
   // The case above relabels to "0.2" precisely so the version rule passes and
-  // only the witness rule can fire. At "0.4" that isolation is free: the
+  // only the witness rule can fire. From "0.4" on that isolation is free: the
   // reference is OPTIONAL there, so removing it leaves the version rule silent
   // and nothing but Section 9A.6 step 9 to refuse the record. Nothing else
-  // covered the version the generator actually produces.
+  // covered the version the generator actually produces. Named for the emitted
+  // version deliberately: a name that outlives its referent reads as coverage
+  // of a version nobody emits any more.
   const [healthy, didDocuments] = externalChannelRecord();
-  expect(healthy.record_version).toBe("0.4");
+  expect(healthy.record_version).toBe("0.5");
   expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
 
   const neither = structuredClone(healthy);
@@ -1828,7 +1830,7 @@ test("a 0.4 COMPLETED record with neither witness is rejected", () => {
 
   // No relabel: the record is refused while still carrying the version it was
   // generated with.
-  expect(neither.record_version).toBe("0.4");
+  expect(neither.record_version).toBe("0.5");
   expect(verifySessionEvidenceRecord(neither, didDocuments)).toBe(false);
 });
 
@@ -1865,7 +1867,12 @@ test("a transaction record hash on any other outcome is still rejected", () => {
   expect(verifySessionEvidenceRecord(crossLinked, didDocuments)).toBe(false);
 });
 
-test("a reference with a DID-bearing responder is rejected", () => {
+test("a reference with a DID-bearing responder is admitted unless bilateral", () => {
+  // The relationship survives; what changed is what it permits. Before "0.5" a
+  // DID-bearing responder refused the reference outright. That gate was an
+  // IDENTITY PROXY for the property that no counterparty signature witnesses
+  // the completion, and a counterparty whose identity verifies but whose acts
+  // are unsigned satisfies it exactly as fully as one with no identity at all.
   const [healthy, didDocuments] = externalChannelRecord();
 
   const identified = structuredClone(healthy);
@@ -1878,20 +1885,48 @@ test("a reference with a DID-bearing responder is rejected", () => {
   };
   reseal(identified);
 
+  // Arm one: the counterparty's observed act carries no DID of its own, so the
+  // classifier counts one represented party and the level stays unilateral.
   const assessment = assessSessionEvidenceRecord(identified, didDocuments);
-
-  // Assert the reason before the verdict: every act verifies, and with the
-  // seller's act unsigned the record is still unilateral, so what refuses it is
-  // the rule that a reference needs an observed responder.
   expect(assessment.invalid_acts).toBe(0);
   expect(assessment.verified_acts).toBe(1);
   expect(assessment.unsigned_acts).toBe(1);
   expect(assessment.evidence_level).toBe("unilateral");
-  expect(assessment.valid).toBe(false);
+  expect(assessment.valid).toBe(true);
+
+  // Arm two: attribute the observed act to the responder's DID and both parties
+  // are represented, so the level is mixed — admitted as well. Both conditions
+  // widened at "0.5", and both were identity proxies on the same property; a
+  // producer must not have to discard a verified DID to reach an admitted
+  // classification.
+  const mixed = structuredClone(identified);
+  const observed = (mixed.acts as Dict[]).find(
+    (entry) => entry.attribution === "unsigned_observation",
+  ) as Dict;
+  observed.sender_did = RESPONDER_DID;
+  mixed.evidence_level = "mixed";
+  reseal(mixed);
+
+  expect(verifySessionEvidenceRecord(mixed, didDocuments)).toBe(true);
+
+  // Arm three: bilateral, and nothing else, still refuses. It differs from arm
+  // two in EXACTLY ONE FIELD, so the refusal is attributable to the label — and
+  // the external-commitment rule runs before the recomputed-level comparison,
+  // so it is that rule which fires, not a classification mismatch.
+  const bilateral = structuredClone(mixed);
+  bilateral.evidence_level = "bilateral";
+  reseal(bilateral);
+
+  expect(verifySessionEvidenceRecord(bilateral, didDocuments)).toBe(false);
 });
 
+// Unchanged by the "0.5" relaxation, and refused by a different rule: an
+// OBSERVED responder is still coupled to unilateral evidence by Section 9A.8,
+// which this change does not touch, so both levels are refused before the
+// external-commitment rule is consulted. Named for the observed responder now —
+// the old name overclaimed a rule that no longer holds in general.
 test.each(["mixed", "bilateral"])(
-  "a reference with evidence other than unilateral is rejected: %s",
+  "a reference with an observed responder requires unilateral evidence: %s",
   (evidenceLevel) => {
     const [healthy, didDocuments] = externalChannelRecord();
 
@@ -2040,7 +2075,13 @@ test("a reference key that is present but undefined is not read as absent", () =
 
 // --- what the generator refuses to seal -------------------------------------
 
-test("the generator refuses a reference for a DID-bearing responder", () => {
+test("the generator refuses a reference for a bilateral session", () => {
+  // Stronger than the rule it replaces. This session's counterparty signed an
+  // acceptance, so it classifies bilateral and HAS a TransactionRecord; the
+  // generator refuses the reference on the evidence level rather than on the
+  // responder's identity shape. That is the right reason: a DID-bearing
+  // responder is admitted now, and what must stay refused is a genuinely
+  // bilateral session claiming an external witness.
   const [manager, session] = makeSession();
   const offer = makeOffer(session.session_id);
   manager.processMessage(session, offer);
@@ -2050,7 +2091,7 @@ test("the generator refuses a reference for a DID-bearing responder", () => {
     generateEvidenceWith(session, null, {
       externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
     }),
-  ).toThrow(/completes with its TransactionRecord/);
+  ).toThrow(/unilateral or mixed evidence/);
 });
 
 test.each([
@@ -2138,7 +2179,7 @@ test("a null reference is not supplied", () => {
 
   const evidence = generateEvidenceWith(session, null, { externalCommitmentReference: null });
 
-  expect(evidence.record_version).toBe("0.4");
+  expect(evidence.record_version).toBe("0.5");
   expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
 });
@@ -2380,7 +2421,20 @@ function resealExternalChannel(record: Dict, sealingCase: Dict | null = null): D
   return record;
 }
 
-/** Set each path in `changes.set` to its value and delete each path in `changes.remove`. */
+/**
+ * Set each path in `changes.set` to its value and delete each path in `changes.remove`.
+ *
+ * The `string[]` casts below are DELIBERATE AND LOAD-BEARING, and they understate
+ * the runtime type: a path element may be a string (object key) or a NUMBER (array
+ * index). The `mixed` external-channel case targets `["acts", 1, "sender_did"]`,
+ * where `1` is a JSON number, and JS array indexing accepts it unchanged.
+ *
+ * DO NOT "fix" these to a stricter type. Three harnesses walk these paths -- this
+ * one, `_apply_changes` and `_with_changes` on the Python side -- and the vectors
+ * are the CROSS-LANGUAGE contract, so all three must accept the same paths.
+ * Tighten `path` here and that case breaks in TypeScript ALONE, which is exactly
+ * the divergence the shared vectors exist to close.
+ */
 function applyChanges(record: Dict, changes: Dict): Dict {
   const holderOf = (path: string[]): Dict =>
     path.slice(0, -1).reduce((current: Dict, key) => current[key] as Dict, record);
@@ -2482,4 +2536,296 @@ test.each(
   expect(record.evidence_level).toBe(entry.evidence_level);
   expect(record.record_hash).toBe(entry.record_hash);
   expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(true);
+});
+
+// The bucket that mirrors invalid_records and MUST verify. Same shape, same
+// derivation, opposite verdict: each case applies its changes to expected.record
+// and reseals exactly as invalid_records does, so a case migrating between the
+// two buckets is a move rather than a rewrite. It exists because valid_variants
+// varies only observed_acts, and a structure carrying two contracts cannot tell
+// a reader which dimension an entry varies.
+test.each(
+  (EXTERNAL_CHANNEL_VECTOR.valid_records as Dict[]).map((entry): [string, Dict] => [
+    entry.name as string,
+    entry,
+  ]),
+)("external-channel valid record has Python/TypeScript parity: %s", (_name, entry) => {
+  const record = applyChanges(
+    structuredClone((EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict),
+    entry,
+  );
+  resealExternalChannel(record, entry);
+
+  expect(record.record_hash).toBe(entry.record_hash);
+  expect(verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_DID_DOCUMENTS)).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Mandate-only completion: a verified counterparty whose acts are unsigned
+// (Section 9A.12). The Python mirror is tests/test_mandate_only_completion.py;
+// these live here rather than in a file of their own because the TypeScript
+// suite has no cross-test imports and every fixture below is module-local.
+//
+// A counterparty can hold a resolvable DID and a mandate that verifies and
+// still never sign an act. That responder is a DID-bearing full party, never an
+// observed_party -- that descriptor requires the declared-markers to be
+// literally false -- and with its acts unsigned there is no bilateral
+// TransactionRecord either. The property the external-channel witness protects
+// is NO COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION; observed_party plus
+// unilateral was an identity proxy narrower than that property.
+// ---------------------------------------------------------------------------
+
+/** A session whose responder holds a DID and a mandate but signed nothing. */
+function mandateOnlySession(): [Session, Record<string, Dict>] {
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markCompletedExternally(session);
+  return [session, didDocuments];
+}
+
+/**
+ * The default is senderDid=null, which is what the buyer actually emits.
+ *
+ * Both levels are admitted; the default is the a2cn-natural construction.
+ *
+ * A mandate-only counterparty holds a resolvable DID. Whether the record is
+ * mixed or unilateral depends on how the producer projects the act, and BOTH
+ * are honest: carrying the counterparty's verified DID on an act attributed
+ * unsigned_observation gives two represented parties, so mixed — the default
+ * here, and what an act arriving over the A2CN wire looks like; recording no
+ * sender_did at all gives one, so unilateral, which today's buyer does by
+ * construction. Admitting only one of them would make a producer choose its
+ * classification over its evidence.
+ */
+function mandateOnlyRecord(
+  senderDid: string | null = RESPONDER_DID,
+): [Dict, Record<string, Dict>] {
+  const [session, didDocuments] = mandateOnlySession();
+  return [
+    generateEvidenceWith(session, [observedQuote({ senderDid })], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+    didDocuments,
+  ];
+}
+
+test("a mandate-only COMPLETED record verifies", () => {
+  const [record, didDocuments] = mandateOnlyRecord();
+
+  // Preconditions, asserted rather than assumed: acceptance below means nothing
+  // unless this really is the mandate-only shape.
+  const responder = (record.parties as Dict).responder as Dict;
+  expect(responder.did).toBe(RESPONDER_DID);
+  expect(hasKey(responder, "identity_source")).toBe(false);
+  expect((record.terminal as Dict).outcome).toBe(SessionState.COMPLETED);
+  expect(record.transaction_record_hash).toBeNull();
+  expect(record.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
+
+  expect(record.record_version).toBe("0.5");
+  expect(record.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+});
+
+test("the counterparty act of a mandate-only record stays unsigned", () => {
+  // No attribution inflation: a verified DID does not sign an act for its
+  // holder. The identity verifies; the ACTS do not.
+  const [record, didDocuments] = mandateOnlyRecord();
+
+  const attributions = Object.fromEntries(
+    (record.acts as Dict[]).map((entry) => [entry.message_type, entry.attribution]),
+  );
+  expect(attributions).toStrictEqual({
+    offer: "verified_signature",
+    counteroffer: "unsigned_observation",
+  });
+  expect(assessSessionEvidenceRecord(record, didDocuments)).toStrictEqual({
+    valid: true,
+    evidence_level: "mixed",
+    verified_acts: 1,
+    unsigned_acts: 1,
+    invalid_acts: 0,
+  });
+});
+
+test("a mandate-only completion whose counterparty act carries no DID is unilateral", () => {
+  // The cross-product cell a mixed-only test would leave unexercised. A producer
+  // may record the counterparty's act without a sender_did — an act observed
+  // through a channel that carried no identity, which is what today's buyer
+  // emits by construction. The classifier then counts one represented party,
+  // not two, so the level is unilateral rather than mixed. The widening is
+  // therefore load-bearing for a FULL-PARTY responder at unilateral too, not
+  // merely carrying Tier 0 along.
+  //
+  // HISTORY, because a later reader will be tempted to narrow this again. A
+  // narrower rule was drafted and briefly held: evidence_level unchanged at
+  // unilateral, on the measured ground that today's buyer records counterparty
+  // acts with no sender_did and so never produces mixed. THE MEASUREMENT WAS
+  // CORRECT AND THE RULE BUILT ON IT WAS STILL WRONG. It would have obliged a
+  // producer to omit a DID it had verified — to record less than it knows in
+  // order to reach an admitted classification — which is the same defect, one
+  // level up, that widening the responder condition removes. It would also have
+  // pinned the spec to a producer behaviour already logged as an open item, so
+  // the day that projection changed, every record that producer emitted would
+  // have stopped being emittable.
+  //
+  // Admitting both levels is also the only option that does not silently settle
+  // a separate question: whether an act's SENDER and its SIGNER should be the
+  // same field at all. Attaching a DID to an act nobody signed really is
+  // attribution inflation, and a missing sender_did really may be the honest
+  // projection given no signature. The spec declines to force either.
+  //
+  // Its sibling above is the same shape with the DID present. The two together
+  // pin that BOTH projections are admitted — neither alone distinguishes "this
+  // level is what the producer happens to emit" from "this level is what the
+  // rule requires".
+  const [record, didDocuments] = mandateOnlyRecord(null);
+
+  expect(((record.parties as Dict).responder as Dict).did).toBe(RESPONDER_DID);
+  expect(record.evidence_level).toBe("unilateral");
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+});
+
+test("the generator witnesses a mandate-only completion with the reference alone", () => {
+  // The session's responder is DID-bearing, which before this change was the
+  // generator's test for "completes with a TransactionRecord". That test was
+  // wrong for this tier: a TransactionRecord needs the counterparty's signed
+  // acceptance, which a mandate-only session does not have.
+  const [session] = mandateOnlySession();
+  expect(() => generateTransactionRecord(session)).toThrow();
+
+  const [record] = mandateOnlyRecord();
+
+  expect(record.transaction_record_hash).toBeNull();
+  expect(hasKey(record, "external_commitment_reference")).toBe(true);
+});
+
+test("a mandate-only COMPLETED record carrying both witnesses is refused", () => {
+  const [healthy, didDocuments] = mandateOnlyRecord();
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+  // The reseal helper must itself produce a verifiable record, or the refusal
+  // below would prove only that resealing is broken.
+  expect(verifySessionEvidenceRecord(reseal(structuredClone(healthy)), didDocuments)).toBe(true);
+
+  const both = structuredClone(healthy);
+  both.transaction_record_hash = "A".repeat(43);
+  reseal(both);
+
+  expect(both.transaction_record_hash).not.toBeNull();
+  expect(hasKey(both, "external_commitment_reference")).toBe(true);
+  expect(verifySessionEvidenceRecord(both, didDocuments)).toBe(false);
+});
+
+test("a mandate-only COMPLETED record carrying neither witness is refused", () => {
+  const [healthy, didDocuments] = mandateOnlyRecord();
+
+  const neither = structuredClone(healthy);
+  delete neither.external_commitment_reference;
+  reseal(neither);
+
+  expect(neither.transaction_record_hash).toBeNull();
+  expect(hasKey(neither, "external_commitment_reference")).toBe(false);
+  expect(verifySessionEvidenceRecord(neither, didDocuments)).toBe(false);
+});
+
+test("a mandate-only completion with no producer-signed act is refused", () => {
+  // mixed is admitted only alongside a producer-signed act. The relaxation
+  // widens WHO the responder may be; it does not weaken what the producer must
+  // have signed. With no signed act of its own the seal alone would carry the
+  // COMPLETED claim.
+  const [healthy, didDocuments] = mandateOnlyRecord();
+
+  const actLess = structuredClone(healthy);
+  actLess.acts = (actLess.acts as Dict[]).filter(
+    (entry) => entry.attribution !== "verified_signature",
+  );
+  reseal(actLess);
+
+  // The semantic precondition: this record really does carry acts, and none of
+  // them is signed. An empty acts list would satisfy the rule vacuously.
+  expect((actLess.acts as Dict[]).length).toBeGreaterThan(0);
+  expect((actLess.acts as Dict[]).every((e) => e.attribution !== "verified_signature")).toBe(true);
+  expect(verifySessionEvidenceRecord(actLess, didDocuments)).toBe(false);
+});
+
+test("stamping a verified_signature on an unsigned counterparty act is refused", () => {
+  // The presence-versus-verification hazard, at the tier that invites it: a
+  // mandate-only counterparty HAS a resolvable key, which is exactly what makes
+  // this the place someone would relabel its unsigned act as verified.
+  const [healthy, didDocuments] = mandateOnlyRecord();
+
+  const inflated = structuredClone(healthy);
+  const counterparty = (inflated.acts as Dict[]).find(
+    (entry) => entry.attribution === "unsigned_observation",
+  ) as Dict;
+  counterparty.attribution = "verified_signature";
+  reseal(inflated);
+
+  expect(counterparty.signature).toBeNull();
+  expect(verifySessionEvidenceRecord(inflated, didDocuments)).toBe(false);
+});
+
+test("a transaction_record_hash still requires a DID-bearing responder", () => {
+  // The direction this change does not touch. A TransactionRecord is bilateral
+  // by construction (Section 9.3), so a responder with no A2CN identity cannot
+  // have one, and a record claiming one for such a session is refused at every
+  // version. Mirrors the Python row of the same name; without it the TypeScript
+  // side would carry no guard on this direction at all.
+  const [healthy, didDocuments] = externalChannelRecord();
+
+  const claimed = structuredClone(healthy);
+  claimed.transaction_record_hash = "A".repeat(43);
+  delete claimed.external_commitment_reference;
+  reseal(claimed);
+
+  // The semantic precondition: the responder really is the observed shape, so
+  // the refusal below is the witness-direction rule and not something else.
+  expect(hasKey((claimed.parties as Dict).responder, "identity_source")).toBe(true);
+  expect(verifySessionEvidenceRecord(claimed, didDocuments)).toBe(false);
+});
+
+test("a mandate-only relaxation leaves the no-DID external-channel record unchanged", () => {
+  // A relaxation can widen past its target, and nothing else would notice.
+  const [record, didDocuments] = externalChannelRecord();
+
+  expect(((record.parties as Dict).responder as Dict).did_declared).toBe(false);
+  expect(record.evidence_level).toBe("unilateral");
+  expect(record.transaction_record_hash).toBeNull();
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+});
+
+test("an observed responder still requires the reference to complete", () => {
+  // The session must be the identity-light one. Passing observedResponder for a
+  // session whose responder declared a DID is refused earlier and for a
+  // different reason, a guard this change does not touch.
+  const [manager, session] = makeIdentityLightSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markCompletedExternally(session);
+
+  expect(() =>
+    generateEvidenceWith(session, [orderConfirmation()], {
+      observedResponder: OBSERVED_RESPONDER,
+    }),
+  ).toThrow(/requires externalCommitmentReference/);
+});
+
+test("a reference is still refused for a non-COMPLETED outcome", () => {
+  const [manager, session] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  session.state = SessionState.WITHDRAWN;
+  session.current_turn = "none";
+  session.terminal_message_id = null;
+  session.state_updated_at = "2026-03-24T10:10:00Z";
+
+  expect(() =>
+    generateEvidenceWith(session, [observedQuote({})], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/only for a COMPLETED session/);
+});
+
+test("the producer still seals a mandate-only record as initiator", () => {
+  const [record] = mandateOnlyRecord();
+
+  expect((record.producer as Dict).did).toBe(INITIATOR_DID);
+  expect(((record.parties as Dict).initiator as Dict).did).toBe(INITIATOR_DID);
 });

@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://a2cn.dev/schemas/session-evidence-record/0.5",
+  "title": "A2CN SessionEvidenceRecord",
+  "description": "Producer-sealed evidence package for an A2CN session. \"0.5\" is the version whose external-channel completion witness is admitted for a verified DID-bearing responder whose acts are unsigned, not only for an identity-light one. \"0.4\" gated that witness on an observed_party responder at evidence_level \"unilateral\", which is an identity proxy narrower than the property it protects: that no counterparty signature witnesses the completion. That property is enforced by the completion-witness rule of Section 9A.6 step 9, which is unchanged here, so this file relaxes the proxy and nothing else. A counterparty holding a resolvable DID and a verifying mandate but signing no act is a full party, never an observed_party, and has no TransactionRecord either; before \"0.5\" such a session had no COMPLETED shape at all.",
+  "type": "object",
+  "required": [
+    "record_type",
+    "record_version",
+    "evidence_id",
+    "session_id",
+    "generated_at",
+    "producer",
+    "parties",
+    "terminal",
+    "transaction_record_hash",
+    "acts",
+    "act_chain_hash",
+    "evidence_level",
+    "record_hash",
+    "producer_signature"
+  ],
+  "properties": {
+    "record_type": {
+      "type": "string",
+      "const": "a2cn_session_evidence_record"
+    },
+    "record_version": {
+      "type": "string",
+      "const": "0.5"
+    },
+    "evidence_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "parties": {
+      "type": "object",
+      "required": ["initiator", "responder"],
+      "properties": {
+        "initiator": { "$ref": "#/$defs/party" },
+        "responder": {
+          "description": "A DID-bearing A2CN party, or a producer-asserted identity-light descriptor that a verifier MUST NOT resolve or authenticate.",
+          "oneOf": [
+            { "$ref": "#/$defs/party" },
+            { "$ref": "#/$defs/observed_party" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "required": ["outcome", "reason", "message_id", "timestamp"],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "COMPLETED",
+            "REJECTED_FINAL",
+            "WITHDRAWN",
+            "TIMED_OUT",
+            "IMPASSE",
+            "ERROR",
+            "HALTED_BY_CONTROLS"
+          ]
+        },
+        "reason": {
+          "type": ["string", "null"]
+        },
+        "message_id": {
+          "type": ["string", "null"]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "money_basis": {
+          "$ref": "#/$defs/money_basis",
+          "description": "Recomputable basis for the terminal quote. Binds to the act named by terminal.message_id."
+        }
+      },
+      "additionalProperties": false
+    },
+    "transaction_record_hash": {
+      "anyOf": [
+        { "$ref": "#/$defs/hash" },
+        { "type": "null" }
+      ]
+    },
+    "external_commitment_reference": {
+      "$ref": "#/$defs/external_commitment_reference",
+      "description": "OPTIONAL at \"0.5\", as at \"0.4\" and unlike \"0.3\" where the record carries it by definition. A record carries it exactly when a COMPLETED session settled through an external channel (Section 9A.12)."
+    },
+    "acts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceAct"
+      }
+    },
+    "act_chain_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "evidence_level": {
+      "type": "string",
+      "enum": ["bilateral", "mixed", "unilateral"]
+    },
+    "record_hash": {
+      "$ref": "#/$defs/hash"
+    },
+    "producer_signature": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Compact JWS over record_hash using producer.verification_method."
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Namespaced producer extensions. Covered by record_hash and the producer seal, never interpreted by a verifier. The rest of the record stays closed.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]*(\\.[a-z0-9][a-z0-9_-]*)+$"
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "description": "The completion witness (Section 9A.6 step 9, Section 9A.2). A COMPLETED record carries exactly one of a non-null transaction_record_hash and an external_commitment_reference; a record with any other outcome carries a null transaction_record_hash and no external_commitment_reference. \"0.2\" expressed only the bilateral half and \"0.3\" only the external-channel half, each describing one case; the rule itself has always held at every record_version and the verifier enforces it independently of this file.",
+      "if": {
+        "required": ["terminal"],
+        "properties": {
+          "terminal": {
+            "required": ["outcome"],
+            "properties": {
+              "outcome": { "const": "COMPLETED" }
+            }
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "description": "Bilateral completion: the witness is the TransactionRecord hash.",
+            "required": ["transaction_record_hash"],
+            "properties": {
+              "transaction_record_hash": { "$ref": "#/$defs/hash" }
+            },
+            "not": { "required": ["external_commitment_reference"] }
+          },
+          {
+            "description": "External-channel completion: the witness is the external commitment reference, so there is no TransactionRecord to hash.",
+            "required": ["transaction_record_hash", "external_commitment_reference"],
+            "properties": {
+              "transaction_record_hash": { "type": "null" }
+            }
+          }
+        ]
+      },
+      "else": {
+        "properties": {
+          "transaction_record_hash": { "type": "null" }
+        },
+        "not": { "required": ["external_commitment_reference"] }
+      }
+    },
+    {
+      "description": "External-channel completion is against a counterparty that signed no act, and the record carries at least one act its producer signed (Sections 9A.8 and 9A.12). BOTH conditions widened at \"0.5\", and both were identity proxies on one property: that no counterparty signature witnesses the completion. The responder may be an observed_party with no A2CN identity, or a DID-bearing party whose identity verifies while its acts stay unsigned. The evidence is unilateral or mixed, never bilateral: unilateral when the producer records the counterparty's act with no sender_did, mixed when it carries the counterparty's verified DID on an act attributed unsigned_observation. BOTH ARE HONEST RECORDS -- admitting only unilateral would require a producer to omit a DID it has verified, recording less than it knows to reach a classification. bilateral stays excluded because it asserts both parties' material acts are attributable, the one claim such a record cannot make. The acts.contains clause is what holds the real property, and it is unchanged: without an act the producer signed, the seal alone would carry the COMPLETED claim. Conditional rather than unconditional as in \"0.3\": a \"0.5\" record describes every outcome, so requiring a signed act or a non-bilateral level of all of them would refuse an ordinary session that ended unsigned.",
+      "if": {
+        "required": ["external_commitment_reference"]
+      },
+      "then": {
+        "properties": {
+          "parties": {
+            "properties": {
+              "responder": {
+                "anyOf": [
+                  { "$ref": "#/$defs/party" },
+                  { "$ref": "#/$defs/observed_party" }
+                ]
+              }
+            }
+          },
+          "evidence_level": { "enum": ["unilateral", "mixed"] },
+          "acts": {
+            "contains": {
+              "properties": {
+                "attribution": { "const": "verified_signature" }
+              },
+              "required": ["attribution"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "The witness MUST match the responder, both ways (Section 9A.6 step 9). A non-null transaction_record_hash requires a DID-bearing parties.responder, because a TransactionRecord is bilateral by construction (Section 9.3). Neither \"0.2\" nor \"0.3\" stated this direction; the verifier has enforced it at every record_version, so writing it here refuses only a combination that was never valid.",
+      "if": {
+        "required": ["transaction_record_hash"],
+        "properties": {
+          "transaction_record_hash": { "type": "string" }
+        }
+      },
+      "then": {
+        "properties": {
+          "parties": {
+            "properties": {
+              "responder": { "$ref": "#/$defs/party" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "An observed_party responder is coupled to unilateral evidence (Section 9A.8). No schema before \"0.5\" stated this; the verifier has enforced it at every record_version, so writing it here refuses only a combination that was never valid. UNCONDITIONAL, and that is the whole of its value. It covers TWO cases allOf[1] does not. First, allOf[1] is GATED ON external_commitment_reference, so an observed responder at \"mixed\" or \"bilateral\" carrying NO reference has never been refused by any schema at any version, although the verifier has always refused it. Second, allOf[1] admits \"unilateral\" OR \"mixed\" (Section 9A.12), so where a reference IS present the two clauses CONJOIN and this one is what still refuses \"mixed\" for an observed responder -- they do not state the same level and must not be read as if they did. Do NOT fold this into allOf[1]: doing so would admit an observed responder at \"mixed\", which Section 9A.8 forbids, and would drop the no-reference case entirely. Section 9A.8's coupling and Section 9A.12's conditions have distinct scopes and are stated separately so a later change to either cannot quietly retire the other -- the reason this clause exists at all is that Section 9A.12's wording was, for a time, the only thing enforcing Section 9A.8's rule, and a relaxation there silently removed the enforcement.",
+      "if": {
+        "required": ["parties"],
+        "properties": {
+          "parties": {
+            "required": ["responder"],
+            "properties": {
+              "responder": { "$ref": "#/$defs/observed_party" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evidence_level": { "const": "unilateral" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "Base64url-encoded SHA-256 digest without padding."
+    },
+    "producer": {
+      "type": "object",
+      "required": ["did", "agent_id", "verification_method"],
+      "properties": {
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "party": {
+      "type": "object",
+      "required": [
+        "organization_name",
+        "did",
+        "agent_id",
+        "verification_method",
+        "mandate_type"
+      ],
+      "properties": {
+        "organization_name": { "type": "string" },
+        "did": {
+          "type": "string",
+          "pattern": "^did:"
+        },
+        "agent_id": { "type": "string" },
+        "verification_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mandate_type": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "observed_party": {
+      "type": "object",
+      "description": "A counterparty with no A2CN identity. Every field is a PRODUCER-ASSERTED, UNVERIFIED descriptor. A verifier MUST NOT resolve, authenticate, or vouch for any of it.",
+      "required": [
+        "identity_source",
+        "did_declared",
+        "a2cn_endpoint_declared",
+        "mandate_declared"
+      ],
+      "properties": {
+        "identity_source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Producer's own label for where the identity came from, for example an ordering portal or an email domain. Opaque to the verifier: no registry, no whitelist, no per-type validation."
+        },
+        "organization_name": { "type": "string" },
+        "observed_credential": {
+          "type": "object",
+          "description": "Digest of a credential the producer observed. The digest is recorded so the credential value itself need not be retained; it is not evidence of authentication.",
+          "required": ["type", "digest"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "digest": { "$ref": "#/$defs/hash" }
+          },
+          "additionalProperties": false
+        },
+        "did_declared": { "const": false },
+        "a2cn_endpoint_declared": { "const": false },
+        "mandate_declared": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "external_commitment_reference": {
+      "type": "object",
+      "description": "The external order or commitment a COMPLETED session produced with a counterparty that signed no A2CN act (Section 9A.12). Recorded by the producer and not verified: a verifier MUST NOT dereference locator or contact the counterparty. The counterparty's identity is not repeated here: it is parties.responder, either the observed_credential of an observed_party (Section 9A.8) or the did of a party whose identity verifies although its acts are unsigned.",
+      "required": ["external_commitment_id"],
+      "properties": {
+        "external_commitment_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The counterparty's identifier for the order or commitment, for example a UCP order id. Always a string, even when it looks numeric."
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the producer found the counterparty, for example its discovery URL. Provenance only: a verifier MUST NOT dereference it."
+        },
+        "reference_note": {
+          "type": "string",
+          "description": "A note for human readers. Never interpreted."
+        }
+      },
+      "additionalProperties": false
+    },
+    "money_basis": {
+      "type": "object",
+      "description": "Independently recomputable unit normalization for a claimed total. `basis` is a checked label only: a verifier MUST NOT convert between net and gross. A `net` or `gross` label MUST equal the `terms.basis` of the act it describes whenever that act's terms carries `basis` (Section 9A.9).",
+      "required": [
+        "raw_amounts",
+        "currency",
+        "minor_unit_exponent",
+        "basis",
+        "normalized_total_minor"
+      ],
+      "properties": {
+        "raw_amounts": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Amounts as observed, in MAJOR units, as exact decimal strings. Strings because a JSON number cannot carry a decimal amount exactly.",
+          "items": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          }
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "minor_unit_exponent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Producer-asserted decimal places between major and minor units. A2CN maintains no currency exponent registry; this is checked for arithmetic consistency, not for correctness against the currency."
+        },
+        "basis": {
+          "type": "string",
+          "enum": ["net", "gross", "per_unit", "line_total", "unspecified"]
+        },
+        "normalized_total_minor": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "Bounded to the exact-integer range both reference implementations share, so the recompute cannot disagree across languages."
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceAct": {
+      "type": "object",
+      "required": [
+        "sequence_number",
+        "round_number",
+        "message_type",
+        "message_id",
+        "sender_did",
+        "timestamp",
+        "source_protocol",
+        "act",
+        "act_hash",
+        "sender_verification_method",
+        "signature_type",
+        "signature",
+        "attribution"
+      ],
+      "properties": {
+        "sequence_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "round_number": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "message_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "sender_did": {
+          "type": ["string", "null"],
+          "pattern": "^did:",
+          "description": "Null only for an unsigned observation whose sender holds no DID. A producer MUST NOT fabricate one."
+        },
+        "timestamp": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "money_basis": {
+          "$ref": "#/$defs/money_basis",
+          "description": "Producer annotation about this act. It is outside `act` because it is not counterparty-authored content."
+        },
+        "source_protocol": {
+          "type": ["string", "null"]
+        },
+        "act": {
+          "type": "object",
+          "description": "Complete normalized observed act protected by act_hash."
+        },
+        "act_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "sender_verification_method": {
+          "type": ["string", "null"]
+        },
+        "signature_type": {
+          "type": ["string", "null"],
+          "description": "The signature slot the act carries. \"0.4\" is the first version admitting rejection_signature and withdrawal_signature, because Rejection and Withdrawal became signable in band with the uniform signed-act envelope (Sections 7.5 and 7.6). One slot per act type keeps signature_type and message_type one-to-one, which is what lets a verifier refuse a relabelled act.",
+          "enum": [
+            "protocol_act_signature",
+            "acceptance_signature",
+            "rejection_signature",
+            "withdrawal_signature",
+            null
+          ]
+        },
+        "signature": {
+          "type": ["string", "null"]
+        },
+        "attribution": {
+          "type": "string",
+          "enum": ["verified_signature", "unsigned_observation"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "attribution": { "const": "verified_signature" },
+            "sender_did": { "type": "string", "pattern": "^did:" },
+            "sender_verification_method": { "type": "string", "minLength": 1 },
+            "signature_type": {
+              "type": "string",
+              "enum": [
+                "protocol_act_signature",
+                "acceptance_signature",
+                "rejection_signature",
+                "withdrawal_signature"
+              ]
+            },
+            "signature": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "properties": {
+            "attribution": { "const": "unsigned_observation" },
+            "sender_verification_method": { "type": "null" },
+            "signature_type": { "type": "null" },
+            "signature": { "type": "null" }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -232,11 +232,14 @@ function relabelled(record: Dict, version: string): Dict {
   return copy;
 }
 
-test("a signed decline is emitted at 0.4", () => {
+test("a signed decline is emitted at 0.5", () => {
   // The control for everything below: the vocabulary and the version agree.
+  // Named for the EMITTED version, "0.5". The binding FLOOR is still "0.4" and
+  // the refusals below are keyed on it — the two are different numbers now, and
+  // conflating them is how this test would come to assert a version nobody emits.
   const [record, didDocuments] = declineRecord(true);
 
-  expect(record.record_version).toBe("0.4");
+  expect(record.record_version).toBe("0.5");
   expect((record.acts as Dict[])[0].signature_type).toBe("rejection_signature");
   expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
 });
@@ -278,10 +281,11 @@ test("a 0.3 relabel is refused for its own reason", () => {
 });
 
 test("the binding is one-directional", () => {
-  // "0.4" does not imply the vocabulary: an ordinary record carries no decline.
+  // A version at or above the floor does not imply the vocabulary: an ordinary
+  // record carries no decline at all.
   const [record, didDocuments] = declineRecord(false);
 
-  expect(record.record_version).toBe("0.4");
+  expect(record.record_version).toBe("0.5");
   expect((record.acts as Dict[]).every((entry) => entry.signature_type === null)).toBe(true);
   expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
 });

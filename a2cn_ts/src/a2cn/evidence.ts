@@ -39,19 +39,23 @@ export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 // carries external_commitment_reference (Section 9A.12). Every other record
 // stays "0.2", so a verifier that predates "0.3" still reads it.
 export const SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3";
-// Every record a producer emits is "0.4" (Section 9A.2). The two constants
-// above name versions that only historical records carry; they stay so those
-// records can still be read, because the SER recognizer is additive — a
-// version is added and none removed, and an older sealed record stays valid.
-export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4";
+// Every record a producer emits is "0.5" (Section 9A.2). The constants above
+// name versions that only historical records carry; they stay so those records
+// can still be read, because the SER recognizer is additive — a version is
+// added and none removed, and an older sealed record stays valid.
+export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.5";
 // The versions a verifier accepts (Section 9A.2). Every other value is rejected.
 // Verification is the same for all of them, except that a "0.3" record carries
 // external_commitment_reference exactly when it is "0.3".
+//
+// ORDERED, and the order is load-bearing: versionAtOrAfter reads its floors off
+// this list, so a new version MUST be appended in published order.
 export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = [
   "0.1",
   "0.2",
   "0.3",
   "0.4",
+  "0.5",
 ];
 export const SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record";
 
@@ -74,7 +78,7 @@ export const EvidenceSignatureType = {
   WITHDRAWAL: "withdrawal_signature",
 } as const;
 
-// The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+// The act vocabulary that "0.4" and later admit. Rejection and Withdrawal became
 // signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
 // no earlier version's schema lists these values and no earlier record can
 // legitimately carry one.
@@ -82,7 +86,17 @@ const DECLINE_SIGNATURE_TYPES = new Set<string>([
   EvidenceSignatureType.REJECTION,
   EvidenceSignatureType.WITHDRAWAL,
 ]);
-const VERSIONS_ADMITTING_DECLINE_VOCABULARY = new Set<string>(["0.4"]);
+// FLOORS, not literal sets. Both rules keyed on these mean "this version or
+// later", and both were once written as sets naming the versions that existed
+// when they were written. That is correct until the next version ships and then
+// states the opposite of its own docstring: as new Set(["0.4"]) this refused a
+// "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
+// witness rule below dropped every stored "0.4" external-channel record into the
+// "0.3" biconditional and refused it. Neither docstring ever claimed a single
+// version — each already said "or later" — so the literals contradicted the
+// prose beside them rather than implementing it.
+const VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4";
+const VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4";
 
 export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
 
@@ -201,12 +215,14 @@ export interface GenerateSessionEvidenceOptions {
   terminalMoneyBasis?: Dict | null;
   extensions?: Dict | null;
   /**
-   * Completes a session whose responder is observed: the external order or
-   * commitment the deal produced, in place of a TransactionRecord, which is
-   * bilateral (Section 9A.12). Such a record is "0.4", like every record this
-   * generator emits; the reference is OPTIONAL at that version (Section 9A.2).
-   * Required for that session and refused for any other; null or undefined
-   * means it is not supplied.
+   * Completes a session whose counterparty signed no A2CN act: the external
+   * order or commitment the deal produced, in place of a TransactionRecord,
+   * which is bilateral (Section 9A.12). That counterparty may be an observed
+   * responder holding no identity, or a DID-bearing party whose identity
+   * verifies while its acts stay unsigned. Such a record is "0.5", like every
+   * record this generator emits; the reference is OPTIONAL at that version
+   * (Section 9A.2). It is refused for any outcome but COMPLETED; null or
+   * undefined means it is not supplied.
    */
   externalCommitmentReference?: Dict | null;
 }
@@ -260,20 +276,18 @@ export function generateSessionEvidenceRecord(
   });
 
   // A COMPLETED session carries exactly one completion witness (Section 9A.2).
-  // A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
-  // completes with one, and an observed responder completes through the
-  // external commitment the deal produced (Section 9A.12).
+  // A TransactionRecord is bilateral (Section 9.3), so a session whose
+  // counterparty signed an acceptance completes with one, and a session whose
+  // counterparty signed nothing completes through the external commitment the
+  // deal produced (Section 9A.12). That second case is NOT the same as "the
+  // responder is observed": a mandate-only counterparty is DID-bearing and
+  // still signs no act, so the witness is keyed on the reference the caller
+  // supplies rather than on the responder's identity shape.
   const externalCommitmentReference = options.externalCommitmentReference ?? null;
   let reference: Dict | null = null;
   if (externalCommitmentReference !== null) {
     if (outcome !== SessionState.COMPLETED) {
       throw new Error("externalCommitmentReference is only for a COMPLETED session");
-    }
-    if (observedResponder === null) {
-      throw new Error(
-        "externalCommitmentReference requires an observed responder; a " +
-          "DID-bearing responder completes with its TransactionRecord",
-      );
     }
     reference = validatedExternalCommitmentReference(externalCommitmentReference);
   } else if (outcome === SessionState.COMPLETED && observedResponder !== null) {
@@ -302,7 +316,7 @@ export function generateSessionEvidenceRecord(
 
   const terminalTimestamp = terminalTimestampFor(session);
   let transactionRecordHash: string | null = null;
-  if (outcome === SessionState.COMPLETED && observedResponder === null) {
+  if (outcome === SessionState.COMPLETED && reference === null) {
     transactionRecordHash = generateTransactionRecord(session).record_hash as string;
   }
 
@@ -367,7 +381,8 @@ export function generateSessionEvidenceRecord(
   }
   if (!externalCommitmentRulesHold(record)) {
     throw new Error(
-      "An external commitment reference requires an observed responder and unilateral evidence",
+      "An external commitment reference requires a responder that signed no act, " +
+        "and unilateral or mixed evidence",
     );
   }
   // externalCommitmentMatchesVersion03 was checked here, and is not any more. It
@@ -380,13 +395,25 @@ export function generateSessionEvidenceRecord(
   // merely unreachable.
   //
   // The predicate itself is NOT dead — the verifier still calls it, where it
-  // governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
-  // live again the moment emission stops being universally "0.4". So if a later
-  // change makes the emitted version conditional, this site needs a guard AND A
-  // NEW MESSAGE, because the old one asserted a rule that is no longer true of
-  // anything we emit — restoring it verbatim would be worse than the deletion it
-  // undoes. An unreachable guard is merely dead; a guard whose failure message
-  // states a false rule misleads whoever revives it.
+  // governs stored records below the floor. And this call site becomes live
+  // again the moment emission stops being UNIVERSAL — that is, the moment
+  // record_version comes to depend on what the record contains. The condition is
+  // universality, NOT any particular version number.
+  //
+  // That distinction is load-bearing and this file has now paid for it twice. An
+  // earlier wording said "the moment emission stops being universally 0.4",
+  // which the move to "0.5" satisfies LITERALLY while leaving this site exactly
+  // as dead as it was: emission stayed universal and the assignment above stayed
+  // unconditional. A condition written as a version number goes stale the moment
+  // the version moves; a condition written as the property it means does not.
+  // The same literal-for-semantic substitution is what made the two version
+  // rules below contradict their own docstrings.
+  //
+  // So if a later change makes the emitted version conditional, this site needs
+  // a guard AND A NEW MESSAGE, because the old one asserted a rule that is no
+  // longer true of anything we emit — restoring it verbatim would be worse than
+  // the deletion it undoes. An unreachable guard is merely dead; a guard whose
+  // failure message states a false rule misleads whoever revives it.
   if (!externalCommitmentProducerActPresent(record)) {
     throw new Error(
       "An external commitment reference requires at least one act signed by the " +
@@ -973,14 +1000,43 @@ function completionWitnessHolds(record: Dict): boolean {
 }
 
 /**
- * Couple an external commitment reference to an observed responder and
- * unilateral evidence.
+ * Couple an external commitment reference to a counterparty that signed nothing.
  *
  * A TransactionRecord is bilateral by construction (Section 9.3), so the
- * reference exists for a counterparty with no A2CN identity, and the record
- * represents one DID-bearing party beside an observed reference (Section 9A.12).
- * Asserted here rather than left to follow from the observed-responder coupling,
- * for the same reason that coupling is asserted explicitly.
+ * reference exists for a session that produced none: one whose counterparty
+ * never signed an A2CN act (Section 9A.12). That counterparty may hold no
+ * identity at all — an observed_party — or hold a DID and a mandate that verify
+ * while signing no act. Both satisfy the property this rule exists to protect,
+ * which is that NO COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION.
+ *
+ * Until "0.5" this asserted observed_party and unilateral. That pair is an
+ * IDENTITY PROXY for the property and is narrower than it: written for the
+ * no-DID case, it incidentally excluded a verified-identity counterparty whose
+ * acts are unsigned — a shape an observed_party cannot even express, since that
+ * descriptor requires the declared-markers to be literally false. The proxy is
+ * relaxed to the property here. What still holds the property is the
+ * producer-signed act (externalCommitmentProducerActPresent) together with the
+ * exactly-one-witness rule, and neither of those moves.
+ *
+ * evidence_level was a SECOND identity proxy on the same property, and it is
+ * relaxed for the same reason. Both unilateral and mixed satisfy "no
+ * counterparty signature witnesses the completion"; which one a record carries
+ * depends on the producer, not on the honesty of the record:
+ *
+ *   - unilateral when the producer records the counterparty's act with no
+ *     sender_did at all;
+ *   - mixed when it carries the counterparty's verified DID on an act
+ *     attributed unsigned_observation.
+ *
+ * BOTH ARE HONEST RECORDS. Admitting only unilateral would require a producer
+ * to omit a DID it has verified — to record less than it knows in order to
+ * reach a classification — which is the very defect this rule is being relaxed
+ * to remove, one level up.
+ *
+ * bilateral stays excluded, which is why this checks membership rather than
+ * merely "not bilateral": that level asserts both parties' material acts are
+ * attributable, precisely the claim a session completing through an external
+ * reference cannot make.
  */
 function externalCommitmentRulesHold(record: Dict): boolean {
   if (!hasOwn(record, "external_commitment_reference")) {
@@ -990,24 +1046,45 @@ function externalCommitmentRulesHold(record: Dict): boolean {
   if (typeof parties !== "object" || parties === null) {
     return false;
   }
+  const responder = parties.responder;
+  if (!fullPartyShapeValid(responder) && !observedPartyShapeValid(responder)) {
+    return false;
+  }
   return (
-    observedPartyShapeValid(parties.responder) &&
+    record.evidence_level === EvidenceLevel.MIXED ||
     record.evidence_level === EvidenceLevel.UNILATERAL
   );
+}
+
+/**
+ * Whether a recognized record_version is `floor` or later.
+ *
+ * Ordered by position in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS, which is
+ * published order. A value this verifier does not recognize is never "later":
+ * it is refused elsewhere, and treating an unknown label as later would let it
+ * inherit the newest rules merely by being unfamiliar.
+ */
+function versionAtOrAfter(version: unknown, floor: string): boolean {
+  const index = RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.indexOf(version as string);
+  if (index < 0) {
+    return false;
+  }
+  return index >= RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.indexOf(floor);
 }
 
 /**
  * A record carries external_commitment_reference exactly when it is "0.3"
  * (Section 9A.2).
  *
- * This is the one verification rule that depends on the version. The reference
- * is present by key, so one whose value is null counts as carried.
+ * A historical rule, kept so "0.3" records still read as they always did. From
+ * "0.4" on there is no version-keyed witness rule at all. The reference is
+ * present by key, so one whose value is null counts as carried.
  */
 function externalCommitmentMatchesVersion03(record: Dict): boolean {
   const version = record.record_version;
-  if (version === SESSION_EVIDENCE_RECORD_VERSION_CURRENT) {
-    // "0.4" carries no version-keyed witness rule at all: the reference is
-    // OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule —
+  if (versionAtOrAfter(version, VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE)) {
+    // "0.4" and later carry no version-keyed witness rule at all: the reference
+    // is OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule —
     // which holds at every record_version and is enforced independently of any
     // version — carries the weight instead. Keeping the biconditional would
     // refuse every external-channel record, by demanding the version be "0.3"
@@ -1022,8 +1099,9 @@ function externalCommitmentMatchesVersion03(record: Dict): boolean {
  * An act carrying a decline signature makes the record "0.4" or later.
  *
  * ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
- * version, never the reverse. An ordinary "0.4" record carries no decline at
- * all, so this must not be read as "0.4" implying the vocabulary.
+ * version, never the reverse. An ordinary record at or above the floor carries
+ * no decline at all, so this must not be read as the version implying the
+ * vocabulary.
  *
  * Keyed on signature_type rather than on a signature field inside acts[].act.
  * That object is open, so a field there violates no published schema, and a
@@ -1034,8 +1112,13 @@ function externalCommitmentMatchesVersion03(record: Dict): boolean {
  * schema names the vocabulary.
  *
  * NOTE the polarity, which is the opposite of the rule above: that one goes
- * quiet at "0.4" and governs only historical records; this one fires only below
- * "0.4" and governs only new vocabulary.
+ * quiet at the floor and governs only historical records; this one fires only
+ * below the floor and governs only new vocabulary. Both floors are "0.4" and
+ * both are read through versionAtOrAfter, rather than written as the set of
+ * versions that happened to exist when this was written — as the literal
+ * new Set(["0.4"]) this refused a "0.5" record for carrying a decline that
+ * "0.5" admits, while the first line of this comment already said "or later".
+ * The prose was right and the code was wrong.
  */
 function declineVocabularyRequires04(record: Dict): boolean {
   const acts = record.acts;
@@ -1057,7 +1140,7 @@ function declineVocabularyRequires04(record: Dict): boolean {
   if (!carriesDecline) {
     return true;
   }
-  return VERSIONS_ADMITTING_DECLINE_VOCABULARY.has(record.record_version as string);
+  return versionAtOrAfter(record.record_version, VERSION_ADMITTING_DECLINE_VOCABULARY);
 }
 
 /**

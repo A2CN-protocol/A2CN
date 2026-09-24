@@ -327,9 +327,9 @@ missing — each rejected with `unbound_reason` rather than the generic
 `unrecognized_reason` that `transaction_record.rejected` gets, since those values
 are no version at all. `"0.3"` is refused for the same reason `"0.2"` is, one act
 later: it bound its offer and stored none of the acceptance's act fields. A SessionEvidenceRecord is untouched by that rule: it accepts `"0.1"`,
-`"0.2"`, `"0.3"` and `"0.4"`, and rejects `"0.5"`. That set is **additive** —
-`"0.4"` was added and none removed — so a record sealed under an earlier version
-stays valid. This is deliberately the opposite of the TransactionRecord's clean
+`"0.2"`, `"0.3"`, `"0.4"` and `"0.5"`, and rejects `"0.6"`. That set is
+**additive** — `"0.5"` was added and none removed — so a record sealed under an
+earlier version stays valid. This is deliberately the opposite of the TransactionRecord's clean
 break above: every evidence record is producer-sealed, so there is no unbound
 tier for a relabelled record to be downgraded to.
 `producers_emit` is the version each producer writes: one value for every
@@ -343,7 +343,7 @@ Each artifact's `shapes` (TransactionRecord) or per-case `shape` names
 (SessionEvidenceRecord) say which record each case is applied to. Every
 SessionEvidenceRecord case carries its own `shape` — in `accepted`,
 `additional_accepted_shapes` and `cross_shape` alike — because from `"0.4"` a
-version no longer picks out a single shape: `"0.4"` appears with
+version no longer picks out a single shape: `"0.4"` and `"0.5"` each appear with
 `without_external_commitment` in `accepted` and with `with_external_commitment`
 in `additional_accepted_shapes`. The mapping is one-to-many from that version on,
 so the `shape` named on the case, never the version, decides which record is
@@ -395,19 +395,37 @@ observed, and is `unilateral`, because the level of a record whose responder is
 an `observed_party` is asserted rather than derived (Section 9A.5). Each
 `invalid_records` case edits `expected.record` as its `set` and `remove` say,
 and names the rule it breaks: both completion witnesses, neither, a reference on
-another outcome, a DID-bearing responder, `mixed` or `bilateral` evidence, the
-record labelled `"0.2"` or `"0.1"`, `"0.3"` without the reference, an
-`observed_party` responder carrying a `transaction_record_hash` (at `"0.2"` and
-at `"0.1"`), no act the producer signed, no acts at all, and a record sealed by
-a DID that is not its initiator. That last case is sealed with `second_producer`,
-whose `private_jwk` is test-only, as its `sealed_by` says, so its seal verifies
-and only the producer binding refuses it; a case whose `schema_expresses` is
-false states a rule a JSON Schema cannot express, so the `"0.3"` schema accepts
-that record and only the verifier refuses it. Resealed, each has
-`resealed_record_hash` and fails verification. The Python suite validates every
-valid record against `session-evidence-record-0.3.schema.json`, checks that
-every invalid one fails it unless `schema_expresses` says otherwise, and checks
-that the `"0.1"` and `"0.2"` schemas refuse the reference.
+another outcome, `mixed` or `bilateral` evidence **against an `observed_party`
+responder** (refused by Section 9A.8's coupling, not by Section 9A.12), a
+DID-bearing responder at `bilateral`, the record labelled `"0.2"` or `"0.1"`,
+`"0.3"` without the reference, an `observed_party` responder carrying a
+`transaction_record_hash` (at `"0.2"` and at `"0.1"`), no act the producer
+signed, no acts at all, and a record sealed by a DID that is not its initiator.
+That last case is sealed with `second_producer`, whose `private_jwk` is
+test-only, as its `sealed_by` says, so its seal verifies and only the producer
+binding refuses it; a case whose `schema_expresses` is false states a rule a JSON
+Schema cannot express, so every schema describing the record accepts it and only
+the verifier refuses it. Resealed, each has `resealed_record_hash` and fails
+verification. The Python suite validates every valid record against
+`session-evidence-record-0.5.schema.json`, checks that every invalid one fails it
+unless `schema_expresses` says otherwise, and checks that the `"0.1"` and `"0.2"`
+schemas refuse the reference.
+
+`valid_records` mirrors `invalid_records` — same `set`/`remove` shape, same
+derivation, opposite verdict — so a case moving between the two buckets is a move
+rather than a rewrite. Its one case is a DID-bearing responder carrying the
+reference, which `"0.4"` refused and `"0.5"` admits; it lands at `unilateral`,
+not `mixed`, because it sets only `parties.responder` while the inherited
+observed act carries a null `sender_did`. **A DID-bearing responder does not
+imply `mixed`.** The bucket is separate from `valid_variants`, which varies only
+`observed_acts`: one structure carrying two contracts cannot tell a reader which
+dimension a given entry varies.
+
+**Whether a case reaches Section 9A.12's own exclusions is decided by its
+responder shape, not by its name.** Section 9A.8 couples an `observed_party`
+responder to `unilateral`, and a verifier enforces that first, so every case
+pairing the reference with an `observed_party` is refused before Section 9A.12's
+conditions are consulted. Only a full-party responder reaches them.
 `session_evidence_record_0_2_schema_sha256` pins
 `session-evidence-record-0.2.schema.json`, beside which the `"0.3"` schema is
 published and which is not rewritten (Section 17).

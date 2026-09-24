@@ -34,15 +34,19 @@ SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 # stays "0.2", so a verifier that predates "0.3" still reads it.
 SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3"
 # The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-# Verification is the same for all of them, except that a record carries
-# external_commitment_reference exactly when it is "0.3".
-# Every record a producer emits is "0.4" (Section 9A.2). The two constants
-# above name versions that only historical records carry; they stay so those
-# records can still be read, because the SER recognizer is additive — a
-# version is added and none removed, and an older sealed record stays valid.
-SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4"
+# Verification is the same for all of them, except BELOW THE FLOOR, where a
+# record carries external_commitment_reference exactly when it is "0.3". That
+# biconditional is historical and governs only versions under "0.4"; stated as
+# the general rule it contradicts the paragraph directly below it.
+# Every record a producer emits is "0.5" (Section 9A.2). The constants above
+# name versions that only historical records carry; they stay so those records
+# can still be read, because the SER recognizer is additive — a version is
+# added and none removed, and an older sealed record stays valid.
+SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.5"
 
-RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4")
+# ORDERED, and the order is load-bearing: _version_at_or_after reads its floors
+# off this tuple, so a new version MUST be appended in published order.
+RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4", "0.5")
 SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record"
 
 EVIDENCE_BILATERAL = "bilateral"
@@ -57,12 +61,22 @@ SIGNATURE_ACCEPTANCE = "acceptance_signature"
 SIGNATURE_REJECTION = "rejection_signature"
 SIGNATURE_WITHDRAWAL = "withdrawal_signature"
 
-# The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+# The act vocabulary that "0.4" and later admit. Rejection and Withdrawal became
 # signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
 # no earlier version's schema lists these values and no earlier record can
 # legitimately carry one.
 _DECLINE_SIGNATURE_TYPES = frozenset({SIGNATURE_REJECTION, SIGNATURE_WITHDRAWAL})
-_VERSIONS_ADMITTING_DECLINE_VOCABULARY = frozenset({"0.4"})
+# FLOORS, not literal sets. Both rules keyed on these mean "this version or
+# later", and both were once written as sets naming the versions that existed
+# when they were written. That is correct until the next version ships and then
+# states the opposite of its own docstring: as frozenset({"0.4"}) this refused a
+# "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
+# witness rule below dropped every stored "0.4" external-channel record into the
+# "0.3" biconditional and refused it. Neither docstring ever claimed a single
+# version — each already said "or later" — so the literals contradicted the
+# prose beside them rather than implementing it.
+_VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4"
+_VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4"
 
 OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS"
 
@@ -184,12 +198,14 @@ def generate_session_evidence_record(
     ``terminal_outcome`` may assert ``HALTED_BY_CONTROLS`` for a session the
     producer's own controls stopped.
 
-    ``external_commitment_reference`` completes a session whose responder is
-    observed: it names the external order or commitment the deal produced, in
-    place of a TransactionRecord, which is bilateral (Section 9A.12). Such a
-    record is ``"0.4"``, like every record this generator emits; the reference is
-    OPTIONAL at that version (Section 9A.2). It is required for that session and
-    refused for any other; ``None`` means it is not supplied.
+    ``external_commitment_reference`` completes a session whose counterparty
+    signed no A2CN act: it names the external order or commitment the deal
+    produced, in place of a TransactionRecord, which is bilateral (Section
+    9A.12). That counterparty may be an observed responder holding no identity,
+    or a DID-bearing party whose identity verifies while its acts stay unsigned.
+    Such a record is ``"0.5"``, like every record this generator emits; the
+    reference is OPTIONAL at that version (Section 9A.2). It is refused for any
+    outcome but ``COMPLETED``; ``None`` means it is not supplied.
     """
     if session.state not in _TERMINAL_STATES:
         raise ValueError("Session evidence is only available for terminal sessions")
@@ -220,18 +236,17 @@ def generate_session_evidence_record(
     )
 
     # A COMPLETED session carries exactly one completion witness (Section 9A.2).
-    # A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
-    # completes with one, and an observed responder completes through the
-    # external commitment the deal produced (Section 9A.12).
+    # A TransactionRecord is bilateral (Section 9.3), so a session whose
+    # counterparty signed an acceptance completes with one, and a session whose
+    # counterparty signed nothing completes through the external commitment the
+    # deal produced (Section 9A.12). That second case is NOT the same as "the
+    # responder is observed": a mandate-only counterparty is DID-bearing and
+    # still signs no act, so the witness is keyed on the reference the caller
+    # supplies rather than on the responder's identity shape.
     reference = None
     if external_commitment_reference is not None:
         if outcome != SessionState.COMPLETED:
             raise ValueError("external_commitment_reference is only for a COMPLETED session")
-        if observed_responder is None:
-            raise ValueError(
-                "external_commitment_reference requires an observed responder; a "
-                "DID-bearing responder completes with its TransactionRecord"
-            )
         reference = _validated_external_commitment_reference(external_commitment_reference)
     elif outcome == SessionState.COMPLETED and observed_responder is not None:
         raise ValueError(
@@ -262,7 +277,7 @@ def generate_session_evidence_record(
 
     terminal_timestamp = _terminal_timestamp(session)
     transaction_record_hash = None
-    if outcome == SessionState.COMPLETED and observed_responder is None:
+    if outcome == SessionState.COMPLETED and reference is None:
         transaction_record_hash = generate_transaction_record(session)["record_hash"]
 
     act_chain_hash = hash_bytes(canonicalize([entry["act_hash"] for entry in acts]))
@@ -325,8 +340,8 @@ def generate_session_evidence_record(
         )
     if not _external_commitment_rules_hold(record):
         raise ValueError(
-            "An external commitment reference requires an observed responder and "
-            "unilateral evidence"
+            "An external commitment reference requires a responder that signed no "
+            "act, and unilateral or mixed evidence"
         )
     # _external_commitment_matches_version_0_3 was checked here, and is not any
     # more. It cannot fire on anything this function builds: record_version is
@@ -338,13 +353,26 @@ def generate_session_evidence_record(
     # than merely unreachable.
     #
     # The predicate itself is NOT dead -- the verifier still calls it, where it
-    # governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
-    # live again the moment emission stops being universally "0.4". So if a
-    # later change makes the emitted version conditional, this site needs a
-    # guard AND A NEW MESSAGE, because the old one asserted a rule that is no
-    # longer true of anything we emit -- restoring it verbatim would be worse
-    # than the deletion it undoes. An unreachable guard is merely dead; a guard
-    # whose failure message states a false rule misleads whoever revives it.
+    # governs stored records below the floor. And this call site becomes live
+    # again the moment emission stops being UNIVERSAL -- that is, the moment
+    # record_version comes to depend on what the record contains. The condition
+    # is universality, NOT any particular version number.
+    #
+    # That distinction is load-bearing and this file has now paid for it twice.
+    # An earlier wording said "the moment emission stops being universally
+    # 0.4", which the move to "0.5" satisfies LITERALLY while leaving this site
+    # exactly as dead as it was: emission stayed universal and the assignment
+    # above stayed unconditional. A condition written as a version number goes
+    # stale the moment the version moves; a condition written as the property
+    # it means does not. The same literal-for-semantic substitution is what
+    # made the two version rules below contradict their own docstrings.
+    #
+    # So if a later change makes the emitted version conditional, this site
+    # needs a guard AND A NEW MESSAGE, because the old one asserted a rule that
+    # is no longer true of anything we emit -- restoring it verbatim would be
+    # worse than the deletion it undoes. An unreachable guard is merely dead; a
+    # guard whose failure message states a false rule misleads whoever revives
+    # it.
     if not _external_commitment_producer_act_present(record):
         raise ValueError(
             "An external commitment reference requires at least one act signed by "
@@ -849,41 +877,91 @@ def _completion_witness_holds(record: dict) -> bool:
 
 
 def _external_commitment_rules_hold(record: dict) -> bool:
-    """Couple an external commitment reference to an observed responder and unilateral evidence.
+    """Couple an external commitment reference to a counterparty that signed nothing.
 
     A TransactionRecord is bilateral by construction (Section 9.3), so the
-    reference exists for a counterparty with no A2CN identity, and the record
-    represents one DID-bearing party beside an observed reference (Section
-    9A.12). Asserted here rather than left to follow from the observed-responder
-    coupling, for the same reason that coupling is asserted explicitly.
+    reference exists for a session that produced none: one whose counterparty
+    never signed an A2CN act (Section 9A.12). That counterparty may hold no
+    identity at all -- an ``observed_party`` -- or hold a DID and a mandate that
+    verify while signing no act. Both satisfy the property this rule exists to
+    protect, which is that NO COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION.
+
+    Until "0.5" this asserted ``observed_party`` and ``unilateral``. That pair is
+    an IDENTITY PROXY for the property and is narrower than it: written for the
+    no-DID case, it incidentally excluded a verified-identity counterparty whose
+    acts are unsigned -- a shape an ``observed_party`` cannot even express, since
+    that descriptor requires the declared-markers to be literally False. The
+    proxy is relaxed to the property here. What still holds the property is the
+    producer-signed act (``_external_commitment_producer_act_present``) together
+    with the exactly-one-witness rule, and neither of those moves.
+
+    ``evidence_level`` was a SECOND identity proxy on the same property, and it
+    is relaxed for the same reason. Both ``unilateral`` and ``mixed`` satisfy
+    "no counterparty signature witnesses the completion"; which one a record
+    carries depends on the producer, not on the honesty of the record:
+
+    * ``unilateral`` when the producer records the counterparty's act with no
+      ``sender_did`` at all;
+    * ``mixed`` when it carries the counterparty's verified DID on an act
+      attributed ``unsigned_observation``.
+
+    BOTH ARE HONEST RECORDS. Admitting only ``unilateral`` would require a
+    producer to omit a DID it has verified -- to record less than it knows in
+    order to reach a classification -- which is the very defect this rule is
+    being relaxed to remove, one level up.
+
+    ``bilateral`` stays excluded, which is why this checks membership rather
+    than merely "not bilateral": that level asserts both parties' material acts
+    are attributable, precisely the claim a session completing through an
+    external reference cannot make.
     """
     if "external_commitment_reference" not in record:
         return True
     parties = record.get("parties")
     if not isinstance(parties, dict):
         return False
-    return (
-        _observed_party_shape_valid(parties.get("responder"))
-        and record.get("evidence_level") == EVIDENCE_UNILATERAL
-    )
+    responder = parties.get("responder")
+    if not (_full_party_shape_valid(responder) or _observed_party_shape_valid(responder)):
+        return False
+    return record.get("evidence_level") in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL)
+
+
+def _version_at_or_after(version: Any, floor: str) -> bool:
+    """Whether a recognized ``record_version`` is ``floor`` or later.
+
+    Ordered by position in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS, which is
+    published order. A value this verifier does not recognize is never "later":
+    it is refused elsewhere, and treating an unknown label as later would let it
+    inherit the newest rules merely by being unfamiliar.
+    """
+    versions = RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS
+    if version not in versions:
+        return False
+    return versions.index(version) >= versions.index(floor)
 
 
 def _external_commitment_matches_version_0_3(record: dict) -> bool:
     """A "0.3" record carries external_commitment_reference exactly when it is "0.3".
 
     A historical rule, kept so "0.3" records still read as they always did.
-    "0.4" carries no version-keyed witness rule at all: the reference is
-    OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule — which
-    holds at every record_version and is enforced independently of any version
-    — carries the weight instead. Keeping the biconditional for "0.4" would
-    refuse every external-channel record, since it would demand the version be
-    "0.3" to carry a reference.
+    From the floor on ("0.4" and later) there is no version-keyed witness rule
+    at all: the reference is OPTIONAL there, and Section 9A.6 step 9's
+    exactly-one-witness rule — which holds at every record_version and is
+    enforced independently of any version — carries the weight instead. Keeping
+    the biconditional above the floor would refuse every external-channel
+    record, since it would demand the version be "0.3" to carry a reference.
+
+    Read as a FLOOR, not as equality against the current version. Written as
+    ``version == CURRENT``, this refused every stored "0.4" external-channel
+    record the moment CURRENT became "0.5": such a record fell through to the
+    biconditional, which demands "0.3", and was rejected. That break was
+    invisible to both suites, because the only stored-record pin was at "0.3".
 
     The reference is present by key, so one whose value is null counts as
     carried.
     """
     version = record.get("record_version")
-    if version == SESSION_EVIDENCE_RECORD_VERSION_CURRENT:
+    if _version_at_or_after(version, _VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE):
         return True
     carried = "external_commitment_reference" in record
     return carried == (version == SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT)
@@ -893,8 +971,9 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     """An act carrying a decline signature makes the record "0.4" or later.
 
     ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
-    version, never the reverse. An ordinary "0.4" record carries no decline at
-    all, so this must not be read as "0.4" implying the vocabulary.
+    version, never the reverse. An ordinary record at or above the floor carries
+    no decline at all, so this must not be read as the version implying the
+    vocabulary.
 
     Keyed on ``signature_type`` rather than on the presence of a signature field
     inside ``acts[].act``. That object is open, so a field there violates no
@@ -905,8 +984,13 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     the enum is the only place an earlier version's schema names the vocabulary.
 
     NOTE the polarity, which is the opposite of the rule above: that one goes
-    quiet at "0.4" and governs only historical records; this one fires only
-    below "0.4" and governs only new vocabulary.
+    quiet at the floor and governs only historical records; this one fires only
+    below the floor and governs only new vocabulary. Both floors are "0.4" and
+    both are read through ``_version_at_or_after``, rather than written as the
+    set of versions that happened to exist when this was written -- as the
+    literal ``frozenset({"0.4"})`` this refused a "0.5" record for carrying a
+    decline that "0.5" admits, while the first line of this docstring already
+    said "or later". The prose was right and the code was wrong.
     """
     acts = record.get("acts")
     if not isinstance(acts, list):
@@ -917,7 +1001,9 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     )
     if not carries_decline:
         return True
-    return record.get("record_version") in _VERSIONS_ADMITTING_DECLINE_VOCABULARY
+    return _version_at_or_after(
+        record.get("record_version"), _VERSION_ADMITTING_DECLINE_VOCABULARY
+    )
 
 
 def _bilateral_witness_matches_responder(record: dict) -> bool:

@@ -752,7 +752,7 @@ def test_the_decline_parity_vector_actually_carries_decline_vocabulary():
 
     signature_types = [entry["signature_type"] for entry in record["acts"]]
     assert "rejection_signature" in signature_types, signature_types
-    assert record["record_version"] == "0.4"
+    assert record["record_version"] == "0.5"
     assert all(entry["attribution"] == "verified_signature" for entry in record["acts"])
 
 
@@ -1538,7 +1538,7 @@ def test_every_extension_vector_validates_against_the_published_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.5.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1588,7 +1588,7 @@ def test_the_schema_rejects_what_the_verifier_rejects():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.5.schema.json").read_text()
     )
     validator = jsonschema.Draft202012Validator(schema)
     healthy, _ = _priced_record()
@@ -1632,7 +1632,7 @@ def test_the_pre_extension_parity_record_still_validates_against_the_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.5.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1823,7 +1823,7 @@ def _bilateral_record():
 def test_a_bilateral_completed_record_keeps_its_transaction_record_hash():
     evidence, did_documents, session = _bilateral_record()
 
-    assert evidence["record_version"] == "0.4"
+    assert evidence["record_version"] == "0.5"
     assert evidence["transaction_record_hash"] == generate_transaction_record(session)["record_hash"]
     assert "external_commitment_reference" not in evidence
     assert verify_session_evidence_record(evidence, did_documents)
@@ -1843,7 +1843,7 @@ def test_an_external_channel_completed_record_is_valid():
         external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
 
-    assert evidence["record_version"] == "0.4"
+    assert evidence["record_version"] == "0.5"
     assert evidence["terminal"]["outcome"] == SessionState.COMPLETED
     assert evidence["transaction_record_hash"] is None
     assert evidence["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
@@ -1893,17 +1893,20 @@ def test_a_completed_record_with_neither_witness_is_rejected():
     assert not verify_session_evidence_record(bilateral, bilateral_documents)
 
 
-def test_a_0_4_completed_record_with_neither_witness_is_rejected():
+def test_a_0_5_completed_record_with_neither_witness_is_rejected():
     """The shape the generator now emits, refused by the witness rule alone.
 
     The case above relabels to "0.2" precisely so the version rule passes and
-    only the witness rule can fire. At "0.4" that isolation is free: the
+    only the witness rule can fire. From "0.4" on that isolation is free: the
     reference is OPTIONAL there, so removing it leaves the version rule silent
     and nothing but Section 9A.6 step 9 to refuse the record. Nothing else
     covered the version the generator actually produces.
+
+    Named for the emitted version deliberately. A test whose name outlives its
+    referent reads as coverage of a version nobody emits any more.
     """
     healthy, did_documents = _external_channel_record()
-    assert healthy["record_version"] == "0.4"
+    assert healthy["record_version"] == "0.5"
     assert verify_session_evidence_record(healthy, did_documents)
 
     neither = copy.deepcopy(healthy)
@@ -1912,7 +1915,7 @@ def test_a_0_4_completed_record_with_neither_witness_is_rejected():
 
     # No relabel: the record is refused while still carrying the version it was
     # generated with.
-    assert neither["record_version"] == "0.4"
+    assert neither["record_version"] == "0.5"
     assert not verify_session_evidence_record(neither, did_documents)
 
 
@@ -1951,7 +1954,17 @@ def test_a_transaction_record_hash_on_any_other_outcome_is_still_rejected():
     assert not verify_session_evidence_record(cross_linked, did_documents)
 
 
-def test_a_reference_with_a_did_bearing_responder_is_rejected():
+def test_a_reference_with_a_did_bearing_responder_is_admitted_unless_bilateral():
+    """The relationship survives; what changed is what it permits.
+
+    Before "0.5" a DID-bearing responder refused the reference outright. That
+    gate was an IDENTITY PROXY for the property that no counterparty signature
+    witnesses the completion, and a counterparty whose identity verifies but
+    whose acts are unsigned satisfies the property exactly as fully as one with
+    no identity at all. What still refuses the record is ``bilateral``, which
+    asserts both parties' material acts are attributable -- precisely the claim
+    an external witness cannot make.
+    """
     healthy, did_documents = _external_channel_record()
 
     identified = copy.deepcopy(healthy)
@@ -1964,20 +1977,54 @@ def test_a_reference_with_a_did_bearing_responder_is_rejected():
     }
     _reseal(identified)
 
+    # Arm one: the counterparty's observed act carries no DID of its own, so the
+    # classifier counts one represented party and the level stays unilateral.
     assessment = assess_session_evidence_record(identified, did_documents)
-
-    # Assert the reason before the verdict: every act verifies, and with the
-    # seller's act unsigned the record is still unilateral, so what refuses it
-    # is the rule that a reference needs an observed responder.
     assert assessment["invalid_acts"] == 0
     assert assessment["verified_acts"] == 1
     assert assessment["unsigned_acts"] == 1
     assert assessment["evidence_level"] == "unilateral"
-    assert not assessment["valid"]
+    assert assessment["valid"]
+
+    # Arm two: attribute the observed act to the responder's DID and both
+    # parties are represented, so the level is mixed -- admitted as well. Both
+    # conditions widened at "0.5", and both were identity proxies on the same
+    # property; a producer must not have to discard a verified DID to reach an
+    # admitted classification.
+    mixed = copy.deepcopy(identified)
+    observed = next(
+        entry for entry in mixed["acts"] if entry["attribution"] == "unsigned_observation"
+    )
+    observed["sender_did"] = RESPONDER_DID
+    mixed["evidence_level"] = "mixed"
+    _reseal(mixed)
+
+    assert verify_session_evidence_record(mixed, did_documents)
+
+    # Arm three: bilateral, and nothing else, still refuses. It differs from arm
+    # two in EXACTLY ONE FIELD, so the refusal is attributable to the label
+    # rather than to anything else about the record -- and the external-commitment
+    # rule runs before the recomputed-level comparison, so it is that rule which
+    # fires, not a classification mismatch.
+    bilateral = copy.deepcopy(mixed)
+    bilateral["evidence_level"] = "bilateral"
+    _reseal(bilateral)
+
+    assert not verify_session_evidence_record(bilateral, did_documents)
 
 
 @pytest.mark.parametrize("evidence_level", ["mixed", "bilateral"])
-def test_a_reference_with_evidence_other_than_unilateral_is_rejected(evidence_level):
+def test_a_reference_with_an_observed_responder_requires_unilateral_evidence(evidence_level):
+    """Unchanged by the "0.5" relaxation, and refused by a different rule.
+
+    An OBSERVED responder is still coupled to unilateral evidence by Section
+    9A.8, which this change does not touch, so both levels below are refused
+    before the external-commitment rule is consulted. The relaxation widened
+    which responders may carry the reference, not what an observed one may
+    claim. Named for the observed responder now: as "a reference with evidence
+    other than unilateral is rejected" it overclaimed a rule that no longer
+    holds in general.
+    """
     healthy, did_documents = _external_channel_record()
 
     promoted = copy.deepcopy(healthy)
@@ -2088,13 +2135,22 @@ def test_the_verifier_never_dereferences_the_locator(monkeypatch):
 # --- what the generator refuses to seal -------------------------------------
 
 
-def test_the_generator_refuses_a_reference_for_a_did_bearing_responder():
+def test_the_generator_refuses_a_reference_for_a_bilateral_session():
+    """A session whose counterparty signed cannot hide behind an external witness.
+
+    Stronger than the rule it replaces. This session's counterparty signed an
+    acceptance, so it classifies ``bilateral`` and HAS a TransactionRecord; the
+    generator refuses the reference on the evidence level rather than on the
+    responder's identity shape. That is the right reason: a DID-bearing
+    responder is admitted now (see the verifier test above), and what must stay
+    refused is a genuinely bilateral session claiming an external witness.
+    """
     manager, session, _ = _make_session()
     offer = _offer(session.session_id)
     manager.process_message(session, offer)
     manager.process_message(session, _acceptance(session.session_id, offer))
 
-    with pytest.raises(ValueError, match="completes with its TransactionRecord"):
+    with pytest.raises(ValueError, match="unilateral or mixed evidence"):
         _generate(session, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE)
 
 
@@ -2174,7 +2230,7 @@ def test_a_reference_of_none_is_not_supplied():
 
     evidence = _generate(session, external_commitment_reference=None)
 
-    assert evidence["record_version"] == "0.4"
+    assert evidence["record_version"] == "0.5"
     assert "external_commitment_reference" not in evidence
     assert verify_session_evidence_record(evidence, did_documents)
 
@@ -2409,7 +2465,17 @@ def _reseal_external_channel(record: dict, case: dict | None = None) -> dict:
 
 
 def _apply_changes(record: dict, case: dict) -> dict:
-    """Set each path in case["set"] to its value and delete each path in case["remove"]."""
+    """Set each path in case["set"] to its value and delete each path in case["remove"].
+
+    A path element may be a STRING (dict key) or an INTEGER (list index): the
+    ``mixed`` external-channel case targets ``["acts", 1, "sender_did"]``, and
+    ``holder[key]`` indexes lists and dicts alike. THREE harnesses walk these
+    paths -- this one, ``applyChanges`` in ``a2cn_ts/tests/test_evidence.test.ts``
+    and ``_with_changes`` in ``tests/test_record_schemas.py`` -- and the vectors
+    are the CROSS-LANGUAGE contract, so all three must accept the same paths.
+    Replace any of them with a dict-only walk and that case breaks in one
+    language only, which is the divergence the shared vectors exist to close.
+    """
     for change in case.get("set", []):
         value = change["value"]
         if value == "OBSERVED_ACTS_ONLY":
@@ -2495,5 +2561,24 @@ def test_external_channel_valid_variants_have_python_typescript_parity(case):
     record = _external_channel_vector_record(observed_acts=case["observed_acts"])
 
     assert record["evidence_level"] == case["evidence_level"]
+    assert record["record_hash"] == case["record_hash"]
+    assert verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])
+
+
+@pytest.mark.parametrize(
+    "case", EXTERNAL_CHANNEL_VECTOR["valid_records"], ids=lambda case: case["name"]
+)
+def test_external_channel_valid_records_have_python_typescript_parity(case):
+    """The bucket that mirrors invalid_records and MUST verify.
+
+    Same shape, same derivation, opposite verdict: each case applies its changes
+    to expected.record and reseals, exactly as invalid_records does, so a case
+    migrating between the two buckets is a move rather than a rewrite. It exists
+    because valid_variants varies only observed_acts, and a structure carrying
+    two contracts cannot tell a reader which dimension an entry varies.
+    """
+    record = _apply_changes(copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"]), case)
+    _reseal_external_channel(record, case)
+
     assert record["record_hash"] == case["record_hash"]
     assert verify_session_evidence_record(record, EXTERNAL_CHANNEL_VECTOR["did_documents"])

@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vector for Section 9A.12, external-channel completion: a COMPLETED SessionEvidenceRecord whose completion witness is external_commitment_reference, at record_version \"0.3\". The producer negotiates with a seller that holds no A2CN identity: the native log holds the producer's signed A2CN offer, observed_acts holds the seller's order confirmation as an unsigned observation, the responder is an observed_party, and there is no SessionAck and no TransactionRecord. Every name, identifier, and URL is an example value, and both private JWKs are test-only. The keys are Ed25519, whose signatures are deterministic, so every seal below is recomputed rather than recorded.",
+  "description": "Cross-language vector for Section 9A.12, external-channel completion: a COMPLETED SessionEvidenceRecord whose completion witness is external_commitment_reference, at record_version \"0.5\". The producer negotiates with a seller that holds no A2CN identity: the native log holds the producer's signed A2CN offer, observed_acts holds the seller's order confirmation as an unsigned observation, the responder is an observed_party, and there is no SessionAck and no TransactionRecord. Every name, identifier, and URL is an example value, and both private JWKs are test-only. The keys are Ed25519, whose signatures are deterministic, so every seal below is recomputed rather than recorded.",
   "did_documents": {
     "did:example:agent": {
       "@context": [
@@ -155,10 +155,10 @@
         "did": "did:example:buyer",
         "verification_method": "did:example:buyer#key-1"
       },
-      "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.Q3JuY0xLZERfX2pCbWN4WEJadWJpRGlCQmh5aDJpZXFydUsxV0M5UTNiYw.WZ60bHNL0tn1LRSUt_jVxSj4kHnq9XltFYHiMZNq-pYi2kd7WuGevu1Ebh464eiw5zuTyGD78wvOHGPYuQ9pCw",
-      "record_hash": "CrncLKdD__jBmcxXBZubiDiBBhyh2ieqruK1WC9Q3bc",
+      "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.NDlqZzd2YUM0WHZNeEI0TmFFSE05LUZDcnBWVTd3MnFNNktFdkZ0YkVkMA.91KcwDR8KNeKHeze82cD3KMGGfM266dL_-7EyWmj_17hNgcURvq_-k9DRwi2DQv0nNTlLchzM0fqOBBvTTecDA",
+      "record_hash": "49jg7vaC4XvMxB4NaEHM9-FCrpVU7w2qM6KEvFtbEd0",
       "record_type": "a2cn_session_evidence_record",
-      "record_version": "0.4",
+      "record_version": "0.5",
       "session_id": "00000000-0000-4000-8000-000000000300",
       "terminal": {
         "message_id": "ucp-order-confirmation-1",
@@ -168,8 +168,8 @@
       },
       "transaction_record_hash": null
     },
-    "record_hash": "CrncLKdD__jBmcxXBZubiDiBBhyh2ieqruK1WC9Q3bc",
-    "record_version": "0.4"
+    "record_hash": "49jg7vaC4XvMxB4NaEHM9-FCrpVU7w2qM6KEvFtbEd0",
+    "record_version": "0.5"
   },
   "historical_0_3_record": {
     "act_chain_hash": "6CuNmYICwGSQKJHtkI4EpQmXdtynUDcQhZjdetbBfBM",
@@ -278,11 +278,119 @@
     },
     "transaction_record_hash": null
   },
-  "historical_0_3_record_description": "The record this vector's session produced before every producer moved to record_version \"0.4\", kept with the bytes, record_hash and producer_signature it had. It is a HISTORICAL ATTESTATION and MUST NOT be regenerated: nothing derives it, and re-sealing it under today's version would destroy the only thing it proves. That thing is Section 9A.2's additive recognizer -- a SessionEvidenceRecord sealed under an earlier version stays valid, because every such record is producer-sealed over its own record_version and so has no unbound tier to be downgraded to. This is the deliberate opposite of the TransactionRecord's clean break in the same release. expected.record is the same session's record at \"0.4\" and differs from this one in exactly three members: record_version, record_hash, and the producer_signature over that hash.",
+  "historical_0_3_record_description": "The record this vector's session produced before every producer moved past record_version \"0.3\", kept with the bytes, record_hash and producer_signature it had. It is a HISTORICAL ATTESTATION and MUST NOT be regenerated: nothing derives it, and re-sealing it under today's version would destroy the only thing it proves. That thing is Section 9A.2's additive recognizer -- a SessionEvidenceRecord sealed under an earlier version stays valid, because every such record is producer-sealed over its own record_version and so has no unbound tier to be downgraded to. This is the deliberate opposite of the TransactionRecord's clean break in the same release. expected.record is the same session's record at \"0.5\" and differs from this one in exactly three members: record_version, record_hash, and the producer_signature over that hash.",
+  "historical_0_4_record": {
+    "act_chain_hash": "6CuNmYICwGSQKJHtkI4EpQmXdtynUDcQhZjdetbBfBM",
+    "acts": [
+      {
+        "act": {
+          "expires_at": "2026-09-01T12:16:00Z",
+          "message_id": "ec-offer-1",
+          "message_type": "offer",
+          "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+          "round_number": 1,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000300",
+          "terms": {
+            "currency": "USD",
+            "total_value": 18750
+          },
+          "timestamp": "2026-09-01T12:01:00Z"
+        },
+        "act_hash": "IgSu497HhMZgg4Z07SKrG_IG1doZJJqWK0eQvs_ClkY",
+        "attribution": "verified_signature",
+        "message_id": "ec-offer-1",
+        "message_type": "offer",
+        "round_number": 1,
+        "sender_did": "did:example:buyer",
+        "sender_verification_method": "did:example:buyer#key-1",
+        "sequence_number": 1,
+        "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+        "signature_type": "protocol_act_signature",
+        "source_protocol": "a2cn",
+        "timestamp": "2026-09-01T12:01:00Z"
+      },
+      {
+        "act": {
+          "message_id": "ucp-order-confirmation-1",
+          "message_type": "order_confirmation",
+          "order": {
+            "currency": "USD",
+            "id": "ORD-2026-000123",
+            "status": "confirmed",
+            "total_minor": 18750
+          },
+          "timestamp": "2026-09-01T12:05:00Z"
+        },
+        "act_hash": "CvHxBaLZYZXz6QkcLl2j-oaAtwJyXlzyrmYfVmSSs5s",
+        "attribution": "unsigned_observation",
+        "message_id": "ucp-order-confirmation-1",
+        "message_type": "order_confirmation",
+        "round_number": null,
+        "sender_did": null,
+        "sender_verification_method": null,
+        "sequence_number": null,
+        "signature": null,
+        "signature_type": null,
+        "source_protocol": "ucp",
+        "timestamp": "2026-09-01T12:05:00Z"
+      }
+    ],
+    "evidence_id": "005ec349-1c60-5db4-b90a-085513160db0",
+    "evidence_level": "unilateral",
+    "external_commitment_reference": {
+      "external_commitment_id": "ORD-2026-000123",
+      "locator": "https://shop.example/.well-known/ucp",
+      "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
+    },
+    "generated_at": "2026-09-01T12:05:00Z",
+    "parties": {
+      "initiator": {
+        "agent_id": "buyer-agent",
+        "did": "did:example:buyer",
+        "mandate_type": "declared",
+        "organization_name": "Example Buyer",
+        "verification_method": "did:example:buyer#key-1"
+      },
+      "responder": {
+        "a2cn_endpoint_declared": false,
+        "did_declared": false,
+        "identity_source": "ucp_discovery",
+        "mandate_declared": false,
+        "observed_credential": {
+          "digest": "x1kNDeF0H1lXnQbIIx5Pj3D98zASZtfmjSQ04kImvM4",
+          "type": "ucp_signing_key_set"
+        },
+        "organization_name": "Example Shop"
+      }
+    },
+    "producer": {
+      "agent_id": "buyer-agent",
+      "did": "did:example:buyer",
+      "verification_method": "did:example:buyer#key-1"
+    },
+    "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.M0ZEdkVyOFp4WE1DclVCZVA1bVg2S1haVWNLQVlpNVE3S1AzbzJ6SmdXWQ.TqHc0qzgcUiwME6VRgxbaB44YdC2mGGvfQ57_PowPOAnp71PEXe082gDuxSNuDlA-ATBqcKzLvZJpXK546IqCg",
+    "record_hash": "3FDvEr8ZxXMCrUBeP5mX6KXZUcKAYi5Q7KP3o2zJgWY",
+    "record_type": "a2cn_session_evidence_record",
+    "record_version": "0.4",
+    "session_id": "00000000-0000-4000-8000-000000000300",
+    "terminal": {
+      "message_id": "ucp-order-confirmation-1",
+      "outcome": "COMPLETED",
+      "reason": "external_order_confirmed",
+      "timestamp": "2026-09-01T12:05:00Z"
+    },
+    "transaction_record_hash": null
+  },
+  "historical_0_4_record_description": "The record this vector's session produced at record_version \"0.4\", kept with the bytes, record_hash and producer_signature it had. A HISTORICAL ATTESTATION that MUST NOT be regenerated, for the same reason as historical_0_3_record: nothing derives it, and re-sealing it under today's version would destroy the only thing it proves. What it proves is narrower and sharper than the \"0.3\" record's. The verifier's version-keyed witness rule returns early for the CURRENT version; written as an equality against CURRENT rather than as a floor, it dropped every stored \"0.4\" external-channel record into the historical \"0.3\" biconditional and refused it the moment CURRENT became \"0.5\". No other artifact catches that: historical_0_3_record covers \"0.3\", and a regenerated record follows CURRENT and so takes the early return either way. Only a record stored AT THE PREVIOUS VERSION does. expected.record is the same session's record at \"0.5\" and differs from this one in exactly three members: record_version, record_hash, and the producer_signature over that hash.",
   "invalid_records": [
     {
       "name": "both-witnesses",
-      "resealed_record_hash": "33HIkSI4P7u_DhoxWsl2p9rXOOSAYkgNpZuCcIyzC5M",
+      "resealed_record_hash": "JVqrtZ0QozS7nXxkj0KczclY_nRnBF26FKXiyNsSHoQ",
       "rule": "Section 9A.2: a COMPLETED record carries exactly one completion witness, never both.",
       "set": [
         {
@@ -313,7 +421,7 @@
     },
     {
       "name": "reference-on-timed-out",
-      "resealed_record_hash": "K0bObwDxqr3O7zWg9EJcKkhjohEY3Zwcm4Y5xv_Ivuw",
+      "resealed_record_hash": "KQXvJLaqX4vrFZ4u78de8oIuywJOj9sqpYFeolvXQmM",
       "rule": "Section 9A.2: an outcome other than COMPLETED carries no external_commitment_reference.",
       "set": [
         {
@@ -327,7 +435,7 @@
     },
     {
       "name": "reference-on-halted-by-controls",
-      "resealed_record_hash": "BvzLrg-uJa9A9iDVrZ0fzUQtdmOAxJDcAlg2Ez004x4",
+      "resealed_record_hash": "MWBmKWYNzK5LVRR1dX2yFpKBYhPEJNwJdVGRGZRCmMc",
       "rule": "Section 9A.2: an outcome other than COMPLETED carries no external_commitment_reference.",
       "set": [
         {
@@ -340,28 +448,8 @@
       ]
     },
     {
-      "name": "reference-with-did-bearing-responder",
-      "resealed_record_hash": "f53JZto5VloKO9bUi2OJO4jTGL-Qpd8viFwm4RuyfNk",
-      "rule": "Section 9A.12: a record that carries external_commitment_reference has an observed_party responder.",
-      "set": [
-        {
-          "path": [
-            "parties",
-            "responder"
-          ],
-          "value": {
-            "agent_id": "shop-agent",
-            "did": "did:example:shop",
-            "mandate_type": "declared",
-            "organization_name": "Example Shop",
-            "verification_method": "did:example:shop#key-1"
-          }
-        }
-      ]
-    },
-    {
       "name": "reference-with-mixed-evidence",
-      "resealed_record_hash": "1AiEgE7BFF7dhhwEBD-y_9_uD_inzOMVQ24Gl-dzV8g",
+      "resealed_record_hash": "m2jU57hiomfMisedFLXBipb2eenuM-aYWqhiwGw7Z8A",
       "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
       "set": [
         {
@@ -374,7 +462,7 @@
     },
     {
       "name": "reference-with-bilateral-evidence",
-      "resealed_record_hash": "-sprrIOmR5QJJabwAGuyx-iC4vi2DxZawuSbFU02r-Y",
+      "resealed_record_hash": "hNiM8TB4-I6kyC96FOOA-53ldBmpoyGnvWcYZjT9ejE",
       "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
       "set": [
         {
@@ -479,7 +567,7 @@
     },
     {
       "name": "no-producer-signed-act",
-      "resealed_record_hash": "oLYhMw6isREQmIMmAeQm0dvbeSIRjDHBH5boqYLJ7QE",
+      "resealed_record_hash": "m4_mC2h1w-TruMWmnH9_fasy1jCMmG2gev6IDvvfbDg",
       "rule": "Section 9A.12: an external-channel record carries at least one act signed by its initiator.",
       "set": [
         {
@@ -492,7 +580,7 @@
     },
     {
       "name": "act-less",
-      "resealed_record_hash": "UUgWon4SjBzCYhErV74fnT9Wt6w-NPOZWhIMUeNx38U",
+      "resealed_record_hash": "kbh6SfpCBRgx0BcMjt6uE-ZEJ4-iQG4QgYrubGd002M",
       "rule": "Section 9A.12: an external-channel record carries at least one act signed by its initiator.",
       "set": [
         {
@@ -505,8 +593,8 @@
     },
     {
       "name": "producer-not-initiator",
-      "resealed_record_hash": "xsJJ3TkAWJig-SIHaZTUH1ZlaYGT31222tIlCGiGlss",
-      "rule": "Section 9A.12: an external-channel record is sealed by parties.initiator.did. A JSON Schema cannot compare two members, so the 0.3 schema accepts this record and only the verifier refuses it.",
+      "resealed_record_hash": "flGiJa_3Heo9Y8CTZoeDxaOJXK_yGAfrLjpOjKMzjq4",
+      "rule": "Section 9A.12: an external-channel record is sealed by parties.initiator.did. A JSON Schema cannot compare two members, so every schema that describes this record accepts it and only the verifier refuses it.",
       "schema_expresses": false,
       "sealed_by": "second_producer",
       "set": [
@@ -538,9 +626,35 @@
           "value": "did:example:agent#key-1"
         }
       ]
+    },
+    {
+      "name": "reference-with-did-bearing-responder-and-bilateral-evidence",
+      "resealed_record_hash": "BwmYzQlOL_yyD7U1zYsgSxFxFBWz6fmfuD7jS6ESX3k",
+      "rule": "Section 9A.12: evidence_level is unilateral or mixed, never bilateral -- that level asserts both parties' material acts are attributable, the one claim a session completing through an external reference cannot make. This case needs a DID-BEARING responder and is not interchangeable with reference-with-bilateral-evidence: that case's observed_party responder makes Section 9A.8's coupling refuse it BEFORE the external-commitment rule is reached, so it never exercises this exclusion at all. Consolidating the two would retire a guard that was never exercised.",
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:shop",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:shop#key-1"
+          }
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "bilateral"
+        }
+      ]
     }
   ],
-  "invalid_records_description": "Each case applies set (each path set to value) and remove (each path deleted) to expected.record, then recomputes act_chain_hash, record_hash and the producer seal. The seal uses producer_private_jwk unless sealed_by names another producer, whose private_jwk seals it instead. An acts value of \"OBSERVED_ACTS_ONLY\" means the record's observed act alone, the second entry of expected.record.acts. The resealed record has resealed_record_hash and fails verification; rule names the rule it breaks. A case with schema_expresses false states a rule JSON Schema cannot express, so the \"0.4\" schema accepts that record and only the verifier refuses it.",
+  "invalid_records_description": "Each case applies set (each path set to value) and remove (each path deleted) to expected.record, then recomputes act_chain_hash, record_hash and the producer seal. The seal uses producer_private_jwk unless sealed_by names another producer, whose private_jwk seals it instead. An acts value of \"OBSERVED_ACTS_ONLY\" means the record's observed act alone, the second entry of expected.record.acts. The resealed record has resealed_record_hash and fails verification; rule names the rule it breaks. A case with schema_expresses false states a rule JSON Schema cannot express, so the \"0.5\" schema accepts that record and only the verifier refuses it.",
   "invalid_references": [
     {
       "external_commitment_reference": {
@@ -548,7 +662,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "commitment-id-missing",
-      "resealed_record_hash": "c97N9Ua4r5gnm4-MqZ8crxNZxnVBUBvTEHZyfBDW3YA"
+      "resealed_record_hash": "4Zgqfch8S-8mFl4oPgTxVHPNzbGAcAfAJ-UaawAmh1s"
     },
     {
       "external_commitment_reference": {
@@ -557,7 +671,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "commitment-id-empty",
-      "resealed_record_hash": "5y024GUbDjUHoFPA7nyQUOKpka4BrnAnC5QhMkJ7OgE"
+      "resealed_record_hash": "0bE4xt8cb1FCLY7PHO2HJgq_--gWkXcpOQoX4EsxFzY"
     },
     {
       "external_commitment_reference": {
@@ -566,7 +680,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "commitment-id-integer",
-      "resealed_record_hash": "KivFSPPwuhAU8mGFOFRBgMyz7iS47LuDM8LBYGxuWd4"
+      "resealed_record_hash": "UkX4DA6fdo4hOuQV_bTNV6Obxl6aIAqeHmp10twqHH4"
     },
     {
       "external_commitment_reference": {
@@ -575,7 +689,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "commitment-id-null",
-      "resealed_record_hash": "k22zYnPMp88OqdnS6XW2cskFDDEp6Mz3NBRau7L8XJc"
+      "resealed_record_hash": "AiKZRxVGKgUQpg6mMyIGULG2D9vEZshRbEanUhJjMyE"
     },
     {
       "external_commitment_reference": {
@@ -586,7 +700,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "commitment-id-array",
-      "resealed_record_hash": "OB4uCf35HR90h7grqLcKnPvZa_KN_9HdpXS3V_c69J8"
+      "resealed_record_hash": "osG8ioo9Mda9qH7agL7i48t9QRAZFlIsxoZvAve7yng"
     },
     {
       "external_commitment_reference": {
@@ -595,7 +709,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-empty",
-      "resealed_record_hash": "OUyNDKfMW2kxdHxfC0AM--34KYS17N0iLupo14L0msc"
+      "resealed_record_hash": "Ll8RuEWw0si8GexltyOGBHsNXx4IPumcy1C1h2p3Oak"
     },
     {
       "external_commitment_reference": {
@@ -604,7 +718,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-null",
-      "resealed_record_hash": "pQUrqd1eYSsUfXOEt5Q7EM9_eLrlXLIOCvPA4q1_1Ag"
+      "resealed_record_hash": "h-VgQUkrv4_Q9cftzKVukNcTlOJZ2QACsxCq8Mo6POo"
     },
     {
       "external_commitment_reference": {
@@ -613,7 +727,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-number",
-      "resealed_record_hash": "PNCTWwxZt7HJIE8ts3qYWJ_5p92I8PuuIjcCIq9mUEY"
+      "resealed_record_hash": "YabIYIZPqStBFj35zm9Z_24aM2mutFjH6uwoQnzV3dk"
     },
     {
       "external_commitment_reference": {
@@ -624,7 +738,7 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "locator-array",
-      "resealed_record_hash": "uK6fY0OlH7pP3uGmqVoCkMXZnXCtMJUng3qqZ2WFxeM"
+      "resealed_record_hash": "GuPq4zkHA5PXKsBnhuh61fdzYrc1jXLeSkR7In1MjNg"
     },
     {
       "external_commitment_reference": {
@@ -633,7 +747,7 @@
         "reference_note": 7
       },
       "name": "reference-note-number",
-      "resealed_record_hash": "QLfPookGQn-Jkmf5pdzrZGxCs-Wd1v7535YdeoyS2Ig"
+      "resealed_record_hash": "FnG2yRmFLyxsl7RXaWZiO_L5Qc8yS8gDaeSwPMcuBkU"
     },
     {
       "external_commitment_reference": {
@@ -642,7 +756,7 @@
         "reference_note": null
       },
       "name": "reference-note-null",
-      "resealed_record_hash": "m-KuE5YA9dBqmkAmPS-8m6kv160YwU7n81N7lugW3Rg"
+      "resealed_record_hash": "wZccKYXT52v0kmBXM6yQ09towl-zRVCKYQP328C-IM4"
     },
     {
       "external_commitment_reference": {
@@ -652,17 +766,17 @@
         "reference_note": "Order confirmed through the seller's UCP checkout. The seller holds no A2CN identity."
       },
       "name": "extra-key",
-      "resealed_record_hash": "OF6Bi2BFdna5NGqida4W2nHOclnqto0FafS4RDN1qoc"
+      "resealed_record_hash": "loBZCeX2tf6lGC_8WNby3ihgU6p9AIed5isx_c0LYWk"
     },
     {
       "external_commitment_reference": null,
       "name": "reference-null",
-      "resealed_record_hash": "FH4i-ZGezd4B0T8NkjQnOU91TmnSSgGEkBKLgqWkphI"
+      "resealed_record_hash": "IC3pSbv2Dtam5heEql7Pp454Gy0VEwOW-YkBqAhzB3E"
     },
     {
       "external_commitment_reference": "ORD-2026-000123",
       "name": "reference-string",
-      "resealed_record_hash": "T5etXs9MU5Ef1GMgxzTMLegoVY9IIndBJmJE6okhq2k"
+      "resealed_record_hash": "gqtJGLAGofsxFnsAYNNwKU4oCxGe7uWS0thWSiPAdfQ"
     },
     {
       "external_commitment_reference": [
@@ -673,12 +787,12 @@
         }
       ],
       "name": "reference-array",
-      "resealed_record_hash": "e_4fzreFokv2RD2fQhAouoNiS18ZEWi3Q5_QiBRn9yM"
+      "resealed_record_hash": "8mpwuXjqFICDm36184048U2zB3GyX96HMvy8sbiFslU"
     },
     {
       "external_commitment_reference": {},
       "name": "reference-empty-object",
-      "resealed_record_hash": "3zvaOIPDObgfhlAY_TAGazpKlUWcNnTlqnLwIARRdu0"
+      "resealed_record_hash": "QxztnrSFiV4MIuNKzbqpF8xRuoUQCznI5r9NoGD6nT4"
     }
   ],
   "invalid_references_description": "Each case is a malformed external_commitment_reference. Generated with it, the record is refused; a null reference counts as not supplied, and the generator then refuses the COMPLETED session with an observed responder for lacking one. expected.record with its external_commitment_reference replaced by the case value, resealed with producer_private_jwk, has resealed_record_hash and fails verification.",
@@ -804,13 +918,72 @@
     "terminal_reason": "external_order_confirmed"
   },
   "session_evidence_record_0_2_schema_sha256": "0344b8ee57bb431e28b04f0c5a48b9bce4d7cca90e046ea11668b2c0b1887734",
+  "session_evidence_record_0_4_schema_sha256": "334174ba4aff97dc01975564f881279e6bbb71e7751ec757dec59a59cba9d756",
+  "session_evidence_record_0_5_schema_sha256": "f14cabbb993e38994758d5c21c9900bd0be2c349c1812be24e2e8325775629fd",
+  "valid_records": [
+    {
+      "name": "reference-with-verified-identity-and-unsigned-acts",
+      "record_hash": "shSenp11RN9cClCwibPpL2HOYHOH7DNooWDOVigcXGk",
+      "rule": "Section 9A.12: the external witness is admitted for a counterparty whose identity verifies but whose acts are unsigned, not only for an observed_party. BOTH this case and reference-with-verified-identity-and-mixed-evidence have UNSIGNED counterparty acts -- the two names are NOT alternatives. They differ in exactly one field: whether the counterparty's unsigned act carries a sender_did. Here it does not, so the classifier counts one represented party and the level is \"unilateral\". A DID-bearing responder does not imply \"mixed\".",
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:shop",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:shop#key-1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reference-with-verified-identity-and-mixed-evidence",
+      "record_hash": "cFR1tANc2fhW2DI-tzW8E8p_oxzEc9z58rnGuqCiB0M",
+      "rule": "Section 9A.12: evidence_level \"mixed\" is admitted for the external witness, not only \"unilateral\". BOTH this case and reference-with-verified-identity-and-unsigned-acts have UNSIGNED counterparty acts -- the two names are NOT alternatives. They differ in exactly one field: whether the counterparty's unsigned act carries a sender_did. Here it carries the responder's own DID while the act stays attributed unsigned_observation, so two parties are represented and the classifier returns \"mixed\". Admitting only \"unilateral\" would require a producer to omit a DID it has verified, recording less than it knows to reach an admitted classification. A sender_did records WHO THE PRODUCER OBSERVED ACTING and never that anyone signed: the act carries no signature, and stamping one on it is refused (attribution inflation).",
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:shop",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:shop#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts",
+            1,
+            "sender_did"
+          ],
+          "value": "did:example:shop"
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
+        }
+      ]
+    }
+  ],
+  "valid_records_description": "Each case applies set (each path set to value) and remove (each path deleted) to expected.record, then recomputes act_chain_hash, record_hash and the producer seal, exactly as invalid_records does. The resealed record has record_hash and MUST VERIFY; rule names the rule that admits it. This bucket mirrors invalid_records rather than extending valid_variants, which varies only observed_acts: one structure carrying two contracts cannot tell a reader which dimension an entry varies.",
   "valid_references": [
     {
       "external_commitment_reference": {
         "external_commitment_id": "ORD-2026-000123"
       },
       "name": "commitment-id-only",
-      "record_hash": "YQR4_x5m3GSdNTb5kVjn0pJqwa-IwMHmXOunJtXC1DE"
+      "record_hash": "YOvAPfj0qgpZD_-AmJPhsrQvjS1hut6eMCZ7frbZ2SA"
     },
     {
       "external_commitment_reference": {
@@ -818,7 +991,7 @@
         "locator": "https://shop.example/.well-known/ucp"
       },
       "name": "numeric-string-commitment-id",
-      "record_hash": "4KOSBDdpj4q2gxv8gLjh1xXYzvtRO2kW_ZTXu-howxw"
+      "record_hash": "kXF4hEAul8Su1sOiwID9YWv96b5RpY51X3jBKRrP8zk"
     },
     {
       "external_commitment_reference": {
@@ -826,7 +999,7 @@
         "reference_note": ""
       },
       "name": "empty-reference-note",
-      "record_hash": "FVuNPdC8bCymAXd_616o46tQjXvWLNPCQclW6gg8mbI"
+      "record_hash": "r9nv9poakM5tzif8eslr7NNr8U4nl5fbFCWC39ubRSg"
     },
     {
       "external_commitment_reference": {
@@ -834,7 +1007,7 @@
         "reference_note": "Commande confirmée — référence du vendeur"
       },
       "name": "non-ascii-reference-note",
-      "record_hash": "9P5T9fopyefrKcChs33z4KrnueuZKeYnACu-3Qpd0gM"
+      "record_hash": "eEWUAP5i6qfhuwIsH2Y7zg1AGTZ-PxmYUTUHYuDkIWY"
     }
   ],
   "valid_references_description": "Each case generates the record with its external_commitment_reference instead of options.external_commitment_reference. The record has record_hash and verifies.",
@@ -843,7 +1016,7 @@
       "evidence_level": "unilateral",
       "name": "producer-acts-only",
       "observed_acts": [],
-      "record_hash": "wtWQmFAaOoJArfAM412CdaZzmjyHw-CA501O0s3O8LA",
+      "record_hash": "MVdmXAuTibIX2PvaAiYIWepq3kcbJ97NrE-YHF-fZkA",
       "rule": "Section 9A.5: the level of a record whose responder is an observed_party is asserted unilateral, not derived from the acts."
     }
   ],

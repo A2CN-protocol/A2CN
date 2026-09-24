@@ -180,14 +180,14 @@
       "terminal_reason": "withdrawal"
     },
     "expected": {
-      "record_version": "0.4",
+      "record_version": "0.5",
       "act_hashes": [
         "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
         "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY",
         "9NbWMQFY0a_dLccdbyJEtdSmj1V-CbAKE3cLr2fF9gM"
       ],
       "act_chain_hash": "Pl1svm1QqVgFU1sN8wBXaDoLT6ht-ta1U2YpQJjwTOI",
-      "record_hash": "sI0iTcTco62fsbtqIzj6ao3Z_j-aA4xWybdLs32ku08",
+      "record_hash": "TH4gQAQ8ux-henPrO5eotfHU6VvgEsgUBPZwgbwwlFQ",
       "stated_versions": [
         "0.3",
         "0.3",
@@ -315,10 +315,10 @@
           "did": "did:example:buyer",
           "verification_method": "did:example:buyer#key-1"
         },
-        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.c0kwaVRjVGNvNjJmc2J0cUl6ajZhbzNaX2otYUE0eFd5YmRMczMya3UwOA.GM7Dq1x0Ycf9vjfPI-Px-cQ30gb2lzjbMkB4iC-oWOgOjYvca1V798LkslteWTDgP8ZzVrlmg1kRLPbZEZv4DQ",
-        "record_hash": "sI0iTcTco62fsbtqIzj6ao3Z_j-aA4xWybdLs32ku08",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.VEg0Z1FBUTh1eC1oZW5Qck81ZW90ZkhVNlZ2Z0VzZ1VCUFp3Z2J3d2xGUQ.AIZlyjCO9j43MA_k0kuUBozvy2qcU0bk4tZR5gw-fr8rx2hgQRPysfDxeYtnIdMXK3EM6EZbNYlUdtYcM49VAw",
+        "record_hash": "TH4gQAQ8ux-henPrO5eotfHU6VvgEsgUBPZwgbwwlFQ",
         "record_type": "a2cn_session_evidence_record",
-        "record_version": "0.4",
+        "record_version": "0.5",
         "session_id": "00000000-0000-4000-8000-000000000530",
         "terminal": {
           "message_id": "wv-withdrawal-30",
@@ -468,7 +468,7 @@
       "base": "current",
       "act_index": 0,
       "set_protocol_version": "0.2",
-      "resealed_record_hash": "NMQUITqJg064tElTXzxukLAweZP70U3na5jja3Ht2MI",
+      "resealed_record_hash": "ftMUKy6YCXsJWRChx_ikqE4_LauC5oseJN1rS-iZ5yg",
       "verifies": false,
       "rule": "An act is rebuilt under the version it states; this offer was signed under 0.3 and states 0.2."
     },
@@ -477,7 +477,7 @@
       "base": "current",
       "act_index": 0,
       "remove_protocol_version": true,
-      "resealed_record_hash": "RpAyM3CnjqOlmsB2OVrwZUfYZ5qRSRPi00RUiPgLi2M",
+      "resealed_record_hash": "B8UB9HHM9b7rQ349fzJIwvU_t9gvu882axSSd2edMRs",
       "verifies": false,
       "rule": "An act that states no version is rebuilt under the pinned 0.2, never the emit version, so an act signed under 0.3 must state it."
     },
@@ -504,7 +504,7 @@
       "base": "observed",
       "act_index": 1,
       "set_protocol_version": "0.2",
-      "resealed_record_hash": "ut28NRH93R__IVnHHw8C6lC0jtBjflvvmHxpBzsONLQ",
+      "resealed_record_hash": "mKmC2C3Lm-J3iqZCBKJidAVkvzN2RA4clVRAfMrhKXE",
       "verifies": false,
       "rule": "A signed observed act is rebuilt under the version it states; this counteroffer was signed under 0.3 and states 0.2."
     }
@@ -618,13 +618,13 @@
       }
     ],
     "expected": {
-      "record_version": "0.4",
+      "record_version": "0.5",
       "act_hashes": [
         "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
         "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY"
       ],
       "act_chain_hash": "IGmcKvWr74ltujAgvslZjip941aXbJhwbkghrI1eZx0",
-      "record_hash": "7_2q1ZQmyvnkzNyOwNzIZMlfWU_Pu8k952zoAs5yzmk",
+      "record_hash": "BE5bS5DvYP8iMn9tjEQldw33GT-4HR3miy4UwiCKemE",
       "stated_versions": [
         "0.3",
         "0.3"
@@ -727,10 +727,10 @@
           "did": "did:example:buyer",
           "verification_method": "did:example:buyer#key-1"
         },
-        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.N18ycTFaUW15dm5rek55T3dOeklaTWxmV1VfUHU4azk1MnpvQXM1eXptaw.yK4rz5nFA9EYrAR7GOmcq-ThrPCaCIjnGQLup8QgEVLZh-PzTZA4UnyHXNr5PEm4WC9j_z6VO6hgfeWsSF-xAg",
-        "record_hash": "7_2q1ZQmyvnkzNyOwNzIZMlfWU_Pu8k952zoAs5yzmk",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.QkU1YlM1RHZZUDhpTW45dGpFUWxkdzMzR1QtNEhSM21peTRVd2lDS2VtRQ.326-qqIioWb7aphTQfut30Xp-2y2Xwt07IK_AwkLlfW7peuH6qXIXMKyJoOprvo1iKtVHAl4gtpBIhl0oMV3Cw",
+        "record_hash": "BE5bS5DvYP8iMn9tjEQldw33GT-4HR3miy4UwiCKemE",
         "record_type": "a2cn_session_evidence_record",
-        "record_version": "0.4",
+        "record_version": "0.5",
         "session_id": "00000000-0000-4000-8000-000000000530",
         "terminal": {
           "message_id": null,
@@ -743,7 +743,7 @@
     },
     "stating_another_version": {
       "observed_protocol_version": "0.2",
-      "record_hash": "ut28NRH93R__IVnHHw8C6lC0jtBjflvvmHxpBzsONLQ",
+      "record_hash": "mKmC2C3Lm-J3iqZCBKJidAVkvzN2RA4clVRAfMrhKXE",
       "verifies": false
     }
   }
