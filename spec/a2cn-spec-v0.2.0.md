@@ -2483,7 +2483,10 @@ record whose responder is an `observed_party` and which carries a
 `transaction_record_hash`, at every `record_version`: no such TransactionRecord
 can exist, so the hash names nothing any verifier could obtain. That direction is
 unchanged by the `"0.5"` relaxation, which widens only which responders may carry
-the external reference.
+the external reference. A record carrying that reference has no verified acts
+but the initiator's: a third party's signature is excluded as well as the
+counterparty's, because an act that cannot be placed in a known role is refused
+rather than admitted (Section 9A.8 rule 1).
 
 ### 9A.3 Evidence Acts and External Observations
 
@@ -2724,19 +2727,20 @@ then:
     Separately, and keyed on the witness rather than on the responder: when the
     record carries `external_commitment_reference`, enforce Section 9A.12.
     `parties.responder` MUST be an `observed_party` or a DID-bearing party, no
-    act may claim `verified_signature` with a `sender_did` equal to a
-    DID-bearing `parties.responder`'s `did`, `evidence_level` MUST be
-    `unilateral` or `mixed` and never `bilateral`, `producer.did` MUST equal
-    `parties.initiator.did`, and at least one act MUST claim
-    `verified_signature` with a `sender_did` equal to
-    `parties.initiator.did`. Do not dereference its `locator`. The
-    counterparty-signature check is the one that carries the property, so a
-    verifier that omits it admits a record whose counterparty signed: the level
-    check does not cover it, because one unsigned observed act is enough to
-    classify a fully signed session `mixed`, which this rule admits. These two
-    rules are stated apart deliberately: fusing them is what once made the
-    external witness depend on the responder's identity shape rather than on
-    the property that no counterparty signature witnesses the completion.
+    act may claim `verified_signature` unless its `sender_did` equals
+    `parties.initiator.did` (Section 9A.8 rule 1, which holds here for both
+    responder shapes), `evidence_level` MUST be `unilateral` or `mixed` and
+    never `bilateral`, `producer.did` MUST equal `parties.initiator.did`, and
+    at least one act MUST claim `verified_signature` with a `sender_did` equal
+    to `parties.initiator.did`. Do not dereference its `locator`. The
+    initiator-only check is the one that carries the property, so a verifier
+    that omits it admits a record whose counterparty or some third party
+    signed: the level check does not cover it, because one unsigned observed
+    act is enough to classify a fully signed session `mixed`, which this rule
+    admits. These two rules are stated apart deliberately: fusing them is what
+    once made the external witness depend on the responder's identity shape
+    rather than on the property that no counterparty signature witnesses the
+    completion.
 11. Recompute every `money_basis` present under Section 9A.9 and reject the
     record if any of them does not reproduce both the claimed
     `normalized_total_minor` and the total inside the act it describes, or if it
@@ -3031,15 +3035,37 @@ a producer that suppresses a `transaction_record_hash` it could have carried.
 While conditions 2 and 3 named an `observed_party` at `unilateral`, those two did
 the excluding between them and the point never arose; relaxing both at once is
 what made condition 2's own words load-bearing. A verifier MUST therefore check
-them: **no act attributed `verified_signature` may carry a `sender_did` equal to
-a DID-bearing `parties.responder`'s `did`.** That is what "its acts are unsigned"
-means, read through the attribution Section 9A.3 defines: an act attributed
+them, and Section 9A.8 rule 1 is where this specification already states the
+check: **no act may claim `verified_signature` unless its `sender_did` equals
+`parties.initiator.did`.** That is what "its acts are unsigned" means, read
+through the attribution Section 9A.3 defines: an act attributed
 `unsigned_observation` carries no signature, and one whose complete `act` still
 holds an A2CN signature field fails already, as an invalid act. A transport
 signature the producer merely observed is not an A2CN signature and is
-unaffected. The clause names the responder, not "any party other than the
-initiator": a third party's signature is not the counterparty's, and Section 9A.5
-already declines to count one towards `mixed`.
+unaffected.
+
+**The clause names the INITIATOR, and naming the responder instead would not
+hold the property.** Three reasons, each independent:
+
+- It would admit a verified signature from any DID that is neither party — an
+  agent, a delegate, a payment processor. Section 9A.5 declines to *count* such
+  an act towards `mixed`, but that is **classification**, not admission: an
+  uncounted act still sits in a record whose stated property is that only the
+  initiator's acts are verified.
+- It would contradict Section 9A.8 rule 1 for the same act. That rule refuses a
+  verified third-party act outright — "an act that cannot be placed in a known
+  role is refused rather than admitted" — wherever the responder is an
+  `observed_party`. Keying this section on the responder would leave the same act
+  refused for one responder shape and admitted for the other, so admission would
+  turn on the counterparty's identity tier: the identity-proxy reasoning this
+  witness exists to be rid of, one level down.
+- It would depend on how a DID is spelled. `sender_did` carries no imposed
+  syntax, so a DID URL naming the responder's own key is a different string from
+  its `did`, and a verifier whose resolver dereferences DID URLs would resolve
+  and accept it. Whether the record is admitted would be a property of the
+  verifier's resolver rather than of the record.
+
+Comparing against the initiator needs no normalization and closes all three.
 
 > **Section 9A.8's coupling SHADOWS the conditions above, and that has hidden
 > what they cover.** Section 9A.8 requires an `observed_party` responder to be

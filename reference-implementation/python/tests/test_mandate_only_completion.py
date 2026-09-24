@@ -39,19 +39,24 @@ import copy
 
 import pytest
 
-from a2cn.crypto import hash_object
+from a2cn.crypto import hash_object, public_key_to_jwk, sign_jws
 from a2cn.evidence import (
     assess_session_evidence_record,
     generate_transaction_record,
     verify_session_evidence_record,
 )
-from a2cn.messages import PROTOCOL_ACT_VERSION
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.session import SessionState
+from tests.conftest import make_did_document
 from tests.test_evidence import (
     EXTERNAL_COMMITMENT_REFERENCE,
     INITIATOR_DID,
     OBSERVED_RESPONDER,
     RESPONDER_DID,
+    RESPONDER_PRIVATE_KEY,
+    RESPONDER_VM,
+    THIRD_PARTY_DID,
+    THIRD_PARTY_PUBLIC_KEY,
     _acceptance,
     _external_channel_record,
     _generate,
@@ -62,6 +67,7 @@ from tests.test_evidence import (
     _offer,
     _order_confirmation,
     _reseal,
+    _third_party_offer,
 )
 
 
@@ -535,8 +541,12 @@ def test_a_completion_whose_counterparty_signed_the_acceptance_is_refused():
 def test_the_generator_refuses_a_completion_whose_counterparty_signed_an_act():
     """The generator runs the same rule, so a producer cannot emit one either.
 
-    Its refusal message already claimed "a responder that signed no act". These
-    are the cases that make the claim true.
+    The assertion matches "only the initiator", which is what the message says
+    and what the rule is. A message phrased around the RESPONDER would be
+    narrower than the rule it reports -- a third party's verified signature is
+    refused too, and so is the responder's under any spelling of its DID -- so a
+    producer reading it would not learn why its record was refused. The message
+    is part of the contract, which is why a test asserts on it at all.
 
     The signed message goes in as an observed act, which the generator
     normalizes to ``verified_signature`` from the signature it carries -- so
@@ -556,7 +566,7 @@ def test_the_generator_refuses_a_completion_whose_counterparty_signed_an_act():
             if message_factory is None
             else message_factory(session.session_id)
         )
-        with pytest.raises(ValueError, match="signed no act"):
+        with pytest.raises(ValueError, match="only the initiator"):
             _generate(
                 session,
                 [message, _order_confirmation()],
@@ -645,30 +655,253 @@ def test_a_counterparty_signature_cannot_hide_behind_an_unsigned_label():
     assert verify_session_evidence_record(transport, did_documents)
 
 
-def test_a_third_party_signature_does_not_stand_in_for_the_counterparty_s():
-    """The rule names the COUNTERPARTY, and an unrelated DID is not one.
+# ---------------------------------------------------------------------------
+# Initiator-only: every verified act in an external-channel record is the
+# initiator's
+#
+# Section 9A.8 rule 1 already said this for an ``observed_party`` responder --
+# "No act may claim attribution: verified_signature unless its sender_did equals
+# parties.initiator.did ... an act that cannot be placed in a known role is
+# refused rather than admitted". The DID-bearing external-channel shape did not
+# exist when that was written, and nothing restated it there, so the SAME
+# verified third-party act was refused or admitted according to the
+# counterparty's identity tier -- the identity-proxy reasoning this witness
+# exists to be rid of.
+#
+# A rule comparing sender_did to parties.responder.did cannot carry the property
+# for a second reason: it is string equality against one spelling, and a DID URL
+# for the same key is a different string.
+# ---------------------------------------------------------------------------
 
-    A rule written as "any verified act other than the initiator's" would be
-    wider than either Section 9A.5, which already declines to count an unrelated
-    DID towards ``mixed``, or Section 9A.12, whose exclusion is about the
-    counterparty's own acts. The boundary is pinned here rather than left to the
-    reader -- and what pins it is that the record is refused for a DIFFERENT
-    reason, at the act level: an unrelated DID does not resolve, so the act is
-    INVALID rather than merely uncounted. That refusal predates this change and
-    must not be mistaken for coverage of it.
+
+def _signed_entry(message: dict, signature_type: str) -> dict:
+    """The evidence entry the generator builds for a flat signed message.
+
+    Hand-built because the generator now REFUSES these records, which is the
+    generator-leg assertion below rather than a gap. Validated against the
+    generator's own output: for the same message object this reproduces its entry
+    exactly, ``act_hash`` included. The message object must be REUSED rather than
+    rebuilt -- the third party's key is ES256, whose signatures are randomised,
+    so a second call would differ in `signature`, `act` and `act_hash` at once.
     """
-    healthy, did_documents, _session = _mandate_only_pair(_UNSIGNED_COUNTEROFFER)
-    assert verify_session_evidence_record(healthy, did_documents)
+    # The generator records every act with the wire version it was signed under.
+    act = {"protocol_version": PROTOCOL_ACT_VERSION, **copy.deepcopy(message)}
+    return {
+        "sequence_number": act.get("sequence_number"),
+        "round_number": act.get("round_number"),
+        "message_type": act["message_type"],
+        "message_id": act.get("message_id"),
+        "sender_did": act["sender_did"],
+        "timestamp": act.get("timestamp"),
+        "source_protocol": act.get("source_protocol"),
+        "act": act,
+        "act_hash": hash_object(act),
+        "sender_verification_method": act["sender_verification_method"],
+        "signature_type": signature_type,
+        "signature": act[signature_type],
+        "attribution": "verified_signature",
+    }
 
-    stranger = copy.deepcopy(healthy)
-    counterparty = next(
-        entry for entry in stranger["acts"] if entry["sender_did"] == RESPONDER_DID
+
+def _with_extra_act(record: dict, entry: dict) -> dict:
+    """Append one act and reseal, leaving ``evidence_level`` alone.
+
+    The level must not move, or the classifier-consistency check would refuse the
+    record instead of the rule under test. It does not: the classifier counts
+    only session parties, so an act from a non-party changes neither the
+    represented nor the verified set, and a responder act spelled as a DID URL is
+    not the responder's DID either. Both are asserted at each call site.
+    """
+    appended = copy.deepcopy(record)
+    appended["acts"] = list(appended["acts"]) + [copy.deepcopy(entry)]
+    return _reseal(appended)
+
+
+def _third_party_resolving_session():
+    """A mandate-only session whose resolver also knows a non-party DID.
+
+    The third party's DID must RESOLVE, or its act would be refused as invalid
+    and the refusal would say nothing about the rule under test.
+    """
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_completed_externally(session)
+    did_documents[THIRD_PARTY_DID] = make_did_document(
+        THIRD_PARTY_DID, "key-1", public_key_to_jwk(THIRD_PARTY_PUBLIC_KEY)
     )
-    counterparty["sender_did"] = "did:example:unrelated"
-    _reseal(stranger)
+    return session, did_documents
 
-    assert counterparty["attribution"] == "unsigned_observation"
-    assert not verify_session_evidence_record(stranger, did_documents)
+
+def _mandate_only_with_reference(session):
+    return _generate(
+        session,
+        [_observed_quote(sender_did=RESPONDER_DID)],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+
+
+def test_a_completion_carrying_a_third_party_signature_is_refused():
+    """A verified act that is nobody's role in the session (Section 9A.8 rule 1).
+
+    THE ACT MUST BE GENUINELY SIGNED, AND THAT IS EASY TO GET WRONG HERE. The
+    cheap way to write this test is to take an unsigned observation and relabel
+    its ``sender_did`` to an unrelated DID. That does NOT exercise this rule: the
+    act stays ``unsigned_observation``, no DID is ever resolved, ``invalid_acts``
+    stays 0, and what refuses the record is the ``evidence_level`` recomputation,
+    because dropping the responder from the represented set makes a claimed
+    ``mixed`` disagree with the computed ``unilateral``. The record is refused, so
+    such a test PASSES, while saying nothing about the signer.
+
+    So this builds a REAL signature from a DID that is neither party, which
+    RESOLVES and VERIFIES, and asserts ``invalid_acts == 0`` and an unchanged
+    level to rule both alternatives out. Do not simplify it back.
+    """
+    session, did_documents = _third_party_resolving_session()
+    honest = _mandate_only_with_reference(session)
+    assert verify_session_evidence_record(honest, did_documents), "the positive twin"
+
+    third_party_message = _third_party_offer(session.session_id)
+    signed = _with_extra_act(
+        honest, _signed_entry(third_party_message, "protocol_act_signature")
+    )
+
+    # Preconditions. The signature is real and VERIFIES, so nothing is refused at
+    # the act level; and the level is unchanged, so the classifier-consistency
+    # check is satisfied. Whatever refuses this record refuses it for the signer.
+    entry = signed["acts"][-1]
+    assert entry["attribution"] == "verified_signature"
+    assert entry["signature"], "a real signature, not a relabelled act"
+    assert entry["sender_did"] == THIRD_PARTY_DID
+    assert entry["sender_did"] not in (
+        signed["parties"]["initiator"]["did"],
+        signed["parties"]["responder"]["did"],
+    ), "neither party: it has no role in this session"
+    assert honest["evidence_level"] == signed["evidence_level"] == "mixed"
+    assert assess_session_evidence_record(signed, did_documents) == {
+        "valid": False,
+        "evidence_level": "mixed",
+        "verified_acts": 2,
+        "unsigned_acts": 1,
+        "invalid_acts": 0,
+    }
+
+    assert not verify_session_evidence_record(signed, did_documents)
+
+
+def test_the_generator_refuses_a_completion_carrying_a_third_party_signature():
+    """The generator runs the same rule, so a producer cannot emit one either."""
+    session, _did_documents = _third_party_resolving_session()
+    observed = [_observed_quote(sender_did=RESPONDER_DID)]
+
+    with pytest.raises(ValueError, match="only the initiator"):
+        _generate(
+            session,
+            observed + [_third_party_offer(session.session_id)],
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+    # The control: the same call without the third party's act SUCCEEDS, so the
+    # refusal above is that act's doing and not the observed quote's.
+    assert _generate(
+        session, observed, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE
+    )
+
+
+def _acceptance_signed_as(session_id: str, offer: dict, sender_did: str) -> dict:
+    """The responder's real acceptance, with ``sender_did`` spelled as given."""
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": "acceptance-1",
+        "session_id": session_id,
+        "in_reply_to": offer["message_id"],
+        "round_number": offer["round_number"],
+        "sequence_number": 3,
+        "accepted_offer_id": offer["message_id"],
+        "accepted_protocol_act_hash": offer["protocol_act_hash"],
+        "sender_did": sender_did,
+        "sender_agent_id": "seller-agent",
+        "sender_verification_method": RESPONDER_VM,
+        "timestamp": "2026-03-24T10:03:00Z",
+    }
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
+        RESPONDER_PRIVATE_KEY,
+        kid=RESPONDER_VM,
+    )
+    return acceptance
+
+
+def _dereferencing_resolver(did_documents: dict):
+    """Resolve the base DID of a DID URL, as W3C DID URL dereferencing does.
+
+    Not a broken resolver: it is what the resolver the JavaScript ecosystem uses
+    does when handed a DID URL, and Section 9A.6 imposes no syntax on
+    ``sender_did``. The resolver is the CALLER'S, which is why a rule comparing
+    ``sender_did`` to one DID by string equality cannot carry the property.
+    """
+
+    def resolve(did: str) -> dict:
+        return did_documents[did.split("#", 1)[0].split("?", 1)[0]]
+
+    return resolve
+
+
+def test_a_responder_signature_spelled_as_a_did_url_is_refused():
+    """The evasion string equality cannot close, measured under the resolver that opens it.
+
+    The responder signs its own acceptance and the producer writes ``sender_did``
+    as ``did:web:acme-corp.com#key-2026-01`` rather than
+    ``did:web:acme-corp.com``. Same key, same party, same signature; only the
+    spelling differs. ``_verification_method_controlled_by`` accepts it because
+    the method equals the sender string, so the signature VERIFIES, while a rule
+    comparing ``sender_did`` to ``parties.responder.did`` sees two different
+    strings and stands aside.
+
+    UNDER A DEREFERENCING RESOLVER ON PURPOSE. Under an exact-match resolver the
+    DID URL does not resolve, the act is INVALID, and the record is refused for a
+    reason that says nothing about the rule -- a test that stopped there would
+    pass while proving nothing. Arm one asserts ``invalid_acts`` is 0 to rule
+    that out, and arm two holds the resolver fixed while changing only the
+    spelling, which is what makes the spelling the variable under test.
+
+    The initiator-only rule closes this without normalizing any DID: whatever the
+    spelling, the string is not ``parties.initiator.did``.
+    """
+    manager, session, did_documents = _make_session()
+    offer = _offer(session.session_id)
+    manager.process_message(session, offer)
+    _mark_completed_externally(session)
+    resolver = _dereferencing_resolver(did_documents)
+    honest = _mandate_only_with_reference(session)
+    assert verify_session_evidence_record(honest, resolver), "the positive twin"
+
+    url_signed = _with_extra_act(
+        honest,
+        _signed_entry(
+            _acceptance_signed_as(session.session_id, offer, RESPONDER_VM),
+            "acceptance_signature",
+        ),
+    )
+
+    entry = url_signed["acts"][-1]
+    assert entry["sender_did"] == RESPONDER_VM, "spelled as a DID URL"
+    assert entry["sender_did"] != RESPONDER_DID, "so string equality does not see it"
+    assert url_signed["evidence_level"] == honest["evidence_level"] == "mixed"
+    assessment = assess_session_evidence_record(url_signed, resolver)
+    assert assessment["invalid_acts"] == 0, "it really verifies under this resolver"
+    assert assessment["verified_acts"] == 2
+
+    assert not verify_session_evidence_record(url_signed, resolver)
+
+    # Arm two, resolver held fixed: the bare spelling is refused as well, so the
+    # verdict does not turn on how the DID is written.
+    bare_signed = _with_extra_act(
+        honest,
+        _signed_entry(
+            _acceptance_signed_as(session.session_id, offer, RESPONDER_DID),
+            "acceptance_signature",
+        ),
+    )
+    assert not verify_session_evidence_record(bare_signed, resolver)
 
 
 def test_a_transaction_record_hash_still_requires_a_did_bearing_responder():

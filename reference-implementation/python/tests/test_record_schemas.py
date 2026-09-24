@@ -587,17 +587,21 @@ def test_the_earlier_schemas_refuse_the_reference_under_their_own_version(schema
 def test_the_0_5_schema_refuses_every_invalid_external_channel_record(case):
     """The healthy record goes first: a schema that refused everything would pass every case.
 
-    The ``schema_expresses is False`` branch is LIVE and two cases take it, both
+    The ``schema_expresses is False`` branch is LIVE and three cases take it, all
     for the same reason: the rule compares two members of the record, which a
     JSON Schema cannot state at all, so the schema accepts the record and only
     the verifier refuses it.
 
     * ``producer-not-initiator``: Section 9A.12 requires ``producer.did`` to
       equal ``parties.initiator.did``.
-    * ``reference-with-a-counterparty-signed-act``: Section 9A.12 requires that
-      no act attributed ``verified_signature`` carry the responder's
-      ``sender_did``, which compares ``parties.responder.did`` against each
-      entry of ``acts``.
+    * ``reference-with-a-counterparty-signed-act`` and
+      ``reference-with-a-third-party-signed-act``: Section 9A.12 with
+      Section 9A.8 rule 1 requires that no act claim ``verified_signature``
+      unless its ``sender_did`` equals ``parties.initiator.did``, which compares
+      ``parties.initiator.did`` against each entry of ``acts``. Those two carry
+      the SAME signed act and differ only in ``parties.responder``, so the signer
+      is the responder in one and a third party in the other; a rule keyed on the
+      responder's ``did`` admits the second.
 
     That is the whole point of the flag, and it is not a gap: it marks the
     cases where schema silence is correct rather than missing. Do not read a

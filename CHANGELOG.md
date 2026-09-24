@@ -55,19 +55,32 @@ condition removes.
 
 **The property is now checked directly, because the proxies that used to carry it
 are gone.** A verifier and a generator both refuse an external-channel record in
-which any act attributed `verified_signature` carries a `sender_did` equal to a
-DID-bearing responder's `did`. Nothing else in the record excludes a counterparty
-signature: the producer-signed-act rule asks for an act of the *initiator's* and
-is satisfied when both parties signed, and the exactly-one-witness rule is
-satisfied by a producer that suppresses a `transaction_record_hash` it could have
-carried. While the responder condition said `observed_party` and the level said
-`unilateral`, those two excluded it between them; relaxing both at once is what
-made the check necessary, because `bilateral` requires nothing to be unsigned, so
-a single unsigned observed act — which an external-channel flow carries by
-construction — leaves a fully signed session at `mixed`, which is admitted. The
-check is keyed on the act's attribution, which is where Section 9A.3 puts
-"unsigned", and on the responder's own DID: a third party's signature is not the
-counterparty's.
+which any act attributed `verified_signature` carries a `sender_did` other than
+`parties.initiator.did`. That is Section 9A.8 rule 1 — "an act that cannot be
+placed in a known role is refused rather than admitted" — holding for the
+external-channel witness at every `record_version` and for both responder shapes,
+rather than only where the responder is an `observed_party`. Nothing else in the
+record excludes a counterparty signature: the producer-signed-act rule asks for an
+act of the *initiator's* and is satisfied when both parties signed, and the
+exactly-one-witness rule is satisfied by a producer that suppresses a
+`transaction_record_hash` it could have carried. While the responder condition
+said `observed_party` and the level said `unilateral`, those two excluded it
+between them; relaxing both at once is what made the check necessary, because
+`bilateral` requires nothing to be unsigned, so a single unsigned observed act —
+which an external-channel flow carries by construction — leaves a fully signed
+session at `mixed`, which is admitted.
+
+**Initiator-only rather than "not the responder's", and the difference is
+load-bearing.** A rule comparing `sender_did` to `parties.responder.did` would
+admit a verified signature from any *other* DID — an agent, a delegate, a payment
+processor — letting a producer decide, by which string it writes into
+`parties.responder`, whether a counterparty signature is checked at all; and it
+would contradict Section 9A.8 rule 1, which refuses that same act wherever the
+responder is an `observed_party`, so admission would turn on the counterparty's
+identity tier. It would also compare against one spelling: `sender_did` carries no
+imposed syntax, so a DID URL naming the responder's own key is a different string
+from its `did`, and a verifier whose resolver dereferences DID URLs would accept
+it. Comparing against the initiator needs no normalization and closes all three.
 
 **What did not move.** A `COMPLETED` record still carries exactly one completion
 witness, never both and never neither. A `transaction_record_hash` still

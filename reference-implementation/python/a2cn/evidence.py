@@ -340,8 +340,8 @@ def generate_session_evidence_record(
         )
     if not _external_commitment_rules_hold(record):
         raise ValueError(
-            "An external commitment reference requires a responder that signed no "
-            "act, and unilateral or mixed evidence"
+            "An external commitment reference requires that only the initiator "
+            "signed an act, and unilateral or mixed evidence"
         )
     # _external_commitment_matches_version_0_3 was checked here, and is not any
     # more. It cannot fire on anything this function builds: record_version is
@@ -920,15 +920,14 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     carry no signature, and one whose inner ``act`` still holds an A2CN signature
     field is refused in ``_verify_evidence_act``, as an INVALID act. So
     "``parties.responder``'s acts are unsigned" (condition 2) and "no act
-    attributed ``verified_signature`` belongs to the responder" are the same
-    statement, and the second is the one a verifier can check. A transport
-    signature the producer merely observed is not an A2CN signature and is
-    unaffected: Section 9A.12 puts it inside the observed act on purpose.
+    attributed ``verified_signature`` is the responder's" are the same statement,
+    and the second is the one a verifier can check. A transport signature the
+    producer merely observed is not an A2CN signature and is unaffected:
+    Section 9A.12 puts it inside the observed act on purpose.
 
-    Keyed on the RESPONDER's DID, not on "any DID other than the initiator's". A
-    third party's signature is not the counterparty's; Section 9A.5 already
-    declines to count one towards ``mixed``, and an unrelated DID that does not
-    resolve makes its act invalid.
+    Keyed on the INITIATOR's DID, which is Section 9A.8 rule 1.
+    ``_every_verified_act_is_the_initiators`` carries the argument for why the
+    responder's DID is the wrong comparison target.
 
     ``evidence_level`` was a SECOND identity proxy on the same property, and it
     is relaxed for the same reason. Both ``unilateral`` and ``mixed`` satisfy
@@ -960,34 +959,69 @@ def _external_commitment_rules_hold(record: dict) -> bool:
         return False
     if record.get("evidence_level") not in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL):
         return False
-    return not _responder_signed_an_act(record)
+    return _every_verified_act_is_the_initiators(record)
 
 
-def _responder_signed_an_act(record: dict) -> bool:
-    """Whether an act attributed to a verified signature is the responder's.
+def _every_verified_act_is_the_initiators(record: dict) -> bool:
+    """Section 9A.8 rule 1, for every external-channel record rather than some.
 
-    The responder's DID must be a non-empty string to match anything, so an
-    ``observed_party`` -- which carries no ``did`` at all -- never matches here,
-    and Section 9A.8's own rule keeps governing it. A ``verified_signature`` act
-    always carries a non-null ``sender_did`` (Section 9A.3), so a missing
-    responder DID cannot match one by both being absent.
+    "No act may claim ``attribution: "verified_signature"`` unless its
+    ``sender_did`` equals ``parties.initiator.did`` ... an act that cannot be
+    placed in a known role is refused rather than admitted." Section 9A.8 states
+    that for an ``observed_party`` responder. The DID-bearing external-channel
+    shape did not exist when it was written and nothing restated it there, so the
+    SAME verified third-party act was refused for one responder tier and admitted
+    for the other -- which is the identity-proxy reasoning this witness exists to
+    be rid of, reappearing one level down.
+
+    WHY THE INITIATOR AND NOT "NOT THE RESPONDER'S". Three reasons, each
+    independent, and the first is the one that matters:
+
+    * a verified act from a THIRD party would pass a responder comparison. Such
+      an act is nobody's role in the session: Section 9A.5 declines to COUNT it
+      towards ``mixed``, but that is classification, not admission, so nothing
+      would refuse it. A producer naming one organisational DID as
+      ``parties.responder`` while the counterparty signs under an agent or
+      delegate DID could then carry a verified counterparty signature past the
+      rule entirely.
+    * it would contradict Section 9A.8 rule 1 for the same act, which refuses a
+      verified third-party act outright wherever the responder is an
+      ``observed_party``. Admission would turn on the counterparty's identity
+      tier -- the identity-proxy reasoning this witness exists to be rid of.
+    * it would be string equality against one spelling. ``sender_did`` has no
+      imposed syntax (Section 9A.6), and ``did:web:acme-corp.com#key-2026-01`` is
+      a different string from ``did:web:acme-corp.com`` while
+      ``_verification_method_controlled_by`` accepts it and a resolver that
+      dereferences DID URLs resolves it. Whether the record is admitted would be
+      a property of the CALLER'S resolver. Comparing against the initiator needs
+      no normalization: whatever the spelling, it is not the initiator's.
+
+    Stated positively, so the rule is a property of the whole act list rather
+    than a search for one bad entry: an act list with nothing verified satisfies
+    it vacuously, and ``_external_commitment_producer_act_present`` is what
+    refuses that record.
     """
     parties = record.get("parties")
     if not isinstance(parties, dict):
         return False
-    responder = parties.get("responder")
-    if not isinstance(responder, dict):
+    initiator = parties.get("initiator")
+    if not isinstance(initiator, dict):
         return False
-    responder_did = responder.get("did")
-    if not isinstance(responder_did, str) or not responder_did:
+    initiator_did = initiator.get("did")
+    if not isinstance(initiator_did, str) or not initiator_did:
+        # Section 9A.2 requires a DID-bearing initiator, so this record is
+        # refused elsewhere too; refusing here keeps the rule from passing
+        # vacuously on a record with no initiator to compare against.
         return False
     acts = record.get("acts")
     if not isinstance(acts, list):
         return False
-    return any(
+    return all(
         isinstance(entry, dict)
-        and entry.get("attribution") == ATTRIBUTION_VERIFIED
-        and entry.get("sender_did") == responder_did
+        and (
+            entry.get("attribution") != ATTRIBUTION_VERIFIED
+            or entry.get("sender_did") == initiator_did
+        )
         for entry in acts
     )
 

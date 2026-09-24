@@ -401,20 +401,27 @@ DID-bearing responder at `bilateral`, the record labelled `"0.2"` or `"0.1"`,
 `"0.3"` without the reference, an `observed_party` responder carrying a
 `transaction_record_hash` (at `"0.2"` and at `"0.1"`), no act the producer
 signed, no acts at all, a record sealed by a DID that is not its initiator, and a
-record whose DID-bearing responder SIGNED an act that verifies. The sealed-by
+record whose DID-bearing responder SIGNED an act that verifies, and a record
+carrying a verified signature from a THIRD party. The sealed-by
 case is sealed with `second_producer`, whose `private_jwk` is
 test-only, as its `sealed_by` says, so its seal verifies and only the producer
 binding refuses it; a case whose `schema_expresses` is false states a rule a JSON
 Schema cannot express, so every schema describing the record accepts it and only
-the verifier refuses it. Two cases are of that kind, and both compare two members
-of the record: the sealed-by one, and the signed-counterparty one, which compares
-`parties.responder.did` against each act's `sender_did`. That second case borrows
-`second_producer`'s identity for its responder so the DID RESOLVES and the
-signature verifies — an act merely claiming a signature would be refused as
-invalid instead, which is the wrong reason. It is deliberately SINGLE-CAUSE:
-`evidence_level` stays `mixed`, which the classifier agrees with and which
-Section 9A.12 admits, and no act is invalid, so removing that one verifier check
-makes the record verify. Resealed, each has `resealed_record_hash` and fails
+the verifier refuses it. Three cases are of that kind, and all compare two members
+of the record: the sealed-by one, and the two signed-act ones, which compare
+`parties.initiator.did` against each act's `sender_did` — no act may claim
+`verified_signature` unless its `sender_did` is the initiator's (Section 9A.12
+with Section 9A.8 rule 1). **Those two carry the SAME signed act and differ in one
+field, `parties.responder`**, so its signer is the responder in one case and a
+third party in the other; a rule comparing `sender_did` to the responder's `did`
+refuses the first and admits the second, which is what the pair exists to catch.
+Both borrow `second_producer`'s identity for the signer so the DID RESOLVES and
+the signature verifies — an act merely claiming a signature would be refused as
+invalid instead, which is the wrong reason. Both are deliberately SINGLE-CAUSE:
+`evidence_level` is left at the value the classifier computes (`mixed` where the
+signer is the responder and so a represented party, `unilateral` where it is a
+third party and so counts for neither), and no act is invalid, so removing that
+one verifier check makes each record verify. Resealed, each has `resealed_record_hash` and fails
 verification. The Python suite validates every valid record against
 `session-evidence-record-0.5.schema.json`, checks that every invalid one fails it
 unless `schema_expresses` says otherwise, and checks that the `"0.1"` and `"0.2"`
