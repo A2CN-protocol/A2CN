@@ -1151,8 +1151,16 @@ function everyVerifiedActIsTheInitiators(record: Dict): boolean {
   }
   return acts.every(
     (entry) =>
+      // !Array.isArray matches Python's isinstance(entry, dict), which an array
+      // does not satisfy. Without it a bare [] would pass this guard, read
+      // attribution as undefined and count as "not verified", so the two
+      // languages would disagree on such a record. Unobservable from outside
+      // today -- the act-ordering check upstream refuses a record with a
+      // non-object act first, in both languages -- so no verdict test can reach
+      // it, and it is fixed for parity rather than for a reachable defect.
       typeof entry === "object" &&
       entry !== null &&
+      !Array.isArray(entry) &&
       ((entry as Dict).attribution !== EvidenceAttribution.VERIFIED ||
         (entry as Dict).sender_did === initiatorDid),
   );

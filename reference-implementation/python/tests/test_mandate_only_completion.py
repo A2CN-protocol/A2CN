@@ -51,6 +51,8 @@ from tests.conftest import make_did_document
 from tests.test_evidence import (
     EXTERNAL_COMMITMENT_REFERENCE,
     INITIATOR_DID,
+    INITIATOR_PRIVATE_KEY,
+    INITIATOR_VM,
     OBSERVED_RESPONDER,
     RESPONDER_DID,
     RESPONDER_PRIVATE_KEY,
@@ -902,6 +904,96 @@ def test_a_responder_signature_spelled_as_a_did_url_is_refused():
         ),
     )
     assert not verify_session_evidence_record(bare_signed, resolver)
+
+
+def _initiator_act_spelled_as(session_id: str, sender_did: str) -> dict:
+    """A SECOND act of the INITIATOR's own, ``sender_did`` spelled as given."""
+    verification_method = sender_did if "#" in sender_did else INITIATOR_VM
+    act = {
+        "protocol_version": PROTOCOL_ACT_VERSION,
+        "session_id": session_id,
+        "round_number": 1,
+        "sequence_number": 4,
+        "message_type": "offer",
+        "sender_did": sender_did,
+        "timestamp": "2026-03-24T10:04:00Z",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "terms": {"total_value": 9_400_000, "currency": "USD"},
+    }
+    act_hash = hash_object(act)
+    return {
+        **act,
+        "message_id": "initiator-revision-1",
+        "sender_verification_method": verification_method,
+        "source_protocol": "a2cn",
+        "protocol_act_hash": act_hash,
+        "protocol_act_signature": sign_jws(
+            act_hash, INITIATOR_PRIVATE_KEY, kid=verification_method
+        ),
+    }
+
+
+def test_the_initiator_signing_under_two_spellings_of_its_own_did_is_refused():
+    """The comparison is EXACT, and that is the ruled behaviour, not an oversight.
+
+    The initiator signs twice: once with ``sender_did`` equal to
+    ``parties.initiator.did``, once under its own DID URL. Both signatures are
+    genuine and both verify under a resolver that dereferences DID URLs, and
+    condition 6 is satisfied by the bare-DID act -- so this rule is the only thing
+    that objects, and the record is REFUSED.
+
+    DELIBERATE AND RULED. The rule compares ``sender_did`` to
+    ``parties.initiator.did`` by exact string equality and performs no DID
+    normalization. That is the same property that makes it proof against the
+    evasion the sibling test above pins: once a verifier starts treating a DID URL
+    as equal to its base DID, whether a record is admitted depends on how the
+    caller's resolver behaves rather than on the record. Section 9A.12 imposes no
+    syntax on ``sender_did``, so the fail-closed direction is the safe one -- a
+    producer that wants this act counted writes the DID the record already names.
+    This is the cost side of that choice, pinned here so it cannot be "fixed" by
+    adding normalization without the ruling being revisited.
+
+    NOT to be confused with the initiator's ONLY act being spelled as a DID URL.
+    That record is refused by condition 6 -- no act carries the initiator's
+    ``did`` at all -- and was refused before this rule existed, so it pins nothing
+    about this one. Here the bare-DID act is asserted present precisely to rule
+    that reading out.
+    """
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_completed_externally(session)
+    resolver = _dereferencing_resolver(did_documents)
+    honest = _mandate_only_with_reference(session)
+    assert verify_session_evidence_record(honest, resolver), "the positive twin"
+
+    two_spellings = _with_extra_act(
+        honest,
+        _signed_entry(
+            _initiator_act_spelled_as(session.session_id, INITIATOR_VM),
+            "protocol_act_signature",
+        ),
+    )
+
+    # Preconditions, all asserted before the verdict.
+    entry = two_spellings["acts"][-1]
+    assert entry["sender_did"] == INITIATOR_VM, "the initiator's own DID URL"
+    assert entry["sender_did"] != INITIATOR_DID, "a different string from its did"
+    # Condition 6 holds: an act DOES carry parties.initiator.did exactly.
+    assert any(
+        item["attribution"] == "verified_signature"
+        and item["sender_did"] == two_spellings["parties"]["initiator"]["did"]
+        for item in two_spellings["acts"]
+    ), "condition 6 is satisfied, so it is not what refuses this record"
+    # The level is coherent on both sides of the patch: a DID URL is not a party
+    # DID, so the classifier counts neither a new represented nor a new verified
+    # party, and the classifier-consistency check is satisfied.
+    assert honest["evidence_level"] == two_spellings["evidence_level"] == "mixed"
+    # Both signatures verify: nothing is refused at the act level.
+    assessment = assess_session_evidence_record(two_spellings, resolver)
+    assert assessment["invalid_acts"] == 0
+    assert assessment["verified_acts"] == 2
+
+    assert not verify_session_evidence_record(two_spellings, resolver)
 
 
 def test_a_transaction_record_hash_still_requires_a_did_bearing_responder():

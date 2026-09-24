@@ -3364,6 +3364,93 @@ test("a responder signature spelled as a DID URL is refused", () => {
   expect(verifySessionEvidenceRecord(bareSigned, resolver)).toBe(false);
 });
 
+/** A SECOND act of the INITIATOR's own, sender_did spelled as given. */
+function initiatorActSpelledAs(sessionId: string, senderDid: string): Dict {
+  const verificationMethod = senderDid.includes("#") ? senderDid : INITIATOR_VM;
+  const act: Dict = {
+    protocol_version: PROTOCOL_ACT_VERSION,
+    session_id: sessionId,
+    round_number: 1,
+    sequence_number: 4,
+    message_type: "offer",
+    sender_did: senderDid,
+    timestamp: "2026-03-24T10:04:00Z",
+    expires_at: "2030-01-01T00:00:00Z",
+    terms: { total_value: 9_400_000, currency: "USD" },
+  };
+  const actHash = hashObject(act);
+  return {
+    ...act,
+    message_id: "initiator-revision-1",
+    sender_verification_method: verificationMethod,
+    source_protocol: "a2cn",
+    protocol_act_hash: actHash,
+    protocol_act_signature: signJws(actHash, INITIATOR_PRIVATE_KEY, verificationMethod),
+  };
+}
+
+test("the initiator signing under two spellings of its own did is refused", () => {
+  // The comparison is EXACT, and that is the ruled behaviour, not an oversight.
+  //
+  // The initiator signs twice: once with sender_did equal to
+  // parties.initiator.did, once under its own DID URL. Both signatures are genuine
+  // and both verify under a resolver that dereferences DID URLs, and condition 6 is
+  // satisfied by the bare-DID act — so this rule is the only thing that objects, and
+  // the record is REFUSED.
+  //
+  // DELIBERATE AND RULED. The rule compares sender_did to parties.initiator.did by
+  // exact string equality and performs no DID normalization. That is the same
+  // property that makes it proof against the evasion the sibling test above pins:
+  // once a verifier treats a DID URL as equal to its base DID, whether a record is
+  // admitted depends on how the caller's resolver behaves rather than on the record.
+  // Section 9A.12 imposes no syntax on sender_did, so the fail-closed direction is
+  // the safe one — a producer that wants this act counted writes the DID the record
+  // already names. This is the cost side of that choice, pinned here so it cannot be
+  // "fixed" by adding normalization without the ruling being revisited.
+  //
+  // NOT to be confused with the initiator's ONLY act being spelled as a DID URL.
+  // That record is refused by condition 6 — no act carries the initiator's did at
+  // all — and was refused before this rule existed, so it pins nothing about this
+  // one. Here the bare-DID act is asserted present precisely to rule that out.
+  const [manager, session, didDocuments] = makeSession();
+  manager.processMessage(session, makeOffer(session.session_id));
+  markCompletedExternally(session);
+  const resolver = dereferencingResolver(didDocuments);
+  const honest = mandateOnlyWithReference(session);
+  expect(verifySessionEvidenceRecord(honest, resolver)).toBe(true);
+
+  const twoSpellings = withExtraAct(
+    honest,
+    signedEntry(
+      initiatorActSpelledAs(session.session_id, INITIATOR_VM),
+      "protocol_act_signature",
+    ),
+  );
+
+  // Preconditions, all asserted before the verdict.
+  const entry = (twoSpellings.acts as Dict[])[(twoSpellings.acts as Dict[]).length - 1];
+  expect(entry.sender_did).toBe(INITIATOR_VM);
+  expect(entry.sender_did).not.toBe(INITIATOR_DID);
+  // Condition 6 holds: an act DOES carry parties.initiator.did exactly.
+  expect(
+    (twoSpellings.acts as Dict[]).some(
+      (item) =>
+        item.attribution === "verified_signature" &&
+        item.sender_did === ((twoSpellings.parties as Dict).initiator as Dict).did,
+    ),
+  ).toBe(true);
+  // The level is coherent on both sides of the patch: a DID URL is not a party DID,
+  // so the classifier counts neither a new represented nor a new verified party.
+  expect(honest.evidence_level).toBe("mixed");
+  expect(twoSpellings.evidence_level).toBe("mixed");
+  // Both signatures verify: nothing is refused at the act level.
+  const assessment = assessSessionEvidenceRecord(twoSpellings, resolver);
+  expect(assessment.invalid_acts).toBe(0);
+  expect(assessment.verified_acts).toBe(2);
+
+  expect(verifySessionEvidenceRecord(twoSpellings, resolver)).toBe(false);
+});
+
 test("a transaction_record_hash still requires a DID-bearing responder", () => {
   // The direction this change does not touch. A TransactionRecord is bilateral
   // by construction (Section 9.3), so a responder with no A2CN identity cannot

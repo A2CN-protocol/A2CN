@@ -3003,7 +3003,15 @@ following, and a verifier MUST reject it otherwise:
 1. `terminal.outcome` is `COMPLETED` and `transaction_record_hash` is `null`
    (Section 9A.2).
 2. `parties.responder` is either an `observed_party`, so Section 9A.8 applies to
-   it, or a DID-bearing party whose acts are unsigned.
+   it, or a DID-bearing party whose acts are unsigned. Whichever of the two it
+   is, **no act may claim `verified_signature` unless its `sender_did` equals
+   `parties.initiator.did`** — Section 9A.8 rule 1, which holds here for both
+   responder shapes and at every `record_version`. That excludes a verified act
+   of the counterparty's, because its acts are unsigned, and a verified act of
+   any third party's, because an act that cannot be placed in a known role is
+   refused rather than admitted. The comparison is exact: a verifier performs no
+   DID normalization, so a `sender_did` spelled as a DID URL is not
+   `parties.initiator.did` even when it names the initiator's own key.
 3. `evidence_level` is `unilateral` or `mixed`. It is never `bilateral`: that
    level asserts both parties' material acts are attributable, which is exactly
    what a session completing through an external reference cannot claim. Which
@@ -3027,21 +3035,22 @@ the property just as fully, and that an `observed_party` cannot even describe,
 since that descriptor requires `did_declared`, `a2cn_endpoint_declared` and
 `mandate_declared` to be literally `false` (Section 9A.8).
 
-**Condition 2's "whose acts are unsigned" is what holds the property, and it is
-the clause a verifier enforces it by.** Nothing else in this list does.
-Condition 6 requires an act of the *initiator's* and is satisfied by a record in
-which both parties signed. Condition 1's exactly-one-witness rule is satisfied by
-a producer that suppresses a `transaction_record_hash` it could have carried.
-While conditions 2 and 3 named an `observed_party` at `unilateral`, those two did
-the excluding between them and the point never arose; relaxing both at once is
-what made condition 2's own words load-bearing. A verifier MUST therefore check
-them, and Section 9A.8 rule 1 is where this specification already states the
-check: **no act may claim `verified_signature` unless its `sender_did` equals
-`parties.initiator.did`.** That is what "its acts are unsigned" means, read
-through the attribution Section 9A.3 defines: an act attributed
-`unsigned_observation` carries no signature, and one whose complete `act` still
-holds an A2CN signature field fails already, as an invalid act. A transport
-signature the producer merely observed is not an A2CN signature and is
+**Condition 2's signature clause is what holds the property, and nothing else in
+this list does.** Condition 6 requires an act of the *initiator's* and is
+satisfied by a record in which both parties signed. Condition 1's
+exactly-one-witness rule is satisfied by a producer that suppresses a
+`transaction_record_hash` it could have carried. Condition 3's levels are
+satisfied by `mixed`, which a single unsigned observed act reaches from a fully
+signed session. While conditions 2 and 3 named an `observed_party` at
+`unilateral`, those two excluded a counterparty signature between them and the
+point never arose; admitting a DID-bearing responder is what makes condition 2's
+signature clause load-bearing, and is why that clause states the check rather
+than leaving it to be inferred from "whose acts are unsigned".
+
+"Unsigned" there is read through the attribution Section 9A.3 defines: an act
+attributed `unsigned_observation` carries no signature, and one whose complete
+`act` still holds an A2CN signature field fails already, as an invalid act. A
+transport signature the producer merely observed is not an A2CN signature and is
 unaffected.
 
 **The clause names the INITIATOR, and naming the responder instead would not
