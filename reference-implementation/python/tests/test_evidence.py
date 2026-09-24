@@ -1961,9 +1961,18 @@ def test_a_reference_with_a_did_bearing_responder_is_admitted_unless_bilateral()
     gate was an IDENTITY PROXY for the property that no counterparty signature
     witnesses the completion, and a counterparty whose identity verifies but
     whose acts are unsigned satisfies the property exactly as fully as one with
-    no identity at all. What still refuses the record is ``bilateral``, which
-    asserts both parties' material acts are attributable -- precisely the claim
-    an external witness cannot make.
+    no identity at all.
+
+    ``bilateral`` still refuses the record, since that level asserts both
+    parties' material acts are attributable -- precisely the claim an external
+    witness cannot make. It is NOT what keeps a counterparty SIGNATURE out,
+    though, and reading it that way is what left a gap here: ``bilateral``
+    requires nothing to be unsigned, so one unsigned observed act leaves a fully
+    signed session at ``mixed``, which is admitted. The counterparty-signature
+    exclusion is a check of its own, covered in
+    tests/test_mandate_only_completion.py. Every arm below carries an unsigned
+    observed act whose sender is null or the responder and no signature of the
+    responder's, so none of them exercises that check.
     """
     healthy, did_documents = _external_channel_record()
 
@@ -2136,14 +2145,21 @@ def test_the_verifier_never_dereferences_the_locator(monkeypatch):
 
 
 def test_the_generator_refuses_a_reference_for_a_bilateral_session():
-    """A session whose counterparty signed cannot hide behind an external witness.
+    """A genuinely bilateral session cannot claim an external witness.
 
-    Stronger than the rule it replaces. This session's counterparty signed an
-    acceptance, so it classifies ``bilateral`` and HAS a TransactionRecord; the
-    generator refuses the reference on the evidence level rather than on the
-    responder's identity shape. That is the right reason: a DID-bearing
-    responder is admitted now (see the verifier test above), and what must stay
-    refused is a genuinely bilateral session claiming an external witness.
+    THE TITLE THIS ONCE CARRIED -- "a session whose counterparty signed cannot
+    hide behind an external witness" -- was WIDER THAN THE TEST, and the gap was
+    real. This session has NOTHING unsigned, so it classifies ``bilateral`` and
+    is refused on the level. Add one unsigned observed act -- which an
+    external-channel flow carries by construction -- and the very same fully
+    signed session classifies ``mixed``, which the level check admits. So what
+    this exercises is the ``bilateral`` exclusion, and nothing about
+    counterparty signatures in general.
+
+    The general rule is checked separately, on the ``mixed`` shape this test
+    cannot reach, in tests/test_mandate_only_completion.py. Both clauses live in
+    ``_external_commitment_rules_hold`` and raise the same message, so this
+    assertion cannot tell them apart; the level is what it is here for.
     """
     manager, session, _ = _make_session()
     offer = _offer(session.session_id)

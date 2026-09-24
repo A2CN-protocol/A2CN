@@ -450,7 +450,7 @@
     {
       "name": "reference-with-mixed-evidence",
       "resealed_record_hash": "m2jU57hiomfMisedFLXBipb2eenuM-aYWqhiwGw7Z8A",
-      "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
+      "rule": "Section 9A.8: an observed_party responder is unilateral, and this record's responder is one -- so Section 9A.8's coupling refuses it BEFORE Section 9A.12's conditions are reached. It does NOT exercise Section 9A.12, whose condition 3 admits mixed since \"0.5\"; the case that exercises the Section 9A.12 exclusion is reference-with-did-bearing-responder-and-bilateral-evidence, and only a DID-bearing responder gets there.",
       "set": [
         {
           "path": [
@@ -463,7 +463,7 @@
     {
       "name": "reference-with-bilateral-evidence",
       "resealed_record_hash": "hNiM8TB4-I6kyC96FOOA-53ldBmpoyGnvWcYZjT9ejE",
-      "rule": "Section 9A.12: a record that carries external_commitment_reference is unilateral.",
+      "rule": "Section 9A.8: an observed_party responder is unilateral, and this record's responder is one -- so Section 9A.8's coupling refuses it BEFORE Section 9A.12's conditions are reached. Section 9A.12 also excludes bilateral, but this case cannot reach that exclusion and is not interchangeable with reference-with-did-bearing-responder-and-bilateral-evidence, which can.",
       "set": [
         {
           "path": [
@@ -650,6 +650,132 @@
             "evidence_level"
           ],
           "value": "bilateral"
+        }
+      ]
+    },
+    {
+      "name": "reference-with-a-counterparty-signed-act",
+      "resealed_record_hash": "EfABiuYmV66RwUBSHCaRTJorUwb3vMDG9CMZaUBZ9K8",
+      "rule": "Section 9A.12: a record carrying external_commitment_reference has no act attributed verified_signature whose sender_did is the responder's -- its counterparty signed nothing, which is the property the witness carries. The counterparty here signed a COUNTEROFFER, so no TransactionRecord exists for the session either: the reference is the only witness available and is still not its counterparty's. This case needs a DID-BEARING responder whose DID RESOLVES, so the signature verifies and the act is valid rather than merely claimed; it reuses second_producer's identity for that. A JSON Schema cannot express the rule at any version, because it compares parties.responder.did against the sender_did of each act, so every schema that describes this record accepts it and only the verifier refuses it. It is SINGLE-CAUSE: evidence_level stays mixed, which the classifier agrees with and which condition 3 admits, and invalid_acts is 0, so removing this one guard makes the record VERIFY.",
+      "schema_expresses": false,
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:agent",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:agent#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts"
+          ],
+          "value": [
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:16:00Z",
+                "message_id": "ec-offer-1",
+                "message_type": "offer",
+                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+                "protocol_version": "0.2",
+                "round_number": 1,
+                "sender_agent_id": "buyer-agent",
+                "sender_did": "did:example:buyer",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "sequence_number": 1,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:01:00Z"
+              },
+              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
+              "attribution": "verified_signature",
+              "message_id": "ec-offer-1",
+              "message_type": "offer",
+              "round_number": 1,
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:18:00Z",
+                "message_id": "ec-counteroffer-1",
+                "message_type": "counteroffer",
+                "protocol_act_hash": "s4tMDmbOK1sjcrWP_CDQwhHHrdZjaAjUCA-ZMiiUrmc",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+                "protocol_version": "0.2",
+                "round_number": 2,
+                "sender_agent_id": "shop-agent",
+                "sender_did": "did:example:agent",
+                "sender_verification_method": "did:example:agent#key-1",
+                "sequence_number": 2,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:03:00Z"
+              },
+              "act_hash": "CmnxEHcQBRJbErVFKS6GwPYMUu_Bs8iAATbNBpvOHVw",
+              "attribution": "verified_signature",
+              "message_id": "ec-counteroffer-1",
+              "message_type": "counteroffer",
+              "round_number": 2,
+              "sender_did": "did:example:agent",
+              "sender_verification_method": "did:example:agent#key-1",
+              "sequence_number": 2,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:03:00Z"
+            },
+            {
+              "act": {
+                "message_id": "ucp-order-confirmation-1",
+                "message_type": "order_confirmation",
+                "order": {
+                  "currency": "USD",
+                  "id": "ORD-2026-000123",
+                  "status": "confirmed",
+                  "total_minor": 18750
+                },
+                "protocol_version": "0.2",
+                "timestamp": "2026-09-01T12:05:00Z"
+              },
+              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
+              "attribution": "unsigned_observation",
+              "message_id": "ucp-order-confirmation-1",
+              "message_type": "order_confirmation",
+              "round_number": null,
+              "sender_did": null,
+              "sender_verification_method": null,
+              "sequence_number": null,
+              "signature": null,
+              "signature_type": null,
+              "source_protocol": "ucp",
+              "timestamp": "2026-09-01T12:05:00Z"
+            }
+          ]
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
         }
       ]
     }
@@ -919,7 +1045,7 @@
   },
   "session_evidence_record_0_2_schema_sha256": "0344b8ee57bb431e28b04f0c5a48b9bce4d7cca90e046ea11668b2c0b1887734",
   "session_evidence_record_0_4_schema_sha256": "334174ba4aff97dc01975564f881279e6bbb71e7751ec757dec59a59cba9d756",
-  "session_evidence_record_0_5_schema_sha256": "f14cabbb993e38994758d5c21c9900bd0be2c349c1812be24e2e8325775629fd",
+  "session_evidence_record_0_5_schema_sha256": "f4848cbeec51390989657f95302d2a21f3f33555c5c455e3be2bea3a38ef0e4c",
   "valid_records": [
     {
       "name": "reference-with-verified-identity-and-unsigned-acts",

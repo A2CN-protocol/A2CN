@@ -53,13 +53,30 @@ has verified, recording less than it knows in order to reach an admitted
 classification — the same defect, one level up, that widening the responder
 condition removes.
 
+**The property is now checked directly, because the proxies that used to carry it
+are gone.** A verifier and a generator both refuse an external-channel record in
+which any act attributed `verified_signature` carries a `sender_did` equal to a
+DID-bearing responder's `did`. Nothing else in the record excludes a counterparty
+signature: the producer-signed-act rule asks for an act of the *initiator's* and
+is satisfied when both parties signed, and the exactly-one-witness rule is
+satisfied by a producer that suppresses a `transaction_record_hash` it could have
+carried. While the responder condition said `observed_party` and the level said
+`unilateral`, those two excluded it between them; relaxing both at once is what
+made the check necessary, because `bilateral` requires nothing to be unsigned, so
+a single unsigned observed act — which an external-channel flow carries by
+construction — leaves a fully signed session at `mixed`, which is admitted. The
+check is keyed on the act's attribution, which is where Section 9A.3 puts
+"unsigned", and on the responder's own DID: a third party's signature is not the
+counterparty's.
+
 **What did not move.** A `COMPLETED` record still carries exactly one completion
 witness, never both and never neither. A `transaction_record_hash` still
 requires a DID-bearing responder. An external-channel record still requires at
 least one act the producer signed — without it the seal alone would carry the
 `COMPLETED` claim. `bilateral` is still refused for an external witness, because
 it asserts both parties' material acts are attributable, which is the one claim
-such a record cannot make. The
+such a record cannot make — though it is not what excludes a counterparty
+signature, and never was. The
 counterparty's unsigned acts stay `unsigned_observation`: a verified identity is
 not a signed act, and nothing here lets one be recorded as the other.
 

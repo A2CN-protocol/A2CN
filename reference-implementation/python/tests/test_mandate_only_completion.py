@@ -10,10 +10,21 @@ honest ``COMPLETED`` shape at all: the external-channel witness was gated on an
 narrower than the property that gate exists to protect.
 
 THE PROPERTY, stated rather than proxied: *no counterparty signature witnesses
-the completion*. It is enforced by ``_completion_witness_holds`` together with
-the exactly-one-witness rule, both untouched here, and it holds for a verified
-full party exactly as it holds for a no-DID one. This file pins the relaxation
-to that property and to nothing wider.
+the completion*. It holds for a verified full party exactly as it holds for a
+no-DID one, and this file pins the relaxation to that property and to nothing
+wider.
+
+WHAT ENFORCES IT, measured rather than assumed. An earlier version of this
+paragraph named ``_completion_witness_holds`` and the exactly-one-witness rule,
+"both untouched here" -- and that was WRONG, in the way that mattered. Neither
+excludes a counterparty signature: the first asks for an act of the INITIATOR'S,
+which a record where both parties signed supplies, and the second is satisfied by
+a producer that suppresses a ``transaction_record_hash`` it could have carried.
+While the proxies stood, condition 3's ``unilateral`` and the ``observed_party``
+requirement did the excluding between them. Relaxing both at once left the
+property unenforced, and a record whose counterparty signed the acceptance
+verified. It is now a check of its own in ``_external_commitment_rules_hold``,
+and the section at the bottom of this file is what would catch its removal.
 
 WHAT MUST NOT MOVE, asserted here rather than assumed: the counterparty's acts
 stay ``unsigned_observation`` (no attribution inflation), a record still carries
@@ -28,17 +39,20 @@ import copy
 
 import pytest
 
+from a2cn.crypto import hash_object
 from a2cn.evidence import (
     assess_session_evidence_record,
     generate_transaction_record,
     verify_session_evidence_record,
 )
+from a2cn.messages import PROTOCOL_ACT_VERSION
 from a2cn.session import SessionState
 from tests.test_evidence import (
     EXTERNAL_COMMITMENT_REFERENCE,
     INITIATOR_DID,
     OBSERVED_RESPONDER,
     RESPONDER_DID,
+    _acceptance,
     _external_channel_record,
     _generate,
     _make_identity_light_session,
@@ -46,6 +60,7 @@ from tests.test_evidence import (
     _mark_completed_externally,
     _observed_quote,
     _offer,
+    _order_confirmation,
     _reseal,
 )
 
@@ -163,6 +178,17 @@ def test_a_mandate_only_completion_whose_counterparty_act_carries_no_did_is_unil
     logged as an open item, so the day that projection changed, every record
     that producer emitted would have stopped being emittable.
 
+    THAT NARROWING WAS THEN PROPOSED A SECOND TIME, after this paragraph was
+    written, on the same measured ground, and it resolved the same way: both
+    levels are admitted. The second pass got as far as the schema clause, both
+    verifier rules, both generator messages and six prose passages before this
+    docstring surfaced during the sweep and the resolution was revisited; all of
+    it was discarded and the tree returned to admitting both. Recorded here
+    rather than rewritten away, because a tripwire that fires and is then
+    reworded as though it had never been tested is worth less than one carrying
+    its own history. Two independent narrowings, the same evidence, the same
+    answer -- if a third is drafted, it needs a NEW argument, not this one.
+
     Admitting both levels is also the only option that does not silently settle
     a separate question: whether an act's SENDER and its SIGNER should be the
     same field at all. Attaching a DID to an act nobody signed really is
@@ -273,6 +299,376 @@ def test_stamping_a_verified_signature_on_an_unsigned_counterparty_act_is_refuse
 
     assert counterparty["signature"] is None, "nobody signed it; only the label moved"
     assert not verify_session_evidence_record(inflated, did_documents)
+
+
+# ---------------------------------------------------------------------------
+# The property the relaxation had to start enforcing directly
+# ---------------------------------------------------------------------------
+#
+# Widening the responder condition removed the two IDENTITY PROXIES --
+# ``observed_party`` and ``unilateral`` -- that had incidentally excluded a
+# counterparty signature, and nothing took over the property they stood for:
+# NO COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION. Section 9A.12 states it
+# three times over -- condition 2 admits a DID-bearing party only "whose acts
+# are unsigned", the producer MUST NOT attach the reference "to a record whose
+# counterparty signed an act that verifies", and a record "MUST NOT present" a
+# verified identity as a signed act.
+#
+# ``mixed`` is what made the proxies' removal load-bearing rather than
+# theoretical. ``_classify_evidence_level`` returns ``bilateral`` only when
+# NOTHING is unsigned, so a single unsigned observed act -- which an
+# external-channel flow carries by construction -- demotes a fully signed
+# session to ``mixed``, which condition 3 admits. The counterparty's signature
+# then rides in under an admitted classification.
+
+
+_COUNTERPARTY_ENVELOPE = (
+    "sequence_number",
+    "round_number",
+    "message_type",
+    "message_id",
+    "timestamp",
+)
+
+
+def _unsigned_counterparty_act(
+    message_type: str,
+    message_id: str,
+    *,
+    sequence_number: int,
+    round_number: int,
+    timestamp: str,
+) -> dict:
+    """An observed counterparty act carrying no signature of any kind.
+
+    The mandate-only projection: the responder's DID is recorded, because it
+    verifies, and the act is an unsigned observation, because nobody signed it.
+    """
+    return {
+        "sequence_number": sequence_number,
+        "round_number": round_number,
+        "message_type": message_type,
+        "message_id": message_id,
+        "sender_did": RESPONDER_DID,
+        "timestamp": timestamp,
+        "source_protocol": "supplier_portal",
+        "act": {
+            "message_type": message_type,
+            "message_id": message_id,
+            "timestamp": timestamp,
+        },
+    }
+
+
+def _external_completion(observed_acts):
+    """A mandate-only external-channel record over the given observed acts."""
+    manager, session, did_documents = _make_session()
+    manager.process_message(session, _offer(session.session_id))
+    _mark_completed_externally(session)
+    record = _generate(
+        session,
+        observed_acts,
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    return record, did_documents, session
+
+
+def _attach_the_counterparty_signature(record: dict, message: dict, signature_type: str) -> dict:
+    """Replace the counterparty's unsigned observation with its real signed act.
+
+    Hand-attached rather than generated, because the generator refuses to build
+    this record -- which is the generator-leg assertion below, not a gap. What
+    lands here is the counterparty's genuine signature over its own envelope, so
+    the act VERIFIES; the tests assert that through ``invalid_acts``, since a
+    signature that merely looked present would refuse the record at the act
+    level and prove nothing about the rule under test.
+
+    ``evidence_level`` is deliberately left alone. ``_reseal`` does not recompute
+    it, so a case whose level SHOULD change would be refused by the
+    classifier-consistency check instead of by the rule it names. Here it must
+    not change: the record is ``mixed`` with the counterparty's act unsigned and
+    ``mixed`` with it signed, since ``bilateral`` needs nothing unsigned and the
+    order confirmation is. The tests assert the level on both sides of the
+    patch, so a future classifier change cannot turn these into
+    overdetermined negatives unnoticed.
+    """
+    entry = next(item for item in record["acts"] if item["sender_did"] == RESPONDER_DID)
+    # Recorded as a record states an act: with the wire version it was signed under.
+    act = {"protocol_version": PROTOCOL_ACT_VERSION, **copy.deepcopy(message)}
+    entry["act"] = act
+    entry["act_hash"] = hash_object(act)
+    entry["sender_verification_method"] = message["sender_verification_method"]
+    entry["signature_type"] = signature_type
+    entry["signature"] = message[signature_type]
+    entry["attribution"] = "verified_signature"
+    for field in _COUNTERPARTY_ENVELOPE:
+        entry[field] = message[field]
+    return _reseal(record)
+
+
+def _signed_counteroffer(session_id: str) -> dict:
+    return _offer(
+        session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="counteroffer",
+        message_id="counteroffer-1",
+        timestamp="2026-03-24T10:02:00Z",
+    )
+
+
+_UNSIGNED_COUNTEROFFER = (
+    "counteroffer",
+    "counteroffer-1",
+    {"sequence_number": 2, "round_number": 2, "timestamp": "2026-03-24T10:02:00Z"},
+)
+_UNSIGNED_ACCEPTANCE = (
+    "acceptance",
+    "acceptance-1",
+    {"sequence_number": 2, "round_number": 1, "timestamp": "2026-03-24T10:03:00Z"},
+)
+
+
+def _mandate_only_pair(shape):
+    """The record this change admits, and its observed-act list, for one act type."""
+    message_type, message_id, envelope = shape
+    observed = [
+        _unsigned_counterparty_act(message_type, message_id, **envelope),
+        _order_confirmation(),
+    ]
+    return _external_completion(observed)
+
+
+def test_a_completion_whose_counterparty_signed_a_counteroffer_is_refused():
+    """The counterparty signed, so the external reference is not its witness.
+
+    A signed COUNTEROFFER is the variant that closes the one reading a signed
+    acceptance leaves open. No acceptance means no TransactionRecord exists at
+    all (Section 9.3), so the record is honest that it has no bilateral witness
+    -- and a verified counterparty signature still sits inside a record
+    Section 9A.12 calls producer-attested. The rule is about the signature, not
+    about which witness happened to be available.
+
+    Its positive twin is ``_mandate_only_pair`` unpatched: the same session, the
+    same three acts, the same reference, the same ``mixed`` level, and the
+    counterparty's signature the only difference. A refusal on its own would not
+    separate this rule from any other objection to the record, so the twin is
+    asserted here rather than left to a sibling test.
+    """
+    honest, did_documents, session = _mandate_only_pair(_UNSIGNED_COUNTEROFFER)
+    assert honest["evidence_level"] == "mixed"
+    assert verify_session_evidence_record(honest, did_documents), (
+        "the positive twin must verify, or the refusal below is about the shape "
+        "this change exists to admit"
+    )
+    # No TransactionRecord exists for the signed session either, so the
+    # reference is not a weaker witness chosen over a stronger one.
+    with pytest.raises(ValueError):
+        generate_transaction_record(session)
+
+    signed = _attach_the_counterparty_signature(
+        copy.deepcopy(honest),
+        _signed_counteroffer(session.session_id),
+        "protocol_act_signature",
+    )
+
+    counterparty = [
+        entry
+        for entry in signed["acts"]
+        if entry["attribution"] == "verified_signature"
+        and entry["sender_did"] == signed["parties"]["responder"]["did"]
+    ]
+    assert [entry["message_type"] for entry in counterparty] == ["counteroffer"]
+    assert signed["parties"]["responder"]["did"] == RESPONDER_DID
+    assert "identity_source" not in signed["parties"]["responder"], "a full party"
+    assert signed["terminal"]["outcome"] == SessionState.COMPLETED
+    assert signed["transaction_record_hash"] is None
+    assert signed["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
+    # Single-cause preconditions. The level is unchanged, so the
+    # classifier-consistency check is satisfied; no act is invalid, so the
+    # counterparty's signature really verifies. Whatever refuses this record
+    # refuses it for the signature and for nothing else.
+    assert signed["evidence_level"] == "mixed"
+    assert assess_session_evidence_record(signed, did_documents) == {
+        "valid": False,
+        "evidence_level": "mixed",
+        "verified_acts": 2,
+        "unsigned_acts": 1,
+        "invalid_acts": 0,
+    }
+
+    assert not verify_session_evidence_record(signed, did_documents)
+
+
+def test_a_completion_whose_counterparty_signed_the_acceptance_is_refused():
+    """The same rule for an acceptance, so no act type is privileged.
+
+    Keyed on the act's ATTRIBUTION rather than on its ``message_type``: an
+    acceptance, a counteroffer and a signed decline all trip it identically.
+    This session does produce a TransactionRecord, which is the reading the
+    counteroffer variant removes -- both are refused, and for the same reason.
+    """
+    honest, did_documents, session = _mandate_only_pair(_UNSIGNED_ACCEPTANCE)
+    assert verify_session_evidence_record(honest, did_documents)
+
+    offer = next(entry["act"] for entry in honest["acts"] if entry["message_type"] == "offer")
+    signed = _attach_the_counterparty_signature(
+        copy.deepcopy(honest),
+        _acceptance(session.session_id, offer),
+        "acceptance_signature",
+    )
+
+    counterparty = [
+        entry
+        for entry in signed["acts"]
+        if entry["attribution"] == "verified_signature"
+        and entry["sender_did"] == RESPONDER_DID
+    ]
+    assert [entry["message_type"] for entry in counterparty] == ["acceptance"]
+    assert honest["evidence_level"] == signed["evidence_level"] == "mixed"
+    assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
+
+    assert not verify_session_evidence_record(signed, did_documents)
+
+
+def test_the_generator_refuses_a_completion_whose_counterparty_signed_an_act():
+    """The generator runs the same rule, so a producer cannot emit one either.
+
+    Its refusal message already claimed "a responder that signed no act". These
+    are the cases that make the claim true.
+
+    The signed message goes in as an observed act, which the generator
+    normalizes to ``verified_signature`` from the signature it carries -- so
+    what is refused is the ordinary act of recording an act the counterparty
+    signed, not a hand-built record.
+    """
+    for message_factory, shape in (
+        (_signed_counteroffer, _UNSIGNED_COUNTEROFFER),
+        (None, _UNSIGNED_ACCEPTANCE),
+    ):
+        manager, session, _did_documents = _make_session()
+        offer = _offer(session.session_id)
+        manager.process_message(session, offer)
+        _mark_completed_externally(session)
+        message = (
+            _acceptance(session.session_id, offer)
+            if message_factory is None
+            else message_factory(session.session_id)
+        )
+        with pytest.raises(ValueError, match="signed no act"):
+            _generate(
+                session,
+                [message, _order_confirmation()],
+                external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+            )
+        # The control: the same call with the signature stripped SUCCEEDS, so the
+        # refusal above is the signature's doing and not the observed act's.
+        message_type, message_id, envelope = shape
+        assert _generate(
+            session,
+            [
+                _unsigned_counterparty_act(message_type, message_id, **envelope),
+                _order_confirmation(),
+            ],
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+def test_a_counterparty_signature_cannot_hide_behind_an_unsigned_label():
+    """The premise the rule above rests on, guarded rather than assumed.
+
+    That rule is keyed on ``attribution``, so it would be bypassable if an act
+    could carry an A2CN signature while calling itself an unsigned observation.
+    It cannot: ``_verify_evidence_act`` refuses an ``unsigned_observation``
+    whose complete ``act`` still holds any of the four signature fields, and
+    counts the act INVALID. Pre-existing behaviour, and pinned here because the
+    new rule's completeness now depends on it -- if that refusal ever relaxed,
+    keying on attribution would stop covering Section 9A.12 condition 2.
+
+    Arm two is the honest shape the same edit produces once the signature really
+    is gone, and arm three is Section 9A.12's deliberate exception: a transport
+    signature the producer merely observed belongs inside the observed act, is
+    recorded as observed rather than verified, and must NOT be read as a
+    counterparty signature.
+    """
+    honest, did_documents, session = _mandate_only_pair(_UNSIGNED_COUNTEROFFER)
+    signed = _attach_the_counterparty_signature(
+        copy.deepcopy(honest),
+        _signed_counteroffer(session.session_id),
+        "protocol_act_signature",
+    )
+
+    # Arm one: relabelled as unsigned, entry-level fields nulled exactly as
+    # Section 9A.3 demands -- and the inner act keeps its real signature.
+    hidden = copy.deepcopy(signed)
+    counterparty = next(
+        entry for entry in hidden["acts"] if entry["sender_did"] == RESPONDER_DID
+    )
+    counterparty.update(
+        attribution="unsigned_observation",
+        signature=None,
+        signature_type=None,
+        sender_verification_method=None,
+    )
+    _reseal(hidden)
+
+    assert counterparty["act"]["protocol_act_signature"], "the signature is still in there"
+    assert assess_session_evidence_record(hidden, did_documents)["invalid_acts"] == 1
+    assert not verify_session_evidence_record(hidden, did_documents)
+
+    # Arm two: strip the A2CN signature fields and the act is genuinely unsigned,
+    # so the record is the honest mandate-only shape again.
+    stripped = copy.deepcopy(hidden)
+    unsigned = next(
+        entry for entry in stripped["acts"] if entry["sender_did"] == RESPONDER_DID
+    )
+    for field in ("protocol_act_signature", "protocol_act_hash", "sender_verification_method"):
+        unsigned["act"].pop(field, None)
+    unsigned["act_hash"] = hash_object(unsigned["act"])
+    _reseal(stripped)
+
+    assert assess_session_evidence_record(stripped, did_documents)["invalid_acts"] == 0
+    assert verify_session_evidence_record(stripped, did_documents)
+
+    # Arm three: a non-A2CN signature the producer observed. Section 9A.12 puts
+    # it here on purpose, so it changes nothing.
+    transport = copy.deepcopy(stripped)
+    observed = next(
+        entry for entry in transport["acts"] if entry["sender_did"] == RESPONDER_DID
+    )
+    observed["act"]["x_transport_signature"] = "opaque-bytes-the-producer-observed"
+    observed["act_hash"] = hash_object(observed["act"])
+    _reseal(transport)
+
+    assert observed["attribution"] == "unsigned_observation"
+    assert verify_session_evidence_record(transport, did_documents)
+
+
+def test_a_third_party_signature_does_not_stand_in_for_the_counterparty_s():
+    """The rule names the COUNTERPARTY, and an unrelated DID is not one.
+
+    A rule written as "any verified act other than the initiator's" would be
+    wider than either Section 9A.5, which already declines to count an unrelated
+    DID towards ``mixed``, or Section 9A.12, whose exclusion is about the
+    counterparty's own acts. The boundary is pinned here rather than left to the
+    reader -- and what pins it is that the record is refused for a DIFFERENT
+    reason, at the act level: an unrelated DID does not resolve, so the act is
+    INVALID rather than merely uncounted. That refusal predates this change and
+    must not be mistaken for coverage of it.
+    """
+    healthy, did_documents, _session = _mandate_only_pair(_UNSIGNED_COUNTEROFFER)
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    stranger = copy.deepcopy(healthy)
+    counterparty = next(
+        entry for entry in stranger["acts"] if entry["sender_did"] == RESPONDER_DID
+    )
+    counterparty["sender_did"] = "did:example:unrelated"
+    _reseal(stranger)
+
+    assert counterparty["attribution"] == "unsigned_observation"
+    assert not verify_session_evidence_record(stranger, did_documents)
 
 
 def test_a_transaction_record_hash_still_requires_a_did_bearing_responder():

@@ -891,9 +891,44 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     no-DID case, it incidentally excluded a verified-identity counterparty whose
     acts are unsigned -- a shape an ``observed_party`` cannot even express, since
     that descriptor requires the declared-markers to be literally False. The
-    proxy is relaxed to the property here. What still holds the property is the
-    producer-signed act (``_external_commitment_producer_act_present``) together
-    with the exactly-one-witness rule, and neither of those moves.
+    proxy is relaxed to the property here -- and BECAUSE it is relaxed, the
+    property has to be CHECKED here, which is what the counterparty-signature
+    clause below does.
+
+    Nothing else in the record excludes a counterparty signature. It is worth
+    being exact about that, because an earlier draft of this docstring claimed
+    otherwise and the code matched the claim rather than the property:
+
+    * ``_external_commitment_producer_act_present`` requires at least one act of
+      the INITIATOR'S. It is satisfied by a record in which both parties signed,
+      so it never excluded anything of the counterparty's.
+    * the exactly-one-witness rule (``_completion_witness_holds``) requires the
+      reference to be the only witness. A producer that suppresses a
+      ``transaction_record_hash`` it could have carried satisfies it too.
+
+    While the proxies stood, condition 3's ``unilateral`` and the
+    ``observed_party`` requirement did the excluding between them, so the gap was
+    invisible. Relaxing both at once opened it: ``_classify_evidence_level``
+    returns ``bilateral`` only when NOTHING is unsigned, so one unsigned observed
+    act -- which an external-channel flow carries by construction -- demotes a
+    fully signed session to ``mixed``, which is admitted. A verified counterparty
+    signature then rode in under an admitted classification, in a record
+    Section 9A.12 calls producer-attested.
+
+    So the clause is keyed on the act's ATTRIBUTION, which is where the spec puts
+    "unsigned" (Section 9A.3): an entry attributed ``unsigned_observation`` MUST
+    carry no signature, and one whose inner ``act`` still holds an A2CN signature
+    field is refused in ``_verify_evidence_act``, as an INVALID act. So
+    "``parties.responder``'s acts are unsigned" (condition 2) and "no act
+    attributed ``verified_signature`` belongs to the responder" are the same
+    statement, and the second is the one a verifier can check. A transport
+    signature the producer merely observed is not an A2CN signature and is
+    unaffected: Section 9A.12 puts it inside the observed act on purpose.
+
+    Keyed on the RESPONDER's DID, not on "any DID other than the initiator's". A
+    third party's signature is not the counterparty's; Section 9A.5 already
+    declines to count one towards ``mixed``, and an unrelated DID that does not
+    resolve makes its act invalid.
 
     ``evidence_level`` was a SECOND identity proxy on the same property, and it
     is relaxed for the same reason. Both ``unilateral`` and ``mixed`` satisfy
@@ -923,7 +958,38 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     responder = parties.get("responder")
     if not (_full_party_shape_valid(responder) or _observed_party_shape_valid(responder)):
         return False
-    return record.get("evidence_level") in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL)
+    if record.get("evidence_level") not in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL):
+        return False
+    return not _responder_signed_an_act(record)
+
+
+def _responder_signed_an_act(record: dict) -> bool:
+    """Whether an act attributed to a verified signature is the responder's.
+
+    The responder's DID must be a non-empty string to match anything, so an
+    ``observed_party`` -- which carries no ``did`` at all -- never matches here,
+    and Section 9A.8's own rule keeps governing it. A ``verified_signature`` act
+    always carries a non-null ``sender_did`` (Section 9A.3), so a missing
+    responder DID cannot match one by both being absent.
+    """
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    responder = parties.get("responder")
+    if not isinstance(responder, dict):
+        return False
+    responder_did = responder.get("did")
+    if not isinstance(responder_did, str) or not responder_did:
+        return False
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("attribution") == ATTRIBUTION_VERIFIED
+        and entry.get("sender_did") == responder_did
+        for entry in acts
+    )
 
 
 def _version_at_or_after(version: Any, floor: str) -> bool:

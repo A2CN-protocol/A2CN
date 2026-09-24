@@ -1014,9 +1014,42 @@ function completionWitnessHolds(record: Dict): boolean {
  * no-DID case, it incidentally excluded a verified-identity counterparty whose
  * acts are unsigned — a shape an observed_party cannot even express, since that
  * descriptor requires the declared-markers to be literally false. The proxy is
- * relaxed to the property here. What still holds the property is the
- * producer-signed act (externalCommitmentProducerActPresent) together with the
- * exactly-one-witness rule, and neither of those moves.
+ * relaxed to the property here — and BECAUSE it is relaxed, the property has to
+ * be CHECKED here, which is what the counterparty-signature clause below does.
+ *
+ * Nothing else in the record excludes a counterparty signature. It is worth
+ * being exact about that, because an earlier draft of this comment claimed
+ * otherwise and the code matched the claim rather than the property:
+ *
+ *   - externalCommitmentProducerActPresent requires at least one act of the
+ *     INITIATOR'S. It is satisfied by a record in which both parties signed, so
+ *     it never excluded anything of the counterparty's.
+ *   - the exactly-one-witness rule (completionWitnessHolds) requires the
+ *     reference to be the only witness. A producer that suppresses a
+ *     transaction_record_hash it could have carried satisfies it too.
+ *
+ * While the proxies stood, condition 3's unilateral and the observed_party
+ * requirement did the excluding between them, so the gap was invisible. Relaxing
+ * both at once opened it: classifyEvidenceLevel returns bilateral only when
+ * NOTHING is unsigned, so one unsigned observed act — which an external-channel
+ * flow carries by construction — demotes a fully signed session to mixed, which
+ * is admitted. A verified counterparty signature then rode in under an admitted
+ * classification, in a record Section 9A.12 calls producer-attested.
+ *
+ * So the clause is keyed on the act's ATTRIBUTION, which is where the spec puts
+ * "unsigned" (Section 9A.3): an entry attributed unsigned_observation MUST carry
+ * no signature, and one whose inner act still holds an A2CN signature field is
+ * refused in verifyEvidenceAct, as an INVALID act. So "parties.responder's acts
+ * are unsigned" (condition 2) and "no act attributed verified_signature belongs
+ * to the responder" are the same statement, and the second is the one a verifier
+ * can check. A transport signature the producer merely observed is not an A2CN
+ * signature and is unaffected: Section 9A.12 puts it inside the observed act on
+ * purpose.
+ *
+ * Keyed on the RESPONDER's DID, not on "any DID other than the initiator's". A
+ * third party's signature is not the counterparty's; Section 9A.5 already
+ * declines to count one towards mixed, and an unrelated DID that does not
+ * resolve makes its act invalid.
  *
  * evidence_level was a SECOND identity proxy on the same property, and it is
  * relaxed for the same reason. Both unilateral and mixed satisfy "no
@@ -1050,9 +1083,47 @@ function externalCommitmentRulesHold(record: Dict): boolean {
   if (!fullPartyShapeValid(responder) && !observedPartyShapeValid(responder)) {
     return false;
   }
-  return (
-    record.evidence_level === EvidenceLevel.MIXED ||
-    record.evidence_level === EvidenceLevel.UNILATERAL
+  if (
+    record.evidence_level !== EvidenceLevel.MIXED &&
+    record.evidence_level !== EvidenceLevel.UNILATERAL
+  ) {
+    return false;
+  }
+  return !responderSignedAnAct(record);
+}
+
+/**
+ * Whether an act attributed to a verified signature is the responder's.
+ *
+ * The responder's DID must be a non-empty string to match anything, so an
+ * observed_party — which carries no did at all — never matches here, and
+ * Section 9A.8's own rule keeps governing it. A verified_signature act always
+ * carries a non-null sender_did (Section 9A.3), so a missing responder DID
+ * cannot match one by both being absent.
+ */
+function responderSignedAnAct(record: Dict): boolean {
+  const parties = record.parties;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  const responder = (parties as Dict).responder;
+  if (typeof responder !== "object" || responder === null) {
+    return false;
+  }
+  const responderDid = (responder as Dict).did;
+  if (typeof responderDid !== "string" || !responderDid) {
+    return false;
+  }
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  return acts.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as Dict).attribution === EvidenceAttribution.VERIFIED &&
+      (entry as Dict).sender_did === responderDid,
   );
 }
 
