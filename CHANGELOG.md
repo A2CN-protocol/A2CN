@@ -42,11 +42,12 @@ also means an acceptance now attests who accepted, which it never did.
 
 **Rejection and withdrawal can be signed in band for the first time**, via
 `rejection_signature` and `withdrawal_signature`. Each act type has its own
-signature field, so a signature cannot travel across a relabelled act. Signing a
-decline is OPTIONAL; verifying one is not. `reason_code` is inside the signed
-scope because it is what a later dispute turns on; `reason_description` is
-deliberately outside it, being OPTIONAL free text whose presence would otherwise
-make the signed field set vary (Sections 7.5, 7.6).
+signature field, so a signature cannot travel across a relabelled act. An act
+carrying another act type's signature field is now refused, whatever its value.
+Signing a decline is OPTIONAL; verifying one is not. `reason_code` is inside the
+signed scope because it is what a later dispute turns on; `reason_description`
+is deliberately outside it, being OPTIONAL free text whose presence would
+otherwise make the signed field set vary (Sections 7.5, 7.6).
 
 **A Withdrawal now carries `round_number`, REQUIRED — an additive wire change.**
 It is part of the header every signed act covers, and without it a Withdrawal

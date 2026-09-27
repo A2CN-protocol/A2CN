@@ -494,6 +494,22 @@ class SessionManager:
                     message_id=message_id,
                 )
 
+        # Each act type has its own signature field (Section 7.3.1). A field that
+        # belongs to another type is refused whatever its value, null included:
+        # nothing here would verify it, while the evidence record reads it as a
+        # signature claim, so admitting it would leave the session with a record
+        # that cannot verify.
+        own_field = SIGNED_ACT_SIGNATURE_FIELDS[message_type]
+        for field_name in sorted(set(SIGNED_ACT_SIGNATURE_FIELDS.values())):
+            if field_name != own_field and field_name in message:
+                raise A2CNError(
+                    "INVALID_SIGNATURE",
+                    f"{message_type} carries {field_name}, which is not its signature field",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
+
     def process_message(self, session: Session, message: dict) -> dict:
         """
         Apply a message to the session state machine.

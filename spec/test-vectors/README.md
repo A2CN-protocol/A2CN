@@ -247,6 +247,16 @@ Its `schema_valid` and `accepted` columns are always equal, and the Python suite
 validates every case against `withdrawal.schema.json`, so the schema and the
 runtime cannot disagree about the field.
 
+`foreign-signature-slots.json` covers signature fields carried on the wrong act
+type (Section 7.3.1). Each act type has its own signature field, and a receiver
+refuses an act carrying one that belongs to another type, whatever its value,
+`null` included, because a verifier reads any such field as a signature claim
+(Section 9A.6). The cases cover all five act types, signed and unsigned declines,
+and stray fields set to a string or to `null`. For every case both suites then
+close the session, generate the initiator's evidence record and require it to
+verify, so each control shows the honest act records cleanly and each refusal
+shows the stray act never reaches the record.
+
 `session-evidence-record-extensions.json` covers the Section 9A extensions. Its
 `money_basis_act_basis_cases` apply the Section 9A.9 rule that a `money_basis`
 labelled `net` or `gross` must equal the `terms.basis` of the act it describes

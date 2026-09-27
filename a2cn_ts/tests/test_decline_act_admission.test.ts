@@ -30,8 +30,13 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
-import { SIGNED_ACT_SIGNATURE_FIELDS, signedActHash, type Dict } from "../src/a2cn/messages.js";
-import { A2CNError, Session, SessionManager } from "../src/a2cn/session.js";
+import {
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  Withdrawal,
+  signedActHash,
+  type Dict,
+} from "../src/a2cn/messages.js";
+import { A2CNError, Session, SessionManager, SessionState } from "../src/a2cn/session.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -262,4 +267,58 @@ test("withdrawal round_number cases cover both verdicts", () => {
   // A vector whose cases all agree on one verdict would prove nothing.
   expect(new Set(ROUND_CASES.map((c) => c.accepted))).toEqual(new Set([true, false]));
   expect(ROUND_CASES.some((c) => !hasOwn(c, "round_number"))).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// The library's own Withdrawal type builds what the runtime admits
+// ---------------------------------------------------------------------------
+
+test("the withdrawal type builds a withdrawal the runtime accepts", () => {
+  // The message class is the other producer of a withdrawal, so it is held to
+  // the same rule as the wire: its output must carry round_number.
+  const [mgr, sess] = sessionAtNegotiating();
+  const act = new Withdrawal({
+    message_type: "withdrawal",
+    message_id: "typed-wd-1",
+    session_id: sess.session_id,
+    round_number: 1,
+    sequence_number: 2,
+    sender_did: RESPONDER_DID,
+    sender_agent_id: "acme-agent",
+    timestamp: "2026-03-24T10:05:00Z",
+    reason_code: "STRATEGY_DECISION",
+    in_reply_to: "offer-1",
+  }).toDict();
+
+  mgr.processMessage(sess, act);
+
+  expect(act.round_number).toBe(1);
+  expect(sess.state).toBe(SessionState.WITHDRAWN);
+});
+
+test("the withdrawal type carries round 1 before any offer", () => {
+  const mgr = new SessionManager();
+  const sess = mgr.createSession(
+    SESSION_FIXTURE.session_id as string,
+    SESSION_INIT,
+    SESSION_ACK,
+    "2026-03-24T10:00:00Z",
+  );
+  sess.session_timeout_seconds = 86400 * 365 * 100;
+  const act = new Withdrawal({
+    message_type: "withdrawal",
+    message_id: "typed-wd-pre-offer",
+    session_id: sess.session_id,
+    round_number: 1,
+    sequence_number: 1,
+    sender_did: INITIATOR_DID,
+    sender_agent_id: "tc-agent",
+    timestamp: "2026-03-24T10:02:00Z",
+    reason_code: "NO_REASON_GIVEN",
+  }).toDict();
+
+  mgr.processMessage(sess, act);
+
+  expect(act.round_number).toBe(1);
+  expect(sess.state).toBe(SessionState.WITHDRAWN);
 });

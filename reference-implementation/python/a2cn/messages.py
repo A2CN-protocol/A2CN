@@ -601,6 +601,7 @@ class Withdrawal:
     message_type: str  # "withdrawal"
     message_id: str
     session_id: str
+    round_number: int  # the round in progress; 1 before any offer (Section 7.6)
     sequence_number: int
     sender_did: str
     sender_agent_id: str
@@ -615,6 +616,7 @@ class Withdrawal:
             "message_id": self.message_id,
             "session_id": self.session_id,
             "in_reply_to": self.in_reply_to,
+            "round_number": self.round_number,
             "sequence_number": self.sequence_number,
             "sender_did": self.sender_did,
             "sender_agent_id": self.sender_agent_id,

@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from a2cn.crypto import generate_keypair, public_key_to_jwk, sign_jws
-from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
+from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, Withdrawal, signed_act_hash
 from a2cn.session import A2CNError, SessionManager, SessionState
 from tests.conftest import make_did_document
 from tests.test_session import (
@@ -178,3 +178,69 @@ def test_withdrawal_round_number_cases_cover_both_verdicts():
     verdicts = {case["accepted"] for case in ROUND_CASES}
     assert verdicts == {True, False}
     assert any("round_number" not in case for case in ROUND_CASES)
+
+
+# ---------------------------------------------------------------------------
+# The library's own Withdrawal type builds what the runtime admits
+# ---------------------------------------------------------------------------
+
+
+def test_the_withdrawal_type_builds_a_withdrawal_the_runtime_accepts():
+    """The message class is the other producer of a withdrawal, so it is held to
+    the same rule as the wire: its output must carry round_number."""
+    manager, session = _session_at_negotiating()
+    act = Withdrawal(
+        message_type="withdrawal",
+        message_id="typed-wd-1",
+        session_id=session.session_id,
+        round_number=1,
+        sequence_number=2,
+        sender_did=RESPONDER_DID,
+        sender_agent_id="acme-agent",
+        timestamp="2026-03-24T10:05:00Z",
+        reason_code="STRATEGY_DECISION",
+        in_reply_to="offer-1",
+    ).to_dict()
+
+    manager.process_message(session, act)
+
+    assert act["round_number"] == 1
+    assert session.state == SessionState.WITHDRAWN
+
+
+def test_the_withdrawal_type_carries_round_1_before_any_offer():
+    manager = SessionManager()
+    session = manager.create_session(
+        VECTOR["session"]["session_id"], SESSION_INIT, SESSION_ACK, "2026-03-24T10:00:00Z"
+    )
+    session.session_timeout_seconds = 86400 * 365 * 100
+    act = Withdrawal(
+        message_type="withdrawal",
+        message_id="typed-wd-pre-offer",
+        session_id=session.session_id,
+        round_number=1,
+        sequence_number=1,
+        sender_did=INITIATOR_DID,
+        sender_agent_id="tc-agent",
+        timestamp="2026-03-24T10:02:00Z",
+        reason_code="NO_REASON_GIVEN",
+    ).to_dict()
+
+    manager.process_message(session, act)
+
+    assert act["round_number"] == 1
+    assert session.state == SessionState.WITHDRAWN
+
+
+def test_the_withdrawal_type_requires_round_number():
+    with pytest.raises(TypeError):
+        Withdrawal(
+            message_type="withdrawal",
+            message_id="typed-wd-2",
+            session_id="sess-001",
+            sequence_number=2,
+            sender_did=RESPONDER_DID,
+            sender_agent_id="acme-agent",
+            timestamp="2026-03-24T10:05:00Z",
+            reason_code="STRATEGY_DECISION",
+        )

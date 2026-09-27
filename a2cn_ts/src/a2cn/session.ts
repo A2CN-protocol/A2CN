@@ -515,6 +515,23 @@ export class SessionManager {
         );
       }
     }
+
+    // Each act type has its own signature field (Section 7.3.1). A field that
+    // belongs to another type is refused whatever its value, null included:
+    // nothing here would verify it, while the evidence record reads it as a
+    // signature claim, so admitting it would leave the session with a record
+    // that cannot verify.
+    const ownField = SIGNED_ACT_SIGNATURE_FIELDS[messageType];
+    for (const fieldName of [...new Set(Object.values(SIGNED_ACT_SIGNATURE_FIELDS))].sort()) {
+      if (fieldName !== ownField && Object.prototype.hasOwnProperty.call(message, fieldName)) {
+        throw new A2CNError(
+          "INVALID_SIGNATURE",
+          `${messageType} carries ${fieldName}, which is not its signature field`,
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
   }
 
   /**

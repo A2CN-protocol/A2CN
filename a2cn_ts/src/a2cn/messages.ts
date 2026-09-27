@@ -860,6 +860,7 @@ export class Withdrawal {
   message_type: string; // "withdrawal"
   message_id: string;
   session_id: string;
+  round_number: number; // the round in progress; 1 before any offer (Section 7.6)
   sequence_number: number;
   sender_did: string;
   sender_agent_id: string;
@@ -872,6 +873,7 @@ export class Withdrawal {
     message_type: string;
     message_id: string;
     session_id: string;
+    round_number: number;
     sequence_number: number;
     sender_did: string;
     sender_agent_id: string;
@@ -883,6 +885,7 @@ export class Withdrawal {
     this.message_type = props.message_type;
     this.message_id = props.message_id;
     this.session_id = props.session_id;
+    this.round_number = props.round_number;
     this.sequence_number = props.sequence_number;
     this.sender_did = props.sender_did;
     this.sender_agent_id = props.sender_agent_id;
@@ -898,6 +901,7 @@ export class Withdrawal {
       message_id: this.message_id,
       session_id: this.session_id,
       in_reply_to: this.in_reply_to,
+      round_number: this.round_number,
       sequence_number: this.sequence_number,
       sender_did: this.sender_did,
       sender_agent_id: this.sender_agent_id,

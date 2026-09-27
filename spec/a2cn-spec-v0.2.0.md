@@ -1358,6 +1358,8 @@ not have.
 
 Each act type has its **own** signature field. A signature field names the act
 type it was made under, so a signature cannot be carried across a relabelled act.
+An act MUST NOT carry the signature field of another act type, and a receiver
+MUST reject one that does, whatever that field's value.
 
 `terms.basis` (Section 7.2), when present, is inside `terms`, so it is signed
 like the rest of the terms; the signed act object is unchanged.
