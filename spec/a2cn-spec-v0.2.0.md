@@ -2399,8 +2399,11 @@ Version `"0.2"` is the version that introduced Sections 9A.8, 9A.9, 9A.10, and
 with the `terms.basis` of the act it describes. Its schema `$id` ends in `/0.2`.
 Sections 9A.8 to 9A.11 are relaxations, so a verifier that predates them
 rejects records that use them, and the basis rule adds a rejection. Apart from
-the historical rule below that ties `external_commitment_reference` to `"0.3"`
-for records below `"0.4"`,
+three version-keyed rules — the historical rule below that ties
+`external_commitment_reference` to `"0.3"` for records below `"0.4"`, the rule
+that a Rejection or Withdrawal signature requires `"0.4"` or later, and the rule
+that a DID-bearing responder on a record carrying `external_commitment_reference`
+requires `"0.5"` or later —
 verification does not depend on the version: Section 9A.6, with Sections 9A.8
 to 9A.11 and the basis rule, applies to a `"0.1"` record exactly as to a
 `"0.2"` or `"0.3"` record. A verifier therefore also accepts a `"0.1"` record
@@ -2424,9 +2427,14 @@ are unsigned (Section 9A.12). Its schema `$id` ends in `/0.5`. A verifier
 recognizes `"0.1"`, `"0.2"`, `"0.3"`, `"0.4"` and `"0.5"`, and MUST reject any
 other value. That set is additive — a version is added and none removed — so a
 record sealed under an earlier version stays valid, and a verifier MUST NOT
-refuse one on account of its version alone. Section 9A.12 at `"0.5"` is a
-relaxation, so a verifier that predates it rejects a `COMPLETED` record that
-carries `external_commitment_reference` against a DID-bearing responder.
+refuse one on account of its version alone. A version-keyed rule refuses a
+record for its version together with what it carries, never for its version
+alone. Section 9A.12 at `"0.5"` is a relaxation, so a verifier that predates it
+rejects a `COMPLETED` record that carries `external_commitment_reference`
+against a DID-bearing responder. A verifier MUST likewise reject a record
+labelled below `"0.5"` whose `parties.responder` is DID-bearing and which
+carries `external_commitment_reference`: no earlier version admits that
+responder there (Section 9A.12 condition 4).
 
 `external_commitment_reference` is OPTIONAL from `"0.4"` on: such a record
 carries it exactly when a `COMPLETED` session settled through an external
@@ -2434,9 +2442,12 @@ channel. The two-way rule is therefore historical, about `"0.3"` alone: a
 `"0.3"` record carries `external_commitment_reference`, and a record carrying
 one that is below `"0.4"` MUST be `"0.3"`. Presence is by key, so an
 `external_commitment_reference` whose value is `null` counts as carried, and is
-malformed. From `"0.4"` on no verification rule depends on the version at all;
-the completion witness is governed by Section 9A.6 step 9, which holds at every
-`record_version`. A rule that means "this version or later" MUST be written as a
+malformed. From `"0.4"` on no rule about the completion witness depends on the
+version; the witness is governed by Section 9A.6 step 9, which holds at every
+`record_version`. The version-keyed rules that remain are floors: a Rejection or
+Withdrawal signature requires `"0.4"` or later (Section 9A.6), and a DID-bearing
+responder on a record carrying `external_commitment_reference` requires `"0.5"`
+or later (above). A rule that means "this version or later" MUST be written as a
 floor rather than as the set of versions that exist when it is written, or it
 states the opposite of itself as soon as the next version ships.
 
@@ -2684,15 +2695,19 @@ exactly as one the producer merely observed.
 A verifier MUST reject a `record_version` other than `"0.1"`, `"0.2"`, `"0.3"`,
 `"0.4"` or `"0.5"`. Below `"0.4"` it MUST also reject a record that carries
 `external_commitment_reference` but is not `"0.3"`, and a `"0.3"` record that
-does not carry it; from `"0.4"` on that reference is OPTIONAL and no verification
-rule depends on the version (Section 9A.2). It MUST reject a record any of whose
+does not carry it; from `"0.4"` on that reference is OPTIONAL and whether a
+record carries it no longer depends on the version (Section 9A.2). It MUST reject
+a record labelled below `"0.5"` that carries `external_commitment_reference`
+against a DID-bearing `parties.responder`, because no earlier version admits that
+responder there (Section 9A.12 condition 4). It MUST reject a record any of whose
 acts carries a `rejection_signature` or a `withdrawal_signature` unless that
 record is `"0.4"` or later, because no earlier version's vocabulary admits those
 signature types. That rule is one-directional: the vocabulary requires the
 version, while a `"0.4"` or later record is under no obligation to carry a
-decline. Both of these version-keyed rules are floors, not memberships of a fixed
-set: "or later" includes every version published after this text was written. It
-then:
+decline. Each of these version-keyed rules is read as a floor, not as membership
+of a fixed set — the historical rule applies below `"0.4"`, the responder rule
+below `"0.5"`, and the decline rule from `"0.4"` — so "or later" includes every
+version published after this text was written. It then:
 
 1. Validate the record structure, including `external_commitment_reference`
    when present (Section 9A.12), and terminal outcome.
@@ -2726,13 +2741,14 @@ then:
     `evidence_level` MUST be `unilateral`. Do not resolve the observed identity.
     Separately, and keyed on the witness rather than on the responder: when the
     record carries `external_commitment_reference`, enforce Section 9A.12.
-    `parties.responder` MUST be an `observed_party` or a DID-bearing party, no
-    act may claim `verified_signature` unless its `sender_did` equals
-    `parties.initiator.did` (Section 9A.8 rule 1, which holds here for both
-    responder shapes), `evidence_level` MUST be `unilateral` or `mixed` and
-    never `bilateral`, `producer.did` MUST equal `parties.initiator.did`, and
-    at least one act MUST claim `verified_signature` with a `sender_did` equal
-    to `parties.initiator.did`. Do not dereference its `locator`. The
+    `parties.responder` MUST be an `observed_party` or, in a record at `"0.5"`
+    or later, a DID-bearing party, no act may claim `verified_signature` unless
+    its `sender_did` equals `parties.initiator.did` (Section 9A.8 rule 1, which
+    holds here for both responder shapes), `evidence_level` MUST be `unilateral`
+    or `mixed` and never `bilateral`, `producer.did` MUST equal
+    `parties.initiator.did`, and at least one act MUST claim
+    `verified_signature` with a `sender_did` equal to `parties.initiator.did`.
+    Do not dereference its `locator`. The
     initiator-only check is the one that carries the property, so a verifier
     that omits it admits a record whose counterparty or some third party
     signed: the level check does not cover it, because one unsigned observed
@@ -3021,19 +3037,24 @@ following, and a verifier MUST reject it otherwise:
    gives two and so `mixed` (Section 9A.5) — and **both are honest records**.
 4. `record_version` is `"0.5"`, or `"0.4"` or `"0.3"` for a record sealed before
    `"0.5"` (Section 9A.2). From `"0.4"` the reference is OPTIONAL, so carrying
-   one no longer fixes the version.
+   one no longer fixes the version. **The widening of conditions 2 and 3 applies
+   from `"0.5"`**: in a record below `"0.5"`, `parties.responder` MUST be an
+   `observed_party`, and `evidence_level` is therefore `unilateral` (Section
+   9A.8). A verifier MUST reject a record labelled `"0.3"` or `"0.4"` whose
+   responder is DID-bearing.
 5. `producer.did` equals `parties.initiator.did`.
 6. At least one act claims `verified_signature` with a `sender_did` equal to
    `parties.initiator.did`.
 
-Conditions 2 and 3 were narrower before `"0.5"`: they required an
-`observed_party` responder at `unilateral`. That pair is an **identity proxy**
-for the property stated above, and narrower than it. Written for a counterparty
-with no A2CN identity, it incidentally excluded one whose DID and mandate
-verify but whose negotiation acts are unsigned — a counterparty that satisfies
-the property just as fully, and that an `observed_party` cannot even describe,
-since that descriptor requires `did_declared`, `a2cn_endpoint_declared` and
-`mandate_declared` to be literally `false` (Section 9A.8).
+Below `"0.5"` conditions 2 and 3 are narrower, as condition 4 states: they
+require an `observed_party` responder at `unilateral`. That pair is an
+**identity proxy** for the property stated above, and narrower than it. Written
+for a counterparty with no A2CN identity, it incidentally excluded one whose DID
+and mandate verify but whose negotiation acts are unsigned — a counterparty that
+satisfies the property just as fully, and that an `observed_party` cannot even
+describe, since that descriptor requires `did_declared`,
+`a2cn_endpoint_declared` and `mandate_declared` to be literally `false` (Section
+9A.8).
 
 **Condition 2's signature clause is what holds the property, and nothing else in
 this list does.** Condition 6 requires an act of the *initiator's* and is

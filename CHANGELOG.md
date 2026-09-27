@@ -39,8 +39,11 @@ The property is that **no counterparty signature witnesses the completion** —
 the completion is attested by the producer's external-order reference, not by
 any act of the counterparty's — and a counterparty whose identity verifies but
 whose acts are unsigned satisfies it exactly as fully as one with no identity at
-all. The gate is relaxed to the property: `parties.responder` may now be an
-`observed_party` **or** a DID-bearing party whose acts are unsigned.
+all. The gate is relaxed to the property in a record at `record_version` `0.5`
+or later: `parties.responder` may now be an `observed_party` **or** a
+DID-bearing party whose acts are unsigned. A record labelled `0.3` or `0.4`
+keeps the earlier gate, so a verifier refuses one that carries the reference
+against a DID-bearing responder, as those versions' schemas do.
 
 **`evidence_level` was a second identity proxy on the same property, and it is
 relaxed too:** such a record may be `unilateral` **or** `mixed`. Which one it
@@ -99,7 +102,8 @@ earlier schema files, which are unchanged byte for byte. A verifier recognizes
 `0.1` through `0.5` and refuses no record on account of its version alone. The
 TransactionRecord is untouched and stays `0.4`.
 
-**Two version-keyed rules are now floors rather than fixed sets.** Both meant
+**Two version-keyed rules are now floors rather than fixed sets, and a third is
+added as one.** The two existing rules meant
 "this version or later" and both were written as the set of versions that
 existed when they were written, while their own documentation already said "or
 later" — so each stated the opposite of itself the moment a new version shipped.
@@ -107,6 +111,8 @@ As written, a `0.5` record carrying a signed Rejection or Withdrawal would have
 been refused for its version, and every stored `0.4` external-channel record
 would have fallen into the historical `0.3` rule and been refused as well. Both
 now read an ordered floor, so neither needs editing when the next version lands.
+The third is the `0.5` floor on a DID-bearing external-channel responder
+described above, read through the same ordered floor.
 
 **One uniform signed-act envelope across all five act types, and a
 TransactionRecord that rebinds both signatures (wire-visible, record-breaking).**
@@ -209,10 +215,11 @@ declines were unsignable before this release.
 
 **`external_commitment_reference` is OPTIONAL at `"0.4"`.** The two-way rule
 tying it to `"0.3"` is now historical, about records below `"0.4"` alone. At
-`"0.4"` no verification rule depends on the version: the completion witness is
-governed by Section 9A.6 step 9, which has always held at every `record_version`
-and which the `"0.4"` schema states structurally for the first time, including
-that a non-null `transaction_record_hash` requires a DID-bearing responder.
+`"0.4"` no rule about the completion witness depends on the version: the
+witness is governed by Section 9A.6 step 9, which has always held at every
+`record_version` and which the `"0.4"` schema states structurally for the first
+time, including that a non-null `transaction_record_hash` requires a DID-bearing
+responder.
 
 **A compatibility property is given up deliberately.** Before `"0.4"`, a record
 without an external commitment reference stayed `"0.2"`, so a verifier that knew
@@ -425,10 +432,10 @@ that a `net` or `gross` `money_basis` agrees with the described act's
 so a verifier that predates them rejects records that use them, and the basis
 rule adds a rejection. Producers emit `"0.2"` for every record that does not
 use Section 9A.12 (below). Verifiers accept `"0.1"` and `"0.2"` and apply the
-same rules to both; apart from Section 9A.12's version rule, verification does
-not depend on the version. They therefore also accept a `"0.1"` record that
-uses Sections 9A.8 to 9A.11; no released implementation produces one, and it
-does not validate against the `"0.1"` schema.
+same rules to both; apart from the version-keyed rules Section 9A.2 lists,
+verification does not depend on the version. They therefore also accept a
+`"0.1"` record that uses Sections 9A.8 to 9A.11; no released implementation
+produces one, and it does not validate against the `"0.1"` schema.
 
 **Session money basis, `session_params.basis`, restated in `terms.basis` and
 recorded in the TransactionRecord at `record_version` `"0.2"` (wire-compatible

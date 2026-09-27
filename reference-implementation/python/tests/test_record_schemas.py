@@ -697,6 +697,44 @@ def test_the_0_4_schema_refuses_the_responder_shape_with_the_version_neutralised
     assert responder, '"0.4" must refuse the DID-bearing full-party responder on its shape'
 
 
+RELABELLED_RESPONDER_CASES = [
+    case
+    for case in EXTERNAL_CHANNEL_VECTOR["invalid_records"]
+    if {tuple(change["path"]) for change in case.get("set", [])}
+    == {("parties", "responder"), ("record_version",)}
+]
+
+
+def test_the_relabelled_responder_cases_are_the_two_earlier_versions():
+    """The selection below is structural, so pin what it selects."""
+    assert sorted(case["name"] for case in RELABELLED_RESPONDER_CASES) == [
+        "reference-with-did-bearing-responder-relabelled-0.3",
+        "reference-with-did-bearing-responder-relabelled-0.4",
+    ]
+
+
+@pytest.mark.parametrize("case", RELABELLED_RESPONDER_CASES, ids=lambda case: case["name"])
+def test_the_own_version_schema_refuses_a_relabelled_responder_on_its_shape_alone(case):
+    """The schema half of the version binding the verifier enforces.
+
+    A "0.5" record relabelled to "0.3" or "0.4" is refused by the "0.5" schema
+    on ``record_version`` alone, which says nothing about the responder. This
+    reads the relabelled record against ITS OWN version's schema instead, and
+    requires every objection to be about ``parties.responder``: that version
+    admits only an ``observed_party`` there. The verifier side of the same case
+    is ``test_external_channel_invalid_records_have_python_typescript_parity``.
+    """
+    record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
+    _resealed_external_channel_record(_with_changes(record, case))
+    version = record["record_version"]
+    assert version in ("0.3", "0.4")
+
+    errors = _errors(f"session-evidence-record-{version}.schema.json", record)
+    assert errors, f'the "{version}" schema must refuse the DID-bearing responder'
+    assert all(list(error.absolute_path)[:2] == ["parties", "responder"] for error in errors)
+    assert case.get("schema_expresses") is not False
+
+
 def test_no_record_without_the_reference_fits_the_0_3_schema():
     """A record that does not complete through an external channel is never "0.3".
 

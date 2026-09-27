@@ -898,6 +898,58 @@
           ]
         }
       ]
+    },
+    {
+      "name": "reference-with-did-bearing-responder-relabelled-0.3",
+      "resealed_record_hash": "HApF-H6bCdNVysGwH9c9Wanp7dg0uJZzCLf4Vfr0NDs",
+      "rule": "Section 9A.12: a DID-bearing responder on a record carrying external_commitment_reference is admitted from record_version \"0.5\", the first version whose schema admits it. This is valid_records' reference-with-verified-identity-and-unsigned-acts with record_version set to \"0.3\" and resealed. The \"0.3\" schema requires an observed_party responder there and refuses this record on parties.responder alone, and the verifier refuses it on the version floor alone: its acts all verify, its evidence_level is the one the classifier derives, and its record_hash and seal are sound. It is the unilateral variant on purpose: the mixed one is also refused by the earlier schemas' evidence_level constant, so its schema refusal would have two causes.",
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:shop",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:shop#key-1"
+          }
+        },
+        {
+          "path": [
+            "record_version"
+          ],
+          "value": "0.3"
+        }
+      ]
+    },
+    {
+      "name": "reference-with-did-bearing-responder-relabelled-0.4",
+      "resealed_record_hash": "f53JZto5VloKO9bUi2OJO4jTGL-Qpd8viFwm4RuyfNk",
+      "rule": "Section 9A.12: a DID-bearing responder on a record carrying external_commitment_reference is admitted from record_version \"0.5\", the first version whose schema admits it. This is valid_records' reference-with-verified-identity-and-unsigned-acts with record_version set to \"0.4\" and resealed. The \"0.4\" schema requires an observed_party responder there and refuses this record on parties.responder alone, and the verifier refuses it on the version floor alone: its acts all verify, its evidence_level is the one the classifier derives, and its record_hash and seal are sound. It is the unilateral variant on purpose: the mixed one is also refused by the earlier schemas' evidence_level constant, so its schema refusal would have two causes.",
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:shop",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:shop#key-1"
+          }
+        },
+        {
+          "path": [
+            "record_version"
+          ],
+          "value": "0.4"
+        }
+      ]
     }
   ],
   "invalid_records_description": "Each case applies set (each path set to value) and remove (each path deleted) to expected.record, then recomputes act_chain_hash, record_hash and the producer seal. The seal uses producer_private_jwk unless sealed_by names another producer, whose private_jwk seals it instead. An acts value of \"OBSERVED_ACTS_ONLY\" means the record's observed act alone, the second entry of expected.record.acts. The resealed record has resealed_record_hash and fails verification; rule names the rule it breaks. A case with schema_expresses false states a rule JSON Schema cannot express, so the \"0.5\" schema accepts that record and only the verifier refuses it.",

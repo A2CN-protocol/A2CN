@@ -45,8 +45,11 @@ export const SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3";
 // added and none removed, and an older sealed record stays valid.
 export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.5";
 // The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-// Verification is the same for all of them, except that a "0.3" record carries
-// external_commitment_reference exactly when it is "0.3".
+// Verification is the same for all of them except where a rule is keyed on the
+// version, and each such rule is one of the floors below: BELOW "0.4" a record
+// carries external_commitment_reference exactly when it is "0.3"; a decline
+// signature type requires "0.4" or later; and a DID-bearing responder on a
+// record carrying that reference requires "0.5" or later.
 //
 // ORDERED, and the order is load-bearing: versionAtOrAfter reads its floors off
 // this list, so a new version MUST be appended in published order.
@@ -86,8 +89,8 @@ const DECLINE_SIGNATURE_TYPES = new Set<string>([
   EvidenceSignatureType.REJECTION,
   EvidenceSignatureType.WITHDRAWAL,
 ]);
-// FLOORS, not literal sets. Both rules keyed on these mean "this version or
-// later", and both were once written as sets naming the versions that existed
+// FLOORS, not literal sets. Every rule keyed on these means "this version or
+// later". The first two were once written as sets naming the versions that existed
 // when they were written. That is correct until the next version ships and then
 // states the opposite of its own docstring: as new Set(["0.4"]) this refused a
 // "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
@@ -97,6 +100,10 @@ const DECLINE_SIGNATURE_TYPES = new Set<string>([
 // prose beside them rather than implementing it.
 const VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4";
 const VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4";
+// The first version whose schema admits a DID-bearing responder on a record
+// carrying external_commitment_reference; "0.3" and "0.4" require an
+// observed_party there. Also a floor, read through versionAtOrAfter.
+const VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER = "0.5";
 
 export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
 
@@ -1069,6 +1076,13 @@ function completionWitnessHolds(record: Dict): boolean {
  * merely "not bilateral": that level asserts both parties' material acts are
  * attributable, precisely the claim a session completing through an external
  * reference cannot make.
+ *
+ * The DID-bearing responder is admitted from "0.5" and not before, because
+ * "0.5" is the first version whose schema admits it; "0.3" and "0.4" require an
+ * observed_party there. Without the floor, a "0.5" record relabelled to either
+ * and resealed would verify while its own version's schema refused it. The
+ * observed_party responder needs no floor of its own here: the reference itself
+ * is refused below "0.3" by the version-keyed witness rule.
  */
 function externalCommitmentRulesHold(record: Dict): boolean {
   if (!hasOwn(record, "external_commitment_reference")) {
@@ -1079,7 +1093,11 @@ function externalCommitmentRulesHold(record: Dict): boolean {
     return false;
   }
   const responder = parties.responder;
-  if (!fullPartyShapeValid(responder) && !observedPartyShapeValid(responder)) {
+  if (fullPartyShapeValid(responder)) {
+    if (!versionAtOrAfter(record.record_version, VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER)) {
+      return false;
+    }
+  } else if (!observedPartyShapeValid(responder)) {
     return false;
   }
   if (

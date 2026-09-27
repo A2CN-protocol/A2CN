@@ -34,10 +34,13 @@ SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 # stays "0.2", so a verifier that predates "0.3" still reads it.
 SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3"
 # The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-# Verification is the same for all of them, except BELOW THE FLOOR, where a
-# record carries external_commitment_reference exactly when it is "0.3". That
-# biconditional is historical and governs only versions under "0.4"; stated as
-# the general rule it contradicts the paragraph directly below it.
+# Verification is the same for all of them except where a rule is keyed on the
+# version, and each such rule is one of the floors below: BELOW "0.4" a record
+# carries external_commitment_reference exactly when it is "0.3"; a decline
+# signature type requires "0.4" or later; and a DID-bearing responder on a record
+# carrying that reference requires "0.5" or later. The biconditional is
+# historical and governs only versions under "0.4"; stated as the general rule it
+# contradicts the paragraph directly below it.
 # Every record a producer emits is "0.5" (Section 9A.2). The constants above
 # name versions that only historical records carry; they stay so those records
 # can still be read, because the SER recognizer is additive — a version is
@@ -66,8 +69,8 @@ SIGNATURE_WITHDRAWAL = "withdrawal_signature"
 # no earlier version's schema lists these values and no earlier record can
 # legitimately carry one.
 _DECLINE_SIGNATURE_TYPES = frozenset({SIGNATURE_REJECTION, SIGNATURE_WITHDRAWAL})
-# FLOORS, not literal sets. Both rules keyed on these mean "this version or
-# later", and both were once written as sets naming the versions that existed
+# FLOORS, not literal sets. Every rule keyed on these means "this version or
+# later". The first two were once written as sets naming the versions that existed
 # when they were written. That is correct until the next version ships and then
 # states the opposite of its own docstring: as frozenset({"0.4"}) this refused a
 # "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
@@ -77,6 +80,10 @@ _DECLINE_SIGNATURE_TYPES = frozenset({SIGNATURE_REJECTION, SIGNATURE_WITHDRAWAL}
 # prose beside them rather than implementing it.
 _VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4"
 _VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4"
+# The first version whose schema admits a DID-bearing responder on a record
+# carrying external_commitment_reference; "0.3" and "0.4" require an
+# observed_party there. Also a floor, read through _version_at_or_after.
+_VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER = "0.5"
 
 OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS"
 
@@ -948,6 +955,13 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     than merely "not bilateral": that level asserts both parties' material acts
     are attributable, precisely the claim a session completing through an
     external reference cannot make.
+
+    The DID-bearing responder is admitted from "0.5" and not before, because
+    "0.5" is the first version whose schema admits it; "0.3" and "0.4" require an
+    ``observed_party`` there. Without the floor, a "0.5" record relabelled to
+    either and resealed would verify while its own version's schema refused it.
+    The ``observed_party`` responder needs no floor of its own here: the
+    reference itself is refused below "0.3" by the version-keyed witness rule.
     """
     if "external_commitment_reference" not in record:
         return True
@@ -955,7 +969,12 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     if not isinstance(parties, dict):
         return False
     responder = parties.get("responder")
-    if not (_full_party_shape_valid(responder) or _observed_party_shape_valid(responder)):
+    if _full_party_shape_valid(responder):
+        if not _version_at_or_after(
+            record.get("record_version"), _VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER
+        ):
+            return False
+    elif not _observed_party_shape_valid(responder):
         return False
     if record.get("evidence_level") not in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL):
         return False

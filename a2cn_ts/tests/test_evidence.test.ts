@@ -14,6 +14,7 @@ import {
   privateKeyFromJwk,
   publicKeyToJwk,
   signJws,
+  verifyJws,
 } from "../src/a2cn/crypto.js";
 import {
   assessSessionEvidenceRecord,
@@ -3516,3 +3517,89 @@ test("the producer still seals a mandate-only record as initiator", () => {
   expect((record.producer as Dict).did).toBe(INITIATOR_DID);
   expect(((record.parties as Dict).initiator as Dict).did).toBe(INITIATOR_DID);
 });
+
+// ---------------------------------------------------------------------------
+// The shape is bound to the version whose schema admits it
+//
+// A DID-bearing responder on a record carrying external_commitment_reference is
+// admitted from "0.5", the first version whose schema admits it; "0.3" and "0.4"
+// require an observed_party there. A "0.5" record relabelled to an earlier
+// version and resealed is a record THAT version's schema refuses, so the
+// verifier refuses it too. Each negative pins every other outcome of
+// verification as a precondition. The Python mirror also lowers the floor and
+// shows the same bytes then verify; the TypeScript constant is module-private,
+// so that half is shown here by mutation rather than in the suite.
+// ---------------------------------------------------------------------------
+
+function relabelled(record: Dict, version: string): Dict {
+  const copy = structuredClone(record);
+  copy.record_version = version;
+  return reseal(copy);
+}
+
+/** Everything but the version binding, asserted rather than assumed. */
+function expectSealedAndOtherwiseSound(
+  record: Dict,
+  didDocuments: Record<string, Dict>,
+  level: string,
+): void {
+  const unsealed = { ...record, record_hash: "", producer_signature: "" };
+  expect(hashObject(unsealed)).toBe(record.record_hash);
+  expect(verifyJws(record.producer_signature as string, INITIATOR_PUBLIC_KEY)).toBe(
+    record.record_hash,
+  );
+  expect(assessSessionEvidenceRecord(record, didDocuments).invalid_acts).toBe(0);
+  // The acts and parties are those of a record that verified at "0.5", and the
+  // classifier reads no version, so the level is still the coherent one.
+  expect(record.evidence_level).toBe(level);
+}
+
+const MANDATE_ONLY_LEVELS: [string, string | null, string][] = [
+  ["mixed", RESPONDER_DID, "mixed"],
+  ["unilateral", null, "unilateral"],
+];
+
+test.each(MANDATE_ONLY_LEVELS)(
+  "a mandate-only record verifies at 0.5: %s",
+  (_name, senderDid, level) => {
+    const [record, didDocuments] = mandateOnlyRecord(senderDid);
+
+    expect(record.record_version).toBe("0.5");
+    expectSealedAndOtherwiseSound(record, didDocuments, level);
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+  },
+);
+
+test.each(
+  MANDATE_ONLY_LEVELS.flatMap(([name, senderDid, level]) =>
+    ["0.3", "0.4"].map((version): [string, string, string | null, string] => [
+      name,
+      version,
+      senderDid,
+      level,
+    ]),
+  ),
+)(
+  "a mandate-only record relabelled below 0.5 is refused: %s at %s",
+  (_name, version, senderDid, level) => {
+    const [record, didDocuments] = mandateOnlyRecord(senderDid);
+    const relabelledRecord = relabelled(record, version);
+
+    expect(hasKey((relabelledRecord.parties as Dict).responder, "identity_source")).toBe(false);
+    expect(hasKey(relabelledRecord, "external_commitment_reference")).toBe(true);
+    expectSealedAndOtherwiseSound(relabelledRecord, didDocuments, level);
+    expect(verifySessionEvidenceRecord(relabelledRecord, didDocuments)).toBe(false);
+  },
+);
+
+test.each(["0.3", "0.4", "0.5"])(
+  "an observed responder with the reference verifies from 0.3: %s",
+  (version) => {
+    // The floor binds the DID-bearing responder only; observed_party keeps "0.3".
+    const [record, didDocuments] = externalChannelRecord();
+    const relabelledRecord = relabelled(record, version);
+
+    expect(((relabelledRecord.parties as Dict).responder as Dict).did_declared).toBe(false);
+    expect(verifySessionEvidenceRecord(relabelledRecord, didDocuments)).toBe(true);
+  },
+);

@@ -39,7 +39,8 @@ import copy
 
 import pytest
 
-from a2cn.crypto import hash_object, public_key_to_jwk, sign_jws
+import a2cn.evidence as evidence_module
+from a2cn.crypto import hash_object, public_key_to_jwk, sign_jws, verify_jws
 from a2cn.evidence import (
     assess_session_evidence_record,
     generate_transaction_record,
@@ -52,6 +53,7 @@ from tests.test_evidence import (
     EXTERNAL_COMMITMENT_REFERENCE,
     INITIATOR_DID,
     INITIATOR_PRIVATE_KEY,
+    INITIATOR_PUBLIC_KEY,
     INITIATOR_VM,
     OBSERVED_RESPONDER,
     RESPONDER_DID,
@@ -1068,3 +1070,95 @@ def test_the_producer_still_seals_a_mandate_only_record_as_initiator():
 
     assert record["producer"]["did"] == INITIATOR_DID
     assert record["parties"]["initiator"]["did"] == INITIATOR_DID
+
+
+# ---------------------------------------------------------------------------
+# The shape is bound to the version whose schema admits it
+# ---------------------------------------------------------------------------
+#
+# A DID-bearing responder on a record carrying external_commitment_reference is
+# admitted from "0.5", the first version whose schema admits it; "0.3" and "0.4"
+# require an observed_party there. A "0.5" record relabelled to an earlier
+# version and resealed is a record THAT version's schema refuses, so the verifier
+# refuses it too. Each negative below is SINGLE-CAUSE: its preconditions pin
+# every other outcome of verification, and with the floor removed the same
+# bytes verify.
+
+
+def _relabelled(record: dict, version: str) -> dict:
+    relabelled = copy.deepcopy(record)
+    relabelled["record_version"] = version
+    return _reseal(relabelled)
+
+
+def _assert_sealed_and_otherwise_sound(record: dict, did_documents: dict, level: str):
+    """Everything but the version binding, asserted rather than assumed."""
+    unsealed = {**record, "record_hash": "", "producer_signature": ""}
+    assert hash_object(unsealed) == record["record_hash"], "record_hash matches the bytes"
+    assert verify_jws(record["producer_signature"], INITIATOR_PUBLIC_KEY) == record["record_hash"]
+    assessment = assess_session_evidence_record(record, did_documents)
+    assert assessment["invalid_acts"] == 0
+    # The acts and parties are those of a record that verified at "0.5", and the
+    # classifier reads no version, so the level is still the coherent one.
+    assert record["evidence_level"] == level
+
+
+MANDATE_ONLY_LEVELS = [
+    pytest.param(RESPONDER_DID, "mixed", id="mixed"),
+    pytest.param(None, "unilateral", id="unilateral"),
+]
+
+
+@pytest.mark.parametrize(("sender_did", "level"), MANDATE_ONLY_LEVELS)
+def test_a_mandate_only_record_verifies_at_0_5(sender_did, level):
+    record, did_documents = _mandate_only_record(sender_did=sender_did)
+
+    assert record["record_version"] == "0.5"
+    _assert_sealed_and_otherwise_sound(record, did_documents, level)
+    assert verify_session_evidence_record(record, did_documents)
+
+
+@pytest.mark.parametrize("version", ["0.3", "0.4"])
+@pytest.mark.parametrize(("sender_did", "level"), MANDATE_ONLY_LEVELS)
+def test_a_mandate_only_record_relabelled_below_0_5_is_refused(sender_did, level, version):
+    """The DID-bearing responder with an external witness is a "0.5" shape."""
+    record, did_documents = _mandate_only_record(sender_did=sender_did)
+    relabelled = _relabelled(record, version)
+
+    assert "identity_source" not in relabelled["parties"]["responder"]
+    assert "external_commitment_reference" in relabelled
+    _assert_sealed_and_otherwise_sound(relabelled, did_documents, level)
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+
+@pytest.mark.parametrize("version", ["0.3", "0.4"])
+@pytest.mark.parametrize(("sender_did", "level"), MANDATE_ONLY_LEVELS)
+def test_the_relabelled_mandate_only_record_is_refused_by_the_version_floor_alone(
+    monkeypatch, sender_did, level, version
+):
+    """Single cause: with the floor lowered out of the way, the SAME bytes verify.
+
+    A refusal with two causes cannot show that either one bites. Lowering the
+    floor to the first recognized version removes it and touches nothing else,
+    so a record that then verifies was refused by the floor and by nothing else.
+    """
+    record, did_documents = _mandate_only_record(sender_did=sender_did)
+    relabelled = _relabelled(record, version)
+    assert not verify_session_evidence_record(relabelled, did_documents)
+
+    monkeypatch.setattr(
+        evidence_module,
+        "_VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER",
+        evidence_module.RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS[0],
+    )
+    assert verify_session_evidence_record(relabelled, did_documents)
+
+
+@pytest.mark.parametrize("version", ["0.3", "0.4", "0.5"])
+def test_an_observed_responder_with_the_reference_verifies_from_0_3(version):
+    """The floor binds the DID-bearing responder only; observed_party keeps "0.3"."""
+    record, did_documents = _external_channel_record()
+    relabelled = _relabelled(record, version)
+
+    assert relabelled["parties"]["responder"]["did_declared"] is False
+    assert verify_session_evidence_record(relabelled, did_documents)
