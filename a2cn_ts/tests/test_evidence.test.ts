@@ -416,6 +416,7 @@ test("timestamp and message id are nullable for incomplete unsigned terminal act
   const [manager, session, didDocuments] = makeSession();
   manager.processMessage(session, {
     message_type: "withdrawal",
+    round_number: 1,
     sender_did: INITIATOR_DID,
   });
 

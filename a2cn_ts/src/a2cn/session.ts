@@ -20,6 +20,7 @@ import {
 import {
   PROTOCOL_ACT_VERSION,
   SIGNED_ACT_SIGNATURE_FIELDS,
+  isActInteger,
   protocolActObject,
   signedActHash,
   type Dict,
@@ -492,6 +493,23 @@ export class SessionManager {
         throw new A2CNError(
           "INVALID_REQUEST",
           `round_number must be a positive integer, got ${JSON.stringify(rnd)}`,
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
+
+    // A withdrawal's round_number is required too, signed or not: it is part of
+    // the header every signed act covers (Section 7.6), and the schema requires
+    // it. It is the round in progress, so a withdrawal sent before any offer
+    // carries 1. It is judged by value, as the signed act's rebuild judges it, so
+    // 2.0 is the integer 2 and a boolean is not a number.
+    if (messageType === "withdrawal") {
+      const rnd = message.round_number;
+      if (!(isActInteger(rnd) && rnd >= 1)) {
+        throw new A2CNError(
+          "INVALID_REQUEST",
+          "round_number must be a positive integer on a withdrawal",
           400,
           { sessionId: session.session_id, messageId },
         );
@@ -1142,8 +1160,21 @@ export class SessionManager {
    */
   private verifyDeclineSignature(session: Session, message: Dict): void {
     const signatureField = SIGNED_ACT_SIGNATURE_FIELDS[message.message_type as string];
-    if (signatureField === undefined || !message[signatureField]) {
+    // Only an absent field is the unsigned act. A present one claims a signature
+    // whatever its value: null, empty or non-string is refused here, never read
+    // as unsigned.
+    if (
+      signatureField === undefined ||
+      !Object.prototype.hasOwnProperty.call(message, signatureField)
+    ) {
       return;
+    }
+    const signature = message[signatureField];
+    if (typeof signature !== "string" || signature === "") {
+      throw new A2CNError("INVALID_SIGNATURE", `${signatureField} must be a non-empty string`, 400, {
+        sessionId: session.session_id,
+        messageId: message.message_id as string | undefined,
+      });
     }
 
     const payloadHash = signedActHash(message);

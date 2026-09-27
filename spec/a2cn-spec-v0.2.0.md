@@ -1615,7 +1615,8 @@ party may withdraw regardless of current turn ownership.
 OPTIONAL if withdrawing before any offers are exchanged.
 
 **`round_number`** (integer, REQUIRED) — the round the session stands at when the
-Withdrawal is sent. A Withdrawal does not advance the round.
+Withdrawal is sent, which is the round in progress, and `1` when the Withdrawal is
+sent before any offer. A Withdrawal does not advance the round.
 
 > **Additive wire change.** A Withdrawal did not previously carry
 > `round_number`. It is REQUIRED now because `round_number` is part of the common

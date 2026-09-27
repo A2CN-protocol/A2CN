@@ -28,7 +28,7 @@
     "round_number": {
       "type": "integer",
       "minimum": 1,
-      "description": "The round the session stands at when the Withdrawal is sent; a Withdrawal does not advance the round. REQUIRED so the common header can be rebuilt from the act's own fields (Section 7.6)."
+      "description": "The round in progress when the Withdrawal is sent, which is 1 before any offer; a Withdrawal does not advance the round. REQUIRED so the common header can be rebuilt from the act's own fields (Section 7.6)."
     },
     "sequence_number": { "type": "integer", "minimum": 1 },
     "sender_did": { "type": "string", "pattern": "^did:" },

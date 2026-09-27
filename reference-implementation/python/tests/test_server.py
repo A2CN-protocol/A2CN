@@ -479,6 +479,7 @@ async def test_evidence_available_after_withdrawal(test_client):
         "message_type": "withdrawal",
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
+        "round_number": 1,
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "sender_agent_id": "test-agent",
@@ -511,6 +512,7 @@ async def test_evidence_rejects_authenticated_nonparty(test_client):
         "message_type": "withdrawal",
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
+        "round_number": 1,
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "timestamp": "2026-03-24T10:02:00Z",
@@ -554,6 +556,7 @@ async def test_evidence_available_after_incomplete_withdrawal(test_client):
     session_id = await _create_session(test_client)
     withdrawal = {
         "message_type": "withdrawal",
+        "round_number": 1,
         "sender_did": INITIATOR_DID,
     }
     response = await test_client.post(
@@ -591,6 +594,7 @@ async def test_audit_available_after_withdrawal(test_client):
         "message_type": "withdrawal",
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
+        "round_number": 1,
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "sender_agent_id": "test-agent",

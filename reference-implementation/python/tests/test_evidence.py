@@ -412,6 +412,7 @@ def test_timestamp_and_message_id_are_nullable_for_incomplete_unsigned_terminal_
         session,
         {
             "message_type": "withdrawal",
+            "round_number": 1,
             "sender_did": INITIATOR_DID,
         },
     )

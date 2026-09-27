@@ -26,6 +26,7 @@ from a2cn.line_items import (
 from a2cn.messages import (
     PROTOCOL_ACT_VERSION,
     SIGNED_ACT_SIGNATURE_FIELDS,
+    _is_act_integer,
     protocol_act_object,
     signed_act_hash,
 )
@@ -472,6 +473,22 @@ class SessionManager:
                 raise A2CNError(
                     "INVALID_REQUEST",
                     f"round_number must be a positive integer, got {rnd!r}",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
+
+        # A withdrawal's round_number is required too, signed or not: it is part
+        # of the header every signed act covers (Section 7.6), and the schema
+        # requires it. It is the round in progress, so a withdrawal sent before
+        # any offer carries 1. It is judged by value, as the signed act's rebuild
+        # judges it, so 2.0 is the integer 2 and a bool is not a number.
+        if message_type == "withdrawal":
+            rnd = message.get("round_number")
+            if not (_is_act_integer(rnd) and rnd >= 1):
+                raise A2CNError(
+                    "INVALID_REQUEST",
+                    "round_number must be a positive integer on a withdrawal",
                     400,
                     session_id=session.session_id,
                     message_id=message_id,
@@ -1161,8 +1178,20 @@ class SessionManager:
         the shortest path into the handler.
         """
         signature_field = SIGNED_ACT_SIGNATURE_FIELDS.get(message.get("message_type", ""))
-        if signature_field is None or not message.get(signature_field):
+        # Only an absent field is the unsigned act. A present one claims a
+        # signature whatever its value: null, empty or non-string is refused
+        # here, never read as unsigned.
+        if signature_field is None or signature_field not in message:
             return
+        signature = message[signature_field]
+        if not isinstance(signature, str) or not signature:
+            raise A2CNError(
+                "INVALID_SIGNATURE",
+                f"{signature_field} must be a non-empty string",
+                400,
+                session_id=session.session_id,
+                message_id=message.get("message_id"),
+            )
 
         payload_hash = signed_act_hash(message)
         if payload_hash is None:

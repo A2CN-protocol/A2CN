@@ -234,6 +234,19 @@ decline as the other: a rejection relabelled a withdrawal rebuilds to a differen
 hash, while a withdrawal relabelled a rejection cannot rebuild at all, since a
 rejection's payload names `rejected_offer_id`, which a withdrawal does not carry.
 
+`decline-act-admission.json` covers what a receiver admits on the two decline
+paths. Both suites build the session it describes, send each case's act through
+the state machine, and must reach its verdict, error code and error message.
+`signature_presence` pins that a present signature is always checked: only an
+absent signature field is the unsigned act and is accepted, while `null`, an
+empty string, a whitespace string, or any other non-string value is refused and
+never read as unsigned. `withdrawal_round_number` pins that a Withdrawal carries
+a positive integer `round_number`, judged by value, whether or not it is signed;
+a Withdrawal sent before any offer carries `1`.
+Its `schema_valid` and `accepted` columns are always equal, and the Python suite
+validates every case against `withdrawal.schema.json`, so the schema and the
+runtime cannot disagree about the field.
+
 `session-evidence-record-extensions.json` covers the Section 9A extensions. Its
 `money_basis_act_basis_cases` apply the Section 9A.9 rule that a `money_basis`
 labelled `net` or `gross` must equal the `terms.basis` of the act it describes

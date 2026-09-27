@@ -410,6 +410,7 @@ test("terminal state reentry", async () => {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "test-agent",

@@ -51,7 +51,8 @@ make the signed field set vary (Sections 7.5, 7.6).
 **A Withdrawal now carries `round_number`, REQUIRED — an additive wire change.**
 It is part of the header every signed act covers, and without it a Withdrawal
 could not be rebuilt and verified like every other act. A receiver that predates
-the field ignores it.
+the field ignores it. A Withdrawal without `round_number` is now refused, so a
+sender that predates the field must add it, carrying `1` before any offer.
 
 **The SessionEvidenceRecord moves to `record_version` `"0.4"`, emitted
 universally, and its accepted set is ADDITIVE — no stored record is invalidated.**

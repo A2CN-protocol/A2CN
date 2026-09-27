@@ -390,6 +390,7 @@ async def test_terminal_state_reentry(test_client, initiator_keypair):
         "message_type": "withdrawal",
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
+        "round_number": 1,
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "sender_agent_id": "test-agent",

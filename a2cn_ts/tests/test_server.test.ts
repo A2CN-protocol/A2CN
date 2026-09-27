@@ -501,6 +501,7 @@ test("evidence available after withdrawal", async () => {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "test-agent",
@@ -530,6 +531,7 @@ test("evidence rejects authenticated nonparty", async () => {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     timestamp: "2026-03-24T10:02:00Z",
@@ -563,6 +565,7 @@ test("evidence available after incomplete withdrawal", async () => {
   const sessionId = await createSession(client);
   const withdrawal = {
     message_type: "withdrawal",
+    round_number: 1,
     sender_did: INITIATOR_DID,
   };
   const response = await client.post(`/sessions/${sessionId}/messages`, {
@@ -599,6 +602,7 @@ test("audit available after withdrawal", async () => {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "test-agent",
