@@ -1,8 +1,11 @@
-"""A decline's signature, once present, is verified like any other act's.
+"""A decline's signature is required and verified like any other act's.
 
-Signing a rejection or withdrawal is OPTIONAL: an unsigned decline is a
-conformant message and stays accepted, recorded as an unsigned observation.
-What is not optional is the check. The signature slots were added without any
+A rejection or withdrawal a party sends on the wire must be signed, exactly as
+its offers and acceptances are (Sections 7.5, 7.6): an unsigned one is refused,
+never recorded as an unsigned observation. The unsigned path belongs only to an
+act the producer observed from a party that does not sign (Section 9A.3), which
+enters a record through the evidence generator, not through the state machine.
+The signature check itself came first. The signature slots were added without any
 verification call site, so ``_verify_sender_signature`` ran for offers and
 acceptances only: a decline carrying a forged signature was accepted with no
 check at all, advanced the session, and entered the message log — from where a
@@ -15,11 +18,10 @@ key the sender does not control. A syntactically broken string would be refused
 by a parse failure and would prove nothing about verification; only an actual
 signature check refuses these.
 
-Two invariants pull against each other here and both are tested:
-  - a signature that is present MUST be verified, and
-  - an act that carries no signature MUST still be accepted.
-Making decline signatures mandatory would satisfy the first and break the
-second, so the unsigned cases are controls, not decoration.
+Two rules are tested here, one on each side of the line:
+  - a party's own decline MUST be signed, and a signature MUST be verified, and
+  - an unsigned decline observed from a party that does not sign is still
+    recorded, as an unsigned observation.
 """
 
 from __future__ import annotations
@@ -29,11 +31,13 @@ import uuid
 import pytest
 
 from a2cn.crypto import generate_keypair, public_key_to_jwk, sign_jws
-from a2cn.messages import signed_act_hash
+from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.session import A2CNError, SessionManager, SessionState
 from tests.conftest import make_did_document
 from tests.test_session import (
     INITIATOR_DID,
+    INITIATOR_PRIVATE_KEY,
     INITIATOR_PUBLIC_KEY,
     RESPONDER_DID,
     RESPONDER_PRIVATE_KEY,
@@ -48,6 +52,15 @@ from tests.test_session import (
 ATTACKER_PRIVATE_KEY, _ATTACKER_PUBLIC_KEY = generate_keypair()
 
 RESPONDER_VM = f"{RESPONDER_DID}#key-2026-01"
+
+DID_DOCUMENTS = {
+    INITIATOR_DID: make_did_document(
+        INITIATOR_DID, "key-1", public_key_to_jwk(INITIATOR_PUBLIC_KEY)
+    ),
+    RESPONDER_DID: make_did_document(
+        RESPONDER_DID, "key-2026-01", public_key_to_jwk(RESPONDER_PUBLIC_KEY)
+    ),
+}
 
 SIGNATURE_FIELD = {
     "rejection": "rejection_signature",
@@ -226,23 +239,87 @@ def test_an_honestly_signed_withdrawal_is_accepted():
 
 
 # ---------------------------------------------------------------------------
-# Controls: signing a decline is optional, and must stay optional
+# A party's own decline must be signed; an observed one need not be
 # ---------------------------------------------------------------------------
 
 
-def test_an_unsigned_rejection_is_still_accepted():
+@pytest.mark.parametrize("message_type", ["rejection", "withdrawal"])
+def test_an_unsigned_decline_from_a_party_is_refused(message_type):
     manager, session = _session_at_negotiating()
-    unsigned = _rejection(session.session_id)
+    build = _rejection if message_type == "rejection" else _withdrawal
+    unsigned = build(session.session_id)
+    state_before = session.state
 
-    manager.process_message(session, unsigned)
+    with pytest.raises(A2CNError) as excinfo:
+        manager.process_message(session, unsigned)
 
-    assert unsigned in session._message_log
+    assert (excinfo.value.code, excinfo.value.message) == (
+        "INVALID_SIGNATURE",
+        f"Missing sender_verification_method or {SIGNATURE_FIELD[message_type]}",
+    )
+    assert session.state == state_before
+    assert unsigned not in session._message_log
 
 
-def test_an_unsigned_withdrawal_is_still_accepted():
+@pytest.mark.parametrize("message_type", ["rejection", "withdrawal"])
+def test_an_unsigned_decline_observed_from_a_non_signing_party_is_still_recorded(message_type):
+    """A counterparty that signs nothing, such as a mandate-only one, still has its
+    decline recorded, as an unsigned observation, through the evidence generator."""
     manager, session = _session_at_negotiating()
-    unsigned = _withdrawal(session.session_id)
+    build = _rejection if message_type == "rejection" else _withdrawal
+    observed = build(session.session_id)
+    session.state = SessionState.TIMED_OUT
+    session.current_turn = "none"
+    session.terminal_reason = "session_timeout"
+    session.terminal_message_id = None
+    session.state_updated_at = "2026-03-24T10:10:00Z"
 
-    manager.process_message(session, unsigned)
+    record = generate_session_evidence_record(
+        session,
+        producer_private_key=INITIATOR_PRIVATE_KEY,
+        producer_did=INITIATOR_DID,
+        producer_agent_id="buyer-agent",
+        producer_verification_method=f"{INITIATOR_DID}#key-1",
+        observed_acts=[observed],
+    )
 
-    assert session.state == SessionState.WITHDRAWN
+    entry = next(e for e in record["acts"] if e["act"]["message_type"] == message_type)
+    assert entry["attribution"] == "unsigned_observation"
+    assert entry["signature"] is None
+    assert verify_session_evidence_record(record, DID_DOCUMENTS)
+
+
+# ---------------------------------------------------------------------------
+# Only a party to the session may withdraw from it
+# ---------------------------------------------------------------------------
+
+OUTSIDER_DID = "did:web:outsider.example"
+OUTSIDER_VM = f"{OUTSIDER_DID}#key-1"
+OUTSIDER_PRIVATE_KEY, OUTSIDER_PUBLIC_KEY = generate_keypair()
+
+
+def test_a_validly_signed_withdrawal_from_a_registered_non_party_is_refused():
+    """Its DID resolves and its signature verifies, so only the party check refuses it."""
+    manager, session = _session_at_negotiating()
+    manager.register_did_document(
+        OUTSIDER_DID,
+        make_did_document(OUTSIDER_DID, "key-1", public_key_to_jwk(OUTSIDER_PUBLIC_KEY)),
+    )
+    act = {**_withdrawal(session.session_id), "sender_did": OUTSIDER_DID}
+    act["sender_verification_method"] = OUTSIDER_VM
+    act["withdrawal_signature"] = sign_jws(
+        signed_act_hash(act, version_when_absent=PROTOCOL_ACT_VERSION),
+        OUTSIDER_PRIVATE_KEY,
+        kid=OUTSIDER_VM,
+    )
+    state_before = session.state
+
+    with pytest.raises(A2CNError) as excinfo:
+        manager.process_message(session, act)
+
+    assert excinfo.value.code == "UNAUTHORIZED_SENDER"
+    assert excinfo.value.http_status == 403
+    assert OUTSIDER_DID in excinfo.value.message
+    assert excinfo.value.message.endswith("is not a party to this session")
+    assert session.state == state_before
+    assert act not in session._message_log

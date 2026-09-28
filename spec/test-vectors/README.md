@@ -259,15 +259,16 @@ rejection's payload names `rejected_offer_id`, which a withdrawal does not carry
 `decline-act-admission.json` covers what a receiver admits on the two decline
 paths. Both suites build the session it describes, send each case's act through
 the state machine, and must reach its verdict, error code and error message.
-`signature_presence` pins that a present signature is always checked: only an
-absent signature field is the unsigned act and is accepted, while `null`, an
-empty string, a whitespace string, or any other non-string value is refused and
-never read as unsigned. `withdrawal_round_number` pins that a Withdrawal carries
-a positive integer `round_number`, judged by value, whether or not it is signed;
-a Withdrawal sent before any offer carries `1`.
-Its `schema_valid` and `accepted` columns are always equal, and the Python suite
-validates every case against `withdrawal.schema.json`, so the schema and the
-runtime cannot disagree about the field.
+`signature_presence` pins that a party's decline must be signed: an absent
+signature field is refused as a missing signature, and `null`, an empty string, a
+whitespace string, or any other non-string value is refused and never read as
+unsigned. `withdrawal_round_number` pins that a Withdrawal carries a positive
+integer `round_number`, judged by value; a Withdrawal sent before any offer
+carries `1`. Signed, each case reaches its own verdict; unsigned, it is always
+refused, for its invalid `round_number` first when it has one and otherwise as
+`unsigned_refusal` says. Its `schema_valid` and `accepted` columns are always
+equal, and the Python suite validates every case against
+`withdrawal.schema.json`, so the schema and the runtime cannot disagree.
 
 `foreign-signature-slots.json` covers signature fields carried on the wrong act
 type (Section 7.3.1). Each act type has its own signature field, and a receiver
@@ -276,8 +277,10 @@ refuses an act carrying one that belongs to another type, whatever its value,
 (Section 9A.6). The cases cover all five act types, signed and unsigned declines,
 and stray fields set to a string or to `null`. For every case both suites then
 close the session, generate the initiator's evidence record and require it to
-verify, so each control shows the honest act records cleanly and each refusal
-shows the stray act never reaches the record.
+verify, so each signed control shows the honest act records cleanly and each
+refusal shows the stray act never reaches the record. An unsigned decline is
+refused whether or not it carries a stray field, because a party's own decline
+must be signed.
 
 `session-evidence-record-extensions.json` covers the Section 9A extensions. Its
 `money_basis_act_basis_cases` apply the Section 9A.9 rule that a `money_basis`

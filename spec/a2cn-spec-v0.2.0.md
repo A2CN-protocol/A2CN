@@ -1402,10 +1402,14 @@ whether the check runs. An act carrying members this section does not name still
 rebuilds from the ones it does, and those extra members are not covered by the
 signature.
 
-Signing a Rejection or a Withdrawal is OPTIONAL — an unsigned decline is a
-conformant message and is attributed as an unsigned observation. Verifying one is
-not optional: once an act carries a signature field, the rebuild decides, and
-nothing in the act's own content can turn the check off.
+For an A2CN wire act between DID-bearing parties the signature is REQUIRED for
+all five act types: Offer, Counteroffer, Acceptance, Rejection and Withdrawal. A
+receiver MUST reject such an act whose signature is absent, empty or does not
+rebuild, and MUST NOT accept it as unsigned. An unsigned decline is conformant
+only as an external observation of a party that does not sign (Section 9A.3),
+which a producer records and a receiver never processes as a live act. Once an
+act carries a signature field, the rebuild decides, and nothing in the act's own
+content can turn the check off.
 
 #### 7.3.2 Signing Procedure
 
@@ -1542,7 +1546,7 @@ Counteroffer (incrementing the round), or MAY send a Withdrawal.
 - `"PRICE_TOO_HIGH"` | `"PRICE_TOO_LOW"` | `"TERMS_UNACCEPTABLE"`
 - `"OUTSIDE_MANDATE"` | `"NO_REASON_GIVEN"`
 
-**`rejection_signature`** (string, OPTIONAL) — JWS over the base64url SHA-256
+**`rejection_signature`** (string, REQUIRED) — JWS over the base64url SHA-256
 hash of the JCS-canonicalized signed act object of Section 7.3.1. A rejection's
 payload is `rejected_offer_id` and `reason_code`, so the signed object is:
 ```json
@@ -1563,11 +1567,12 @@ Serialization and signs the hash string for the canonical object above as the
 JWS payload bytes. The payload segment MUST be
 `base64url(ASCII(rejection_payload_hash))`, not a JWT claim set.
 
-Signing a Rejection is OPTIONAL, and an unsigned Rejection remains a conformant
-message. Verifying one is NOT optional: a Rejection that carries
-`rejection_signature` MUST be verified against the object above, and MUST be
-rejected if it does not rebuild to the signed hash (Section 7.3.1). A party that
-signs MUST also send `sender_verification_method`.
+A Rejection a party sends MUST carry `rejection_signature` and
+`sender_verification_method`, as its offers and acceptances carry theirs. A
+receiver MUST verify it against the object above, and MUST reject a Rejection
+whose signature is absent, empty, or does not rebuild to the signed hash (Section
+7.3.1). An unsigned Rejection is conformant only as an external observation
+(Section 9A.3).
 
 `rejected_offer_id` is signed for the same reason §7.4 binds an acceptance to the
 offer it accepts: it ties the refusal to one specific act. `reason_code` is
@@ -1624,7 +1629,9 @@ Schema: `spec/schemas/withdrawal.schema.json`
 ```
 
 A withdrawal terminates the session immediately with state `WITHDRAWN`. Either
-party may withdraw regardless of current turn ownership.
+party may withdraw regardless of current turn ownership, and only a party may: a
+receiver MUST reject a Withdrawal whose `sender_did` is not a party to the
+session with `UNAUTHORIZED_SENDER`, however validly it is signed.
 
 `in_reply_to` — the `message_id` of the most recent message received, if any.
 OPTIONAL if withdrawing before any offers are exchanged.
@@ -1645,7 +1652,7 @@ sent before any offer. A Withdrawal does not advance the round.
 - `"OUTSIDE_MANDATE"` | `"COUNTERPARTY_UNREACHABLE"` | `"STRATEGY_DECISION"`
 - `"COMPLIANCE_FAILURE"` | `"NO_REASON_GIVEN"`
 
-**`withdrawal_signature`** (string, OPTIONAL) — JWS over the base64url SHA-256
+**`withdrawal_signature`** (string, REQUIRED) — JWS over the base64url SHA-256
 hash of the JCS-canonicalized signed act object of Section 7.3.1. A withdrawal's
 payload is `reason_code`, so the signed object is:
 ```json
@@ -1665,11 +1672,12 @@ Serialization and signs the hash string for the canonical object above as the
 JWS payload bytes. The payload segment MUST be
 `base64url(ASCII(withdrawal_payload_hash))`, not a JWT claim set.
 
-Signing a Withdrawal is OPTIONAL, and an unsigned Withdrawal remains a conformant
-message. Verifying one is NOT optional: a Withdrawal that carries
-`withdrawal_signature` MUST be verified against the object above, and MUST be
-rejected if it does not rebuild to the signed hash (Section 7.3.1). A party that
-signs MUST also send `sender_verification_method`.
+A Withdrawal a party sends MUST carry `withdrawal_signature` and
+`sender_verification_method`, as its offers and acceptances carry theirs. A
+receiver MUST verify it against the object above, and MUST reject a Withdrawal
+whose signature is absent, empty, or does not rebuild to the signed hash (Section
+7.3.1). An unsigned Withdrawal is conformant only as an external observation
+(Section 9A.3).
 
 `in_reply_to` is not signed, because it is OPTIONAL and a signed act's field set
 does not vary with what the sender chose to fill in. `reason_description` is not
@@ -2522,10 +2530,12 @@ reproduce the corresponding signature from the complete `act`, and `attribution`
 MUST be `"verified_signature"`. The record verifies only if that claimed
 signature successfully verifies; an invalid claim cannot be downgraded.
 
-Signing a Rejection or Withdrawal is OPTIONAL: a decline carrying no signature
-is conformant and is recorded as an unsigned observation. A decline that does
-carry one is verified exactly as any other act is — the signature's presence,
-not the act's type, is what makes the check mandatory.
+A Rejection or Withdrawal from an A2CN party is signed, like its other acts
+(Sections 7.5 and 7.6), and is verified exactly as any other act is. A decline
+that carries no signature is recorded only as the external observation of a party
+that does not sign, such as a counterparty whose mandate is declared but who
+holds no signing key, and is attributed `"unsigned_observation"`; the unsigned
+path exists only for such observations, never for a party's own wire act.
 
 Every act claimed as carrying an A2CN signature MUST contain a `session_id` equal
 to the SessionEvidenceRecord `session_id`. A verifier MUST enforce this binding
@@ -2631,16 +2641,17 @@ The classification counts only DID-bearing parties. An act whose `sender_did` is
 `null`, or whose sender is not a session party, contributes to no party's
 representation.
 
-A Rejection or Withdrawal MAY carry its own signature (Sections 7.5 and 7.6), and
-a signed one is recorded as a verified act like any other. Implementations MUST
-preserve an *unsigned* decline as an unsigned observation, rather than inferring
-attribution from the message alone. Either way, they MUST NOT classify those
-terminal messages as bilaterally attributable — and that conclusion no longer
-rests on the absence of a decline signature, but on the terminal outcome:
-`bilateral` requires `COMPLETED`, so even a fully signed decline path classifies
-`mixed`, through its locally observed terminal fact. A signed decline therefore
-costs verification and buys no classification credit: a cryptographically
-attested rejection classifies exactly as one the producer merely observed.
+A Rejection or Withdrawal from an A2CN party carries its own signature (Sections
+7.5 and 7.6), and is recorded as a verified act like any other. Implementations
+MUST preserve an *unsigned* decline, observed from a party that does not sign,
+as an unsigned observation, rather than inferring attribution from the message
+alone. Either way, they MUST NOT classify those terminal messages as bilaterally
+attributable — and that conclusion no longer rests on the absence of a decline
+signature, but on the terminal outcome: `bilateral` requires `COMPLETED`, so
+even a fully signed decline path classifies `mixed`, through its locally
+observed terminal fact. A signed decline therefore costs verification and buys
+no classification credit: a cryptographically attested rejection classifies
+exactly as one the producer merely observed.
 
 ### 9A.6 Verification
 
@@ -3816,6 +3827,7 @@ SessionReject messages also use this format via the `error_code` and
 | `INVALID_SIGNATURE` | 400 | Yes | Protocol act signature verification failed |
 | `WRONG_MESSAGE_TYPE` | 422 | Yes | e.g., "offer" received in round 2+ |
 | `NOT_YOUR_TURN` | 409 | Yes | Message sent out of turn |
+| `UNAUTHORIZED_SENDER` | 403 | Yes | An act's `sender_did` is not a party to the session |
 | `SESSION_NOT_FOUND` | 404 | Yes | Session ID not recognized |
 | `SESSION_WRONG_STATE` | 409 | Yes | Message invalid for current session state |
 | `ROUND_LIMIT_EXCEEDED` | 422 | Yes | Message would exceed max_rounds |

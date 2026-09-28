@@ -32,7 +32,7 @@ import {
   type Dict,
 } from "../src/a2cn/messages.js";
 import { A2CNError, Session, SessionManager } from "../src/a2cn/session.js";
-import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
+import { INITIATOR_DID, RESPONDER_DID, makeDidDocument, signDecline } from "./conftest.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const VECTOR = JSON.parse(
@@ -236,7 +236,7 @@ function actFor(mgr: SessionManager, sess: Session, testCase: Dict): Dict {
 
 function closeAndRecord(mgr: SessionManager, sess: Session): Dict {
   if (!sess.isTerminal()) {
-    mgr.processMessage(sess, {
+    const closer: Dict = {
       message_type: "withdrawal",
       message_id: randomUUID(),
       session_id: sess.session_id,
@@ -245,7 +245,8 @@ function closeAndRecord(mgr: SessionManager, sess: Session): Dict {
       sender_did: INITIATOR_DID,
       timestamp: "2026-03-24T10:09:00Z",
       reason_code: "STRATEGY_DECISION",
-    });
+    };
+    mgr.processMessage(sess, signDecline(closer, INITIATOR_PRIVATE_KEY, INITIATOR_VM));
   }
   return generateSessionEvidenceRecord(sess, {
     producerPrivateKey: INITIATOR_PRIVATE_KEY,

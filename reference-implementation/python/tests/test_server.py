@@ -18,6 +18,7 @@ from a2cn.crypto import (
     verify_jws,
 )
 from tests.conftest import (
+    sign_decline,
     INITIATOR_DID,
     RESPONDER_DID,
     SERVER_DID,
@@ -473,7 +474,7 @@ async def test_evidence_not_available_for_active_session(test_client):
 
 
 @pytest.mark.asyncio
-async def test_evidence_available_after_withdrawal(test_client):
+async def test_evidence_available_after_withdrawal(test_client, initiator_keypair):
     session_id = await _create_session(test_client)
     withdrawal = {
         "message_type": "withdrawal",
@@ -486,6 +487,7 @@ async def test_evidence_available_after_withdrawal(test_client):
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "STRATEGY_DECISION",
     }
+    withdrawal = sign_decline(withdrawal, initiator_keypair[0], f"{INITIATOR_DID}#key-1")
     await test_client.post(
         f"/sessions/{session_id}/messages",
         json=withdrawal,
@@ -504,7 +506,7 @@ async def test_evidence_available_after_withdrawal(test_client):
 
 
 @pytest.mark.asyncio
-async def test_evidence_rejects_authenticated_nonparty(test_client):
+async def test_evidence_rejects_authenticated_nonparty(test_client, initiator_keypair):
     import a2cn.server as server_module
 
     session_id = await _create_session(test_client)
@@ -516,7 +518,9 @@ async def test_evidence_rejects_authenticated_nonparty(test_client):
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "timestamp": "2026-03-24T10:02:00Z",
+        "reason_code": "STRATEGY_DECISION",
     }
+    withdrawal = sign_decline(withdrawal, initiator_keypair[0], f"{INITIATOR_DID}#key-1")
     await test_client.post(
         f"/sessions/{session_id}/messages",
         json=withdrawal,
@@ -552,7 +556,14 @@ async def test_evidence_rejects_authenticated_nonparty(test_client):
 
 
 @pytest.mark.asyncio
-async def test_evidence_available_after_incomplete_withdrawal(test_client):
+async def test_an_incomplete_unsigned_withdrawal_is_refused_on_the_wire(test_client):
+    """A live withdrawal must be signed, and one this incomplete cannot even be rebuilt.
+
+    It was once accepted and recorded as an unsigned observation with null
+    message_id and timestamp. A party's own decline is now signed (Section 7.6),
+    so the session stays open; the evidence record's handling of an incomplete
+    unsigned act is covered where such an act is recorded, as an observation.
+    """
     session_id = await _create_session(test_client)
     withdrawal = {
         "message_type": "withdrawal",
@@ -564,16 +575,11 @@ async def test_evidence_available_after_incomplete_withdrawal(test_client):
         json=withdrawal,
         headers=init_headers("incomplete-withdrawal"),
     )
-    assert response.status_code == 200
 
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_SIGNATURE"
     evidence_response = await test_client.get(f"/sessions/{session_id}/evidence")
-
-    assert evidence_response.status_code == 200
-    evidence = evidence_response.json()
-    assert evidence["terminal"]["outcome"] == "WITHDRAWN"
-    assert evidence["terminal"]["message_id"] is None
-    assert evidence["acts"][0]["message_id"] is None
-    assert evidence["acts"][0]["timestamp"] is None
+    assert evidence_response.status_code == 409
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +594,7 @@ async def test_audit_not_available_for_active_session(test_client):
 
 
 @pytest.mark.asyncio
-async def test_audit_available_after_withdrawal(test_client):
+async def test_audit_available_after_withdrawal(test_client, initiator_keypair):
     session_id = await _create_session(test_client)
     withdrawal = {
         "message_type": "withdrawal",
@@ -601,6 +607,7 @@ async def test_audit_available_after_withdrawal(test_client):
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "STRATEGY_DECISION",
     }
+    withdrawal = sign_decline(withdrawal, initiator_keypair[0], f"{INITIATOR_DID}#key-1")
     wid = withdrawal["message_id"]
     await test_client.post(
         f"/sessions/{session_id}/messages",

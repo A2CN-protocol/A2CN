@@ -8,9 +8,10 @@
  * whether the signature field was truthy, so an empty string or a zero was read
  * as "unsigned" and skipped the check that a present signature makes mandatory.
  * The act then entered the message log as one the evidence record's classifier
- * calls signed but that cannot verify. Only an absent field is the unsigned
- * act; a present one, null included, is a signature claim, which is what the
- * published schemas say too.
+ * calls signed but that cannot verify. A party's own decline must now be signed,
+ * so an absent field is refused as well, like any other missing signature; the
+ * unsigned path belongs only to an act observed from a party that does not
+ * sign, which does not pass through the state machine.
  *
  * A withdrawal carries a valid round_number: the round in progress, so 1
  * before any offer. It is part of the common header
@@ -38,7 +39,7 @@ import {
   type Dict,
 } from "../src/a2cn/messages.js";
 import { A2CNError, Session, SessionManager, SessionState } from "../src/a2cn/session.js";
-import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
+import { INITIATOR_DID, RESPONDER_DID, makeDidDocument, signDecline } from "./conftest.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const VECTOR = JSON.parse(
@@ -52,6 +53,7 @@ const ACTS = VECTOR.acts as Record<string, Dict>;
 const SIGNATURE_FIELDS = VECTOR.signature_fields as Record<string, string>;
 const SIGNATURE_CASES = (VECTOR.signature_presence as Dict).cases as Dict[];
 const ROUND_CASES = (VECTOR.withdrawal_round_number as Dict).cases as Dict[];
+const UNSIGNED_REFUSAL = (VECTOR.withdrawal_round_number as Dict).unsigned_refusal as Dict;
 
 const { privateKey: INITIATOR_PRIVATE_KEY, publicKey: INITIATOR_PUBLIC_KEY } = generateKeypair();
 const { privateKey: RESPONDER_PRIVATE_KEY, publicKey: RESPONDER_PUBLIC_KEY } = generateKeypair();
@@ -244,14 +246,25 @@ function withdrawalFor(testCase: Dict, signed: boolean): Dict {
   return act;
 }
 
+/**
+ * The verdict for a case, signed or not. A party's own withdrawal must be
+ * signed, so unsigned it is always refused: for its invalid round_number first,
+ * when it has one, and otherwise as unsigned.
+ */
+function expectedFor(testCase: Dict, signed: boolean): Dict {
+  return signed || !testCase.accepted ? testCase : UNSIGNED_REFUSAL;
+}
+
 for (const testCase of ROUND_CASES) {
   for (const signed of [false, true]) {
     test(`withdrawal round_number: ${testCase.name} (${signed ? "signed" : "unsigned"})`, () => {
       const [mgr, sess] = sessionAtNegotiating();
       const act = withdrawalFor(testCase, signed);
+      const expected = expectedFor(testCase, signed);
 
       expect(testCase.schema_valid).toBe(testCase.accepted);
-      assertVerdict(mgr, sess, act, testCase);
+      expect(expected.schema_valid).toBe(expected.accepted);
+      assertVerdict(mgr, sess, act, expected);
     });
   }
 }
@@ -292,8 +305,9 @@ test("the withdrawal type builds a withdrawal the runtime accepts", () => {
     reason_code: "STRATEGY_DECISION",
     in_reply_to: "offer-1",
   }).toDict();
+  const signed = signDecline(act, RESPONDER_PRIVATE_KEY, RESPONDER_VM);
 
-  mgr.processMessage(sess, act);
+  mgr.processMessage(sess, signed);
 
   expect(act.round_number).toBe(1);
   expect(sess.state).toBe(SessionState.WITHDRAWN);
@@ -301,6 +315,10 @@ test("the withdrawal type builds a withdrawal the runtime accepts", () => {
 
 test("the withdrawal type carries round 1 before any offer", () => {
   const mgr = new SessionManager();
+  mgr.registerDidDocument(
+    INITIATOR_DID,
+    makeDidDocument(INITIATOR_DID, "key-1", publicKeyToJwk(INITIATOR_PUBLIC_KEY)),
+  );
   const sess = mgr.createSession(
     SESSION_FIXTURE.session_id as string,
     SESSION_INIT,
@@ -319,8 +337,9 @@ test("the withdrawal type carries round 1 before any offer", () => {
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "NO_REASON_GIVEN",
   }).toDict();
+  const signed = signDecline(act, INITIATOR_PRIVATE_KEY, INITIATOR_VM);
 
-  mgr.processMessage(sess, act);
+  mgr.processMessage(sess, signed);
 
   expect(act.round_number).toBe(1);
   expect(sess.state).toBe(SessionState.WITHDRAWN);

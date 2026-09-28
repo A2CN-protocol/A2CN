@@ -27,6 +27,7 @@ import {
   makeDidDocument,
   makeSessionInit,
   freshServer,
+  signDecline,
   type TestClient,
 } from "../conftest.js";
 
@@ -417,8 +418,9 @@ test("terminal state reentry", async () => {
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "NO_REASON_GIVEN",
   };
+  const signedW = signDecline(w, fixture.initiatorKeypair.privateKey, `${INITIATOR_DID}#key-1`);
   await fixture.client.post(`/sessions/${sessionId}/messages`, {
-    json: w,
+    json: signedW,
     headers: initHeaders(w.message_id),
   });
 

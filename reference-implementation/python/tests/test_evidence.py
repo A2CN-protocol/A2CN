@@ -407,15 +407,20 @@ def test_signed_local_offer_and_timeout_are_unilateral():
 
 
 def test_timestamp_and_message_id_are_nullable_for_incomplete_unsigned_terminal_act():
+    # A live withdrawal must now be signed, so an incomplete unsigned one reaches a
+    # record only as a stored act, not through the state machine (Section 7.6).
     manager, session, did_documents = _make_session()
-    manager.process_message(
-        session,
+    session._message_log.append(
         {
             "message_type": "withdrawal",
             "round_number": 1,
             "sender_did": INITIATOR_DID,
-        },
+        }
     )
+    session.state = SessionState.WITHDRAWN
+    session.current_turn = "none"
+    session.terminal_reason = "withdrawal"
+    session.terminal_message_id = None
 
     evidence = _generate(session)
 

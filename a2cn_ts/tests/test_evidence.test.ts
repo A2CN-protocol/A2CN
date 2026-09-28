@@ -413,12 +413,18 @@ test("signed local offer and timeout are unilateral", () => {
 });
 
 test("timestamp and message id are nullable for incomplete unsigned terminal act", () => {
-  const [manager, session, didDocuments] = makeSession();
-  manager.processMessage(session, {
+  // A live withdrawal must now be signed, so an incomplete unsigned one reaches a
+  // record only as a stored act, not through the state machine (Section 7.6).
+  const [, session, didDocuments] = makeSession();
+  session._message_log.push({
     message_type: "withdrawal",
     round_number: 1,
     sender_did: INITIATOR_DID,
   });
+  session.state = SessionState.WITHDRAWN;
+  session.current_turn = "none";
+  session.terminal_reason = "withdrawal";
+  session.terminal_message_id = null;
 
   const evidence = generateEvidence(session);
   const terminal = evidence.terminal as Dict;

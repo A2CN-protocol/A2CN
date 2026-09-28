@@ -1,9 +1,12 @@
 /**
- * A decline's signature, once present, is verified like any other act's.
+ * A decline's signature is required and verified like any other act's.
  *
- * Signing a rejection or withdrawal is OPTIONAL: an unsigned decline is a
- * conformant message and stays accepted, recorded as an unsigned observation.
- * What is not optional is the check. The signature slots were added without any
+ * A rejection or withdrawal a party sends on the wire must be signed, exactly as
+ * its offers and acceptances are (Sections 7.5, 7.6): an unsigned one is
+ * refused, never recorded as an unsigned observation. The unsigned path belongs
+ * only to an act the producer observed from a party that does not sign (Section
+ * 9A.3), which enters a record through the evidence generator, not through the
+ * state machine. The signature check itself came first. The signature slots were added without any
  * verification call site, so verifySenderSignature ran for offers and
  * acceptances only: a decline carrying a forged signature was accepted with no
  * check at all, advanced the session, and entered the message log — from where
@@ -15,10 +18,10 @@
  * a key the sender does not control. A syntactically broken string would be
  * refused by a parse failure and would prove nothing about verification.
  *
- * Two invariants pull against each other and both are tested: a signature that
- * is present MUST be verified, and an act carrying no signature MUST still be
- * accepted. Making decline signatures mandatory would satisfy the first and
- * break the second, so the unsigned cases are controls, not decoration.
+ * Two rules are tested here, one on each side of the line: a party's own decline
+ * MUST be signed, and a signature MUST be verified; and an unsigned decline
+ * observed from a party that does not sign is still recorded, as an unsigned
+ * observation.
  *
  * The Python suite runs the same cases.
  */
@@ -27,7 +30,11 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
-import { signedActHash, type Dict } from "../src/a2cn/messages.js";
+import {
+  generateSessionEvidenceRecord,
+  verifySessionEvidenceRecord,
+} from "../src/a2cn/evidence.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { A2CNError, Session, SessionManager, SessionState } from "../src/a2cn/session.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
@@ -295,23 +302,98 @@ test("an honestly signed withdrawal is accepted", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Controls: signing a decline is optional, and must stay optional
+// A party's own decline must be signed; an observed one need not be
 // ---------------------------------------------------------------------------
 
-test("an unsigned rejection is still accepted", () => {
+for (const messageType of ["rejection", "withdrawal"]) {
+  const build = messageType === "rejection" ? rejection : withdrawal;
+
+  test(`an unsigned decline from a party is refused: ${messageType}`, () => {
+    const [mgr, sess] = sessionAtNegotiating();
+    const unsigned = build(sess.session_id);
+    const stateBefore = sess.state;
+
+    const err = expectA2CNError(() => mgr.processMessage(sess, unsigned));
+
+    expect([err.code, err.message]).toEqual([
+      "INVALID_SIGNATURE",
+      `Missing sender_verification_method or ${SIGNATURE_FIELD[messageType]}`,
+    ]);
+    expect(sess.state).toBe(stateBefore);
+    expect(sess._message_log).not.toContain(unsigned);
+  });
+
+  const observedName = "an unsigned decline observed from a non-signing party is still recorded";
+  test(`${observedName}: ${messageType}`, () => {
+    // A counterparty that signs nothing, such as a mandate-only one, still has its
+    // decline recorded, as an unsigned observation, through the evidence generator.
+    const [, sess] = sessionAtNegotiating();
+    const observed = build(sess.session_id);
+    sess.state = SessionState.TIMED_OUT;
+    sess.current_turn = "none";
+    sess.terminal_reason = "session_timeout";
+    sess.terminal_message_id = null;
+    sess.state_updated_at = "2026-03-24T10:10:00Z";
+
+    const record = generateSessionEvidenceRecord(sess, {
+      producerPrivateKey: INITIATOR_PRIVATE_KEY,
+      producerDid: INITIATOR_DID,
+      producerAgentId: "buyer-agent",
+      producerVerificationMethod: INITIATOR_VM,
+      observedActs: [observed],
+    });
+
+    const entry = (record.acts as Dict[]).find(
+      (e) => (e.act as Dict).message_type === messageType,
+    ) as Dict;
+    expect(entry.attribution).toBe("unsigned_observation");
+    expect(entry.signature).toBeNull();
+    const didDocuments = {
+      [INITIATOR_DID]: makeDidDocument(
+        INITIATOR_DID,
+        "key-1",
+        publicKeyToJwk(INITIATOR_PUBLIC_KEY),
+      ),
+      [RESPONDER_DID]: makeDidDocument(
+        RESPONDER_DID,
+        "key-2026-01",
+        publicKeyToJwk(RESPONDER_PUBLIC_KEY),
+      ),
+    };
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Only a party to the session may withdraw from it
+// ---------------------------------------------------------------------------
+
+const OUTSIDER_DID = "did:web:outsider.example";
+const OUTSIDER_VM = `${OUTSIDER_DID}#key-1`;
+const { privateKey: OUTSIDER_PRIVATE_KEY, publicKey: OUTSIDER_PUBLIC_KEY } = generateKeypair();
+
+test("a validly signed withdrawal from a registered non-party is refused", () => {
+  // Its DID resolves and its signature verifies, so only the party check refuses it.
   const [mgr, sess] = sessionAtNegotiating();
-  const unsigned = rejection(sess.session_id);
+  mgr.registerDidDocument(
+    OUTSIDER_DID,
+    makeDidDocument(OUTSIDER_DID, "key-1", publicKeyToJwk(OUTSIDER_PUBLIC_KEY)),
+  );
+  const act: Dict = { ...withdrawal(sess.session_id), sender_did: OUTSIDER_DID };
+  act.sender_verification_method = OUTSIDER_VM;
+  act.withdrawal_signature = signJws(
+    signedActHash(act, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    OUTSIDER_PRIVATE_KEY,
+    OUTSIDER_VM,
+  );
+  const stateBefore = sess.state;
 
-  mgr.processMessage(sess, unsigned);
+  const err = expectA2CNError(() => mgr.processMessage(sess, act));
 
-  expect(sess._message_log).toContain(unsigned);
-});
-
-test("an unsigned withdrawal is still accepted", () => {
-  const [mgr, sess] = sessionAtNegotiating();
-  const unsigned = withdrawal(sess.session_id);
-
-  mgr.processMessage(sess, unsigned);
-
-  expect(sess.state).toBe(SessionState.WITHDRAWN);
+  expect(err.code).toBe("UNAUTHORIZED_SENDER");
+  expect(err.httpStatus).toBe(403);
+  expect(err.message).toContain(OUTSIDER_DID);
+  expect(err.message.endsWith("is not a party to this session")).toBe(true);
+  expect(sess.state).toBe(stateBefore);
+  expect(sess._message_log).not.toContain(act);
 });

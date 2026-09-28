@@ -123,10 +123,16 @@ def test_a_signed_withdrawal_validates():
     assert _errors(_schema("withdrawal"), _sign(_withdrawal())) == []
 
 
-def test_an_unsigned_decline_validates():
-    """Signing a decline is OPTIONAL, so an unsigned one is still conformant."""
-    assert _errors(_schema("rejection"), _rejection()) == []
-    assert _errors(_schema("withdrawal"), _withdrawal()) == []
+def test_an_unsigned_decline_does_not_validate():
+    """A party's decline is signed (Sections 7.5, 7.6), so an unsigned one is not
+    a conformant message; it is recorded only as an observation of a party that
+    does not sign, which these schemas do not describe."""
+    for name, act in (("rejection", _rejection()), ("withdrawal", _withdrawal())):
+        missing = {e.message for e in _errors(_schema(name), act) if e.validator == "required"}
+        assert missing == {
+            "'sender_verification_method' is a required property",
+            f"'{name}_signature' is a required property",
+        }, name
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import generate_transaction_record
 from a2cn.session import SessionManager, SessionState, A2CNError
 from tests.conftest import (
+    sign_decline,
     make_session_init, INITIATOR_DID, RESPONDER_DID, SERVER_DID,
     make_did_document
 )
@@ -397,6 +398,7 @@ async def test_terminal_state_reentry(test_client, initiator_keypair):
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "NO_REASON_GIVEN",
     }
+    w = sign_decline(w, initiator_keypair[0], f"{INITIATOR_DID}#key-1")
     await test_client.post(
         f"/sessions/{session_id}/messages", json=w, headers=init_headers(w["message_id"])
     )

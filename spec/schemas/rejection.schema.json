@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2cn.dev/schemas/rejection/0.3",
   "title": "A2CN Rejection",
-  "description": "The Section 7.5 act that refuses a specific offer and returns the turn to the rejecting party. Signing is OPTIONAL — an unsigned Rejection is conformant and is attributed as an unsigned observation — but verifying is not: once rejection_signature is present it MUST be checked against the Section 7.3.1 signed act object, whose payload for a rejection is rejected_offer_id and reason_code. reason_description is deliberately outside the signed scope: it is OPTIONAL, so signing it would make the signed field set depend on whether the sender filled it in, and it is untrusted free text (Section 13.7). The message object stays open so vendor fields pass through.",
+  "description": "The Section 7.5 act that refuses a specific offer and returns the turn to the rejecting party. A Rejection a party sends on the wire is signed, like its offers and acceptances, and rejection_signature MUST be checked against the Section 7.3.1 signed act object, whose payload for a rejection is rejected_offer_id and reason_code; an unsigned Rejection is refused. An unsigned rejection is recorded only as an unsigned observation of a party that does not sign (Section 9A.3), and this schema does not describe that observation. reason_description is deliberately outside the signed scope: it is OPTIONAL, so signing it would make the signed field set depend on whether the sender filled it in, and it is untrusted free text (Section 13.7). The message object stays open so vendor fields pass through.",
   "type": "object",
   "required": [
     "message_type",
@@ -12,8 +12,10 @@
     "sequence_number",
     "rejected_offer_id",
     "sender_did",
+    "sender_verification_method",
     "timestamp",
-    "reason_code"
+    "reason_code",
+    "rejection_signature"
   ],
   "properties": {
     "message_type": {
@@ -38,7 +40,7 @@
     "sender_verification_method": {
       "type": "string",
       "minLength": 1,
-      "description": "DID URL of the verification method used to sign this message. REQUIRED when rejection_signature is present (Section 7.5)."
+      "description": "DID URL of the verification method used to sign this message (Section 7.5)."
     },
     "timestamp": { "type": "string", "format": "date-time" },
     "protocol_version": {
@@ -63,10 +65,7 @@
     "rejection_signature": {
       "type": "string",
       "minLength": 1,
-      "description": "OPTIONAL. Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
+      "description": "Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
     }
-  },
-  "dependentRequired": {
-    "rejection_signature": ["sender_verification_method"]
   }
 }

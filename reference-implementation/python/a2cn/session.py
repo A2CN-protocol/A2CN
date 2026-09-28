@@ -1221,16 +1221,16 @@ class SessionManager:
         return session.to_state_dict()
 
     def _verify_decline_signature(self, session: Session, message: dict) -> None:
-        """Verify a decline's signature when it carries one (Sections 7.5, 7.6).
+        """Require and verify a decline's signature (Sections 7.5, 7.6).
 
-        Signing a decline is optional: an act carrying no signature is a
-        conformant message and is left alone, to be recorded later as an
-        unsigned observation. Once a signature is present the check is
-        mandatory and nothing about the act's own content can turn it off —
-        including an act that cannot be rebuilt, which is refused rather than
-        skipped. Treating unrebuildable as unsigned would hand an attacker the
-        whole check for the price of deleting one field, while the act still
-        carries a signature and still claims to be signed.
+        A party's rejection or withdrawal must be signed, exactly as its offers
+        and acceptances are, and is checked the same way: a missing signature is
+        refused as it is for them, never recorded as an unsigned observation.
+        That path belongs only to an act observed from a party that does not
+        sign (Section 9A.3), which enters a record through the evidence
+        generator, not through this state machine. Nothing about the act's own
+        content can turn the check off, including an act that cannot be
+        rebuilt, which is refused rather than skipped.
 
         This runs on handler entry, ahead of the state and sequence guards. A
         withdrawal is dispatched before the turn and approval guards and its
@@ -1238,13 +1238,13 @@ class SessionManager:
         the shortest path into the handler.
         """
         signature_field = SIGNED_ACT_SIGNATURE_FIELDS.get(message.get("message_type", ""))
-        # Only an absent field is the unsigned act. A present one claims a
-        # signature whatever its value: null, empty or non-string is refused
-        # here, never read as unsigned.
-        if signature_field is None or signature_field not in message:
+        if signature_field is None:
             return
-        signature = message[signature_field]
-        if not isinstance(signature, str) or not signature:
+        # A present field that is null, empty or not a string is refused as such;
+        # an absent one falls through to the same check an acceptance gets, which
+        # refuses it as a missing signature.
+        signature = message.get(signature_field)
+        if signature_field in message and (not isinstance(signature, str) or not signature):
             raise A2CNError(
                 "INVALID_SIGNATURE",
                 f"{signature_field} must be a non-empty string",
@@ -1320,6 +1320,10 @@ class SessionManager:
         sequence_number = message.get("sequence_number")
 
         self._verify_decline_signature(session, message)
+
+        # Only a party to the session may withdraw from it (Section 7.6). A valid
+        # signature proves who signed, not that the signer is a party.
+        self._sender_role(session, message.get("sender_did", ""))
 
         # Sequence check for withdrawal (if applicable)
         if sequence_number is not None:

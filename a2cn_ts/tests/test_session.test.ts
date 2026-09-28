@@ -7,7 +7,7 @@ import { Session, SessionManager, SessionState, A2CNError } from "../src/a2cn/se
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import { generateAuditLog } from "../src/a2cn/record.js";
 import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
-import { makeDidDocument } from "./conftest.js";
+import { makeDidDocument, signDecline } from "./conftest.js";
 
 const INITIATOR_DID = "did:web:techcorp.example";
 const RESPONDER_DID = "did:web:acme-corp.com";
@@ -358,7 +358,8 @@ test("message on terminal session raises", () => {
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
-  mgr.processMessage(sess, withdrawal);
+  const signedWithdrawal = signDecline(withdrawal, INITIATOR_PRIVATE_KEY, `${INITIATOR_DID}#key-1`);
+  mgr.processMessage(sess, signedWithdrawal);
   expect(sess.state).toBe(SessionState.WITHDRAWN);
 
   // Now try to send another message
@@ -424,7 +425,12 @@ test("rejection at max rounds transitions to rejected final", () => {
     timestamp: "2026-03-24T10:05:00Z",
     reason_code: "PRICE_TOO_LOW",
   };
-  mgr.processMessage(sess, rejection);
+  const signedRejection = signDecline(
+    rejection,
+    RESPONDER_PRIVATE_KEY,
+    `${RESPONDER_DID}#key-2026-01`,
+  );
+  mgr.processMessage(sess, signedRejection);
   expect(sess.state).toBe(SessionState.REJECTED_FINAL);
 });
 
@@ -780,7 +786,8 @@ test("audit metadata defaults to autonomous without approval receipts", () => {
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
-  mgr.processMessage(sess, withdrawal);
+  const signedWithdrawal = signDecline(withdrawal, INITIATOR_PRIVATE_KEY, `${INITIATOR_DID}#key-1`);
+  mgr.processMessage(sess, signedWithdrawal);
 
   const metadata = generateAuditLog(sess).audit_metadata as Dict;
 

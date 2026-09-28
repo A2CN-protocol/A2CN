@@ -8,6 +8,7 @@ between each test via the autouse clear_sessions fixture.
 from __future__ import annotations
 
 import copy
+import json
 import sys
 import os
 import uuid
@@ -25,7 +26,8 @@ if str(_REPO_PY) not in sys.path:
 
 import mcp_server
 from a2cn.client import A2CNClient
-from a2cn.crypto import generate_keypair
+from a2cn.crypto import generate_keypair, verify_jws
+from a2cn.messages import signed_act_hash
 from a2cn.session import A2CNError
 
 # ---------------------------------------------------------------------------
@@ -463,15 +465,22 @@ async def test_reject_success():
     _seed_session(cp_offer=SAMPLE_CP_OFFER)
 
     with respx.mock:
-        respx.post(url__regex=rf"{BASE_URL}/sessions/.+/messages").mock(
+        route = respx.post(url__regex=rf"{BASE_URL}/sessions/.+/messages").mock(
             return_value=httpx.Response(200, json={"status": "received"},
                                         headers={"Content-Type": "application/a2cn+json"})
         )
         result = await mcp_server.a2cn_reject(SESSION_ID, reason_description="Price too high")
+        sent = json.loads(route.calls.last.request.content)
 
     assert "error" not in result
     assert result["status"] == "REJECTED_FINAL"
     assert mcp_server._sessions[SESSION_ID]["status"] == "REJECTED_FINAL"
+    # A party's rejection is signed (Section 7.5), under the negotiated version.
+    client = mcp_server._sessions[SESSION_ID]["client"]
+    assert sent["sender_verification_method"] == client.agent_info["verification_method"]
+    assert client.private_key is mcp_server._private_key
+    expected = signed_act_hash(sent, version_when_absent=SESSION_ACK["protocol_version"])
+    assert verify_jws(sent["rejection_signature"], mcp_server._public_key) == expected
 
 
 @pytest.mark.asyncio

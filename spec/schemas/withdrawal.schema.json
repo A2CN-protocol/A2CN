@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://a2cn.dev/schemas/withdrawal/0.3",
   "title": "A2CN Withdrawal",
-  "description": "The Section 7.6 act that terminates a session immediately with state WITHDRAWN. Either party may withdraw regardless of turn ownership. Signing is OPTIONAL — an unsigned Withdrawal is conformant and is attributed as an unsigned observation — but verifying is not: once withdrawal_signature is present it MUST be checked against the Section 7.3.1 signed act object, whose payload for a withdrawal is reason_code. round_number is REQUIRED because it is part of the common header every signed act covers; a Withdrawal that omits it cannot be signed. in_reply_to and reason_description are outside the signed scope because both are OPTIONAL, and a signed act's field set does not vary with what the sender chose to fill in. The message object stays open so vendor fields pass through.",
+  "description": "The Section 7.6 act that terminates a session immediately with state WITHDRAWN. Either party may withdraw regardless of turn ownership. A Withdrawal a party sends on the wire is signed, like its offers and acceptances, and withdrawal_signature MUST be checked against the Section 7.3.1 signed act object, whose payload for a withdrawal is reason_code; an unsigned Withdrawal is refused. An unsigned withdrawal is recorded only as an unsigned observation of a party that does not sign (Section 9A.3), and this schema does not describe that observation. round_number is REQUIRED because it is part of the common header every signed act covers; a Withdrawal that omits it cannot be signed. in_reply_to and reason_description are outside the signed scope because both are OPTIONAL, and a signed act's field set does not vary with what the sender chose to fill in. The message object stays open so vendor fields pass through.",
   "type": "object",
   "required": [
     "message_type",
@@ -11,8 +11,10 @@
     "round_number",
     "sequence_number",
     "sender_did",
+    "sender_verification_method",
     "timestamp",
-    "reason_code"
+    "reason_code",
+    "withdrawal_signature"
   ],
   "properties": {
     "message_type": {
@@ -36,7 +38,7 @@
     "sender_verification_method": {
       "type": "string",
       "minLength": 1,
-      "description": "DID URL of the verification method used to sign this message. REQUIRED when withdrawal_signature is present (Section 7.6)."
+      "description": "DID URL of the verification method used to sign this message (Section 7.6)."
     },
     "timestamp": { "type": "string", "format": "date-time" },
     "protocol_version": {
@@ -61,10 +63,7 @@
     "withdrawal_signature": {
       "type": "string",
       "minLength": 1,
-      "description": "OPTIONAL. Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
+      "description": "Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
     }
-  },
-  "dependentRequired": {
-    "withdrawal_signature": ["sender_verification_method"]
   }
 }

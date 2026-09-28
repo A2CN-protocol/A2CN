@@ -24,7 +24,7 @@ from a2cn.crypto import public_key_to_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
 from a2cn.messages import PROTOCOL_ACT_VERSION, SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
 from a2cn.session import A2CNError
-from tests.conftest import make_did_document
+from tests.conftest import make_did_document, sign_decline
 from tests.test_session import (
     INITIATOR_DID,
     INITIATOR_PRIVATE_KEY,
@@ -98,18 +98,18 @@ def _act_for(manager, session, case: dict) -> dict:
 
 def _close_and_record(manager, session) -> dict:
     if not session.is_terminal():
+        closer = {
+            "message_type": "withdrawal",
+            "message_id": str(uuid.uuid4()),
+            "session_id": session.session_id,
+            "round_number": max(session.round_number, 1),
+            "sequence_number": session.sequence_number + 1,
+            "sender_did": INITIATOR_DID,
+            "timestamp": "2026-03-24T10:09:00Z",
+            "reason_code": "STRATEGY_DECISION",
+        }
         manager.process_message(
-            session,
-            {
-                "message_type": "withdrawal",
-                "message_id": str(uuid.uuid4()),
-                "session_id": session.session_id,
-                "round_number": max(session.round_number, 1),
-                "sequence_number": session.sequence_number + 1,
-                "sender_did": INITIATOR_DID,
-                "timestamp": "2026-03-24T10:09:00Z",
-                "reason_code": "STRATEGY_DECISION",
-            },
+            session, sign_decline(closer, INITIATOR_PRIVATE_KEY, f"{INITIATOR_DID}#key-1")
         )
     return generate_session_evidence_record(
         session,

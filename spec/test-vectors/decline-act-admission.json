@@ -41,13 +41,14 @@
     "withdrawal": "withdrawal_signature"
   },
   "signature_presence": {
-    "description": "A decline's signature is OPTIONAL, but a signature that is present is always checked. Each case places signature in the act's signature field when the case carries a signature member, and removes the field when it does not. Only an absent field is the unsigned act, accepted and later recorded as an unsigned observation. A present field is a signature claim whatever its value, and is refused when it does not verify: a null, empty or non-string value is refused outright, and it is never read as unsigned. The published schemas refuse the same values.",
+    "description": "A rejection or withdrawal a party sends on the wire must be signed, exactly as its offers and acceptances are (Sections 7.5, 7.6), and a signature it carries is always checked. Each case places signature in the act's signature field when the case carries a signature member, and removes the field when it does not. An absent field is refused like any other missing signature, never read as unsigned: the unsigned path belongs only to an act a producer observed from a party that does not sign (Section 9A.3), which does not pass through the state machine. A present field is a signature claim whatever its value, and is refused when it does not verify: a null, empty or non-string value is refused outright. The published schemas refuse the same values.",
     "cases": [
       {
         "name": "rejection-absent",
         "act_type": "rejection",
-        "accepted": true,
-        "state_after": "NEGOTIATING"
+        "accepted": false,
+        "error_code": "INVALID_SIGNATURE",
+        "error_message": "Missing sender_verification_method or rejection_signature"
       },
       {
         "name": "rejection-null",
@@ -116,8 +117,9 @@
       {
         "name": "withdrawal-absent",
         "act_type": "withdrawal",
-        "accepted": true,
-        "state_after": "WITHDRAWN"
+        "accepted": false,
+        "error_code": "INVALID_SIGNATURE",
+        "error_message": "Missing sender_verification_method or withdrawal_signature"
       },
       {
         "name": "withdrawal-null",
@@ -186,7 +188,13 @@
     ]
   },
   "withdrawal_round_number": {
-    "description": "round_number is REQUIRED on a Withdrawal (Section 7.6) because it is part of the common header every signed act covers, and the schema requires it unconditionally. The runtime and withdrawal.schema.json must reach the same verdict on every case: schema_valid and accepted are always equal. Each case sets round_number on the withdrawal act when the case carries a round_number member and removes it when it does not, and is run twice: once unsigned, with sender_verification_method removed, and once signed by the responder's key over the act's rebuilt hash, or over a stand-in payload when the act does not rebuild. The verdict is the same both times, because the requirement does not depend on whether the act is signed. round_number is the round in progress, so a withdrawal sent before any offer carries 1. It is judged by value: 1.0 is the integer 1 and -0.0 the integer 0 in other JSON spellings, and a boolean is not a number.",
+    "description": "round_number is REQUIRED on a Withdrawal (Section 7.6) because it is part of the common header every signed act covers, and the schema requires it unconditionally. The runtime and withdrawal.schema.json must reach the same verdict on every case: schema_valid and accepted are always equal. Each case sets round_number on the withdrawal act when the case carries a round_number member and removes it when it does not, and is run twice. Signed by the responder's key over the act's rebuilt hash, or over a stand-in payload when the act does not rebuild, it reaches the case's verdict. Unsigned, with sender_verification_method removed, it is always refused, and the schema refuses it too, because a party's own withdrawal must be signed: a case whose round_number is invalid is refused for that first, with the case's error, and a valid one is refused as unsigned_refusal says. round_number is the round in progress, so a withdrawal sent before any offer carries 1. It is judged by value: 1.0 is the integer 1 and -0.0 the integer 0 in other JSON spellings, and a boolean is not a number.",
+    "unsigned_refusal": {
+      "accepted": false,
+      "schema_valid": false,
+      "error_code": "INVALID_SIGNATURE",
+      "error_message": "Missing sender_verification_method or withdrawal_signature"
+    },
     "cases": [
       {
         "name": "one",

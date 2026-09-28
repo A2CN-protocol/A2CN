@@ -1210,16 +1210,16 @@ export class SessionManager {
   }
 
   /**
-   * Verify a decline's signature when it carries one (Sections 7.5, 7.6).
+   * Require and verify a decline's signature (Sections 7.5, 7.6).
    *
-   * Signing a decline is optional: an act carrying no signature is a
-   * conformant message and is left alone, to be recorded later as an unsigned
-   * observation. Once a signature is present the check is mandatory and
-   * nothing about the act's own content can turn it off — including an act
-   * that cannot be rebuilt, which is refused rather than skipped. Treating
-   * unrebuildable as unsigned would hand an attacker the whole check for the
-   * price of deleting one field, while the act still carries a signature and
-   * still claims to be signed.
+   * A party's rejection or withdrawal must be signed, exactly as its offers and
+   * acceptances are, and is checked the same way: a missing signature is
+   * refused as it is for them, never recorded as an unsigned observation. That
+   * path belongs only to an act observed from a party that does not sign
+   * (Section 9A.3), which enters a record through the evidence generator, not
+   * through this state machine. Nothing about the act's own content can turn
+   * the check off, including an act that cannot be rebuilt, which is refused
+   * rather than skipped.
    *
    * This runs on handler entry, ahead of the state and sequence guards. A
    * withdrawal is dispatched before the turn and approval guards and its
@@ -1228,17 +1228,17 @@ export class SessionManager {
    */
   private verifyDeclineSignature(session: Session, message: Dict): void {
     const signatureField = SIGNED_ACT_SIGNATURE_FIELDS[message.message_type as string];
-    // Only an absent field is the unsigned act. A present one claims a signature
-    // whatever its value: null, empty or non-string is refused here, never read
-    // as unsigned.
-    if (
-      signatureField === undefined ||
-      !Object.prototype.hasOwnProperty.call(message, signatureField)
-    ) {
+    if (signatureField === undefined) {
       return;
     }
+    // A present field that is null, empty or not a string is refused as such; an
+    // absent one falls through to the same check an acceptance gets, which
+    // refuses it as a missing signature.
     const signature = message[signatureField];
-    if (typeof signature !== "string" || signature === "") {
+    if (
+      Object.prototype.hasOwnProperty.call(message, signatureField) &&
+      (typeof signature !== "string" || signature === "")
+    ) {
       throw new A2CNError("INVALID_SIGNATURE", `${signatureField} must be a non-empty string`, 400, {
         sessionId: session.session_id,
         messageId: message.message_id as string | undefined,
@@ -1310,6 +1310,10 @@ export class SessionManager {
     const sequenceNumber = message.sequence_number as number | undefined;
 
     this.verifyDeclineSignature(session, message);
+
+    // Only a party to the session may withdraw from it (Section 7.6). A valid
+    // signature proves who signed, not that the signer is a party.
+    this.senderRole(session, (message.sender_did as string) ?? "");
 
     // Sequence check for withdrawal (if applicable)
     if (sequenceNumber !== undefined && sequenceNumber !== null) {

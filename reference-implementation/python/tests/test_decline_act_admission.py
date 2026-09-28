@@ -7,9 +7,10 @@ A present signature is always checked. The signed-act guard used to ask whether
 the signature field was truthy, so an empty string — and, here only, an empty
 object or list, or a zero — was read as "unsigned" and skipped the check that a
 present signature makes mandatory. The act then entered the message log as one
-the evidence record's classifier calls signed but that cannot verify. Only an
-absent field is the unsigned act; a present one, null included, is a signature
-claim, which is what the published schemas say too.
+the evidence record's classifier calls signed but that cannot verify. A party's
+own decline must now be signed, so an absent field is refused as well, like any
+other missing signature; the unsigned path belongs only to an act observed from
+a party that does not sign, which does not pass through the state machine.
 
 A withdrawal carries a valid round_number: the round in progress, so 1 before
 any offer. It is part of the common header every
@@ -37,9 +38,10 @@ from a2cn.messages import (
     signed_act_hash,
 )
 from a2cn.session import A2CNError, SessionManager, SessionState
-from tests.conftest import make_did_document
+from tests.conftest import make_did_document, sign_decline
 from tests.test_session import (
     INITIATOR_DID,
+    INITIATOR_PRIVATE_KEY,
     INITIATOR_PUBLIC_KEY,
     RESPONDER_DID,
     RESPONDER_PRIVATE_KEY,
@@ -58,6 +60,7 @@ WITHDRAWAL_SCHEMA = json.loads(
 )
 SIGNATURE_CASES = VECTOR["signature_presence"]["cases"]
 ROUND_CASES = VECTOR["withdrawal_round_number"]["cases"]
+UNSIGNED_REFUSAL = VECTOR["withdrawal_round_number"]["unsigned_refusal"]
 
 
 def _session_at_negotiating():
@@ -109,8 +112,9 @@ def test_the_vector_matches_this_implementation_and_its_fixtures():
         assert act["sender_did"] == RESPONDER_DID
         assert act["sender_verification_method"] == VECTOR["session"]["responder_verification_method"]
     # The round_number cases are only meaningful if they differ from a valid act
-    # in round_number alone, so the base withdrawal must be schema-valid.
-    base = copy.deepcopy(VECTOR["acts"]["withdrawal"])
+    # in round_number alone, so the base withdrawal, signed, must be schema-valid.
+    base_round = VECTOR["acts"]["withdrawal"]["round_number"]
+    base = _withdrawal_for({"round_number": base_round}, signed=True)
     assert _schema_errors(base) == []
 
 
@@ -160,22 +164,35 @@ def _withdrawal_for(case: dict, *, signed: bool) -> dict:
     return act
 
 
+def _expected(case: dict, signed: bool) -> dict:
+    """The verdict for a case, signed or not.
+
+    A party's own withdrawal must be signed, so unsigned it is always refused: for
+    its invalid round_number first, when it has one, and otherwise as unsigned.
+    """
+    if signed or not case["accepted"]:
+        return case
+    return UNSIGNED_REFUSAL
+
+
 @pytest.mark.parametrize("signed", [False, True], ids=["unsigned", "signed"])
 @pytest.mark.parametrize("case", ROUND_CASES, ids=[c["name"] for c in ROUND_CASES])
 def test_withdrawal_round_number(case, signed):
     manager, session = _session_at_negotiating()
     act = _withdrawal_for(case, signed=signed)
 
-    _assert_verdict(manager, session, act, case)
+    _assert_verdict(manager, session, act, _expected(case, signed))
 
 
 @pytest.mark.parametrize("signed", [False, True], ids=["unsigned", "signed"])
 @pytest.mark.parametrize("case", ROUND_CASES, ids=[c["name"] for c in ROUND_CASES])
 def test_withdrawal_round_number_schema_agrees_with_the_runtime(case, signed):
     act = _withdrawal_for(case, signed=signed)
+    expected = _expected(case, signed)
 
     assert case["schema_valid"] == case["accepted"]
-    assert (_schema_errors(act) == []) is case["schema_valid"]
+    assert expected["schema_valid"] == expected["accepted"]
+    assert (_schema_errors(act) == []) is expected["schema_valid"]
 
 
 def test_withdrawal_round_number_cases_cover_both_verdicts():
@@ -206,6 +223,9 @@ def test_the_withdrawal_type_builds_a_withdrawal_the_runtime_accepts():
         reason_code="STRATEGY_DECISION",
         in_reply_to="offer-1",
     ).to_dict()
+    act = sign_decline(
+        act, RESPONDER_PRIVATE_KEY, VECTOR["session"]["responder_verification_method"]
+    )
 
     manager.process_message(session, act)
 
@@ -215,6 +235,10 @@ def test_the_withdrawal_type_builds_a_withdrawal_the_runtime_accepts():
 
 def test_the_withdrawal_type_carries_round_1_before_any_offer():
     manager = SessionManager()
+    manager.register_did_document(
+        INITIATOR_DID,
+        make_did_document(INITIATOR_DID, "key-1", public_key_to_jwk(INITIATOR_PUBLIC_KEY)),
+    )
     session = manager.create_session(
         VECTOR["session"]["session_id"], SESSION_INIT, SESSION_ACK, "2026-03-24T10:00:00Z"
     )
@@ -230,6 +254,7 @@ def test_the_withdrawal_type_carries_round_1_before_any_offer():
         timestamp="2026-03-24T10:02:00Z",
         reason_code="NO_REASON_GIVEN",
     ).to_dict()
+    act = sign_decline(act, INITIATOR_PRIVATE_KEY, f"{INITIATOR_DID}#key-1")
 
     manager.process_message(session, act)
 

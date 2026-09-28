@@ -7,7 +7,7 @@ from a2cn.session import Session, SessionManager, SessionState, A2CNError
 from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
 from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import generate_audit_log
-from tests.conftest import make_did_document
+from tests.conftest import make_did_document, sign_decline
 
 
 INITIATOR_DID = "did:web:techcorp.example"
@@ -350,6 +350,7 @@ def test_message_on_terminal_session_raises():
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "STRATEGY_DECISION",
     }
+    withdrawal = sign_decline(withdrawal, INITIATOR_PRIVATE_KEY, f"{INITIATOR_DID}#key-1")
     mgr.process_message(sess, withdrawal)
     assert sess.state == SessionState.WITHDRAWN
 
@@ -416,6 +417,7 @@ def test_rejection_at_max_rounds_transitions_to_rejected_final():
         "timestamp": "2026-03-24T10:05:00Z",
         "reason_code": "PRICE_TOO_LOW",
     }
+    rejection = sign_decline(rejection, RESPONDER_PRIVATE_KEY, f"{RESPONDER_DID}#key-2026-01")
     mgr.process_message(sess, rejection)
     assert sess.state == SessionState.REJECTED_FINAL
 
@@ -776,6 +778,7 @@ def test_audit_metadata_defaults_to_autonomous_without_approval_receipts():
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "STRATEGY_DECISION",
     }
+    withdrawal = sign_decline(withdrawal, INITIATOR_PRIVATE_KEY, f"{INITIATOR_DID}#key-1")
     mgr.process_message(sess, withdrawal)
 
     metadata = generate_audit_log(sess)["audit_metadata"]
