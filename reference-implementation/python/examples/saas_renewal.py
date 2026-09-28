@@ -311,7 +311,7 @@ async def main(deal_type: str = "saas_renewal", impasse_threshold: int = 3) -> N
             exp = _now_fixed(900)
             msg_id = __import__("uuid").uuid4().__str__()
             act = {
-                "protocol_version": "0.2",
+                "protocol_version": "0.3",
                 "session_id": sess_id,
                 "round_number": rnd,
                 "sequence_number": seq,

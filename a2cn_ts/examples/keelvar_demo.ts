@@ -26,7 +26,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { KeelvarEventParser } from "../src/adapters/keelvar_adapter.js";
 import { A2CNClient } from "../src/a2cn/client.js";
 import { createJwt, generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { generateTransactionRecord } from "../src/a2cn/record.js";
 import { createServerContext } from "../src/a2cn/server.js";
 import { now as sessionNow } from "../src/a2cn/session.js";
@@ -294,7 +294,7 @@ async function main(): Promise<void> {
   const exp = nowFixed(900);
   const msgIdR2 = randomUUID();
   const actR2 = {
-    protocol_version: "0.2",
+    protocol_version: sessionObj.protocol_version,
     session_id: sessionId,
     round_number: 2,
     sequence_number: 2,
@@ -366,21 +366,7 @@ async function main(): Promise<void> {
   const r3Offer = client._sessions[sessionId].latest_offer as Dict;
   ts = sessionNow();
   const msgIdAcc = randomUUID();
-  // Signed payload is the 5-field acceptance object (Section 7.4), not a
-  // full protocol act — Acceptance messages carry no terms/expires_at.
-  const acceptancePayload = {
-    session_id: sessionId,
-    round_number: 3,
-    sequence_number: 4,
-    accepted_offer_id: r3Offer.message_id,
-    accepted_protocol_act_hash: r3Offer.protocol_act_hash,
-  };
-  const acceptanceSignature = signJws(
-    hashObject(acceptancePayload),
-    supplierPriv,
-    `${SUPPLIER_DID}#key-1`,
-  );
-  const supplierAcceptance = {
+  const supplierAcceptance: Dict = {
     message_type: "acceptance",
     message_id: msgIdAcc,
     session_id: sessionId,
@@ -393,8 +379,17 @@ async function main(): Promise<void> {
     sender_agent_id: "supply-agent-ts-001",
     sender_verification_method: `${SUPPLIER_DID}#key-1`,
     timestamp: ts,
-    acceptance_signature: acceptanceSignature,
   };
+  // Signed over the acceptance's own envelope (Section 7.3.1): the common header
+  // plus accepted_offer_id and accepted_protocol_act_hash, under the wire version
+  // the session was negotiated at.
+  supplierAcceptance.acceptance_signature = signJws(
+    signedActHash(supplierAcceptance, {
+      versionWhenAbsent: sessionObj.protocol_version,
+    }) as string,
+    supplierPriv,
+    `${SUPPLIER_DID}#key-1`,
+  );
   serverCtx.manager.processMessage(sessionObj, supplierAcceptance);
   client.processIncoming(sessionId, supplierAcceptance);
   log("Round 4 → Supplier accepts $21,500 — session COMPLETED", supplierAcceptance);

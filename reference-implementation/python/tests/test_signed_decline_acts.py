@@ -24,6 +24,7 @@ from a2cn.evidence import (
     verify_session_evidence_record,
 )
 from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
     SIGNED_ACT_SIGNATURE_FIELDS,
     rebuild_signed_act,
     signed_act_hash,
@@ -49,7 +50,7 @@ def _sign(act: dict, private_key, verification_method: str) -> dict:
     signed = copy.deepcopy(act)
     signed["sender_verification_method"] = verification_method
     signed[SIGNED_ACT_SIGNATURE_FIELDS[act["message_type"]]] = sign_jws(
-        signed_act_hash(signed),
+        signed_act_hash(signed, version_when_absent=PROTOCOL_ACT_VERSION),
         private_key,
         kid=verification_method,
     )

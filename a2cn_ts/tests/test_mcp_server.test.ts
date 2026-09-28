@@ -22,7 +22,7 @@ const BASE_URL = "https://acme-corp.com";
 const SESSION_ID = "test-session-00000000-0000-0000-0000";
 
 const DISCOVERY_DOC: Dict = {
-  a2cn_version: "0.2",
+  a2cn_version: "0.3",
   agent_did: COUNTERPARTY_DID,
   conformance_level: 2,
   deal_types: ["saas_renewal"],
@@ -37,7 +37,7 @@ const SESSION_ACK: Dict = {
   message_id: randomUUID(),
   session_id: SESSION_ID,
   in_reply_to: "init-001",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -140,7 +140,7 @@ function seedSession(
   });
   // Bootstrap the client's internal session state
   client._sessions[sessionId] = {
-    session_init: {},
+    session_init: { protocol_version: SESSION_ACK.protocol_version },
     session_ack: SESSION_ACK,
     sequence_number: 1,
     round_number: 1,
@@ -201,7 +201,7 @@ test("discover a2cn capable", async () => {
   const result = await ctx.a2cnDiscover(COUNTERPARTY_DID);
 
   expect(result.a2cn_capable).toBe(true);
-  expect(result.a2cn_version).toBe("0.2");
+  expect(result.a2cn_version).toBe("0.3");
   expect(result.conformance_level).toBe(2);
   expect(result.deal_types).toContain("saas_renewal");
   expect(result.agent_did).toBe(COUNTERPARTY_DID);

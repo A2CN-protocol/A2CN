@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://a2cn.dev/schemas/rejection/0.2",
+  "$id": "https://a2cn.dev/schemas/rejection/0.3",
   "title": "A2CN Rejection",
   "description": "The Section 7.5 act that refuses a specific offer and returns the turn to the rejecting party. Signing is OPTIONAL — an unsigned Rejection is conformant and is attributed as an unsigned observation — but verifying is not: once rejection_signature is present it MUST be checked against the Section 7.3.1 signed act object, whose payload for a rejection is rejected_offer_id and reason_code. reason_description is deliberately outside the signed scope: it is OPTIONAL, so signing it would make the signed field set depend on whether the sender filled it in, and it is untrusted free text (Section 13.7). The message object stays open so vendor fields pass through.",
   "type": "object",
@@ -43,7 +43,7 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "protocol_version": {
       "type": "string",
-      "description": "Not carried on the wire by this implementation. A verifier rebuilding the signed act uses its own wire version unless the act states one (Section 7.3.1)."
+      "description": "Not carried on the wire. A live act is rebuilt under its session's negotiated wire version, and a receiver refuses one that states another. A recorded act states the version it was signed under and is rebuilt under it; a recorded act that states none is rebuilt under \"0.2\", never under a verifier's own wire version (Section 7.3.1)."
     },
     "reason_code": {
       "type": "string",

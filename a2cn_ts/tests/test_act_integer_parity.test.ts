@@ -30,6 +30,7 @@ import { expect, test } from "vitest";
 import { generateKeypair, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import { assessSessionEvidenceRecord, generateSessionEvidenceRecord } from "../src/a2cn/evidence.js";
 import {
+  PROTOCOL_ACT_VERSION,
   SIGNED_ACT_SIGNATURE_FIELDS,
   isActInteger,
   signedActHash,
@@ -60,7 +61,7 @@ function makeSession(): [Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -83,7 +84,7 @@ function makeSession(): [Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -169,7 +170,9 @@ function spelled(spelling: Dict, sessionId: string): Dict {
 function signed(act: Dict): Dict {
   const copy: Dict = structuredClone(act);
   copy.sender_verification_method = RESPONDER_VM;
-  const payloadHash = signedActHash(copy) ?? UNREBUILDABLE_STAND_IN;
+  const payloadHash = signedActHash(copy, {
+    versionWhenAbsent: PROTOCOL_ACT_VERSION,
+  }) ?? UNREBUILDABLE_STAND_IN;
   copy[SIGNED_ACT_SIGNATURE_FIELDS.rejection] = signJws(
     payloadHash,
     RESPONDER_PRIVATE_KEY,

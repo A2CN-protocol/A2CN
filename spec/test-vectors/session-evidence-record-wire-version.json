@@ -1,0 +1,750 @@
+{
+  "description": "Cross-language vector for the wire version a SessionEvidenceRecord's acts are rebuilt under (Section 7.3.1). A live act is signed under its session's negotiated wire version and does not state it on the wire, so a producer states it in each act it records. current is a session negotiated at 0.3: both suites replay session through their own generator and must produce expected byte for byte, record included, every act stating 0.3. legacy_record is a stored artifact, not generated: the record the generator released before acts stated their version sealed for a session negotiated at 0.2, so none of its acts states a version. It must still verify, because a version-less recorded act is rebuilt under the pinned 0.2, not under the version an implementation now emits. Each edit case changes one act's stated version on the base record it names, recomputes that act's act_hash and the chain, reseals with the producer's key, and must reach resealed_record_hash and the stated verdict. Ed25519 signatures are deterministic, so every seal is reproducible. Keys are test-only.",
+  "did_documents": {
+    "did:example:buyer": {
+      "@context": [
+        "https://www.w3.org/ns/did/v1"
+      ],
+      "assertionMethod": [
+        "did:example:buyer#key-1"
+      ],
+      "authentication": [
+        "did:example:buyer#key-1"
+      ],
+      "id": "did:example:buyer",
+      "verificationMethod": [
+        {
+          "controller": "did:example:buyer",
+          "id": "did:example:buyer#key-1",
+          "publicKeyJwk": {
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "Ns1n0OsqdGF5Z482pAE52zwRBQiOisLtLmslWG84fBw"
+          },
+          "type": "JsonWebKey2020"
+        }
+      ]
+    },
+    "did:example:seller": {
+      "@context": [
+        "https://www.w3.org/ns/did/v1"
+      ],
+      "assertionMethod": [
+        "did:example:seller#key-1"
+      ],
+      "authentication": [
+        "did:example:seller#key-1"
+      ],
+      "id": "did:example:seller",
+      "verificationMethod": [
+        {
+          "controller": "did:example:seller",
+          "id": "did:example:seller#key-1",
+          "publicKeyJwk": {
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "1un_ELT6fNllaIFguYl66oL2SmJsyPuCaMT0N5e_vbA"
+          },
+          "type": "JsonWebKey2020"
+        }
+      ]
+    }
+  },
+  "producer": {
+    "agent_id": "buyer-agent",
+    "did": "did:example:buyer",
+    "verification_method": "did:example:buyer#key-1"
+  },
+  "producer_private_jwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "Ns1n0OsqdGF5Z482pAE52zwRBQiOisLtLmslWG84fBw",
+    "d": "2EPMkifp4yV0cRrCNz0u8y0t4PMwIzKM9Dk5OtmsuM0"
+  },
+  "current": {
+    "session": {
+      "initiator_mandate": {
+        "mandate_type": "declared"
+      },
+      "message_log": [
+        {
+          "expires_at": "2026-09-01T13:00:00Z",
+          "message_id": "wv-offer-30-1",
+          "message_type": "offer",
+          "round_number": 1,
+          "sender_agent_id": "agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000530",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9000000
+          },
+          "timestamp": "2026-09-01T12:01:00Z",
+          "protocol_act_hash": "PimSWCQiXp5T3fBCpCvyM3VuVKkwk8fbHSz5x3HFV6E",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg"
+        },
+        {
+          "expires_at": "2026-09-01T13:00:00Z",
+          "message_id": "wv-counteroffer-30-2",
+          "message_type": "counteroffer",
+          "round_number": 2,
+          "sender_agent_id": "agent",
+          "sender_did": "did:example:seller",
+          "sender_verification_method": "did:example:seller#key-1",
+          "sequence_number": 2,
+          "session_id": "00000000-0000-4000-8000-000000000530",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9800000
+          },
+          "timestamp": "2026-09-01T12:02:00Z",
+          "protocol_act_hash": "BRzEea3sS2T2Evqgo0TYZ_749qnIq4sCSd-sSbxHX2Q",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA"
+        },
+        {
+          "message_id": "wv-withdrawal-30",
+          "message_type": "withdrawal",
+          "reason_code": "STRATEGY_DECISION",
+          "round_number": 2,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 3,
+          "session_id": "00000000-0000-4000-8000-000000000530",
+          "timestamp": "2026-09-01T12:04:00Z",
+          "withdrawal_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.QkdPTUEwekRXSXV0V2JYdkZhN01GOVVDb2kxUU9pMllab3QxYm13UVRGSQ.xezC_h7kv2-Ak2mtQ6HtWBxEA0qwsy9Vlwk3S2v-Lk3rxZvs61Qf4Y7bHED5Qh45Lpa0CcnYlq6-txmBOD1-AA"
+        }
+      ],
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_ack": {
+        "current_turn": "initiator",
+        "message_id": "wv-ack-30",
+        "message_type": "session_ack",
+        "protocol_version": "0.3",
+        "responder": {
+          "agent_id": "seller-agent",
+          "did": "did:example:seller",
+          "organization_name": "Wire Seller",
+          "verification_method": "did:example:seller#key-1"
+        },
+        "responder_mandate": {
+          "mandate_type": "declared"
+        },
+        "session_created_at": "2026-09-01T12:00:00Z",
+        "session_id": "00000000-0000-4000-8000-000000000530",
+        "session_params_accepted": {
+          "currency": "USD",
+          "deal_type": "goods_procurement",
+          "max_rounds": 4,
+          "round_timeout_seconds": 900,
+          "session_timeout_seconds": 3600
+        }
+      },
+      "session_created_at": "2026-09-01T12:00:00Z",
+      "session_id": "00000000-0000-4000-8000-000000000530",
+      "session_init": {
+        "initiator": {
+          "agent_id": "buyer-agent",
+          "did": "did:example:buyer",
+          "organization_name": "Wire Buyer",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "initiator_mandate": {
+          "mandate_type": "declared"
+        },
+        "message_id": "wv-init-30",
+        "message_type": "session_init",
+        "protocol_version": "0.3",
+        "session_params": {
+          "currency": "USD",
+          "deal_type": "goods_procurement",
+          "max_rounds": 4,
+          "round_timeout_seconds": 900,
+          "session_timeout_seconds": 3600
+        }
+      },
+      "session_params": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      },
+      "state": "WITHDRAWN",
+      "state_updated_at": "2026-09-01T12:04:00Z",
+      "terminal_message_id": "wv-withdrawal-30",
+      "terminal_reason": "withdrawal"
+    },
+    "expected": {
+      "record_version": "0.4",
+      "act_hashes": [
+        "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
+        "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY",
+        "9NbWMQFY0a_dLccdbyJEtdSmj1V-CbAKE3cLr2fF9gM"
+      ],
+      "act_chain_hash": "Pl1svm1QqVgFU1sN8wBXaDoLT6ht-ta1U2YpQJjwTOI",
+      "record_hash": "sI0iTcTco62fsbtqIzj6ao3Z_j-aA4xWybdLs32ku08",
+      "stated_versions": [
+        "0.3",
+        "0.3",
+        "0.3"
+      ],
+      "record": {
+        "act_chain_hash": "Pl1svm1QqVgFU1sN8wBXaDoLT6ht-ta1U2YpQJjwTOI",
+        "acts": [
+          {
+            "act": {
+              "expires_at": "2026-09-01T13:00:00Z",
+              "message_id": "wv-offer-30-1",
+              "message_type": "offer",
+              "protocol_act_hash": "PimSWCQiXp5T3fBCpCvyM3VuVKkwk8fbHSz5x3HFV6E",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg",
+              "protocol_version": "0.3",
+              "round_number": 1,
+              "sender_agent_id": "agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000530",
+              "terms": {
+                "currency": "USD",
+                "total_value": 9000000
+              },
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            "act_hash": "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
+            "attribution": "verified_signature",
+            "message_id": "wv-offer-30-1",
+            "message_type": "offer",
+            "round_number": 1,
+            "sender_did": "did:example:buyer",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "sequence_number": 1,
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg",
+            "signature_type": "protocol_act_signature",
+            "source_protocol": "a2cn",
+            "timestamp": "2026-09-01T12:01:00Z"
+          },
+          {
+            "act": {
+              "expires_at": "2026-09-01T13:00:00Z",
+              "message_id": "wv-counteroffer-30-2",
+              "message_type": "counteroffer",
+              "protocol_act_hash": "BRzEea3sS2T2Evqgo0TYZ_749qnIq4sCSd-sSbxHX2Q",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA",
+              "protocol_version": "0.3",
+              "round_number": 2,
+              "sender_agent_id": "agent",
+              "sender_did": "did:example:seller",
+              "sender_verification_method": "did:example:seller#key-1",
+              "sequence_number": 2,
+              "session_id": "00000000-0000-4000-8000-000000000530",
+              "terms": {
+                "currency": "USD",
+                "total_value": 9800000
+              },
+              "timestamp": "2026-09-01T12:02:00Z"
+            },
+            "act_hash": "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY",
+            "attribution": "verified_signature",
+            "message_id": "wv-counteroffer-30-2",
+            "message_type": "counteroffer",
+            "round_number": 2,
+            "sender_did": "did:example:seller",
+            "sender_verification_method": "did:example:seller#key-1",
+            "sequence_number": 2,
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA",
+            "signature_type": "protocol_act_signature",
+            "source_protocol": "a2cn",
+            "timestamp": "2026-09-01T12:02:00Z"
+          },
+          {
+            "act": {
+              "message_id": "wv-withdrawal-30",
+              "message_type": "withdrawal",
+              "protocol_version": "0.3",
+              "reason_code": "STRATEGY_DECISION",
+              "round_number": 2,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 3,
+              "session_id": "00000000-0000-4000-8000-000000000530",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "withdrawal_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.QkdPTUEwekRXSXV0V2JYdkZhN01GOVVDb2kxUU9pMllab3QxYm13UVRGSQ.xezC_h7kv2-Ak2mtQ6HtWBxEA0qwsy9Vlwk3S2v-Lk3rxZvs61Qf4Y7bHED5Qh45Lpa0CcnYlq6-txmBOD1-AA"
+            },
+            "act_hash": "9NbWMQFY0a_dLccdbyJEtdSmj1V-CbAKE3cLr2fF9gM",
+            "attribution": "verified_signature",
+            "message_id": "wv-withdrawal-30",
+            "message_type": "withdrawal",
+            "round_number": 2,
+            "sender_did": "did:example:buyer",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "sequence_number": 3,
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.QkdPTUEwekRXSXV0V2JYdkZhN01GOVVDb2kxUU9pMllab3QxYm13UVRGSQ.xezC_h7kv2-Ak2mtQ6HtWBxEA0qwsy9Vlwk3S2v-Lk3rxZvs61Qf4Y7bHED5Qh45Lpa0CcnYlq6-txmBOD1-AA",
+            "signature_type": "withdrawal_signature",
+            "source_protocol": "a2cn",
+            "timestamp": "2026-09-01T12:04:00Z"
+          }
+        ],
+        "evidence_id": "d64b1309-463f-567a-b1c4-2543a6c39142",
+        "evidence_level": "mixed",
+        "generated_at": "2026-09-01T12:04:00Z",
+        "parties": {
+          "initiator": {
+            "agent_id": "buyer-agent",
+            "did": "did:example:buyer",
+            "mandate_type": "declared",
+            "organization_name": "Wire Buyer",
+            "verification_method": "did:example:buyer#key-1"
+          },
+          "responder": {
+            "agent_id": "seller-agent",
+            "did": "did:example:seller",
+            "mandate_type": "declared",
+            "organization_name": "Wire Seller",
+            "verification_method": "did:example:seller#key-1"
+          }
+        },
+        "producer": {
+          "agent_id": "buyer-agent",
+          "did": "did:example:buyer",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.c0kwaVRjVGNvNjJmc2J0cUl6ajZhbzNaX2otYUE0eFd5YmRMczMya3UwOA.GM7Dq1x0Ycf9vjfPI-Px-cQ30gb2lzjbMkB4iC-oWOgOjYvca1V798LkslteWTDgP8ZzVrlmg1kRLPbZEZv4DQ",
+        "record_hash": "sI0iTcTco62fsbtqIzj6ao3Z_j-aA4xWybdLs32ku08",
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.4",
+        "session_id": "00000000-0000-4000-8000-000000000530",
+        "terminal": {
+          "message_id": "wv-withdrawal-30",
+          "outcome": "WITHDRAWN",
+          "reason": "withdrawal",
+          "timestamp": "2026-09-01T12:04:00Z"
+        },
+        "transaction_record_hash": null
+      }
+    }
+  },
+  "legacy_record": {
+    "act_chain_hash": "QdFwQNQLe-RWDx4c1k5ndPW4onaq3UlWu15wlPhedn0",
+    "acts": [
+      {
+        "act": {
+          "expires_at": "2026-09-01T13:00:00Z",
+          "message_id": "wv-offer-20-1",
+          "message_type": "offer",
+          "protocol_act_hash": "up7d-gEI-pQAcZ_dnOTArNkzPSO68IkndvOJM4BgARU",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dXA3ZC1nRUktcFFBY1pfZG5PVEFyTmt6UFNPNjhJa25kdk9KTTRCZ0FSVQ.lSro6VhEyB7Ox1rtaqdWOXyhkVK-MIc2BKPoRDVtbqiQ6NVypH6RUOJ-VZ5kXcV9oeXI_O-qAzrq3_s6rmlYDA",
+          "round_number": 1,
+          "sender_agent_id": "agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000520",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9000000
+          },
+          "timestamp": "2026-09-01T12:01:00Z"
+        },
+        "act_hash": "QDueOgJ3SEaE4WR4qh1QYOmCiBL0ORCy0Ldom6d1D8w",
+        "attribution": "verified_signature",
+        "message_id": "wv-offer-20-1",
+        "message_type": "offer",
+        "round_number": 1,
+        "sender_did": "did:example:buyer",
+        "sender_verification_method": "did:example:buyer#key-1",
+        "sequence_number": 1,
+        "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dXA3ZC1nRUktcFFBY1pfZG5PVEFyTmt6UFNPNjhJa25kdk9KTTRCZ0FSVQ.lSro6VhEyB7Ox1rtaqdWOXyhkVK-MIc2BKPoRDVtbqiQ6NVypH6RUOJ-VZ5kXcV9oeXI_O-qAzrq3_s6rmlYDA",
+        "signature_type": "protocol_act_signature",
+        "source_protocol": "a2cn",
+        "timestamp": "2026-09-01T12:01:00Z"
+      },
+      {
+        "act": {
+          "expires_at": "2026-09-01T13:00:00Z",
+          "message_id": "wv-counteroffer-20-2",
+          "message_type": "counteroffer",
+          "protocol_act_hash": "nqu830FPF61DwWgPGvwii-OirMKbaFy7ixIVSAFL7pI",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.bnF1ODMwRlBGNjFEd1dnUEd2d2lpLU9pck1LYmFGeTdpeElWU0FGTDdwSQ.fX2WfaAsWjTCxmiPM9OqhLO7hbE2LVXGFfgSva2eYKPP7ewhM1d7On5KgfHML20aUJNQgZfAr4AmkIYNADujDg",
+          "round_number": 2,
+          "sender_agent_id": "agent",
+          "sender_did": "did:example:seller",
+          "sender_verification_method": "did:example:seller#key-1",
+          "sequence_number": 2,
+          "session_id": "00000000-0000-4000-8000-000000000520",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9800000
+          },
+          "timestamp": "2026-09-01T12:02:00Z"
+        },
+        "act_hash": "S0GAXuXIoVhB3TYUz564IR1Y9sgD1G-VUfOySM8sPgY",
+        "attribution": "verified_signature",
+        "message_id": "wv-counteroffer-20-2",
+        "message_type": "counteroffer",
+        "round_number": 2,
+        "sender_did": "did:example:seller",
+        "sender_verification_method": "did:example:seller#key-1",
+        "sequence_number": 2,
+        "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.bnF1ODMwRlBGNjFEd1dnUEd2d2lpLU9pck1LYmFGeTdpeElWU0FGTDdwSQ.fX2WfaAsWjTCxmiPM9OqhLO7hbE2LVXGFfgSva2eYKPP7ewhM1d7On5KgfHML20aUJNQgZfAr4AmkIYNADujDg",
+        "signature_type": "protocol_act_signature",
+        "source_protocol": "a2cn",
+        "timestamp": "2026-09-01T12:02:00Z"
+      },
+      {
+        "act": {
+          "message_id": "wv-withdrawal-20",
+          "message_type": "withdrawal",
+          "reason_code": "STRATEGY_DECISION",
+          "round_number": 2,
+          "sender_agent_id": "buyer-agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 3,
+          "session_id": "00000000-0000-4000-8000-000000000520",
+          "timestamp": "2026-09-01T12:04:00Z",
+          "withdrawal_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dmJSYWR0YmZneGIzN0g4bWY2SHZ4cTVOcWNBNjhLMHhzaVZlRkFwVVFnUQ.lDZtCkesTxl2n5iLGEyF4zYI6iPmvc3OnfcqtIl5MtVdyeFyi7zSJeLNakpYFe9ph7Y99C1X3rI9mLZmJP8ODg"
+        },
+        "act_hash": "wY-NhFQI6o-O-N3QsdN9bOPNf-xh4WXE5JhMi9P5JO0",
+        "attribution": "verified_signature",
+        "message_id": "wv-withdrawal-20",
+        "message_type": "withdrawal",
+        "round_number": 2,
+        "sender_did": "did:example:buyer",
+        "sender_verification_method": "did:example:buyer#key-1",
+        "sequence_number": 3,
+        "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dmJSYWR0YmZneGIzN0g4bWY2SHZ4cTVOcWNBNjhLMHhzaVZlRkFwVVFnUQ.lDZtCkesTxl2n5iLGEyF4zYI6iPmvc3OnfcqtIl5MtVdyeFyi7zSJeLNakpYFe9ph7Y99C1X3rI9mLZmJP8ODg",
+        "signature_type": "withdrawal_signature",
+        "source_protocol": "a2cn",
+        "timestamp": "2026-09-01T12:04:00Z"
+      }
+    ],
+    "evidence_id": "703d914c-2ebb-58fb-a9ff-5779a2c8f165",
+    "evidence_level": "mixed",
+    "generated_at": "2026-09-01T12:04:00Z",
+    "parties": {
+      "initiator": {
+        "agent_id": "buyer-agent",
+        "did": "did:example:buyer",
+        "mandate_type": "declared",
+        "organization_name": "Wire Buyer",
+        "verification_method": "did:example:buyer#key-1"
+      },
+      "responder": {
+        "agent_id": "seller-agent",
+        "did": "did:example:seller",
+        "mandate_type": "declared",
+        "organization_name": "Wire Seller",
+        "verification_method": "did:example:seller#key-1"
+      }
+    },
+    "producer": {
+      "agent_id": "buyer-agent",
+      "did": "did:example:buyer",
+      "verification_method": "did:example:buyer#key-1"
+    },
+    "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.X3hRMmo5NW1VbUQ2anhHS2NQOUdpV0J1c0FiZnVoa01QZ2MyU3BiZUJ3TQ.F3OsfJjo8iGg-s5AXUhZ1K6wBDVen1u2mjxNr2bf1ov2oTpE3iGE-rH33lv-XBSM4kenI-ae5DUPtgBqZREKDQ",
+    "record_hash": "_xQ2j95mUmD6jxGKcP9GiWBusAbfuhkMPgc2SpbeBwM",
+    "record_type": "a2cn_session_evidence_record",
+    "record_version": "0.4",
+    "session_id": "00000000-0000-4000-8000-000000000520",
+    "terminal": {
+      "message_id": "wv-withdrawal-20",
+      "outcome": "WITHDRAWN",
+      "reason": "withdrawal",
+      "timestamp": "2026-09-01T12:04:00Z"
+    },
+    "transaction_record_hash": null
+  },
+  "edit_cases": [
+    {
+      "name": "stated-version-contradicts-signature",
+      "base": "current",
+      "act_index": 0,
+      "set_protocol_version": "0.2",
+      "resealed_record_hash": "NMQUITqJg064tElTXzxukLAweZP70U3na5jja3Ht2MI",
+      "verifies": false,
+      "rule": "An act is rebuilt under the version it states; this offer was signed under 0.3 and states 0.2."
+    },
+    {
+      "name": "current-act-stating-no-version",
+      "base": "current",
+      "act_index": 0,
+      "remove_protocol_version": true,
+      "resealed_record_hash": "RpAyM3CnjqOlmsB2OVrwZUfYZ5qRSRPi00RUiPgLi2M",
+      "verifies": false,
+      "rule": "An act that states no version is rebuilt under the pinned 0.2, never the emit version, so an act signed under 0.3 must state it."
+    },
+    {
+      "name": "legacy-act-stating-another-version",
+      "base": "legacy",
+      "act_index": 0,
+      "set_protocol_version": "0.3",
+      "resealed_record_hash": "7z2EnEWFD7S4Z3ZapGW3fLSO0NfH3SKgJi86pw7t2jw",
+      "verifies": false,
+      "rule": "A version-less act signed under 0.2 that is given another stated version no longer rebuilds."
+    },
+    {
+      "name": "legacy-act-stating-its-own-version",
+      "base": "legacy",
+      "act_index": 0,
+      "set_protocol_version": "0.2",
+      "resealed_record_hash": "DxhLtRSmOumXBv5SFSROjo3MSQi6VPOuUbsnZLRSJwY",
+      "verifies": true,
+      "rule": "Stating 0.2 on an act signed under 0.2 rebuilds exactly as leaving it absent."
+    },
+    {
+      "name": "observed-act-stating-another-version",
+      "base": "observed",
+      "act_index": 1,
+      "set_protocol_version": "0.2",
+      "resealed_record_hash": "ut28NRH93R__IVnHHw8C6lC0jtBjflvvmHxpBzsONLQ",
+      "verifies": false,
+      "rule": "A signed observed act is rebuilt under the version it states; this counteroffer was signed under 0.3 and states 0.2."
+    }
+  ],
+  "observed": {
+    "description": "The same 0.3 session timed out after the buyer's offer, with the seller's signed counteroffer supplied as an observed act that states no version. The generator records it with the session's negotiated version, so it verifies as a signed observed act. stating_another_version supplies the same observed act already stating 0.2: the generator keeps a version an act states, so the record carries 0.2 for an act signed under 0.3 and fails verification.",
+    "session": {
+      "initiator_mandate": {
+        "mandate_type": "declared"
+      },
+      "message_log": [
+        {
+          "expires_at": "2026-09-01T13:00:00Z",
+          "message_id": "wv-offer-30-1",
+          "message_type": "offer",
+          "round_number": 1,
+          "sender_agent_id": "agent",
+          "sender_did": "did:example:buyer",
+          "sender_verification_method": "did:example:buyer#key-1",
+          "sequence_number": 1,
+          "session_id": "00000000-0000-4000-8000-000000000530",
+          "terms": {
+            "currency": "USD",
+            "total_value": 9000000
+          },
+          "timestamp": "2026-09-01T12:01:00Z",
+          "protocol_act_hash": "PimSWCQiXp5T3fBCpCvyM3VuVKkwk8fbHSz5x3HFV6E",
+          "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg"
+        }
+      ],
+      "responder_mandate": {
+        "mandate_type": "declared"
+      },
+      "session_ack": {
+        "current_turn": "initiator",
+        "message_id": "wv-ack-30",
+        "message_type": "session_ack",
+        "protocol_version": "0.3",
+        "responder": {
+          "agent_id": "seller-agent",
+          "did": "did:example:seller",
+          "organization_name": "Wire Seller",
+          "verification_method": "did:example:seller#key-1"
+        },
+        "responder_mandate": {
+          "mandate_type": "declared"
+        },
+        "session_created_at": "2026-09-01T12:00:00Z",
+        "session_id": "00000000-0000-4000-8000-000000000530",
+        "session_params_accepted": {
+          "currency": "USD",
+          "deal_type": "goods_procurement",
+          "max_rounds": 4,
+          "round_timeout_seconds": 900,
+          "session_timeout_seconds": 3600
+        }
+      },
+      "session_created_at": "2026-09-01T12:00:00Z",
+      "session_id": "00000000-0000-4000-8000-000000000530",
+      "session_init": {
+        "initiator": {
+          "agent_id": "buyer-agent",
+          "did": "did:example:buyer",
+          "organization_name": "Wire Buyer",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "initiator_mandate": {
+          "mandate_type": "declared"
+        },
+        "message_id": "wv-init-30",
+        "message_type": "session_init",
+        "protocol_version": "0.3",
+        "session_params": {
+          "currency": "USD",
+          "deal_type": "goods_procurement",
+          "max_rounds": 4,
+          "round_timeout_seconds": 900,
+          "session_timeout_seconds": 3600
+        }
+      },
+      "session_params": {
+        "currency": "USD",
+        "deal_type": "goods_procurement",
+        "max_rounds": 4,
+        "round_timeout_seconds": 900,
+        "session_timeout_seconds": 3600
+      },
+      "state": "TIMED_OUT",
+      "state_updated_at": "2026-09-01T12:03:00Z",
+      "terminal_message_id": null,
+      "terminal_reason": "session_timeout"
+    },
+    "observed_acts": [
+      {
+        "expires_at": "2026-09-01T13:00:00Z",
+        "message_id": "wv-counteroffer-30-2",
+        "message_type": "counteroffer",
+        "round_number": 2,
+        "sender_agent_id": "agent",
+        "sender_did": "did:example:seller",
+        "sender_verification_method": "did:example:seller#key-1",
+        "sequence_number": 2,
+        "session_id": "00000000-0000-4000-8000-000000000530",
+        "terms": {
+          "currency": "USD",
+          "total_value": 9800000
+        },
+        "timestamp": "2026-09-01T12:02:00Z",
+        "protocol_act_hash": "BRzEea3sS2T2Evqgo0TYZ_749qnIq4sCSd-sSbxHX2Q",
+        "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA"
+      }
+    ],
+    "expected": {
+      "record_version": "0.4",
+      "act_hashes": [
+        "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
+        "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY"
+      ],
+      "act_chain_hash": "IGmcKvWr74ltujAgvslZjip941aXbJhwbkghrI1eZx0",
+      "record_hash": "7_2q1ZQmyvnkzNyOwNzIZMlfWU_Pu8k952zoAs5yzmk",
+      "stated_versions": [
+        "0.3",
+        "0.3"
+      ],
+      "attributions": [
+        "verified_signature",
+        "verified_signature"
+      ],
+      "record": {
+        "act_chain_hash": "IGmcKvWr74ltujAgvslZjip941aXbJhwbkghrI1eZx0",
+        "acts": [
+          {
+            "act": {
+              "expires_at": "2026-09-01T13:00:00Z",
+              "message_id": "wv-offer-30-1",
+              "message_type": "offer",
+              "protocol_act_hash": "PimSWCQiXp5T3fBCpCvyM3VuVKkwk8fbHSz5x3HFV6E",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg",
+              "protocol_version": "0.3",
+              "round_number": 1,
+              "sender_agent_id": "agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000530",
+              "terms": {
+                "currency": "USD",
+                "total_value": 9000000
+              },
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            "act_hash": "7zbUpMYx47PmsBUAvj3TEdisAhh6ek_gDIYYk4menfA",
+            "attribution": "verified_signature",
+            "message_id": "wv-offer-30-1",
+            "message_type": "offer",
+            "round_number": 1,
+            "sender_did": "did:example:buyer",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "sequence_number": 1,
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UGltU1dDUWlYcDVUM2ZCQ3BDdnlNM1Z1Vktrd2s4ZmJIU3o1eDNIRlY2RQ.y6NVTL1yd0k6P4rpS-NycBA_iTfjE9E64KfFQyh05KqQG_oaJesxOueW458PSKHa8rdbXhdbmxH4cK-uoATnCg",
+            "signature_type": "protocol_act_signature",
+            "source_protocol": "a2cn",
+            "timestamp": "2026-09-01T12:01:00Z"
+          },
+          {
+            "act": {
+              "expires_at": "2026-09-01T13:00:00Z",
+              "message_id": "wv-counteroffer-30-2",
+              "message_type": "counteroffer",
+              "protocol_act_hash": "BRzEea3sS2T2Evqgo0TYZ_749qnIq4sCSd-sSbxHX2Q",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA",
+              "protocol_version": "0.3",
+              "round_number": 2,
+              "sender_agent_id": "agent",
+              "sender_did": "did:example:seller",
+              "sender_verification_method": "did:example:seller#key-1",
+              "sequence_number": 2,
+              "session_id": "00000000-0000-4000-8000-000000000530",
+              "terms": {
+                "currency": "USD",
+                "total_value": 9800000
+              },
+              "timestamp": "2026-09-01T12:02:00Z"
+            },
+            "act_hash": "arX4sX4kQuZLrEyFOMw8gA1qFglHoGtdb0rsEiMMsnY",
+            "attribution": "verified_signature",
+            "message_id": "wv-counteroffer-30-2",
+            "message_type": "counteroffer",
+            "round_number": 2,
+            "sender_did": "did:example:seller",
+            "sender_verification_method": "did:example:seller#key-1",
+            "sequence_number": 2,
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOnNlbGxlciNrZXktMSJ9.QlJ6RWVhM3NTMlQyRXZxZ28wVFlaXzc0OXFuSXE0c0NTZC1zU2J4SFgyUQ.wC3NLeZYs9RmMQ3kVxZE3ofFVFRQQ2I0O-yZLde6Ly4HaedIEFZdSEyceBG5tWyE1mPZI3q_tHnldHnoZOEwBA",
+            "signature_type": "protocol_act_signature",
+            "source_protocol": null,
+            "timestamp": "2026-09-01T12:02:00Z"
+          }
+        ],
+        "evidence_id": "d64b1309-463f-567a-b1c4-2543a6c39142",
+        "evidence_level": "mixed",
+        "generated_at": "2026-09-01T12:03:00Z",
+        "parties": {
+          "initiator": {
+            "agent_id": "buyer-agent",
+            "did": "did:example:buyer",
+            "mandate_type": "declared",
+            "organization_name": "Wire Buyer",
+            "verification_method": "did:example:buyer#key-1"
+          },
+          "responder": {
+            "agent_id": "seller-agent",
+            "did": "did:example:seller",
+            "mandate_type": "declared",
+            "organization_name": "Wire Seller",
+            "verification_method": "did:example:seller#key-1"
+          }
+        },
+        "producer": {
+          "agent_id": "buyer-agent",
+          "did": "did:example:buyer",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.N18ycTFaUW15dm5rek55T3dOeklaTWxmV1VfUHU4azk1MnpvQXM1eXptaw.yK4rz5nFA9EYrAR7GOmcq-ThrPCaCIjnGQLup8QgEVLZh-PzTZA4UnyHXNr5PEm4WC9j_z6VO6hgfeWsSF-xAg",
+        "record_hash": "7_2q1ZQmyvnkzNyOwNzIZMlfWU_Pu8k952zoAs5yzmk",
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.4",
+        "session_id": "00000000-0000-4000-8000-000000000530",
+        "terminal": {
+          "message_id": null,
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "timestamp": "2026-09-01T12:03:00Z"
+        },
+        "transaction_record_hash": null
+      }
+    },
+    "stating_another_version": {
+      "observed_protocol_version": "0.2",
+      "record_hash": "ut28NRH93R__IVnHHw8C6lC0jtBjflvvmHxpBzsONLQ",
+      "verifies": false
+    }
+  }
+}

@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 import a2cn.evidence as evidence
-from a2cn.crypto import hash_object, private_key_from_jwk, sign_jws
+from a2cn.crypto import canonicalize, hash_bytes, hash_object, private_key_from_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
 from a2cn.record import FINAL_OFFER_ACT_FIELDS, generate_transaction_record
 from a2cn.session import Session, SessionManager, SessionState
@@ -299,8 +299,28 @@ def test_the_transaction_record_schemas_are_closed_except_agreed_terms(schema_fi
 # SessionEvidenceRecord
 # ---------------------------------------------------------------------------
 
-def _session_evidence_record(version: str) -> dict:
-    """The record session-evidence-record-parity.json produces, sealed at ``version``."""
+def _without_stated_wire_versions(record: dict) -> dict:
+    """The record as generated before each act stated its wire version.
+
+    Every act gained protocol_version, since none of the vector's acts states
+    one; each loses it again and its act_hash and the chain are recomputed, so
+    the record can be compared with one produced before acts stated their version.
+    """
+    for entry in record["acts"]:
+        entry["act"].pop("protocol_version")
+        entry["act_hash"] = hash_object(entry["act"])
+    record["act_chain_hash"] = hash_bytes(
+        canonicalize([entry["act_hash"] for entry in record["acts"]])
+    )
+    return record
+
+
+def _session_evidence_record(version: str, *, as_released: bool = False) -> dict:
+    """The record session-evidence-record-parity.json produces, sealed at ``version``.
+
+    as_released strips the wire version each session act now states, giving the
+    bytes a generator produced before acts stated it.
+    """
     source = SER_VECTOR["session"]
     session = Session(
         session_id=source["session_id"],
@@ -327,6 +347,8 @@ def _session_evidence_record(version: str) -> dict:
         producer_verification_method=producer["verification_method"],
         observed_acts=SER_VECTOR["observed_acts"],
     )
+    if as_released:
+        _without_stated_wire_versions(record)
     record["record_version"] = version
     record["record_hash"] = ""
     record["producer_signature"] = ""
@@ -361,8 +383,11 @@ def test_a_record_release_0_3_0_produced_still_validates_and_verifies():
     assert record["record_version"] == "0.1"
     assert _errors(SER_0_1, record) == []
     assert verify_session_evidence_record(record, SER_VECTOR["did_documents"])
-    # Apart from its version, this implementation produces the same record for the session.
-    assert _session_evidence_record("0.1")["record_hash"] == record["record_hash"]
+    # Apart from its version, and from each of its own acts now stating the wire
+    # version it was signed under, this implementation produces the same record.
+    assert _session_evidence_record("0.1", as_released=True)["record_hash"] == record["record_hash"]
+    # The stated versions are the only other difference, and they are not nothing.
+    assert _session_evidence_record("0.1")["record_hash"] != record["record_hash"]
 
 
 EXTENSIONS_VECTOR = json.loads((VECTORS / "session-evidence-record-extensions.json").read_text())
@@ -671,7 +696,8 @@ def test_a_stored_0_3_record_still_verifies_and_fits_its_own_schema():
 
 
 def test_the_stored_0_3_record_is_todays_record_apart_from_its_version():
-    """The two differ in the version, the hash over it, and the seal over that.
+    """The two differ in the version, the hash over it, and the seal over that,
+    and in the wire version today's record states on each of its acts.
 
     A guard on the pair: if they drifted in any other member, the test above
     would be verifying an unrelated artifact while appearing to prove the
@@ -686,7 +712,27 @@ def test_the_stored_0_3_record_is_todays_record_apart_from_its_version():
         for name in set(historical) | set(current)
         if historical.get(name) != current.get(name)
     }
-    assert differing == {"record_version", "record_hash", "producer_signature"}
+    assert differing == {
+        "record_version",
+        "record_hash",
+        "producer_signature",
+        "acts",
+        "act_chain_hash",
+    }
+    # The acts differ only in the stated version and the act_hash over it.
+    assert len(current["acts"]) == len(historical["acts"])
+    stated = 0
+    for now, then in zip(current["acts"], historical["acts"]):
+        act = copy.deepcopy(now["act"])
+        if "protocol_version" not in then["act"] and "protocol_version" in act:
+            del act["protocol_version"]
+            stated += 1
+        assert act == then["act"]
+        assert {k: v for k, v in now.items() if k not in ("act", "act_hash")} == {
+            k: v for k, v in then.items() if k not in ("act", "act_hash")
+        }
+    # Every act, the session's own and the observed one, now states it.
+    assert stated == len(current["acts"]) == 2
 
 
 def test_the_evidence_record_schemas_name_the_versions_the_generator_emits():

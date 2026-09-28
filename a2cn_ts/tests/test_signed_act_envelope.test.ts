@@ -33,7 +33,6 @@ import { expect, test } from "vitest";
 
 import { canonicalize, hashObject } from "../src/a2cn/crypto.js";
 import {
-  PROTOCOL_ACT_VERSION,
   SIGNED_ACT_HEADER_FIELDS,
   SIGNED_ACT_PAYLOAD_FIELDS,
   SIGNED_ACT_SIGNATURE_FIELDS,
@@ -94,7 +93,8 @@ function offerEnvelope(): Dict {
 
 function acceptanceEnvelope(): Dict {
   return signedActObject({
-    protocol_version: PROTOCOL_ACT_VERSION,
+    // The version this vector's acts were signed under, as its record states.
+    protocol_version: FINAL_OFFER.protocol_version as string,
     session_id: ACCEPTANCE_MESSAGE.session_id,
     round_number: ACCEPTANCE_MESSAGE.round_number,
     sequence_number: ACCEPTANCE_MESSAGE.sequence_number,

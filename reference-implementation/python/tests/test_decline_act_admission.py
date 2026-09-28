@@ -30,7 +30,12 @@ from pathlib import Path
 import pytest
 
 from a2cn.crypto import generate_keypair, public_key_to_jwk, sign_jws
-from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, Withdrawal, signed_act_hash
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    SIGNED_ACT_SIGNATURE_FIELDS,
+    Withdrawal,
+    signed_act_hash,
+)
 from a2cn.session import A2CNError, SessionManager, SessionState
 from tests.conftest import make_did_document
 from tests.test_session import (
@@ -150,7 +155,7 @@ def _withdrawal_for(case: dict, *, signed: bool) -> dict:
     # An act that does not rebuild has no hash to sign, so it is signed over a
     # stand-in payload, exactly as a sender that stripped or mangled the field
     # would have to.
-    payload_hash = signed_act_hash(act) or "0" * 43
+    payload_hash = signed_act_hash(act, version_when_absent=PROTOCOL_ACT_VERSION) or "0" * 43
     act["withdrawal_signature"] = sign_jws(payload_hash, RESPONDER_PRIVATE_KEY, kid=vm)
     return act
 

@@ -41,7 +41,7 @@ test("discovery document", async () => {
   const r = await client.get("/.well-known/a2cn-agent");
   expect(r.statusCode).toBe(200);
   const doc = r.json();
-  expect(doc.a2cn_version).toBe("0.2");
+  expect(doc.a2cn_version).toBe("0.3");
   expect(doc.deal_types).toContain("saas_renewal");
   expect(doc.conformance_level).toBe(2);
   expect(doc.agent_did).toBe(RESPONDER_DID);
@@ -153,7 +153,7 @@ test("receive invitation does not require bearer token", async () => {
   const invitation: Dict = {
     message_type: "session_invitation",
     invitation_id: randomUUID(),
-    a2cn_version: "0.2",
+    a2cn_version: "0.3",
     inviter_did: inviterDid,
     inviter_endpoint: "https://buyer.example/a2cn",
     inviter_discovery_url: "https://buyer.example/.well-known/a2cn-agent",
@@ -266,7 +266,7 @@ test("deliver webhook uses did key jws signature", async () => {
     occurred_at: "2026-05-20T05:00:00Z",
     session_state: "COMPLETED",
     terminal: true,
-    a2cn_version: "0.2",
+    a2cn_version: "0.3",
   };
 
   await ctx.deliverWebhook(
@@ -324,7 +324,7 @@ function makeOfferMsg(
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,

@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only. release_0_3_0_record is the record that release 0.3.0 produced for this session with this producer key (record_version \"0.1\"). It must validate against spec/schemas/session-evidence-record.schema.json and verify under the current verifiers, and this implementation's record for the session, relabelled \"0.1\" and resealed, must have its record_hash. release_0_3_0_schema_sha256 is the sha256 of spec/schemas/session-evidence-record.schema.json as release 0.3.0 published it; a published schema file is never rewritten.",
+  "description": "Cross-language SessionEvidenceRecord mixed-evidence test vector. The private JWK is test-only. release_0_3_0_record is the record that release 0.3.0 produced for this session with this producer key (record_version \"0.1\"). It must validate against spec/schemas/session-evidence-record.schema.json and verify under the current verifiers, and this implementation's record for the session, with the wire version it now states on each of its acts removed, relabelled \"0.1\" and resealed, must have its record_hash. Its acts state no wire version, so a verifier rebuilds them under the pinned \"0.2\" (Section 7.3.1). release_0_3_0_schema_sha256 is the sha256 of spec/schemas/session-evidence-record.schema.json as release 0.3.0 published it; a published schema file is never rewritten.",
   "invalid_cases": {
     "non_rfc3339_timestamp": "not-a-timestamp"
   },
@@ -27,16 +27,16 @@
     }
   },
   "expected": {
-    "act_chain_hash": "H--tV6D3bPU1QqOqgd220gXB3bMCihpdET0Ge6h9BBs",
+    "act_chain_hash": "QgOMls4pzpiKrcW6orTYA-x02SfuwuVsBLcbX5PcMrI",
     "act_hashes": [
-      "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
-      "nTHqlXDMBXdHQ1jFK-KHGbM23dPFqAGS8ZkflA5YfQ4"
+      "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+      "kpUnbsEDeSDprhI7VFpWnUMaOWY6NAK_AfbfKEJpxWA"
     ],
     "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
     "evidence_level": "mixed",
     "generated_at": "2026-08-31T12:10:00Z",
-    "invalid_non_rfc3339_record_hash": "PjnJvjmUW6061Oh11Kv3hZ-JyGfcoCXU0lsLBjLMRJc",
-    "record_hash": "6wZeyvRRqdthyTf4gML3PE7QH6j6yxrKYTyfyfiI8Ys"
+    "invalid_non_rfc3339_record_hash": "hs5eZLw11Dbp_FfQxfiVHVwH6q6Pd27WmTGVTPPjegM",
+    "record_hash": "ynYJ9h2yT10RH3-XzeAUCgjfm1RPmQmE_EB-1nGV-tY"
   },
   "observed_acts": [
     {

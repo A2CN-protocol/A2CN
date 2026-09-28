@@ -33,7 +33,6 @@ import pytest
 
 from a2cn.crypto import canonicalize, hash_object
 from a2cn.messages import (
-    PROTOCOL_ACT_VERSION,
     SIGNED_ACT_HEADER_FIELDS,
     SIGNED_ACT_PAYLOAD_FIELDS,
     SIGNED_ACT_SIGNATURE_FIELDS,
@@ -97,7 +96,8 @@ def _offer_envelope() -> dict:
 
 def _acceptance_envelope() -> dict:
     return signed_act_object(
-        protocol_version=PROTOCOL_ACT_VERSION,
+        # The version this vector's acts were signed under, as its record states.
+        protocol_version=FINAL_OFFER["protocol_version"],
         session_id=ACCEPTANCE_MESSAGE["session_id"],
         round_number=ACCEPTANCE_MESSAGE["round_number"],
         sequence_number=ACCEPTANCE_MESSAGE["sequence_number"],

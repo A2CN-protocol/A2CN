@@ -47,7 +47,7 @@ const SIGNATURE_FIELD: Record<string, string> = {
 const SESSION_INIT: Dict = {
   message_type: "session_init",
   message_id: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -71,7 +71,7 @@ const SESSION_ACK: Dict = {
   message_id: "ack-msg-id",
   session_id: "sess-001",
   in_reply_to: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -97,7 +97,7 @@ function makeOffer(sessionId: string, seq: number, rnd: number, senderDid: strin
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,
@@ -151,7 +151,7 @@ function rejection(sessionId: string): Dict {
     message_type: "rejection",
     message_id: randomUUID(),
     session_id: sessionId,
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     round_number: 1,
     sequence_number: 2,
     rejected_offer_id: "offer-1",
@@ -167,7 +167,7 @@ function withdrawal(sessionId: string, withSequence = true): Dict {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     round_number: 1,
     sender_did: RESPONDER_DID,
     sender_agent_id: "acme-agent",

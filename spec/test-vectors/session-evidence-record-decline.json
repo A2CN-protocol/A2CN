@@ -47,15 +47,15 @@
     }
   },
   "expected": {
-    "act_chain_hash": "rJFmmvbrYwU12uCTC5HfQ_xqCvTq39U2luX-h3qSKgs",
+    "act_chain_hash": "1_i6NN_5M-Kmc1zdvIj3QIeO60jisfgeNC4Wnaz04N4",
     "act_hashes": [
-      "7KHQvhqjPAB6VRBspj0f59TVMu_zZwtrXUVDpQkRD54",
-      "Lx1G2CjqAGJdGlhaEhXb5cq9iIIlmgwHDMjujJM2TaM"
+      "dp77DRw0JYZGwjstNeZTu0gFHaNnix76K-KixFedfkE",
+      "AETaa_RRyUd8x_Vvgyte2N8R0KtGOI49a_q_VCpoPB8"
     ],
     "evidence_id": "3c6b99bd-8f38-56d2-b71f-fe73c64cee84",
     "evidence_level": "mixed",
     "generated_at": "2026-09-01T12:05:00Z",
-    "record_hash": "5UOebY5wcSsdAhKiPgIslxiFEOrM6S-fLuRWpxRD6os",
+    "record_hash": "2bblrRJuHI5VSIuu2VJf_u1ne1aOPMszcyAeHfti3q8",
     "record_version": "0.4"
   },
   "observed_acts": null,

@@ -17,6 +17,7 @@ import pytest
 from a2cn.crypto import hash_object, sign_jws
 from a2cn.fulfillment import FULFILLMENT_ATTESTATION_SCHEMA
 from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
     DeliveryNoticeMessage,
     DeliveryAcknowledgedMessage,
     DisputeNoticeMessage,
@@ -98,7 +99,7 @@ class TestDeliveryNoticeDataclass:
             delivery_timestamp="2026-04-02T08:00:00Z",
         )
         assert msg.message_type == "delivery_notice"
-        assert msg.protocol_version == "0.2"
+        assert msg.protocol_version == "0.3"
         assert msg.delivery_reference is None
 
     def test_to_dict_omits_none_fields(self):
@@ -566,7 +567,7 @@ async def _complete_session(
     terms = {"total_value": 10_000_000, "currency": "USD", "seat_count": 50}
     offer_id = str(uuid.uuid4())
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -621,7 +622,7 @@ async def _complete_session(
     # Signed over the act's own envelope (Section 7.3.1), built from the very
     # message that goes on the wire.
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance),
+        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
         responder_private_key,
         kid=f"{RESPONDER_DID}#key-2026-01",
     )
@@ -685,7 +686,7 @@ class TestDisputeResolvedDataclass:
             resolver_did="did:web:resolver.example",
         )
         assert msg.message_type == "dispute_resolved"
-        assert msg.protocol_version == "0.2"
+        assert msg.protocol_version == "0.3"
         assert msg.evidence_references == []
         assert msg.resolution_notes is None
 

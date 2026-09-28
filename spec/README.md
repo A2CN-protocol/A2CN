@@ -19,7 +19,7 @@ most common source of confusion, so they are named separately here.
 | Axis | Current | What it is | When it moves |
 |------|---------|------------|---------------|
 | **Release** | `0.3.0` | The published package and repository release (`pyproject.toml`, `package.json`, git tag). | Any shipped change, additive or not. See [CHANGELOG](../CHANGELOG.md). |
-| **Spec / wire protocol** | `0.2` | The on-the-wire contract: the `protocol_version` and `a2cn_version` fields, and the `$id` of every message schema. | Only on a **wire-incompatible** change. See [Status of This Document](a2cn-spec-v0.2.0.md#status-of-this-document). |
+| **Spec / wire protocol** | `0.3` | The on-the-wire contract: the `protocol_version` and `a2cn_version` fields, and the `$id` of every message schema. | Only on a **wire-incompatible** change. See [Status of This Document](a2cn-spec-v0.2.0.md#status-of-this-document). |
 | **`record_version`** | TransactionRecord `0.3` (a record whose `final_offer` carries the signed protocol act's fields), with `0.2` (a record that carries a basis and no act fields) and `0.1` (one that carries neither) still accepted<br>AuditLog `0.1`<br>SessionEvidenceRecord `0.3` (a record that carries `external_commitment_reference`) or `0.2` (every other record) | The version of each terminal artifact, carried inside its own hashed bytes. Each artifact has its **own** line. | Only when that artifact's shape or canonical meaning changes (Section 9A.1). A TransactionRecord's version follows its content (Section 9.3), and so does a SessionEvidenceRecord's (Section 9A.2). |
 
 A schema's `$id` version is the version of the **thing the schema describes** — the
@@ -29,8 +29,11 @@ coincidence: one versions a record artifact, the other the wire protocol. A reco
 artifact's unversioned schema file describes its `0.1` version, and each later
 version is published beside it as `<name>-<version>.schema.json`
 (`transaction-record-0.2.schema.json`, `transaction-record-0.3.schema.json`,
-`session-evidence-record-0.2.schema.json`, `session-evidence-record-0.3.schema.json`);
-a published schema file is never rewritten.
+`session-evidence-record-0.2.schema.json`, `session-evidence-record-0.3.schema.json`).
+A message schema follows the same rule on the wire version: its unversioned file
+describes the wire version it was first published at, and each later wire version
+is published beside it (`offer-0.3.schema.json` beside `offer.schema.json`, which
+describes `0.2`). A published schema file is never rewritten.
 
 Release `0.3.0` is additive and fully wire-compatible with `0.2`: a `0.2` peer and a
 `0.3.0` peer interoperate, and every signature, hash, and test vector produced under

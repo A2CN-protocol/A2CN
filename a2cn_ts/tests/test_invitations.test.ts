@@ -62,7 +62,7 @@ describe("InvitationCreation", () => {
   test("create invitation has correct fields", () => {
     const [, invitation] = makeStoreWithInvitation();
     expect(invitation.message_type).toBe("session_invitation");
-    expect(invitation.a2cn_version).toBe("0.2");
+    expect(invitation.a2cn_version).toBe("0.3");
     expect(invitation.proposed_deal_type).toBe("goods_procurement");
     expect(invitation.inviter_did).toBe("did:web:buyer.example");
     expect(invitation.accept_endpoint).toContain("accept");

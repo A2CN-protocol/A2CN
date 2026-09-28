@@ -17,12 +17,34 @@ determines every act position.
 
 It also records `release_0_3_0_record`, the SessionEvidenceRecord that release
 0.3.0 produced for its session with its producer key, at `record_version`
-`"0.1"`. Both suites assert that it verifies under the current verifier and that
-this implementation's record for the session, relabelled `"0.1"` and resealed,
-has the same `record_hash`; the Python suite also validates it against
+`"0.1"`. Its acts state no wire version, so they are rebuilt under the pinned
+`"0.2"` (Section 7.3.1). Both suites assert that it verifies under the current
+verifier and that this implementation's record for the session, with the wire
+version it now states on each of its acts removed, relabelled
+`"0.1"` and resealed, has the same `record_hash`; the Python suite also validates it against
 `session-evidence-record.schema.json`. `release_0_3_0_schema_sha256` is the
 sha256 of that schema file as release 0.3.0 published it, which both suites pin,
 because a published schema file is never rewritten (Section 17).
+
+`session-evidence-record-wire-version.json` covers the wire version a recorded
+act is rebuilt under (Section 7.3.1). Its `current` session was negotiated at
+`"0.3"`: both suites replay it through their own generator and must produce
+`expected` byte for byte, the sealed record included, with every act of the
+session's own log stating `protocol_version` `"0.3"`. `legacy_record` is a stored
+record, not regenerated: the generator released before acts stated their version
+sealed it for a session negotiated at `"0.2"`, so none of its acts states one,
+and it must still verify, because such an act is rebuilt under the pinned
+`"0.2"` rather than the version an implementation now emits. Each `edit_cases`
+entry sets or removes one act's `protocol_version` on the base record it names,
+recomputes that act's hash and the chain, reseals, and must reach
+`resealed_record_hash` and the stated verdict: an act stating a version its
+signature was not made under fails, and so does a `"0.3"` act stating none.
+`observed` is the same session timed out after the buyer's offer, with the
+seller's signed counteroffer supplied as an observed act that states no version:
+the generator records it with the session's negotiated version and it verifies
+as a signed observed act. Supplied already stating `"0.2"`, it keeps that version
+and the record fails verification, because a stated version is never
+overwritten.
 
 `session-params-basis.json` covers `session_params.basis` (Section 6.3.1): the
 two valid bases; values that must be rejected, including `unspecified` and

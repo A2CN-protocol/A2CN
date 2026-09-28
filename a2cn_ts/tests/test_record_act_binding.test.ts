@@ -196,11 +196,15 @@ test.each(CARRIED_FIELD_CASES)(
 test.each(Object.keys(VECTORS).sort())(
   "final_offer states the wire version the act was hashed under: %s",
   (vectorName) => {
-    // The offer message carries no protocol_version, so the record states it.
+    // The offer message carries no protocol_version, so the record states it. It
+    // states the session's negotiated version, the one the act was signed under,
+    // which for this vector's session is earlier than the one emitted now.
     const vector = VECTORS[vectorName];
 
     expect("protocol_version" in acceptedOffer(vector)).toBe(false);
-    expect((record(vector).final_offer as Dict).protocol_version).toBe(PROTOCOL_ACT_VERSION);
+    expect((record(vector).final_offer as Dict).protocol_version).toBe(
+      (vector.session_ack as Dict).protocol_version,
+    );
   },
 );
 
@@ -438,7 +442,7 @@ function locallySignedRecord(
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "act-init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: { ...sessionParams, subject: "Act binding" },
     initiator: {
       organization_name: "TechCorp",
@@ -454,7 +458,7 @@ function locallySignedRecord(
     message_id: "act-ack-1",
     session_id: sessionId,
     in_reply_to: "act-init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: sessionParams,
     responder: {
       organization_name: "Acme",
@@ -491,7 +495,7 @@ function locallySignedRecord(
   const terms = { total_value: 9_500_000, currency: "USD" };
   // What the state machine will rebuild: an omitted field defaults to "".
   const actHash = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -534,7 +538,7 @@ function locallySignedRecord(
   };
   // Signed over the act's own envelope (Section 7.3.1).
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     RESPONDER_VM,
   );

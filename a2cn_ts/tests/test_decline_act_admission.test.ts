@@ -31,6 +31,7 @@ import { expect, test } from "vitest";
 
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import {
+  PROTOCOL_ACT_VERSION,
   SIGNED_ACT_SIGNATURE_FIELDS,
   Withdrawal,
   signedActHash,
@@ -61,7 +62,7 @@ const RESPONDER_VM = `${RESPONDER_DID}#key-2026-01`;
 const SESSION_INIT: Dict = {
   message_type: "session_init",
   message_id: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -85,7 +86,7 @@ const SESSION_ACK: Dict = {
   message_id: "ack-msg-id",
   session_id: SESSION_FIXTURE.session_id,
   in_reply_to: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -111,7 +112,7 @@ function makeOffer(sessionId: string): Dict {
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const pah = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -236,7 +237,9 @@ function withdrawalFor(testCase: Dict, signed: boolean): Dict {
   // An act that does not rebuild has no hash to sign, so it is signed over a
   // stand-in payload, exactly as a sender that stripped or mangled the field
   // would have to.
-  const payloadHash = signedActHash(act) ?? "0".repeat(43);
+  const payloadHash = signedActHash(act, {
+    versionWhenAbsent: PROTOCOL_ACT_VERSION,
+  }) ?? "0".repeat(43);
   act.withdrawal_signature = signJws(payloadHash, RESPONDER_PRIVATE_KEY, vm);
   return act;
 }

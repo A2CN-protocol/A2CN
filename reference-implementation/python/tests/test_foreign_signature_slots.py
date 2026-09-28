@@ -22,7 +22,7 @@ import pytest
 
 from a2cn.crypto import public_key_to_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
-from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
 from a2cn.session import A2CNError
 from tests.conftest import make_did_document
 from tests.test_session import (
@@ -70,7 +70,9 @@ def _decline(session_id: str, act_type: str, signed: bool) -> dict:
     if signed:
         act["sender_verification_method"] = RESPONDER_VM
         act[SIGNED_ACT_SIGNATURE_FIELDS[act_type]] = sign_jws(
-            signed_act_hash(act), RESPONDER_PRIVATE_KEY, kid=RESPONDER_VM
+            signed_act_hash(
+                act, version_when_absent=PROTOCOL_ACT_VERSION
+            ), RESPONDER_PRIVATE_KEY, kid=RESPONDER_VM
         )
     return act
 

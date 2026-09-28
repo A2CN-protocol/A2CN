@@ -18,8 +18,8 @@ from jwt.exceptions import InvalidSignatureError
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
 from a2cn.did import get_public_key, get_verification_method
 from a2cn.messages import (
-    PROTOCOL_ACT_VERSION,
     _is_act_integer,
+    negotiated_protocol_version,
     protocol_act_object,
     rebuild_signed_act,
 )
@@ -119,6 +119,9 @@ def generate_transaction_record(session: Session) -> dict:
     initiator_info = session_init.get("initiator", {})
     responder_info = session_ack.get("responder", {})
 
+    # Both acts were signed under the session's negotiated wire version.
+    wire_version = negotiated_protocol_version(session_init, session_ack)
+
     # generated_at = timestamp of Acceptance message (NOT datetime.now())
     generated_at = final_acceptance.get("timestamp", "")
 
@@ -186,10 +189,11 @@ def generate_transaction_record(session: Session) -> dict:
         },
         # The accepted offer's signed act, in Section 7.3.1's order. An offer
         # message carries no protocol_version of its own, so the record states
-        # the wire version its signer hashed the act under.
+        # the wire version its signer hashed the act under: the session's
+        # negotiated version, which may be earlier than the one emitted now.
         "final_offer": {
             "message_id": final_offer.get("message_id", ""),
-            "protocol_version": PROTOCOL_ACT_VERSION,
+            "protocol_version": wire_version,
             "round_number": final_offer.get("round_number"),
             "sequence_number": final_offer.get("sequence_number"),
             "message_type": final_offer.get("message_type", ""),
@@ -205,7 +209,7 @@ def generate_transaction_record(session: Session) -> dict:
         # final_offer already does.
         "final_acceptance": {
             "message_id": final_acceptance.get("message_id", ""),
-            "protocol_version": PROTOCOL_ACT_VERSION,
+            "protocol_version": wire_version,
             "message_type": final_acceptance.get("message_type", ""),
             "sender_did": final_acceptance.get("sender_did", ""),
             "round_number": final_acceptance.get("round_number"),

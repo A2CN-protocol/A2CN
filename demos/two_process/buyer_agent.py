@@ -23,7 +23,7 @@ from demo_shared import (
 )
 from a2cn.client import A2CNClient
 
-app = FastAPI(title="A2CN Demo Buyer Agent", version="0.2")
+app = FastAPI(title="A2CN Demo Buyer Agent", version="0.3")
 
 
 @app.get("/demo/health")

@@ -43,6 +43,7 @@ from a2cn.evidence import generate_session_evidence_record
 from a2cn.invitation import InvitationStore
 from a2cn.fulfillment import build_fulfillment_attestation
 from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
     WebhookPayload,
     InvitationStatus,
     INVITATION_NOT_FOUND,
@@ -69,7 +70,7 @@ logger = logging.getLogger(__name__)
 
 A2CN_CONTENT_TYPE = "application/a2cn+json"
 
-app = FastAPI(title="A2CN Responder", version="0.2")
+app = FastAPI(title="A2CN Responder", version=PROTOCOL_ACT_VERSION)
 manager = SessionManager()
 invitation_store = InvitationStore()
 
@@ -355,7 +356,7 @@ async def get_discovery() -> Response:
     cfg = _responder_config
     agent_info = cfg.get("agent_info", {})
     return a2cn_response({
-        "a2cn_version": "0.2",
+        "a2cn_version": PROTOCOL_ACT_VERSION,
         "agent_did": agent_info.get("did", ""),
         "conformance_level": 2,
         "deal_types": cfg.get("deal_types", ["saas_renewal"]),
@@ -392,8 +393,11 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
     if body.get("message_type") != "session_init":
         return error_response("WRONG_MESSAGE_TYPE", "Expected message_type 'session_init'", 400, message_id=message_id)
 
-    if body.get("protocol_version") != "0.2":
-        return error_response("PROTOCOL_VERSION_MISMATCH", "Only protocol_version '0.2' is supported", 400, message_id=message_id)
+    # One wire version per live session (Section 12.1.7). A peer on an earlier
+    # one is refused here, on the version, rather than later on a signature
+    # it cannot produce; stored acts at an earlier version still verify.
+    if body.get("protocol_version") != PROTOCOL_ACT_VERSION:
+        return error_response("PROTOCOL_VERSION_MISMATCH", f"Only protocol_version {PROTOCOL_ACT_VERSION!r} is supported", 400, message_id=message_id)
 
     session_params = body.get("session_params", {})
     cfg = _responder_config
@@ -421,7 +425,7 @@ async def create_session(request: Request, _jwt: dict = Depends(verify_jwt_auth)
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
         "in_reply_to": message_id,
-        "protocol_version": "0.2",
+        "protocol_version": PROTOCOL_ACT_VERSION,
         "session_params_accepted": {
             "deal_type": session_params["deal_type"],
             "currency": session_params.get("currency"),  # create_session rejects a missing one
@@ -1009,7 +1013,7 @@ async def receive_invitation(request: Request) -> Response:
     """
     body = await _parse_body(request)
 
-    if body.get("a2cn_version") != "0.2":
+    if body.get("a2cn_version") != PROTOCOL_ACT_VERSION:
         return error_response(
             INVITATION_VERSION_MISMATCH,
             f"Unsupported a2cn_version: {body.get('a2cn_version')!r}",

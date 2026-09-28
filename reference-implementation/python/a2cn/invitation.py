@@ -12,6 +12,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone, timedelta
 
 from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
     SessionInvitation,
     InvitationAcceptance,
     InvitationDecline,
@@ -58,7 +59,7 @@ class InvitationStore:
         invitation = SessionInvitation(
             message_type="session_invitation",
             invitation_id=invitation_id,
-            a2cn_version="0.2",
+            a2cn_version=PROTOCOL_ACT_VERSION,
             inviter_did=inviter_did,
             inviter_endpoint=inviter_endpoint,
             inviter_discovery_url=inviter_discovery_url,

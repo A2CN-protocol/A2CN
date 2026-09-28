@@ -35,11 +35,74 @@ export function dropNone(d: Dict): Dict {
 // ---------------------------------------------------------------------------
 
 /**
- * The wire version the protocol act object states. It is the a2cn_version /
- * protocol_version of Section 6.3.1, and it is part of what the signature
- * covers, so a signer and a verifier must use the same value.
+ * The wire version this implementation emits and negotiates. It is the
+ * a2cn_version / protocol_version of Section 6.3.1, and it is the first field
+ * of every signed act object (Section 7.3.1), so a signer and a verifier must
+ * use the same value for a live act. A responder negotiates only this version
+ * for a live session (Section 12.1.7).
  */
-export const PROTOCOL_ACT_VERSION = "0.2";
+export const PROTOCOL_ACT_VERSION = "0.3";
+
+/**
+ * The wire version a recorded act that states no protocol_version is rebuilt
+ * under (Section 7.3.1). Acts were recorded without their version until records
+ * began stating it, and every such act was signed under "0.2". The value is
+ * pinned for that reason and never follows PROTOCOL_ACT_VERSION: tying it to
+ * the emit version would leave every earlier record unverifiable after each
+ * bump.
+ */
+export const LEGACY_VERSIONLESS_WIRE_VERSION = "0.2";
+
+/**
+ * The wire versions this implementation recognises. A session runs at one of
+ * them; "0.2" remains so that a session negotiated at it can still be replayed
+ * and its acts rebuilt.
+ */
+export const SUPPORTED_WIRE_VERSIONS: readonly string[] = [
+  LEGACY_VERSIONLESS_WIRE_VERSION,
+  PROTOCOL_ACT_VERSION,
+];
+
+/**
+ * The wire version a session was negotiated at (Section 12.1.7).
+ *
+ * The SessionInit proposes a version and the SessionAck must state the same
+ * one; the session runs at it, and every live act of the session is signed and
+ * verified under it. Throws an Error, naming the first fault, when either
+ * message states no version, a version this implementation does not recognise,
+ * or when the two disagree. Nothing is filled in from the other message or from
+ * this implementation's own version.
+ *
+ * A session with no SessionAck at all (null or undefined), whose responder holds
+ * no A2CN identity and so never answered (Section 9A.8), runs at the version its
+ * SessionInit proposed. An ack that is present is never passed over.
+ */
+export function negotiatedProtocolVersion(sessionInit: unknown, sessionAck: unknown): string {
+  const messages: [string, unknown][] = [["SessionInit", sessionInit]];
+  if (sessionAck !== null && sessionAck !== undefined) {
+    messages.push(["SessionAck", sessionAck]);
+  }
+  const versions: string[] = [];
+  for (const [label, message] of messages) {
+    const version = isJsonObject(message) ? message.protocol_version : undefined;
+    if (typeof version !== "string" || version === "") {
+      throw new Error(`${label} protocol_version must be a non-empty string`);
+    }
+    if (!SUPPORTED_WIRE_VERSIONS.includes(version)) {
+      throw new Error(`${label} protocol_version is not a supported wire version`);
+    }
+    versions.push(version);
+  }
+  if (versions.length === 2 && versions[0] !== versions[1]) {
+    throw new Error("SessionAck protocol_version does not match the SessionInit's");
+  }
+  return versions[0];
+}
+
+/** Which version stands in for an absent protocol_version; see rebuildSignedAct. */
+export interface RebuildOptions {
+  versionWhenAbsent?: string;
+}
 
 /**
  * The header every signed act carries, whatever its type, in the order Section
@@ -215,11 +278,14 @@ export function protocolActObject(act: {
  * does not name still rebuilds from the ones it does: a verifier must never
  * read a label and skip the binding check.
  *
- * protocol_version is the one covered field an act may omit. A wire message
- * does not carry one (Section 7.1) — the act states the wire version — so an
- * act without it is rebuilt under this implementation's version, and one that
- * carries it under its own, so an act produced under a later wire version still
- * recomputes.
+ * protocol_version is the one covered field an act may omit, and which version
+ * stands in for it depends on where the act comes from (Section 7.3.1). An act
+ * that states one is always rebuilt under the version it states. A live act
+ * received in a session states none, and its caller passes the session's
+ * negotiated version. A recorded act that states none was recorded before
+ * records stated their acts' versions, and is rebuilt under the pinned
+ * LEGACY_VERSIONLESS_WIRE_VERSION, the default — never under the version this
+ * implementation currently emits.
  *
  * Values are constrained only so far as the act can be canonicalized from them.
  * An empty string is rebuilt as it stands, because the hash comparison, not a
@@ -227,7 +293,10 @@ export function protocolActObject(act: {
  * empty timestamp or expires_at (Section 9.5), and demanding more here would
  * refuse an act whose signature covers exactly those bytes.
  */
-export function rebuildSignedAct(act: unknown): Dict | null {
+export function rebuildSignedAct(
+  act: unknown,
+  { versionWhenAbsent = LEGACY_VERSIONLESS_WIRE_VERSION }: RebuildOptions = {},
+): Dict | null {
   if (!isJsonObject(act)) {
     return null;
   }
@@ -247,7 +316,7 @@ export function rebuildSignedAct(act: unknown): Dict | null {
   const rebuilt: Dict = {};
   for (const name of [...SIGNED_ACT_HEADER_FIELDS, ...payloadFields]) {
     if (name === "protocol_version" && !hasOwnField(act, name)) {
-      rebuilt[name] = PROTOCOL_ACT_VERSION;
+      rebuilt[name] = versionWhenAbsent;
       continue;
     }
     if (!hasOwnField(act, name)) {
@@ -274,9 +343,14 @@ export function rebuildSignedAct(act: unknown): Dict | null {
   return rebuilt;
 }
 
-/** The hash an act's signature must be over, or null if it cannot be rebuilt. */
-export function signedActHash(act: unknown): string | null {
-  const rebuilt = rebuildSignedAct(act);
+/**
+ * The hash an act's signature must be over, or null if it cannot be rebuilt.
+ *
+ * versionWhenAbsent is as for rebuildSignedAct: a live act's caller passes the
+ * session's negotiated version, and a recorded act takes the default.
+ */
+export function signedActHash(act: unknown, options: RebuildOptions = {}): string | null {
+  const rebuilt = rebuildSignedAct(act, options);
   return rebuilt === null ? null : hashObject(rebuilt);
 }
 
@@ -485,7 +559,7 @@ function hasToDict(value: unknown): value is { toDict(): Dict } {
 export class SessionInit {
   message_type: string; // "session_init"
   message_id: string;
-  protocol_version: string; // "0.2"
+  protocol_version: string; // PROTOCOL_ACT_VERSION
   session_params: SessionParams;
   initiator: AgentInfo;
   initiator_mandate: DeclaredMandate | Dict;
@@ -530,7 +604,7 @@ export class SessionAck {
   message_id: string;
   session_id: string;
   in_reply_to: string;
-  protocol_version: string; // "0.2"
+  protocol_version: string; // PROTOCOL_ACT_VERSION
   session_params_accepted: Dict;
   responder: AgentInfo;
   responder_mandate: DeclaredMandate | Dict;
@@ -928,7 +1002,7 @@ export type InvitationStatusValue = (typeof InvitationStatus)[keyof typeof Invit
 export class SessionInvitation {
   message_type: string; // always "session_invitation"
   invitation_id: string; // UUID v4
-  a2cn_version: string; // "0.2"
+  a2cn_version: string; // PROTOCOL_ACT_VERSION
   inviter_did: string;
   inviter_endpoint: string; // HTTPS URL of inviter's A2CN endpoint
   inviter_discovery_url: string;
@@ -1101,7 +1175,7 @@ export class WebhookPayload {
     this.occurred_at = props.occurred_at;
     this.session_state = props.session_state;
     this.terminal = props.terminal;
-    this.a2cn_version = props.a2cn_version ?? "0.2";
+    this.a2cn_version = props.a2cn_version ?? PROTOCOL_ACT_VERSION;
     this.record_hash = props.record_hash ?? "";
   }
 
@@ -1170,7 +1244,7 @@ export class DeliveryNoticeMessage {
     this.delivery_timestamp = props.delivery_timestamp;
     this.delivery_reference = props.delivery_reference ?? null;
     this.notes = props.notes ?? null;
-    this.protocol_version = props.protocol_version ?? "0.2";
+    this.protocol_version = props.protocol_version ?? PROTOCOL_ACT_VERSION;
     this.message_type = props.message_type ?? "delivery_notice";
   }
 
@@ -1224,7 +1298,7 @@ export class DeliveryAcknowledgedMessage {
     this.acknowledgment_timestamp = props.acknowledgment_timestamp;
     this.accepted = props.accepted;
     this.notes = props.notes ?? null;
-    this.protocol_version = props.protocol_version ?? "0.2";
+    this.protocol_version = props.protocol_version ?? PROTOCOL_ACT_VERSION;
     this.message_type = props.message_type ?? "delivery_acknowledged";
   }
 
@@ -1288,7 +1362,7 @@ export class DisputeNoticeMessage {
     this.evidence_references = props.evidence_references ?? [];
     this.resolution_requested = props.resolution_requested ?? null;
     this.dispute_timestamp = props.dispute_timestamp ?? nowIsoSeconds();
-    this.protocol_version = props.protocol_version ?? "0.2";
+    this.protocol_version = props.protocol_version ?? PROTOCOL_ACT_VERSION;
     this.message_type = props.message_type ?? "dispute_notice";
   }
 
@@ -1361,7 +1435,7 @@ export class DisputeResolvedMessage {
     this.resolution_timestamp = props.resolution_timestamp ?? nowIsoSeconds();
     this.resolution_notes = props.resolution_notes ?? null;
     this.evidence_references = props.evidence_references ?? [];
-    this.protocol_version = props.protocol_version ?? "0.2";
+    this.protocol_version = props.protocol_version ?? PROTOCOL_ACT_VERSION;
     this.message_type = props.message_type ?? "dispute_resolved";
   }
 

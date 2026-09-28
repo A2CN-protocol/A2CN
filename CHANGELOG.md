@@ -10,7 +10,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 | Axis | Current |
 |------|---------|
 | Release | `0.3.0` |
-| Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.2` |
+| Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
 | `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.4` for every record, with `0.1`, `0.2` and `0.3` still accepted |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
@@ -54,6 +54,34 @@ It is part of the header every signed act covers, and without it a Withdrawal
 could not be rebuilt and verified like every other act. A receiver that predates
 the field ignores it. A Withdrawal without `round_number` is now refused, so a
 sender that predates the field must add it, carrying `1` before any offer.
+
+**The wire protocol version moves from `"0.2"` to `"0.3"`.** The acceptance's
+signed scope changed and the declines became signable, so a `"0.2"` peer cannot
+verify a `"0.3"` act; a responder now refuses a `"0.2"` SessionInit with
+`PROTOCOL_VERSION_MISMATCH` rather than failing later on a signature. Every
+message that states a version — SessionInit and SessionAck, invitations,
+discovery, webhooks and the post-commitment messages — states `"0.3"`. Each
+message schema already published for `"0.2"` is unchanged, and its `"0.3"`
+schema is published beside it as `<name>-0.3.schema.json`; the acceptance,
+rejection and withdrawal schemas are first published at `"0.3"`.
+
+**Recorded acts now state the wire version they were signed under, and a
+version-less recorded act is rebuilt under `"0.2"` (Section 7.3.1).** A live act
+is rebuilt under its session's negotiated version, and a live act that states
+another version is refused. A SessionEvidenceRecord now writes the session's
+negotiated `protocol_version` into every act it records, its own and observed
+acts alike, as a TransactionRecord already did for its two acts, so a record
+verifies under any later wire version. An observed act that already states a
+version keeps it; a signed act whose stated version is not the one it was signed
+under fails verification. A SessionAck must now state the SessionInit's version:
+an initiator refuses one that states another, or none, with
+`PROTOCOL_VERSION_MISMATCH`.
+A recorded act that states no version — every act in a record produced before
+this change — is rebuilt under the pinned `"0.2"`, not under the verifier's
+current version, so every stored record still verifies exactly as before. The
+TransactionRecord now states the session's negotiated version rather than the
+version the producer emits; the two are equal for any session this release
+negotiates.
 
 **The SessionEvidenceRecord moves to `record_version` `"0.4"`, emitted
 universally, and its accepted set is ADDITIVE — no stored record is invalidated.**

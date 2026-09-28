@@ -37,7 +37,7 @@ BASE_URL = "https://acme-corp.com"
 SESSION_ID = "test-session-00000000-0000-0000-0000"
 
 DISCOVERY_DOC = {
-    "a2cn_version": "0.2",
+    "a2cn_version": "0.3",
     "agent_did": COUNTERPARTY_DID,
     "conformance_level": 2,
     "deal_types": ["saas_renewal"],
@@ -52,7 +52,7 @@ SESSION_ACK = {
     "message_id": str(uuid.uuid4()),
     "session_id": SESSION_ID,
     "in_reply_to": "init-001",
-    "protocol_version": "0.2",
+    "protocol_version": "0.3",
     "session_params_accepted": {
         "deal_type": "saas_renewal",
         "currency": "USD",
@@ -139,7 +139,7 @@ def _seed_session(
     )
     # Bootstrap the client's internal session state
     client._sessions[session_id] = {
-        "session_init": {},
+        "session_init": {"protocol_version": SESSION_ACK["protocol_version"]},
         "session_ack": SESSION_ACK,
         "sequence_number": 1,
         "round_number": 1,
@@ -200,7 +200,7 @@ async def test_discover_a2cn_capable():
         result = await mcp_server.a2cn_discover(COUNTERPARTY_DID)
 
     assert result["a2cn_capable"] is True
-    assert result["a2cn_version"] == "0.2"
+    assert result["a2cn_version"] == "0.3"
     assert result["conformance_level"] == 2
     assert "saas_renewal" in result["deal_types"]
     assert result["agent_did"] == COUNTERPARTY_DID

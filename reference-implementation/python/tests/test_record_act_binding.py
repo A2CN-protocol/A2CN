@@ -182,11 +182,18 @@ def test_final_offer_carries_the_accepted_offers_act_field(vector_name, field_na
 
 @pytest.mark.parametrize("vector_name", sorted(VECTORS))
 def test_final_offer_states_the_wire_version_the_act_was_hashed_under(vector_name):
-    """The offer message carries no protocol_version, so the record states it."""
+    """The offer message carries no protocol_version, so the record states it.
+
+    It states the session's negotiated version, the one the act was signed
+    under, which for this vector's session is earlier than the one emitted now.
+    """
     vector = VECTORS[vector_name]
 
     assert "protocol_version" not in _accepted_offer(vector)
-    assert _record(vector)["final_offer"]["protocol_version"] == PROTOCOL_ACT_VERSION
+    assert (
+        _record(vector)["final_offer"]["protocol_version"]
+        == vector["session_ack"]["protocol_version"]
+    )
 
 
 @pytest.mark.parametrize("vector_name", sorted(VECTORS))
@@ -417,7 +424,7 @@ def _locally_signed_record(
     session_init = {
         "message_type": "session_init",
         "message_id": "act-init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {**session_params, "subject": "Act binding"},
         "initiator": {
             "organization_name": "TechCorp",
@@ -433,7 +440,7 @@ def _locally_signed_record(
         "message_id": "act-ack-1",
         "session_id": session_id,
         "in_reply_to": "act-init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": session_params,
         "responder": {
             "organization_name": "Acme",
@@ -466,7 +473,7 @@ def _locally_signed_record(
     terms = {"total_value": 9_500_000, "currency": "USD"}
     # What the state machine will rebuild: an omitted field defaults to "".
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -514,7 +521,9 @@ def _locally_signed_record(
     }
     # Signed over the act's own envelope (Section 7.3.1).
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance), _RESPONDER_PRIVATE_KEY, kid=_RESPONDER_VM
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), _RESPONDER_PRIVATE_KEY, kid=_RESPONDER_VM
     )
     manager.process_message(session, acceptance)
     assert session.state == SessionState.COMPLETED

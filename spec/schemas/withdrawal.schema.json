@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://a2cn.dev/schemas/withdrawal/0.2",
+  "$id": "https://a2cn.dev/schemas/withdrawal/0.3",
   "title": "A2CN Withdrawal",
   "description": "The Section 7.6 act that terminates a session immediately with state WITHDRAWN. Either party may withdraw regardless of turn ownership. Signing is OPTIONAL — an unsigned Withdrawal is conformant and is attributed as an unsigned observation — but verifying is not: once withdrawal_signature is present it MUST be checked against the Section 7.3.1 signed act object, whose payload for a withdrawal is reason_code. round_number is REQUIRED because it is part of the common header every signed act covers; a Withdrawal that omits it cannot be signed. in_reply_to and reason_description are outside the signed scope because both are OPTIONAL, and a signed act's field set does not vary with what the sender chose to fill in. The message object stays open so vendor fields pass through.",
   "type": "object",
@@ -41,7 +41,7 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "protocol_version": {
       "type": "string",
-      "description": "Not carried on the wire by this implementation. A verifier rebuilding the signed act uses its own wire version unless the act states one (Section 7.3.1)."
+      "description": "Not carried on the wire. A live act is rebuilt under its session's negotiated wire version, and a receiver refuses one that states another. A recorded act states the version it was signed under and is rebuilt under it; a recorded act that states none is rebuilt under \"0.2\", never under a verifier's own wire version (Section 7.3.1)."
     },
     "reason_code": {
       "type": "string",

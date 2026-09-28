@@ -12,8 +12,20 @@ import { randomUUID, type KeyObject } from "node:crypto";
 
 import { hashObject, signJws } from "./crypto.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
-import { A2CNError, SessionState, checkFixedMoneyParams, checkOfferMoneyParams } from "./session.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, signedActHash, type Dict } from "./messages.js";
+import {
+  A2CNError,
+  SessionState,
+  checkFixedMoneyParams,
+  checkOfferMoneyParams,
+  checkSessionVersions,
+} from "./session.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  negotiatedProtocolVersion,
+  protocolActObject,
+  signedActHash,
+  type Dict,
+} from "./messages.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
 
@@ -118,7 +130,7 @@ export class A2CNClient {
     const sessionInit: Dict = {
       message_type: "session_init",
       message_id: messageId,
-      protocol_version: "0.2",
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_params: sessionParams,
       initiator: this.agentInfo,
       initiator_mandate: this.mandate,
@@ -140,7 +152,9 @@ export class A2CNClient {
       throw new A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400);
     }
 
-    // The responder must echo currency, and any basis it carries, unchanged (Section 6.4.1)
+    // The responder must state the version this client proposed (Section 12.1.7),
+    // and echo currency, and any basis it carries, unchanged (Section 6.4.1)
+    checkSessionVersions(sessionInit, ack);
     checkFixedMoneyParams(sessionParams, ack.session_params_accepted);
 
     // Cache session state
@@ -188,7 +202,7 @@ export class A2CNClient {
 
     // Build protocol act object (Section 7.3.1)
     const protocolAct = protocolActObject({
-      protocol_version: PROTOCOL_ACT_VERSION,
+      protocol_version: negotiatedProtocolVersion(state.session_init, state.session_ack),
       session_id: sessionId,
       round_number: roundNumber,
       sequence_number: sequenceNumber,
@@ -292,7 +306,9 @@ export class A2CNClient {
     // The act is built first so that what is signed is rebuilt from the very
     // message that goes on the wire.
     acceptance.acceptance_signature = signJws(
-      signedActHash(acceptance) as string,
+      signedActHash(acceptance, {
+        versionWhenAbsent: negotiatedProtocolVersion(state.session_init, state.session_ack),
+      }) as string,
       this.privateKey,
       this.agentInfo.verification_method as string,
     );

@@ -261,7 +261,7 @@ async function main(dealType = "saas_renewal", impasseThreshold = 3): Promise<vo
     const exp = nowFixed(900);
     const msgId = randomUUID();
     const act = {
-      protocol_version: "0.2",
+      protocol_version: "0.3",
       session_id: sessId,
       round_number: rnd,
       sequence_number: seq,

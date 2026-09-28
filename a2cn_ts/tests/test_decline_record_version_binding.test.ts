@@ -43,7 +43,12 @@ import {
   generateSessionEvidenceRecord,
   verifySessionEvidenceRecord,
 } from "../src/a2cn/evidence.js";
-import { SIGNED_ACT_SIGNATURE_FIELDS, signedActHash, type Dict } from "../src/a2cn/messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  signedActHash,
+  type Dict,
+} from "../src/a2cn/messages.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
@@ -65,7 +70,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -88,7 +93,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -153,7 +158,7 @@ function sign(
   const signed = structuredClone(act);
   signed.sender_verification_method = verificationMethod;
   signed[SIGNED_ACT_SIGNATURE_FIELDS[act.message_type as string]] = signJws(
-    signedActHash(signed) as string,
+    signedActHash(signed, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     privateKey,
     verificationMethod,
   );
@@ -191,7 +196,9 @@ function makeOffer(sessionId: string): Dict {
     expires_at: "2026-03-25T10:01:00Z",
     terms: { total_value: 9_500_000, currency: "USD" },
   };
-  offer.protocol_act_hash = signedActHash(offer) as string;
+  offer.protocol_act_hash = signedActHash(offer, {
+    versionWhenAbsent: PROTOCOL_ACT_VERSION,
+  }) as string;
   offer[SIGNED_ACT_SIGNATURE_FIELDS.offer] = signJws(
     offer.protocol_act_hash as string,
     INITIATOR_PRIVATE_KEY,

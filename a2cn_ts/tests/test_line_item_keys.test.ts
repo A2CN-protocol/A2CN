@@ -33,7 +33,7 @@ import {
   toMinorUnits,
 } from "../src/a2cn/line_items.js";
 import { A2CNError, checkOfferMoneyParams } from "../src/a2cn/session.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, type Dict } from "../src/a2cn/messages.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -41,7 +41,7 @@ function readJson(...parts: string[]): Dict {
   return JSON.parse(readFileSync(join(REPO_ROOT, ...parts), "utf-8")) as Dict;
 }
 
-const SCHEMA = readJson("spec", "schemas", "offer.schema.json");
+const SCHEMA = readJson("spec", "schemas", "offer-0.3.schema.json");
 const VECTOR = readJson("spec", "test-vectors", "offer-line-item-keys.json");
 const OFFER = VECTOR.offer as Dict;
 const SESSION_PARAMS: Dict = { currency: "USD" };
@@ -92,7 +92,7 @@ describe("the published offer schema", () => {
   test("is published at the wire version", () => {
     // An offer is a wire message, so its schema's $id carries the wire version.
     expect(SCHEMA.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
-    expect(SCHEMA.$id).toBe("https://a2cn.dev/schemas/offer/0.2");
+    expect(SCHEMA.$id).toBe(`https://a2cn.dev/schemas/offer/${PROTOCOL_ACT_VERSION}`);
   });
 
   test("requires both pinned keys on a line item and refuses neither bare name by accident", () => {

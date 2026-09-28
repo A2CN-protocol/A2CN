@@ -38,7 +38,12 @@ import a2cn.evidence as evidence_module
 import a2cn.record as record_module
 from a2cn.crypto import sign_jws
 from a2cn.evidence import assess_session_evidence_record
-from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, _is_act_integer, signed_act_hash
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    SIGNED_ACT_SIGNATURE_FIELDS,
+    _is_act_integer,
+    signed_act_hash,
+)
 from tests.test_evidence import (
     RESPONDER_PRIVATE_KEY,
     RESPONDER_VM,
@@ -71,7 +76,9 @@ def _spelled(spelling: dict, session_id: str) -> dict:
 def _signed(act: dict) -> dict:
     act = copy.deepcopy(act)
     act["sender_verification_method"] = RESPONDER_VM
-    payload_hash = signed_act_hash(act) or UNREBUILDABLE_STAND_IN
+    payload_hash = signed_act_hash(
+        act, version_when_absent=PROTOCOL_ACT_VERSION
+    ) or UNREBUILDABLE_STAND_IN
     act[SIGNED_ACT_SIGNATURE_FIELDS["rejection"]] = sign_jws(
         payload_hash, RESPONDER_PRIVATE_KEY, kid=RESPONDER_VM
     )

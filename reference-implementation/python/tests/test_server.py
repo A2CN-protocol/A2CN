@@ -42,7 +42,7 @@ async def test_discovery_document(test_client):
     r = await test_client.get("/.well-known/a2cn-agent")
     assert r.status_code == 200
     doc = r.json()
-    assert doc["a2cn_version"] == "0.2"
+    assert doc["a2cn_version"] == "0.3"
     assert "saas_renewal" in doc["deal_types"]
     assert doc["conformance_level"] == 2
     assert doc["agent_did"] == RESPONDER_DID
@@ -150,7 +150,7 @@ async def test_receive_invitation_does_not_require_bearer_token(raw_test_client)
     invitation = {
         "message_type": "session_invitation",
         "invitation_id": str(uuid.uuid4()),
-        "a2cn_version": "0.2",
+        "a2cn_version": "0.3",
         "inviter_did": inviter_did,
         "inviter_endpoint": "https://buyer.example/a2cn",
         "inviter_discovery_url": "https://buyer.example/.well-known/a2cn-agent",
@@ -250,7 +250,7 @@ async def test_deliver_webhook_uses_did_key_jws_signature():
         "occurred_at": "2026-05-20T05:00:00Z",
         "session_state": "COMPLETED",
         "terminal": True,
-        "a2cn_version": "0.2",
+        "a2cn_version": "0.3",
     }
 
     await deliver_webhook(
@@ -297,7 +297,7 @@ def _make_offer_msg(session_id, seq, rnd, sender_did, private_key, msg_type="off
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,

@@ -25,7 +25,12 @@ import {
   generateSessionEvidenceRecord,
   verifySessionEvidenceRecord,
 } from "../src/a2cn/evidence.js";
-import { SIGNED_ACT_SIGNATURE_FIELDS, signedActHash, type Dict } from "../src/a2cn/messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  signedActHash,
+  type Dict,
+} from "../src/a2cn/messages.js";
 import { A2CNError, Session, SessionManager } from "../src/a2cn/session.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
@@ -54,7 +59,7 @@ const DID_DOCUMENTS: Record<string, Dict> = {
 const SESSION_INIT: Dict = {
   message_type: "session_init",
   message_id: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -78,7 +83,7 @@ const SESSION_ACK: Dict = {
   message_id: "ack-msg-id",
   session_id: SESSION_FIXTURE.session_id,
   in_reply_to: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -120,7 +125,7 @@ function makeOffer(sessionId: string, seq: number, rnd: number, senderDid: strin
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const pah = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,
@@ -167,7 +172,7 @@ function makeAcceptance(sess: Session, offer: Dict): Dict {
     timestamp: "2026-03-24T10:05:00Z",
   };
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     RESPONDER_VM,
   );
@@ -194,7 +199,7 @@ function makeDecline(sessionId: string, actType: string, signed: boolean): Dict 
   if (signed) {
     act.sender_verification_method = RESPONDER_VM;
     act[SIGNED_ACT_SIGNATURE_FIELDS[actType]] = signJws(
-      signedActHash(act) as string,
+      signedActHash(act, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
       RESPONDER_PRIVATE_KEY,
       RESPONDER_VM,
     );

@@ -36,7 +36,7 @@ is the most common source of confusion, so they are stated separately here.
 1. **Release version** — currently `0.3.0`. Covers the published packages and the
    repository as a whole. It moves for any shipped change, additive or not. See
    `CHANGELOG.md`.
-2. **Wire protocol version** — currently `"0.2"`. This is the value of the
+2. **Wire protocol version** — currently `"0.3"`. This is the value of the
    `protocol_version` and `a2cn_version` fields, and the version in the `$id` of
    every message schema. It moves **only** on a wire-incompatible protocol change,
    never for an editorial revision and never for an additive release. Because
@@ -1052,7 +1052,7 @@ Authorization: Bearer {signed_jwt}
 
 ### 7.1 Offer Object
 
-Schema: `spec/schemas/offer.schema.json`
+Schema: `spec/schemas/offer-0.3.schema.json`
 
 ```json
 {
@@ -1179,7 +1179,7 @@ Each item:
   "total_minor": "integer"
 }
 ```
-Schema: `spec/schemas/offer.schema.json`
+Schema: `spec/schemas/offer-0.3.schema.json`
 
 **`unit_price_minor`** and **`total_minor`** (integer, both REQUIRED on every
 line item) state that line's money in **integer minor units** of
@@ -1239,7 +1239,7 @@ a price, accepted and signed, is not.
 
 A line item otherwise stays open. A deal type extends it — `goods_procurement`
 adds `manufacturer_part_number`, `internal_part_number`, and `unit_of_measure`
-(`spec/schemas/terms/goods_procurement.schema.json`) — and a platform adapter
+(`spec/schemas/terms/goods_procurement-0.3.schema.json`) — and a platform adapter
 may carry its own identifiers alongside. Only the two bare money spellings are
 closed out.
 
@@ -1326,7 +1326,7 @@ The **common header** is seven fields, in this order:
 
 ```json
 {
-  "protocol_version": "0.2",
+  "protocol_version": "0.3",
   "session_id": "string",
   "round_number": "integer",
   "sequence_number": "integer",
@@ -1365,10 +1365,23 @@ MUST reject one that does, whatever that field's value.
 like the rest of the terms; the signed act object is unchanged.
 
 `protocol_version` states the wire version the act was hashed under. Wire
-messages do not carry it as a field (Section 7.1), so a verifier rebuilding an
-act from a message uses its own wire version; an act that does carry one is
-rebuilt under the version it states, so an act produced under a later wire
-version still recomputes.
+messages do not carry it as a field (Section 7.1), so the version a verifier
+rebuilds an act under depends on where it reads the act:
+
+- A **live** act, received during a session, is rebuilt under the session's
+  negotiated wire version (Section 12.1.7), never under a version the receiver
+  merely supports. A receiver MUST reject a live act that states a
+  `protocol_version` other than the negotiated one with
+  `PROTOCOL_VERSION_MISMATCH`.
+- A **recorded** act that carries `protocol_version` is rebuilt under the
+  version it states. A TransactionRecord states it for both of its acts (Section
+  9.3), and a SessionEvidenceRecord for every act it records (Section 9A.3), so
+  a record verifies under any later wire version.
+- A **recorded** act that carries no `protocol_version` was recorded before
+  records stated their acts' versions, and every such act was signed under
+  `"0.2"`. It is rebuilt under `"0.2"`. A verifier MUST NOT rebuild it under its
+  own current wire version: that value moves with each wire change, and every
+  such record would stop verifying when it did.
 
 #### 7.3.1.1 Verification Is by Rebuild, and Is Mandatory
 
@@ -1458,7 +1471,7 @@ JCS-canonicalized signed act object of Section 7.3.1. An acceptance's payload is
 `accepted_offer_id` and `accepted_protocol_act_hash`, so the signed object is:
 ```json
 {
-  "protocol_version": "0.2",
+  "protocol_version": "0.3",
   "session_id": "...",
   "round_number": 2,
   "sequence_number": 3,
@@ -1534,7 +1547,7 @@ hash of the JCS-canonicalized signed act object of Section 7.3.1. A rejection's
 payload is `rejected_offer_id` and `reason_code`, so the signed object is:
 ```json
 {
-  "protocol_version": "0.2",
+  "protocol_version": "0.3",
   "session_id": "...",
   "round_number": 3,
   "sequence_number": 5,
@@ -1637,7 +1650,7 @@ hash of the JCS-canonicalized signed act object of Section 7.3.1. A withdrawal's
 payload is `reason_code`, so the signed object is:
 ```json
 {
-  "protocol_version": "0.2",
+  "protocol_version": "0.3",
   "session_id": "...",
   "round_number": 3,
   "sequence_number": 6,
@@ -2457,6 +2470,19 @@ contains an envelope field also present on the evidence entry, including
 MAY identify `a2cn`, another protocol, or be `null`; it does not change signature
 semantics.
 
+Every recorded act MUST carry `protocol_version` in `act`: the session's
+negotiated wire version (Section 12.1.7), which a wire message does not carry
+(Section 7.3.1). This holds for the Session's own acts and for observed acts
+alike. The producer adds it when recording the act, so it is covered by
+`act_hash` like the rest of the act. For a signed act the value validates
+itself: a version other than the one the act was signed under fails its
+signature, so writing it gives the producer no power to forge. For an unsigned
+observation it is framing metadata, and the act remains an unsigned
+observation. An act that already states a `protocol_version` keeps the value it
+states. A recorded act that carries none, as does every act in a record
+produced before recorded acts stated their version, is rebuilt under `"0.2"`
+(Section 7.3.1).
+
 Entry-level `sender_did` MAY be `null`, and only when `attribution` is
 `"unsigned_observation"`. It records that the producer observed an act whose
 sender holds no DID. A producer MUST NOT fabricate a DID to fill it, and an act
@@ -2848,7 +2874,7 @@ The outcome is GENERAL to either party. A seller's credit or inventory controls
 halt a run for the same reason a buyer's spend controls do.
 
 `HALTED_BY_CONTROLS` is an evidence-record outcome, not a session state: no wire
-message or state transition is added, and `protocol_version` remains `0.2`. A
+message or state transition is added, and the wire version is unchanged. A
 producer MUST NOT relabel a `COMPLETED` session as halted, since that would
 erase an agreement and drop its required completion witness (Section 9A.2).
 Verification adds nothing beyond enum membership: the outcome is a producer
@@ -3236,7 +3262,7 @@ Normative fields:
 | `notes` | Optional human-readable delivery notes |
 
 The corresponding JSON Schema is
-`spec/schemas/delivery_notice.schema.json`.
+`spec/schemas/delivery_notice-0.3.schema.json`.
 
 #### 10.6.2 delivery_acknowledged
 
@@ -3259,7 +3285,7 @@ Normative fields:
 An implementation MUST reject `delivery_acknowledged` if the referenced
 `delivery_notice_message_id` does not match a recorded `delivery_notice` for the
 same session. The corresponding JSON Schema is
-`spec/schemas/delivery_acknowledged.schema.json`.
+`spec/schemas/delivery_acknowledged-0.3.schema.json`.
 
 #### 10.6.3 dispute_notice
 
@@ -3284,7 +3310,7 @@ Normative fields:
 
 Recording a valid `dispute_notice` moves the post-commitment lifecycle to
 `DISPUTED`. The corresponding JSON Schema is
-`spec/schemas/dispute_notice.schema.json`.
+`spec/schemas/dispute_notice-0.3.schema.json`.
 
 #### 10.6.4 dispute_resolved
 
@@ -3311,7 +3337,7 @@ An implementation MUST reject `dispute_resolved` unless the session has an open
 `dispute_notice` and the `dispute_notice_message_id` matches the recorded
 dispute notice for the same session. It MUST reject any `resolution_outcome`
 outside the enum above. The corresponding JSON Schema is
-`spec/schemas/dispute_resolved.schema.json`.
+`spec/schemas/dispute_resolved-0.3.schema.json`.
 
 #### 10.6.5 Concordia Composition
 
@@ -3389,7 +3415,7 @@ so the recipient can verify its authenticity.
 {
   "message_type": "session_invitation",
   "invitation_id": "uuid-v4",
-  "a2cn_version": "0.2",
+  "a2cn_version": "0.3",
   "inviter_did": "did:web:buyer.example",
   "inviter_endpoint": "https://buyer.example/api/a2cn",
   "inviter_discovery_url": "https://buyer.example/.well-known/a2cn-agent",
@@ -3734,6 +3760,12 @@ The `protocol_version` field in SessionInit declares the initiator's version.
 If the responder does not support the declared version, it MUST reject with
 `PROTOCOL_VERSION_MISMATCH`. The responder MUST NOT silently accept and process
 an unsupported version.
+
+A SessionAck MUST state the same `protocol_version` as the SessionInit it
+answers, and the session runs at that version (Section 7.3.1). An initiator MUST
+reject a SessionAck that states another version, or none, with
+`PROTOCOL_VERSION_MISMATCH`, and MUST NOT sign any act of the session under a
+version it did not propose.
 
 Backward compatibility expectations: minor versions within 0.x are not guaranteed
 compatible. v1.0 and beyond will define compatibility guarantees.
@@ -4666,7 +4698,7 @@ Fairmarkit `BID_CREATED` webhook path above.
 
 ```json
 {
-  "a2cn_version": "0.2",
+  "a2cn_version": "0.3",
   "agent_did": "did:web:supplier.example",
   "conformance_level": 2,
   "deal_types": ["goods_procurement"],
@@ -4903,7 +4935,8 @@ schemas. The following schema files are defined:
 | `session-init.schema.json` | SessionInit |
 | `session-ack.schema.json` | SessionAck |
 | `session-reject.schema.json` | SessionReject |
-| `offer.schema.json` | Offer and Counteroffer |
+| `offer.schema.json` | Offer and Counteroffer, wire version `"0.2"` |
+| `offer-0.3.schema.json` | Offer and Counteroffer, wire version `"0.3"` |
 | `acceptance.schema.json` | Acceptance |
 | `rejection.schema.json` | Rejection |
 | `withdrawal.schema.json` | Withdrawal |
@@ -4922,6 +4955,19 @@ schemas. The following schema files are defined:
 | `audit-log.schema.json` | Audit log |
 | `session-object.schema.json` | Session state object |
 | `error.schema.json` | Error response |
+
+A message schema's unversioned file describes the wire version it was first
+published at, and each later wire version is published beside it as
+`<name>-<version>.schema.json`: `offer-0.3.schema.json`,
+`session-invitation-0.3.schema.json`, `delivery_notice-0.3.schema.json`,
+`delivery_acknowledged-0.3.schema.json`, `dispute_notice-0.3.schema.json`,
+`dispute_resolved-0.3.schema.json`, `invitation-acceptance-0.3.schema.json`,
+`invitation-decline-0.3.schema.json`, `terms/saas_renewal-0.3.schema.json` and
+`terms/goods_procurement-0.3.schema.json` beside the `"0.2"` files.
+`acceptance.schema.json`, `rejection.schema.json` and `withdrawal.schema.json`
+were first published at `"0.3"`. A message schema's `$id` ends in the wire
+version it describes, and, as for a record schema, a published file is never
+rewritten.
 
 A record artifact's unversioned schema file describes its `"0.1"` version. Each
 later version is published beside it as `<name>-<version>.schema.json`, and a

@@ -22,7 +22,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-import { hashObject, privateKeyFromJwk, signJws } from "../src/a2cn/crypto.js";
+import {
+  canonicalize,
+  hashBytes,
+  hashObject,
+  privateKeyFromJwk,
+  signJws,
+} from "../src/a2cn/crypto.js";
 import {
   RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS,
   SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
@@ -446,6 +452,27 @@ function resealedEvidenceRecord(record: Dict, version: string, key: KeyObject, k
   return copy;
 }
 
+/**
+ * The record as generated before each act stated its wire version.
+ *
+ * Every act gained protocol_version, since none of the vector's acts states
+ * one; each loses it again and its act_hash and the chain are recomputed, so
+ * the record can be compared with one produced before acts stated their version.
+ */
+function withoutStatedWireVersions(record: Dict): Dict {
+  const copy = structuredClone(record);
+  for (const entry of copy.acts as Dict[]) {
+    const act = entry.act as Dict;
+    expect("protocol_version" in act).toBe(true);
+    delete act.protocol_version;
+    entry.act_hash = hashObject(act);
+  }
+  copy.act_chain_hash = hashBytes(
+    canonicalize((copy.acts as Dict[]).map((entry) => entry.act_hash)),
+  );
+  return copy;
+}
+
 /** The record session-evidence-record-parity.json produces. */
 function parityEvidenceRecord(): Dict {
   const source = SER_VECTOR.session as Dict;
@@ -585,14 +612,20 @@ test("a record release 0.3.0 produced still verifies", () => {
   expect(
     verifySessionEvidenceRecord(record, SER_VECTOR.did_documents as Record<string, Dict>),
   ).toBe(true);
-  // Apart from its version, this implementation produces the same record for the session.
-  const regenerated = resealedEvidenceRecord(
-    parityEvidenceRecord(),
+  // Apart from its version, and from each of its own acts now stating the wire
+  // version it was signed under, this implementation produces the same record.
+  const key = privateKeyFromJwk(SER_VECTOR.producer_private_jwk as Dict);
+  const kid = (SER_VECTOR.producer as Dict).verification_method as string;
+  const asReleased = resealedEvidenceRecord(
+    withoutStatedWireVersions(parityEvidenceRecord()),
     "0.1",
-    privateKeyFromJwk(SER_VECTOR.producer_private_jwk as Dict),
-    (SER_VECTOR.producer as Dict).verification_method as string,
+    key,
+    kid,
   );
-  expect(regenerated.record_hash).toBe(record.record_hash);
+  expect(asReleased.record_hash).toBe(record.record_hash);
+  // The stated versions are the only other difference, and they are not nothing.
+  const regenerated = resealedEvidenceRecord(parityEvidenceRecord(), "0.1", key, kid);
+  expect(regenerated.record_hash).not.toBe(record.record_hash);
 });
 
 test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
@@ -890,6 +923,8 @@ test("a stored 0.3 record still verifies and fits its own schema", () => {
 });
 
 test("the stored 0.3 record is today's record apart from its version", () => {
+  // The two differ in the version, the hash over it, and the seal over that,
+  // and in the wire version today's record states on each of its acts.
   // A guard on the pair: if they drifted in any other member, the test above
   // would be verifying an unrelated artifact while appearing to prove the
   // recognizer.
@@ -900,5 +935,31 @@ test("the stored 0.3 record is today's record apart from its version", () => {
   const differing = [...new Set([...Object.keys(historical), ...Object.keys(current)])]
     .filter((name) => JSON.stringify(historical[name]) !== JSON.stringify(current[name]))
     .sort();
-  expect(differing).toEqual(["producer_signature", "record_hash", "record_version"]);
+  expect(differing).toEqual([
+    "act_chain_hash",
+    "acts",
+    "producer_signature",
+    "record_hash",
+    "record_version",
+  ]);
+  // The acts differ only in the stated version and the act_hash over it.
+  const nowActs = current.acts as Dict[];
+  const thenActs = historical.acts as Dict[];
+  expect(nowActs.length).toBe(thenActs.length);
+  const rest = (entry: Dict): Dict =>
+    Object.fromEntries(Object.entries(entry).filter(([k]) => k !== "act" && k !== "act_hash"));
+  let stated = 0;
+  nowActs.forEach((now, i) => {
+    const then = thenActs[i];
+    const act = structuredClone(now.act as Dict);
+    if (!("protocol_version" in (then.act as Dict)) && "protocol_version" in act) {
+      delete act.protocol_version;
+      stated += 1;
+    }
+    expect(act).toEqual(then.act);
+    expect(rest(now)).toEqual(rest(then));
+  });
+  // Every act, the session's own and the observed one, now states it.
+  expect(stated).toBe(nowActs.length);
+  expect(stated).toBe(2);
 });

@@ -106,7 +106,7 @@ export function makeSessionInit(messageId?: string | null): Dict {
   return {
     message_type: "session_init",
     message_id: messageId ?? `si-${Date.now()}-${sessionInitCounter}-${Math.random().toString(36).slice(2)}`,
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",

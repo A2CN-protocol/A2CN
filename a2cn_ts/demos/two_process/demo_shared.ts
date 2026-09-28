@@ -190,7 +190,7 @@ export function supplierCounteroffer(session: Session, terms: Dict, inReplyTo: s
   const expiresAt = nowIso(900);
   const privateKey = supplierPrivateKey();
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: session.session_id,
     round_number: roundNumber,
     sequence_number: sequenceNumber,

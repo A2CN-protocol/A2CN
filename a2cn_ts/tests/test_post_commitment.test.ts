@@ -17,6 +17,7 @@ import { describe, expect, test } from "vitest";
 import { hashObject, signJws } from "../src/a2cn/crypto.js";
 import { validateFulfillmentAttestation } from "../src/a2cn/fulfillment.js";
 import {
+  PROTOCOL_ACT_VERSION,
   DeliveryNoticeMessage,
   DeliveryAcknowledgedMessage,
   DisputeNoticeMessage,
@@ -110,7 +111,7 @@ describe("DeliveryNoticeDataclass", () => {
       delivery_timestamp: "2026-04-02T08:00:00Z",
     });
     expect(msg.message_type).toBe("delivery_notice");
-    expect(msg.protocol_version).toBe("0.2");
+    expect(msg.protocol_version).toBe("0.3");
     expect(msg.delivery_reference).toBeNull();
   });
 
@@ -334,7 +335,7 @@ async function completeSession(clients: CompletionClients): Promise<[string, str
   const terms = { total_value: 10_000_000, currency: "USD", seat_count: 50 };
   const offerId = randomUUID();
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -384,7 +385,7 @@ async function completeSession(clients: CompletionClients): Promise<[string, str
   // Signed over the act's own envelope (Section 7.3.1), built from the very
   // message that goes on the wire.
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     responderPrivateKey,
     `${RESPONDER_DID}#key-2026-01`,
   );
@@ -745,7 +746,7 @@ describe("DisputeResolvedDataclass", () => {
       resolver_did: "did:web:resolver.example",
     });
     expect(msg.message_type).toBe("dispute_resolved");
-    expect(msg.protocol_version).toBe("0.2");
+    expect(msg.protocol_version).toBe("0.3");
     expect(msg.evidence_references).toEqual([]);
     expect(msg.resolution_notes).toBeNull();
   });

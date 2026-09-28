@@ -22,7 +22,7 @@ from a2cn.evidence import (
     generate_session_evidence_record,
     verify_session_evidence_record,
 )
-from a2cn.messages import signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record, verify_transaction_record
 from a2cn.session import Session, SessionManager, SessionState
 from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
@@ -43,7 +43,7 @@ def _make_session():
     session_init = {
         "message_type": "session_init",
         "message_id": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -66,7 +66,7 @@ def _make_session():
         "message_id": "ack-1",
         "session_id": session_id,
         "in_reply_to": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -129,7 +129,7 @@ def _offer(
         INITIATOR_PRIVATE_KEY if sender_did == INITIATOR_DID else RESPONDER_PRIVATE_KEY
     )
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": round_number,
         "sequence_number": sequence_number,
@@ -182,7 +182,7 @@ def _acceptance(session_id: str, offer: dict) -> dict:
     # Signed over the act's own envelope (Section 7.3.1): the common header plus
     # an acceptance's payload, accepted_offer_id and accepted_protocol_act_hash.
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance),
+        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
         RESPONDER_PRIVATE_KEY,
         kid=RESPONDER_VM,
     )
@@ -231,7 +231,7 @@ def _external_counteroffer() -> dict:
 
 def _third_party_offer(session_id: str) -> dict:
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 3,
@@ -279,7 +279,7 @@ def _malformed_signed_observation(
         act[null_field] = None
 
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": act.get("session_id", ""),
         "round_number": act.get("round_number"),
         "sequence_number": act.get("sequence_number"),
@@ -1011,6 +1011,8 @@ def test_observed_responder_claiming_a_verified_signature_is_rejected():
         message_id="portal-quote-1",
         timestamp="2026-03-24T10:02:00Z",
     )
+    # Recorded as a record states an act: with the wire version it was signed under.
+    signed_act["protocol_version"] = PROTOCOL_ACT_VERSION
     attack = copy.deepcopy(healthy)
     attack["acts"][1] = {
         "sequence_number": 2,

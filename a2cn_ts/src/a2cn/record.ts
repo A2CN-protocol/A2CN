@@ -20,8 +20,8 @@ import {
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
-  PROTOCOL_ACT_VERSION,
   isActInteger,
+  negotiatedProtocolVersion,
   protocolActObject,
   rebuildSignedAct,
   type Dict,
@@ -147,6 +147,9 @@ export function generateTransactionRecord(session: RecordSession): Dict {
   const initiatorInfo = (sessionInit.initiator as Dict) ?? {};
   const responderInfo = (sessionAck.responder as Dict) ?? {};
 
+  // Both acts were signed under the session's negotiated wire version.
+  const wireVersion = negotiatedProtocolVersion(sessionInit, sessionAck);
+
   // generated_at = timestamp of Acceptance message (NOT local now())
   const generatedAt = (finalAcceptance.timestamp as string) ?? "";
 
@@ -218,7 +221,7 @@ export function generateTransactionRecord(session: RecordSession): Dict {
     // wire version its signer hashed the act under.
     final_offer: {
       message_id: (finalOffer.message_id as string) ?? "",
-      protocol_version: PROTOCOL_ACT_VERSION,
+      protocol_version: wireVersion,
       round_number: finalOffer.round_number ?? null,
       sequence_number: finalOffer.sequence_number ?? null,
       message_type: (finalOffer.message_type as string) ?? "",
@@ -234,7 +237,7 @@ export function generateTransactionRecord(session: RecordSession): Dict {
     // already does.
     final_acceptance: {
       message_id: (finalAcceptance.message_id as string) ?? "",
-      protocol_version: PROTOCOL_ACT_VERSION,
+      protocol_version: wireVersion,
       message_type: (finalAcceptance.message_type as string) ?? "",
       sender_did: (finalAcceptance.sender_did as string) ?? "",
       round_number: finalAcceptance.round_number ?? null,

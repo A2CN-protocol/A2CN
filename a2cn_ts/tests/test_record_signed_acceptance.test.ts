@@ -61,7 +61,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -84,7 +84,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -168,7 +168,7 @@ function makeAcceptance(sessionId: string, offer: Dict): Dict {
     timestamp: ACCEPTANCE_TIMESTAMP,
   };
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     RESPONDER_VM,
   );
@@ -267,7 +267,9 @@ test("final_acceptance carries the fields its signature covers", () => {
 test("the acceptance rebuilds from the record to what was signed", () => {
   const { record, acceptance } = build();
 
-  expect(hashObject(acceptanceActFromRecord(record))).toBe(signedActHash(acceptance));
+  expect(hashObject(acceptanceActFromRecord(record))).toBe(signedActHash(acceptance, {
+    versionWhenAbsent: PROTOCOL_ACT_VERSION,
+  }));
 });
 
 test("a record verifies end to end", () => {
@@ -294,7 +296,9 @@ test("the rebuild reads the acceptance's own timestamp, not the offer's", () => 
   const borrowed = acceptanceActFromRecord(record);
   borrowed.timestamp = (record.final_offer as Dict).timestamp;
 
-  expect(hashObject(borrowed)).not.toBe(signedActHash(acceptance));
+  expect(hashObject(borrowed)).not.toBe(signedActHash(acceptance, {
+    versionWhenAbsent: PROTOCOL_ACT_VERSION,
+  }));
 });
 
 test("altering the acceptance's stored timestamp breaks its signature", () => {

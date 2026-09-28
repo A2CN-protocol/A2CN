@@ -348,7 +348,7 @@ export function buildSellerCounteroffer(
   const exp = expiresAtIso();
   const msgId = randomUUID();
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: roundNumber,
     sequence_number: sequenceNumber,
@@ -390,7 +390,7 @@ function buildSellerAcceptance(
   const exp = expiresAtIso();
   const msgId = randomUUID();
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: roundNumber,
     sequence_number: sequenceNumber,

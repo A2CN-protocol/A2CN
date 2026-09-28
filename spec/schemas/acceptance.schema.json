@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://a2cn.dev/schemas/acceptance/0.2",
+  "$id": "https://a2cn.dev/schemas/acceptance/0.3",
   "title": "A2CN Acceptance",
   "description": "The Section 7.4 act that accepts a specific offer. It carries no terms: the offer it accepts was already checked, and accepted_protocol_act_hash binds the acceptance to that offer's signed protocol act. acceptance_signature covers the signed act object of Section 7.3.1 — the common header plus this act's payload, accepted_offer_id and accepted_protocol_act_hash — and NOT the whole message: message_id, in_reply_to and sender_agent_id are outside the signed scope. The message object stays open so vendor fields pass through.",
   "type": "object",
@@ -54,7 +54,7 @@
     },
     "protocol_version": {
       "type": "string",
-      "description": "Not carried on the wire by this implementation. A verifier rebuilding the signed act uses its own wire version unless the act states one (Section 7.3.1)."
+      "description": "Not carried on the wire. A live act is rebuilt under its session's negotiated wire version, and a receiver refuses one that states another. A recorded act states the version it was signed under and is rebuilt under it; a recorded act that states none is rebuilt under \"0.2\", never under a verifier's own wire version (Section 7.3.1)."
     },
     "acceptance_signature": {
       "type": "string",

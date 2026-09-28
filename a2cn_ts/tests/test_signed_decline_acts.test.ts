@@ -25,6 +25,7 @@ import {
   verifySessionEvidenceRecord,
 } from "../src/a2cn/evidence.js";
 import {
+  PROTOCOL_ACT_VERSION,
   SIGNED_ACT_SIGNATURE_FIELDS,
   rebuildSignedAct,
   signedActHash,
@@ -45,7 +46,7 @@ function makeSession(): [Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -68,7 +69,7 @@ function makeSession(): [Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -129,7 +130,7 @@ function sign(act: Dict, privateKey: Parameters<typeof signJws>[1], verification
   const signed = structuredClone(act);
   signed.sender_verification_method = verificationMethod;
   signed[SIGNED_ACT_SIGNATURE_FIELDS[act.message_type as string]] = signJws(
-    signedActHash(signed) as string,
+    signedActHash(signed, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     privateKey,
     verificationMethod,
   );

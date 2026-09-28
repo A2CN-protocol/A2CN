@@ -35,10 +35,24 @@ def _drop_none(d: dict) -> dict:
 # The signed protocol act (Section 7.3.1)
 # ---------------------------------------------------------------------------
 
-# The wire version the protocol act object states. It is the a2cn_version /
-# protocol_version of Section 6.3.1, and it is part of what the signature
-# covers, so a signer and a verifier must use the same value.
-PROTOCOL_ACT_VERSION = "0.2"
+# The wire version this implementation emits and negotiates. It is the
+# a2cn_version / protocol_version of Section 6.3.1, and it is the first field of
+# every signed act object (Section 7.3.1), so a signer and a verifier must use
+# the same value for a live act. A responder negotiates only this version for a
+# live session (Section 12.1.7).
+PROTOCOL_ACT_VERSION = "0.3"
+
+# The wire version a recorded act that states no protocol_version is rebuilt
+# under (Section 7.3.1). Acts were recorded without their version until records
+# began stating it, and every such act was signed under "0.2". The value is
+# pinned for that reason and never follows PROTOCOL_ACT_VERSION: tying it to the
+# emit version would leave every earlier record unverifiable after each bump.
+LEGACY_VERSIONLESS_WIRE_VERSION = "0.2"
+
+# The wire versions this implementation recognises. A session runs at one of
+# them; "0.2" remains so that a session negotiated at it can still be replayed
+# and its acts rebuilt.
+SUPPORTED_WIRE_VERSIONS = (LEGACY_VERSIONLESS_WIRE_VERSION, PROTOCOL_ACT_VERSION)
 
 # The header every signed act carries, whatever its type, in the order Section
 # 7.3.1 lists them. JCS sorts keys before hashing, so the order is for readers.
@@ -182,7 +196,41 @@ def _is_act_integer(value: Any) -> bool:
     return isinstance(value, float) and value.is_integer()
 
 
-def rebuild_signed_act(act: Mapping[str, Any]) -> dict | None:
+def negotiated_protocol_version(session_init: Any, session_ack: Any) -> str:
+    """The wire version a session was negotiated at (Section 12.1.7).
+
+    The SessionInit proposes a version and the SessionAck must state the same
+    one; the session runs at it, and every live act of the session is signed and
+    verified under it. Raises ValueError, naming the first fault, when either
+    message states no version, a version this implementation does not recognise,
+    or when the two disagree. Nothing is filled in from the other message or from
+    this implementation's own version.
+
+    A session with no SessionAck at all (None), whose responder holds no A2CN
+    identity and so never answered (Section 9A.8), runs at the version its
+    SessionInit proposed. An ack that is present is never passed over.
+    """
+    messages = [("SessionInit", session_init)]
+    if session_ack is not None:
+        messages.append(("SessionAck", session_ack))
+    versions = []
+    for label, message in messages:
+        version = message.get("protocol_version") if isinstance(message, Mapping) else None
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"{label} protocol_version must be a non-empty string")
+        if version not in SUPPORTED_WIRE_VERSIONS:
+            raise ValueError(f"{label} protocol_version is not a supported wire version")
+        versions.append(version)
+    if len(versions) == 2 and versions[0] != versions[1]:
+        raise ValueError("SessionAck protocol_version does not match the SessionInit's")
+    return versions[0]
+
+
+def rebuild_signed_act(
+    act: Mapping[str, Any],
+    *,
+    version_when_absent: str = LEGACY_VERSIONLESS_WIRE_VERSION,
+) -> dict | None:
     """Rebuild the object an act's signature covers, from the act's own fields.
 
     The shared verify primitive: a caller hashes what this returns and requires
@@ -196,11 +244,14 @@ def rebuild_signed_act(act: Mapping[str, Any]) -> dict | None:
     does not name still rebuilds from the ones it does: a verifier must never
     read a label and skip the binding check.
 
-    protocol_version is the one covered field an act may omit. A wire message
-    does not carry one (Section 7.1) — the act states the wire version — so an
-    act without it is rebuilt under this implementation's version, and one that
-    carries it under its own, so an act produced under a later wire version
-    still recomputes.
+    protocol_version is the one covered field an act may omit, and which
+    version stands in for it depends on where the act comes from (Section
+    7.3.1). An act that states one is always rebuilt under the version it
+    states. A live act received in a session states none, and its caller passes
+    the session's negotiated version. A recorded act that states none was
+    recorded before records stated their acts' versions, and is rebuilt under
+    the pinned LEGACY_VERSIONLESS_WIRE_VERSION, the default — never under the
+    version this implementation currently emits.
 
     Values are constrained only so far as the act can be canonicalized from
     them. An empty string is rebuilt as it stands, because the hash comparison,
@@ -225,7 +276,7 @@ def rebuild_signed_act(act: Mapping[str, Any]) -> dict | None:
     rebuilt: dict = {}
     for name in SIGNED_ACT_HEADER_FIELDS + payload_fields:
         if name == "protocol_version" and name not in act:
-            rebuilt[name] = PROTOCOL_ACT_VERSION
+            rebuilt[name] = version_when_absent
             continue
         if name not in act:
             if name in defaulted_fields:
@@ -245,9 +296,17 @@ def rebuild_signed_act(act: Mapping[str, Any]) -> dict | None:
     return rebuilt
 
 
-def signed_act_hash(act: Mapping[str, Any]) -> str | None:
-    """The hash an act's signature must be over, or None if it cannot be rebuilt."""
-    rebuilt = rebuild_signed_act(act)
+def signed_act_hash(
+    act: Mapping[str, Any],
+    *,
+    version_when_absent: str = LEGACY_VERSIONLESS_WIRE_VERSION,
+) -> str | None:
+    """The hash an act's signature must be over, or None if it cannot be rebuilt.
+
+    version_when_absent is as for rebuild_signed_act: a live act's caller passes
+    the session's negotiated version, and a recorded act takes the default.
+    """
+    rebuilt = rebuild_signed_act(act, version_when_absent=version_when_absent)
     return None if rebuilt is None else hash_object(rebuilt)
 
 
@@ -365,7 +424,7 @@ class TermsObject:
 class SessionInit:
     message_type: str  # "session_init"
     message_id: str
-    protocol_version: str  # "0.2"
+    protocol_version: str  # PROTOCOL_ACT_VERSION
     session_params: SessionParams
     initiator: AgentInfo
     initiator_mandate: DeclaredMandate | dict
@@ -394,7 +453,7 @@ class SessionAck:
     message_id: str
     session_id: str
     in_reply_to: str
-    protocol_version: str  # "0.2"
+    protocol_version: str  # PROTOCOL_ACT_VERSION
     session_params_accepted: dict
     responder: AgentInfo
     responder_mandate: DeclaredMandate | dict
@@ -641,7 +700,7 @@ class InvitationStatus(str, Enum):
 class SessionInvitation:
     message_type: str                  # always "session_invitation"
     invitation_id: str                 # UUID v4
-    a2cn_version: str                  # "0.2"
+    a2cn_version: str                  # PROTOCOL_ACT_VERSION
     inviter_did: str
     inviter_endpoint: str              # HTTPS URL of inviter's A2CN endpoint
     inviter_discovery_url: str
@@ -729,7 +788,7 @@ class WebhookPayload:
     occurred_at: str    # ISO 8601 UTC
     session_state: str
     terminal: bool      # always True for these events
-    a2cn_version: str = "0.2"
+    a2cn_version: str = PROTOCOL_ACT_VERSION
     record_hash: str = ""   # populated only for session.completed
 
     def to_dict(self) -> dict:
@@ -779,7 +838,7 @@ class DeliveryNoticeMessage:
     delivery_timestamp: str       # ISO 8601 — when delivery occurred
     delivery_reference: str | None = None  # Tracking number, PO ref, etc.
     notes: str | None = None
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "delivery_notice"
 
     def to_dict(self) -> dict:
@@ -811,7 +870,7 @@ class DeliveryAcknowledgedMessage:
     acknowledgment_timestamp: str     # ISO 8601
     accepted: bool                    # True = delivery accepted, False = disputed
     notes: str | None = None
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "delivery_acknowledged"
 
     def to_dict(self) -> dict:
@@ -849,7 +908,7 @@ class DisputeNoticeMessage:
     evidence_references: list[str] = None  # Document refs, hashes, URLs
     resolution_requested: str | None = None  # "renegotiate" | "cancel" | "neutral_review"
     dispute_timestamp: str = None  # ISO 8601, auto-set on creation
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "dispute_notice"
 
     def __post_init__(self):
@@ -906,7 +965,7 @@ class DisputeResolvedMessage:
     resolution_timestamp: str = None  # ISO 8601, auto-set on creation
     resolution_notes: str | None = None
     evidence_references: list[str] = None  # Supporting evidence for the ruling
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "dispute_resolved"
 
     def __post_init__(self):

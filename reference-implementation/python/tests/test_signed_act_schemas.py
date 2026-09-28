@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from a2cn.crypto import generate_keypair, sign_jws
-from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
 
 REPO_ROOT = Path(__file__).parents[3]
 SCHEMAS = REPO_ROOT / "spec" / "schemas"
@@ -103,7 +103,7 @@ def test_schema_is_valid_draft_2020_12(name: str):
 
 @pytest.mark.parametrize("name", ["acceptance", "rejection", "withdrawal"])
 def test_schema_id_states_the_wire_version(name: str):
-    assert _schema(name)["$id"] == f"https://a2cn.dev/schemas/{name}/0.2"
+    assert _schema(name)["$id"] == f"https://a2cn.dev/schemas/{name}/{PROTOCOL_ACT_VERSION}"
 
 
 # ---------------------------------------------------------------------------

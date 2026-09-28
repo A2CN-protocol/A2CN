@@ -5,7 +5,7 @@ import pytest
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError
 from a2cn.crypto import generate_keypair, hash_object, public_key_to_jwk, sign_jws
-from a2cn.messages import signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import generate_audit_log
 from tests.conftest import make_did_document
 
@@ -16,7 +16,7 @@ RESPONDER_DID = "did:web:acme-corp.com"
 SESSION_INIT = {
     "message_type": "session_init",
     "message_id": "init-msg-id",
-    "protocol_version": "0.2",
+    "protocol_version": "0.3",
     "session_params": {
         "deal_type": "saas_renewal",
         "currency": "USD",
@@ -40,7 +40,7 @@ SESSION_ACK = {
     "message_id": "ack-msg-id",
     "session_id": "sess-001",
     "in_reply_to": "init-msg-id",
-    "protocol_version": "0.2",
+    "protocol_version": "0.3",
     "session_params_accepted": {
         "deal_type": "saas_renewal",
         "currency": "USD",
@@ -77,7 +77,7 @@ def _make_offer(
     expires_at = "2030-01-01T00:00:00Z"
     terms = terms or {"total_value": 9_500_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,
@@ -116,7 +116,7 @@ def _make_offer(
 
 def _resign_offer(offer: dict) -> None:
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": offer["session_id"],
         "round_number": offer["round_number"],
         "sequence_number": offer["sequence_number"],
@@ -155,7 +155,7 @@ def _make_acceptance(sess: Session, offer: dict, *, msg_id="acc-1") -> dict:
     # Signed over the act's own envelope (Section 7.3.1), built from the very
     # message the state machine receives.
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance),
+        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
         RESPONDER_PRIVATE_KEY,
         kid=verification_method,
     )

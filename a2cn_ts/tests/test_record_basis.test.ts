@@ -43,7 +43,7 @@ import {
   verifyTransactionRecordReason,
 } from "../src/a2cn/record.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
-import { signedActHash, type Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import {
   INITIATOR_DID,
   RESPONDER_DID,
@@ -171,7 +171,7 @@ function locallySignedBasisRecord(): [Dict, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "basis-local-init",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: { ...params, subject: "Local basis record" },
     initiator: {
       organization_name: "TechCorp",
@@ -187,7 +187,7 @@ function locallySignedBasisRecord(): [Dict, Record<string, Dict>] {
     message_id: "basis-local-ack",
     session_id: sessionId,
     in_reply_to: "basis-local-init",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: params,
     responder: {
       organization_name: "Acme",
@@ -221,7 +221,7 @@ function locallySignedBasisRecord(): [Dict, Record<string, Dict>] {
 
   const terms = { total_value: 9_500_000, currency: "USD", basis: "gross" };
   const actHash = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -263,7 +263,7 @@ function locallySignedBasisRecord(): [Dict, Record<string, Dict>] {
   // Signed over the act's own envelope (Section 7.3.1), built from the very
   // message the state machine receives.
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     BASIS_RESPONDER.privateKey,
     BASIS_RESPONDER_VM,
   );
@@ -572,7 +572,7 @@ test("client side record matches the server record", async () => {
   };
   // Signed over the act's own envelope (Section 7.3.1).
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     fixture.responderKeypair.privateKey,
     responderVm,
   );

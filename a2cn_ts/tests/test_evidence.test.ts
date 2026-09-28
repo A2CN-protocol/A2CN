@@ -29,7 +29,7 @@ import {
   verifyTransactionRecord,
 } from "../src/a2cn/record.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
-import { signedActHash, type Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const { privateKey: INITIATOR_PRIVATE_KEY, publicKey: INITIATOR_PUBLIC_KEY } = generateKeypair();
@@ -47,7 +47,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -70,7 +70,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -138,7 +138,7 @@ function makeOffer(
   const privateKey =
     senderDid === INITIATOR_DID ? INITIATOR_PRIVATE_KEY : RESPONDER_PRIVATE_KEY;
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: roundNumber,
     sequence_number: sequenceNumber,
@@ -188,7 +188,7 @@ function makeAcceptance(sessionId: string, offer: Dict): Dict {
   // Signed over the act's own envelope (Section 7.3.1): the common header plus
   // an acceptance's payload, accepted_offer_id and accepted_protocol_act_hash.
   acceptance.acceptance_signature = signJws(
-    signedActHash(acceptance) as string,
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     RESPONDER_VM,
   );
@@ -235,7 +235,7 @@ function externalCounteroffer(): Dict {
 
 function thirdPartyOffer(sessionId: string): Dict {
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 3,
@@ -282,7 +282,7 @@ function malformedSignedObservation(
   }
 
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: (act.session_id as string) ?? "",
     round_number: act.round_number,
     sequence_number: act.sequence_number,
@@ -1012,6 +1012,8 @@ test("an observed responder claiming a verified signature is rejected", () => {
     messageId: "portal-quote-1",
     timestamp: "2026-03-24T10:02:00Z",
   });
+  // Recorded as a record states an act: with the wire version it was signed under.
+  signedAct.protocol_version = PROTOCOL_ACT_VERSION;
   const attack = structuredClone(healthy);
   (attack.acts as Dict[])[1] = {
     sequence_number: 2,

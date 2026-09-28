@@ -25,7 +25,12 @@ import {
   type RecordSession,
 } from "./record.js";
 import { SESSION_BASES, SessionState, now } from "./session.js";
-import { isActInteger, rebuildSignedAct, type Dict } from "./messages.js";
+import {
+  isActInteger,
+  negotiatedProtocolVersion,
+  rebuildSignedAct,
+  type Dict,
+} from "./messages.js";
 
 export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2";
 // A record's version follows its content (Section 9A.2): "0.3" exactly when it
@@ -289,11 +294,20 @@ export function generateSessionEvidenceRecord(
     );
   }
 
+  // Every recorded act states the wire version it was signed under, the
+  // session's negotiated version (Sections 7.3.1 and 9A.3), whether it is one of
+  // the session's own acts or an observed one, so the record can be verified by
+  // an implementation that has since moved to another. For a signed act the value
+  // checks itself, since a wrong one fails the signature; for an unsigned
+  // observation it only frames the act. An act that already states one keeps it.
+  const wireVersion = negotiatedProtocolVersion(session._session_init, session._session_ack);
   const acts = session._message_log.map((message) =>
-    normalizeEvidenceAct(message, "a2cn"),
+    normalizeEvidenceAct(statingWireVersion(message, wireVersion), "a2cn"),
   );
   acts.push(
-    ...(options.observedActs ?? []).map((observed) => normalizeEvidenceAct(observed, null)),
+    ...(options.observedActs ?? []).map((observed) =>
+      normalizeEvidenceAct(statingWireVersion(observed, wireVersion), null),
+    ),
   );
   const orderedActs = orderEvidenceActs(acts);
 
@@ -1380,6 +1394,26 @@ function terminalTimestampFor(session: EvidenceSession): string {
 
 function hasOwn(object: Dict, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+/**
+ * The act as recorded: with protocol_version, which it may omit on the wire.
+ *
+ * An observed item may wrap its act in "act" beside the entry's metadata; the
+ * version belongs to the act either way. An act that states one keeps it.
+ */
+function statingWireVersion(item: Dict, wireVersion: string): Dict {
+  if (item === null || typeof item !== "object" || Array.isArray(item)) {
+    return item;
+  }
+  const act = item.act;
+  if (act !== null && typeof act === "object" && !Array.isArray(act)) {
+    return { ...item, act: statingWireVersion(act as Dict, wireVersion) };
+  }
+  if (!Object.prototype.hasOwnProperty.call(item, "protocol_version")) {
+    return { ...item, protocol_version: wireVersion };
+  }
+  return item;
 }
 
 function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null): Dict {

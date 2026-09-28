@@ -21,6 +21,7 @@ import {
   PROTOCOL_ACT_VERSION,
   SIGNED_ACT_SIGNATURE_FIELDS,
   isActInteger,
+  negotiatedProtocolVersion,
   protocolActObject,
   signedActHash,
   type Dict,
@@ -62,7 +63,7 @@ export const SessionState = {
 export class Session {
   // Identity
   session_id: string;
-  protocol_version = "0.2";
+  protocol_version = PROTOCOL_ACT_VERSION;
 
   // State machine
   state: string = SessionState.PENDING;
@@ -188,6 +189,25 @@ function isJsonObject(value: unknown): value is Dict {
  * SESSION_PARAM_CHANGED, naming the parameter, is left for a well-formed value
  * that differs (Section 12.3).
  */
+/**
+ * The wire version both messages agree on, or PROTOCOL_VERSION_MISMATCH (Section 12.1.7).
+ *
+ * A SessionAck states the version of the SessionInit it answers. A message that
+ * states none, states one this implementation does not recognise, or states
+ * another than its counterpart is refused rather than filled in, so no party
+ * signs under a version it did not propose.
+ */
+export function checkSessionVersions(sessionInit: unknown, sessionAck: unknown): string {
+  try {
+    if (sessionAck === null || sessionAck === undefined) {
+      throw new Error("SessionAck protocol_version must be a non-empty string");
+    }
+    return negotiatedProtocolVersion(sessionInit, sessionAck);
+  } catch (exc) {
+    throw new A2CNError("PROTOCOL_VERSION_MISMATCH", (exc as Error).message, 400);
+  }
+}
+
 export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
   if (!isJsonObject(proposed)) {
     throw new A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400);
@@ -393,6 +413,17 @@ const VALID_MESSAGE_TYPES = new Set([
 ]);
 
 /** In-memory store + state machine for all sessions. */
+/**
+ * The wire version a live act of this session is signed and verified under.
+ *
+ * It is the version the session was negotiated at, read from the session's own
+ * SessionAck and SessionInit (Section 12.1.7), never the version this
+ * implementation happens to emit.
+ */
+function wireVersion(session: Session): string {
+  return negotiatedProtocolVersion(session._session_init, session._session_ack);
+}
+
 export class SessionManager {
   _sessions: Record<string, Session> = {};
   // Pre-session idempotency: message_id → response dict
@@ -421,6 +452,7 @@ export class SessionManager {
   }
 
   createSession(sessionId: string, sessionInit: Dict, sessionAck: Dict, now: string): Session {
+    const protocolVersion = checkSessionVersions(sessionInit, sessionAck);
     // Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
     const proposed = sessionInit.session_params === undefined ? {} : sessionInit.session_params;
     const accepted =
@@ -443,6 +475,7 @@ export class SessionManager {
     });
     session._session_init = sessionInit;
     session._session_ack = sessionAck;
+    session.protocol_version = protocolVersion;
     this._sessions[sessionId] = session;
     return session;
   }
@@ -531,6 +564,22 @@ export class SessionManager {
           { sessionId: session.session_id, messageId },
         );
       }
+    }
+
+    // A live act is signed under the session's negotiated wire version
+    // (Section 7.3.1). An act need not state it, but one that states another
+    // version is refused here rather than admitted under a version it did not
+    // claim (Section 12.1.7).
+    if (
+      Object.prototype.hasOwnProperty.call(message, "protocol_version") &&
+      message.protocol_version !== wireVersion(session)
+    ) {
+      throw new A2CNError(
+        "PROTOCOL_VERSION_MISMATCH",
+        "protocol_version does not match the session's negotiated version",
+        400,
+        { sessionId: session.session_id, messageId },
+      );
     }
   }
 
@@ -742,7 +791,7 @@ export class SessionManager {
     const timestamp = (message.timestamp as string) ?? "";
     const expiresAt = (message.expires_at as string) ?? "";
     const protocolAct = protocolActObject({
-      protocol_version: PROTOCOL_ACT_VERSION, // Section 7.3.1
+      protocol_version: wireVersion(session), // Section 7.3.1
       session_id: (message.session_id as string) ?? "",
       round_number: message.round_number,
       sequence_number: message.sequence_number,
@@ -1079,7 +1128,9 @@ export class SessionManager {
     // all three agree on what a signature covers. An acceptance that does not
     // carry those fields cannot be rebound, and is refused rather than checked
     // against a payload assembled out of defaults.
-    const acceptancePayloadHash = signedActHash(message);
+    const acceptancePayloadHash = signedActHash(message, {
+      versionWhenAbsent: wireVersion(session),
+    });
     if (acceptancePayloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
@@ -1194,7 +1245,7 @@ export class SessionManager {
       });
     }
 
-    const payloadHash = signedActHash(message);
+    const payloadHash = signedActHash(message, { versionWhenAbsent: wireVersion(session) });
     if (payloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",

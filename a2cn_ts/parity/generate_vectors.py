@@ -284,7 +284,9 @@ acceptance = {
 # acceptance's payload. The act is built first so that what is signed is rebuilt
 # from the very message the vector carries.
 acceptance["acceptance_signature"] = sign_jws(
-    signed_act_hash(acceptance), buyer_priv, kid=f"{BUYER_DID}#key-1"
+    signed_act_hash(acceptance, version_when_absent=session_ack["protocol_version"]),
+    buyer_priv,
+    kid=f"{BUYER_DID}#key-1",
 )
 
 # Replay through the Python state machine to derive the expected record.

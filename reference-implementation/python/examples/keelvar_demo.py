@@ -143,6 +143,7 @@ async def main() -> None:
     import a2cn.server as server_module
     from a2cn.server import app, configure_responder, manager, register_did_document
     from a2cn.client import A2CNClient
+    from a2cn.messages import signed_act_hash
     from a2cn.record import generate_transaction_record
     from a2cn.session import _now as session_now
 
@@ -362,7 +363,7 @@ async def main() -> None:
         exp = _now_fixed(900)
         msg_id_r2 = str(uuid.uuid4())
         act_r2 = {
-            "protocol_version": "0.2",
+            "protocol_version": session_obj.protocol_version,
             "session_id": session_id,
             "round_number": 2,
             "sequence_number": 2,
@@ -438,18 +439,6 @@ async def main() -> None:
         r3_offer = client._sessions[session_id]["latest_offer"]
         ts = session_now()
         msg_id_acc = str(uuid.uuid4())
-        # Signed payload is the 5-field acceptance object (Section 7.4), not a
-        # full protocol act — Acceptance messages carry no terms/expires_at.
-        acceptance_payload = {
-            "session_id": session_id,
-            "round_number": 3,
-            "sequence_number": 4,
-            "accepted_offer_id": r3_offer["message_id"],
-            "accepted_protocol_act_hash": r3_offer["protocol_act_hash"],
-        }
-        acceptance_signature = sign_jws(
-            hash_object(acceptance_payload), supplier_priv, kid=f"{SUPPLIER_DID}#key-1"
-        )
         supplier_acceptance = {
             "message_type": "acceptance",
             "message_id": msg_id_acc,
@@ -463,8 +452,17 @@ async def main() -> None:
             "sender_agent_id": "supply-agent-ts-001",
             "sender_verification_method": f"{SUPPLIER_DID}#key-1",
             "timestamp": ts,
-            "acceptance_signature": acceptance_signature,
         }
+        # Signed over the acceptance's own envelope (Section 7.3.1): the common
+        # header plus accepted_offer_id and accepted_protocol_act_hash, under the
+        # wire version the session was negotiated at.
+        supplier_acceptance["acceptance_signature"] = sign_jws(
+            signed_act_hash(
+                supplier_acceptance, version_when_absent=session_obj.protocol_version
+            ),
+            supplier_priv,
+            kid=f"{SUPPLIER_DID}#key-1",
+        )
         manager.process_message(session_obj, supplier_acceptance)
         client.process_incoming(session_id, supplier_acceptance)
         _log(

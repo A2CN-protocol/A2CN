@@ -66,7 +66,7 @@ def _session():
     session_init = {
         "message_type": "session_init",
         "message_id": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -89,7 +89,7 @@ def _session():
         "message_id": "ack-1",
         "session_id": session_id,
         "in_reply_to": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -176,7 +176,9 @@ def _acceptance(session_id: str, offer: dict) -> dict:
         "timestamp": ACCEPTANCE_TIMESTAMP,
     }
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance), RESPONDER_PRIVATE_KEY, kid=RESPONDER_VM
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), RESPONDER_PRIVATE_KEY, kid=RESPONDER_VM
     )
     return acceptance
 
@@ -273,7 +275,9 @@ def test_final_acceptance_carries_the_fields_its_signature_covers():
 def test_the_acceptance_rebuilds_from_the_record_to_what_was_signed():
     record, _, _, acceptance = _record()
 
-    assert hash_object(_acceptance_act_from_record(record)) == signed_act_hash(acceptance)
+    assert hash_object(_acceptance_act_from_record(record)) == signed_act_hash(
+        acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+    )
 
 
 def test_a_record_verifies_end_to_end():
@@ -300,7 +304,9 @@ def test_the_rebuild_reads_the_acceptances_own_timestamp_not_the_offers():
     borrowed = _acceptance_act_from_record(record)
     borrowed["timestamp"] = record["final_offer"]["timestamp"]
 
-    assert hash_object(borrowed) != signed_act_hash(acceptance)
+    assert hash_object(borrowed) != signed_act_hash(
+        acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+    )
 
 
 def test_altering_the_acceptances_stored_timestamp_breaks_its_signature():

@@ -17,7 +17,7 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
-from a2cn.messages import _is_act_integer, rebuild_signed_act
+from a2cn.messages import _is_act_integer, negotiated_protocol_version, rebuild_signed_act
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
@@ -248,12 +248,23 @@ def generate_session_evidence_record(
             "external_commitment_reference, because a TransactionRecord is bilateral"
         )
 
+    # Every recorded act states the wire version it was signed under, the
+    # session's negotiated version (Sections 7.3.1 and 9A.3), whether it is one
+    # of the session's own acts or an observed one, so the record can be verified
+    # by an implementation that has since moved to another. For a signed act the
+    # value checks itself, since a wrong one fails the signature; for an unsigned
+    # observation it only frames the act. An act that already states one keeps it.
+    wire_version = negotiated_protocol_version(session._session_init, session._session_ack)
     acts = [
-        _normalize_evidence_act(message, default_source_protocol="a2cn")
+        _normalize_evidence_act(
+            _stating_wire_version(message, wire_version), default_source_protocol="a2cn"
+        )
         for message in session._message_log
     ]
     acts.extend(
-        _normalize_evidence_act(observed, default_source_protocol=None)
+        _normalize_evidence_act(
+            _stating_wire_version(observed, wire_version), default_source_protocol=None
+        )
         for observed in (observed_acts or [])
     )
     acts = _order_evidence_acts(acts)
@@ -1196,6 +1207,21 @@ def _terminal_timestamp(session: Session) -> str:
     if session.state_updated_at:
         return session.state_updated_at
     return _now()
+
+
+def _stating_wire_version(item: Any, wire_version: str) -> Any:
+    """The act as recorded: with protocol_version, which it may omit on the wire.
+
+    An observed item may wrap its act in "act" beside the entry's metadata; the
+    version belongs to the act either way. An act that states one keeps it.
+    """
+    if not isinstance(item, dict):
+        return item
+    if isinstance(item.get("act"), dict):
+        return {**item, "act": _stating_wire_version(item["act"], wire_version)}
+    if "protocol_version" not in item:
+        return {**item, "protocol_version": wire_version}
+    return item
 
 
 def _normalize_evidence_act(item: dict, *, default_source_protocol: str | None) -> dict:

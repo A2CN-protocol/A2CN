@@ -33,7 +33,7 @@ from a2cn.crypto import (
     sign_jws,
 )
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
-from a2cn.messages import signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import (
     FINAL_OFFER_ACT_FIELDS,
     REASON_BASIS_MISMATCH,
@@ -159,7 +159,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
     session_init = {
         "message_type": "session_init",
         "message_id": "basis-local-init",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {**params, "subject": "Local basis record"},
         "initiator": {
             "organization_name": "TechCorp",
@@ -175,7 +175,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
         "message_id": "basis-local-ack",
         "session_id": session_id,
         "in_reply_to": "basis-local-init",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": params,
         "responder": {
             "organization_name": "Acme",
@@ -206,7 +206,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
 
     terms = {"total_value": 9_500_000, "currency": "USD", "basis": "gross"}
     act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -254,7 +254,9 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
     # Signed over the act's own envelope (Section 7.3.1), built from the very
     # message the state machine receives.
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance), _BASIS_RESPONDER_KEY, kid=_BASIS_RESPONDER_VM
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), _BASIS_RESPONDER_KEY, kid=_BASIS_RESPONDER_VM
     )
     manager.process_message(session, acceptance)
     assert session.state == SessionState.COMPLETED
@@ -550,7 +552,9 @@ async def test_client_side_record_matches_the_server_record(
     }
     # Signed over the act's own envelope (Section 7.3.1).
     acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance), responder_keypair[0], kid=responder_vm
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), responder_keypair[0], kid=responder_vm
     )
     r = await responder_test_client.post(
         f"/sessions/{session_id}/messages",

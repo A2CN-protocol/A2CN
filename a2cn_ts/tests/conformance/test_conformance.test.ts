@@ -18,7 +18,7 @@ import {
 import { generateTransactionRecord } from "../../src/a2cn/record.js";
 import { A2CN_NAMESPACE } from "../../src/a2cn/record.js";
 import { SessionManager, SessionState } from "../../src/a2cn/session.js";
-import { signedActHash, type Dict } from "../../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../../src/a2cn/messages.js";
 import { v5 as uuidv5 } from "uuid";
 import {
   INITIATOR_DID,
@@ -65,7 +65,7 @@ function makeOffer(
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 10_000_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,
@@ -250,7 +250,7 @@ test("transaction record deterministic", async () => {
   const initMsg: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -274,7 +274,7 @@ test("transaction record deterministic", async () => {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -302,7 +302,7 @@ test("transaction record deterministic", async () => {
   const offerExpires = "2030-01-01T00:00:00Z";
   const offerTerms = { total_value: 10_500_000, currency: "USD" };
   const offerPah = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -345,7 +345,7 @@ test("transaction record deterministic", async () => {
   };
   // Signed over the act's own envelope (Section 7.3.1).
   acceptanceMsg.acceptance_signature = signJws(
-    signedActHash(acceptanceMsg) as string,
+    signedActHash(acceptanceMsg, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     `${RESPONDER_DID}#key-2026-01`,
   );

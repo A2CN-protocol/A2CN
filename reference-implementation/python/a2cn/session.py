@@ -27,6 +27,7 @@ from a2cn.messages import (
     PROTOCOL_ACT_VERSION,
     SIGNED_ACT_SIGNATURE_FIELDS,
     _is_act_integer,
+    negotiated_protocol_version,
     protocol_act_object,
     signed_act_hash,
 )
@@ -59,7 +60,7 @@ class SessionState:
 class Session:
     # Identity
     session_id: str
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
 
     # State machine
     state: str = SessionState.PENDING
@@ -160,6 +161,22 @@ SESSION_BASES = ("net", "gross")
 # parameters are checked here.
 _FIXED_MONEY_PARAMS = ("currency", "basis")
 _ABSENT = object()
+
+
+def check_session_versions(session_init: Any, session_ack: Any) -> str:
+    """The wire version both messages agree on, or PROTOCOL_VERSION_MISMATCH (Section 12.1.7).
+
+    A SessionAck states the version of the SessionInit it answers. A message that
+    states none, states one this implementation does not recognise, or states
+    another than its counterpart is refused rather than filled in, so no party
+    signs under a version it did not propose.
+    """
+    try:
+        if session_ack is None:
+            raise ValueError("SessionAck protocol_version must be a non-empty string")
+        return negotiated_protocol_version(session_init, session_ack)
+    except ValueError as exc:
+        raise A2CNError("PROTOCOL_VERSION_MISMATCH", str(exc), 400) from exc
 
 
 def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
@@ -365,6 +382,16 @@ def check_offer_money_params(
 # Session manager / state machine
 # ---------------------------------------------------------------------------
 
+def _wire_version(session: Session) -> str:
+    """The wire version a live act of this session is signed and verified under.
+
+    It is the version the session was negotiated at, read from the session's own
+    SessionAck and SessionInit (Section 12.1.7), never the version this
+    implementation happens to emit.
+    """
+    return negotiated_protocol_version(session._session_init, session._session_ack)
+
+
 class SessionManager:
     """In-memory store + state machine for all sessions."""
 
@@ -398,6 +425,7 @@ class SessionManager:
         session_ack: dict,
         now: str,
     ) -> Session:
+        protocol_version = check_session_versions(session_init, session_ack)
         # Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
         proposed = session_init.get("session_params", {})
         accepted = session_ack.get("session_params_accepted", proposed)
@@ -419,6 +447,7 @@ class SessionManager:
         )
         session._session_init = session_init
         session._session_ack = session_ack
+        session.protocol_version = protocol_version
         self._sessions[session_id] = session
         return session
 
@@ -509,6 +538,19 @@ class SessionManager:
                     session_id=session.session_id,
                     message_id=message_id,
                 )
+
+        # A live act is signed under the session's negotiated wire version
+        # (Section 7.3.1). An act need not state it, but one that states another
+        # version is refused here rather than admitted under a version it did
+        # not claim (Section 12.1.7).
+        if "protocol_version" in message and message["protocol_version"] != _wire_version(session):
+            raise A2CNError(
+                "PROTOCOL_VERSION_MISMATCH",
+                "protocol_version does not match the session's negotiated version",
+                400,
+                session_id=session.session_id,
+                message_id=message_id,
+            )
 
     def process_message(self, session: Session, message: dict) -> dict:
         """
@@ -728,7 +770,7 @@ class SessionManager:
         timestamp = message.get("timestamp", "")
         expires_at = message.get("expires_at", "")
         protocol_act = protocol_act_object(
-            protocol_version=PROTOCOL_ACT_VERSION,  # Section 7.3.1
+            protocol_version=_wire_version(session),  # Section 7.3.1
             session_id=message.get("session_id", ""),
             round_number=message.get("round_number"),
             sequence_number=message.get("sequence_number"),
@@ -1085,7 +1127,9 @@ class SessionManager:
         # so all three agree on what a signature covers. An acceptance that does
         # not carry those fields cannot be rebound, and is refused rather than
         # checked against a payload assembled out of defaults.
-        acceptance_payload_hash = signed_act_hash(message)
+        acceptance_payload_hash = signed_act_hash(
+            message, version_when_absent=_wire_version(session)
+        )
         if acceptance_payload_hash is None:
             raise A2CNError(
                 "INVALID_SIGNATURE",
@@ -1209,7 +1253,7 @@ class SessionManager:
                 message_id=message.get("message_id"),
             )
 
-        payload_hash = signed_act_hash(message)
+        payload_hash = signed_act_hash(message, version_when_absent=_wire_version(session))
         if payload_hash is None:
             raise A2CNError(
                 "INVALID_SIGNATURE",
