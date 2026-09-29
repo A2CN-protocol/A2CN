@@ -22,9 +22,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-import { hashObject, privateKeyFromJwk, signJws } from "../src/a2cn/crypto.js";
+import {
+  canonicalize,
+  hashBytes,
+  hashObject,
+  privateKeyFromJwk,
+  signJws,
+} from "../src/a2cn/crypto.js";
 import {
   RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS,
+  SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
   SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
   SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
   generateSessionEvidenceRecord,
@@ -36,6 +43,7 @@ import {
   FINAL_OFFER_ACT_FIELDS,
   KNOWN_TRANSACTION_RECORD_VERSIONS,
   TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+  TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
   TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
   TRANSACTION_RECORD_VERSION_WITH_BASIS,
   generateTransactionRecord,
@@ -65,7 +73,8 @@ const PARITY_VECTORS = readJson("a2cn_ts", "parity", "vectors.json");
 const TR_0_1 = "transaction-record.schema.json";
 const TR_0_2 = "transaction-record-0.2.schema.json";
 const TR_0_3 = "transaction-record-0.3.schema.json";
-const TR_SCHEMAS = [TR_0_1, TR_0_2, TR_0_3];
+const TR_0_4 = "transaction-record-0.4.schema.json";
+const TR_SCHEMAS = [TR_0_1, TR_0_2, TR_0_3, TR_0_4];
 // Every other version's schema, which the record of one version must not fit.
 const OTHER_VERSIONS: Record<string, string[]> = Object.fromEntries(
   TR_SCHEMAS.map((file) => [file, TR_SCHEMAS.filter((other) => other !== file)]),
@@ -203,6 +212,7 @@ test("the transaction record schemas name the versions the generator emits", () 
     [TR_0_1, TRANSACTION_RECORD_VERSION_WITHOUT_BASIS],
     [TR_0_2, TRANSACTION_RECORD_VERSION_WITH_BASIS],
     [TR_0_3, TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT],
+    [TR_0_4, TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE],
   ]) {
     const found = schema(file);
     expect(found.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
@@ -216,10 +226,11 @@ test("the transaction record schemas name the versions the generator emits", () 
       TRANSACTION_RECORD_VERSION_WITHOUT_BASIS,
       TRANSACTION_RECORD_VERSION_WITH_BASIS,
       TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+      TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
     ].sort(),
   );
   expect([...ACCEPTED_TRANSACTION_RECORD_VERSIONS]).toEqual([
-    TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+    TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
   ]);
 });
 
@@ -243,20 +254,20 @@ const TRANSACTION_RECORDS: [string, string, () => Dict][] = [
     TR_0_3,
     () => (WITHOUT_BASIS.record_version_0_3 as Dict).full_record as Dict,
   ],
-  ["0.3 generated for a basis session", TR_0_3, () => replay(TR_VECTOR)],
-  ["0.3 generated for a session without basis", TR_0_3, () => replay(WITHOUT_BASIS)],
+  ["0.4 generated for a basis session", TR_0_4, () => replay(TR_VECTOR)],
+  ["0.4 generated for a session without basis", TR_0_4, () => replay(WITHOUT_BASIS)],
   [
-    "0.3 parity vector",
-    TR_0_3,
+    "0.4 parity vector",
+    TR_0_4,
     () => ((PARITY_VECTORS.session as Dict).expected as Dict).full_record as Dict,
   ],
-  ["0.3 generated without subject_reference", TR_0_3, withoutSubjectReference],
+  ["0.4 generated without subject_reference", TR_0_4, withoutSubjectReference],
   [
     "0.3 empty expires_at vector",
     TR_0_3,
     () => (EMPTY_EXPIRES_AT.record_version_0_3 as Dict).full_record as Dict,
   ],
-  ["0.3 generated with an empty expires_at", TR_0_3, () => replay(EMPTY_EXPIRES_AT)],
+  ["0.4 generated with an empty expires_at", TR_0_4, () => replay(EMPTY_EXPIRES_AT)],
 ];
 
 test.each(TRANSACTION_RECORDS)(
@@ -363,6 +374,7 @@ const HEALTHY_TRANSACTION_RECORDS: Record<string, () => Dict> = {
   [TR_0_1]: () => (WITHOUT_BASIS.record_version_0_1 as Dict).full_record as Dict,
   [TR_0_2]: () => EXPECTED_0_2.full_record as Dict,
   [TR_0_3]: () => EXPECTED_0_3.full_record as Dict,
+  [TR_0_4]: () => ((TR_VECTOR.expected as Dict).record_version_0_4 as Dict).full_record as Dict,
 };
 const EXTRA_FIELD_PLACES: [string, (record: Dict) => Dict][] = [
   ["the record", (record) => record],
@@ -424,6 +436,7 @@ test("every evidence record version a verifier recognizes has a schema that name
 
 const SER_0_1 = "session-evidence-record.schema.json";
 const SER_0_2 = "session-evidence-record-0.2.schema.json";
+const SER_0_4 = "session-evidence-record-0.4.schema.json";
 const SER_VECTOR = readJson("spec", "test-vectors", "session-evidence-record-parity.json");
 const EXTENSIONS_VECTOR = readJson("spec", "test-vectors", "session-evidence-record-extensions.json");
 const EXTENSIONS_KEY = privateKeyFromJwk(EXTENSIONS_VECTOR.producer_private_jwk as Dict);
@@ -436,6 +449,27 @@ function resealedEvidenceRecord(record: Dict, version: string, key: KeyObject, k
   copy.producer_signature = "";
   copy.record_hash = hashObject(copy);
   copy.producer_signature = signJws(copy.record_hash as string, key, kid);
+  return copy;
+}
+
+/**
+ * The record as generated before each act stated its wire version.
+ *
+ * Every act gained protocol_version, since none of the vector's acts states
+ * one; each loses it again and its act_hash and the chain are recomputed, so
+ * the record can be compared with one produced before acts stated their version.
+ */
+function withoutStatedWireVersions(record: Dict): Dict {
+  const copy = structuredClone(record);
+  for (const entry of copy.acts as Dict[]) {
+    const act = entry.act as Dict;
+    expect("protocol_version" in act).toBe(true);
+    delete act.protocol_version;
+    entry.act_hash = hashObject(act);
+  }
+  copy.act_chain_hash = hashBytes(
+    canonicalize((copy.acts as Dict[]).map((entry) => entry.act_hash)),
+  );
   return copy;
 }
 
@@ -578,26 +612,32 @@ test("a record release 0.3.0 produced still verifies", () => {
   expect(
     verifySessionEvidenceRecord(record, SER_VECTOR.did_documents as Record<string, Dict>),
   ).toBe(true);
-  // Apart from its version, this implementation produces the same record for the session.
-  const regenerated = resealedEvidenceRecord(
-    parityEvidenceRecord(),
+  // Apart from its version, and from each of its own acts now stating the wire
+  // version it was signed under, this implementation produces the same record.
+  const key = privateKeyFromJwk(SER_VECTOR.producer_private_jwk as Dict);
+  const kid = (SER_VECTOR.producer as Dict).verification_method as string;
+  const asReleased = resealedEvidenceRecord(
+    withoutStatedWireVersions(parityEvidenceRecord()),
     "0.1",
-    privateKeyFromJwk(SER_VECTOR.producer_private_jwk as Dict),
-    (SER_VECTOR.producer as Dict).verification_method as string,
+    key,
+    kid,
   );
-  expect(regenerated.record_hash).toBe(record.record_hash);
+  expect(asReleased.record_hash).toBe(record.record_hash);
+  // The stated versions are the only other difference, and they are not nothing.
+  const regenerated = resealedEvidenceRecord(parityEvidenceRecord(), "0.1", key, kid);
+  expect(regenerated.record_hash).not.toBe(record.record_hash);
 });
 
 test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
-  "a record that uses Sections 9A.8 to 9A.11 fits only the 0.2 schema: %s",
+  "a record that uses Sections 9A.8 to 9A.11 fits its own version's schema: %s",
   (name) => {
     // Sections 9A.8 to 9A.11 arrived in "0.2", so the released "0.1" schema, closed
-    // where each of them would go, cannot describe them. Verification does not
-    // depend on the version (Section 9A.2), so the record still verifies when it is
-    // relabelled "0.1".
+    // where each of them would go, cannot describe them. Every producer now emits
+    // "0.4" (Section 9A.2), which describes them all. Verification does not depend
+    // on the version, so the record still verifies when it is relabelled "0.1".
     const record = extensionEvidenceRecord(name);
     const released = schema(SER_0_1);
-    const current = schema(SER_0_2);
+    const current = schema(SER_0_4);
     const didDocuments = EXTENSIONS_VECTOR.did_documents as Record<string, Dict>;
     const features = extensionFeatures(record);
 
@@ -605,7 +645,7 @@ test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
     expect(((released.properties as Dict).terminal as Dict).additionalProperties).toBe(false);
     expect(((released.$defs as Dict).evidenceAct as Dict).additionalProperties).toBe(false);
     expect(((released.$defs as Dict).party as Dict).additionalProperties).toBe(false);
-    expect(record.record_version).toBe("0.2");
+    expect(record.record_version).toBe("0.4");
     expect(features.length).toBeGreaterThan(0);
     for (const feature of features) {
       expect(describes(current, feature), feature).toBe(true);
@@ -672,14 +712,18 @@ test("the evidence record schemas name the versions the generator emits", () => 
   for (const [file, version] of [
     [SER_0_2, SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT],
     [SER_0_3, SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT],
+    [SER_0_4, SESSION_EVIDENCE_RECORD_VERSION_CURRENT],
   ]) {
     expect(((schema(file).properties as Dict).record_version as Dict).const).toBe(version);
   }
-  // A verifier recognizes exactly the versions it has a schema for.
+  // A verifier recognizes exactly the versions it has a schema for, and that set
+  // is additive: "0.4" was added and none removed, so a record sealed under an
+  // earlier version stays valid.
   expect([...RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS]).toEqual([
     "0.1",
     SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
     SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
+    SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
   ]);
 });
 
@@ -805,11 +849,11 @@ test("the 0.3 schema's external_commitment_reference agrees with the vector", ()
   }
 });
 
-test("an external-channel record uses a member only the 0.3 schema describes", () => {
+test("an external-channel record uses a member only the later schemas describe", () => {
   const record = externalChannelEvidenceRecord();
-  const current = schema(SER_0_3);
+  const current = schema(SER_0_4);
 
-  expect(record.record_version).toBe("0.3");
+  expect(record.record_version).toBe("0.4");
   expect(Object.keys(record).filter((key) => !(key in (current.properties as Dict)))).toEqual([]);
   expect((current.required as string[]).filter((key) => !(key in record))).toEqual([]);
   for (const file of [SER_0_1, SER_0_2]) {
@@ -829,7 +873,9 @@ test("an external-channel record uses a member only the 0.3 schema describes", (
 });
 
 test("no record without the reference has every member the 0.3 schema requires", () => {
-  // Every record that does not complete through an external channel stays "0.2".
+  // "0.3" requires the reference by definition, so no record without one fits it
+  // under any label. The records themselves are "0.4", the version every producer
+  // now emits, where that reference is OPTIONAL.
   const required = schema(SER_0_3).required as string[];
   const records = [
     parityEvidenceRecord(),
@@ -839,7 +885,7 @@ test("no record without the reference has every member the 0.3 schema requires",
   ];
 
   for (const record of records) {
-    expect(record.record_version).toBe("0.2");
+    expect(record.record_version).toBe("0.4");
     expect(required.filter((key) => !(key in record))).toEqual(["external_commitment_reference"]);
   }
 });
@@ -851,4 +897,69 @@ test("the 0.2 evidence record schema is unchanged", () => {
     .digest("hex");
 
   expect(digest).toBe(EXTERNAL_CHANNEL_VECTOR.session_evidence_record_0_2_schema_sha256);
+});
+
+test("a stored 0.3 record still verifies and fits its own schema", () => {
+  // The additive recognizer, which nothing else in either suite pins. Section
+  // 9A.2: the SessionEvidenceRecord's accepted set GREW to include "0.4" and
+  // lost nothing, so a record sealed under an earlier version stays valid —
+  // the deliberate opposite of the TransactionRecord's clean break in the same
+  // release. The recognizer could have been narrowed to ["0.4"] and every other
+  // test would still have passed.
+  //
+  // This record is loaded, never generated: it is what this vector's session
+  // produced before universal "0.4", with the bytes it had.
+  const record = EXTERNAL_CHANNEL_VECTOR.historical_0_3_record as Dict;
+  const ownSchema = schema(SER_0_3);
+
+  expect(record.record_version).toBe("0.3");
+  expect(
+    verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_VECTOR.did_documents as Record<string, Dict>),
+  ).toBe(true);
+  expect(
+    Object.keys(record).filter((key) => !(key in (ownSchema.properties as Dict))),
+  ).toEqual([]);
+  expect((ownSchema.required as string[]).filter((key) => !(key in record))).toEqual([]);
+});
+
+test("the stored 0.3 record is today's record apart from its version", () => {
+  // The two differ in the version, the hash over it, and the seal over that,
+  // and in the wire version today's record states on each of its acts.
+  // A guard on the pair: if they drifted in any other member, the test above
+  // would be verifying an unrelated artifact while appearing to prove the
+  // recognizer.
+  const historical = EXTERNAL_CHANNEL_VECTOR.historical_0_3_record as Dict;
+  const current = (EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict;
+
+  expect(current.record_version).toBe("0.4");
+  const differing = [...new Set([...Object.keys(historical), ...Object.keys(current)])]
+    .filter((name) => JSON.stringify(historical[name]) !== JSON.stringify(current[name]))
+    .sort();
+  expect(differing).toEqual([
+    "act_chain_hash",
+    "acts",
+    "producer_signature",
+    "record_hash",
+    "record_version",
+  ]);
+  // The acts differ only in the stated version and the act_hash over it.
+  const nowActs = current.acts as Dict[];
+  const thenActs = historical.acts as Dict[];
+  expect(nowActs.length).toBe(thenActs.length);
+  const rest = (entry: Dict): Dict =>
+    Object.fromEntries(Object.entries(entry).filter(([k]) => k !== "act" && k !== "act_hash"));
+  let stated = 0;
+  nowActs.forEach((now, i) => {
+    const then = thenActs[i];
+    const act = structuredClone(now.act as Dict);
+    if (!("protocol_version" in (then.act as Dict)) && "protocol_version" in act) {
+      delete act.protocol_version;
+      stated += 1;
+    }
+    expect(act).toEqual(then.act);
+    expect(rest(now)).toEqual(rest(then));
+  });
+  // Every act, the session's own and the observed one, now states it.
+  expect(stated).toBe(nowActs.length);
+  expect(stated).toBe(2);
 });

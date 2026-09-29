@@ -6,8 +6,8 @@ import { expect, test } from "vitest";
 import { Session, SessionManager, SessionState, A2CNError } from "../src/a2cn/session.js";
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import { generateAuditLog } from "../src/a2cn/record.js";
-import type { Dict } from "../src/a2cn/messages.js";
-import { makeDidDocument } from "./conftest.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
+import { makeDidDocument, signDecline } from "./conftest.js";
 
 const INITIATOR_DID = "did:web:techcorp.example";
 const RESPONDER_DID = "did:web:acme-corp.com";
@@ -15,7 +15,7 @@ const RESPONDER_DID = "did:web:acme-corp.com";
 const SESSION_INIT: Dict = {
   message_type: "session_init",
   message_id: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -39,7 +39,7 @@ const SESSION_ACK: Dict = {
   message_id: "ack-msg-id",
   session_id: "sess-001",
   in_reply_to: "init-msg-id",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -74,7 +74,7 @@ function makeOffer(
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = options.terms ?? { total_value: 9_500_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,
@@ -111,7 +111,7 @@ function makeOffer(
 
 function resignOffer(offer: Dict): void {
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: offer.session_id,
     round_number: offer.round_number,
     sequence_number: offer.sequence_number,
@@ -148,15 +148,10 @@ function makeAcceptance(sess: Session, offer: Dict, msgId = "acc-1"): Dict {
     sender_verification_method: verificationMethod,
     timestamp: "2026-03-24T10:05:00Z",
   };
-  const payload = {
-    session_id: acceptance.session_id,
-    round_number: acceptance.round_number,
-    sequence_number: acceptance.sequence_number,
-    accepted_offer_id: acceptance.accepted_offer_id,
-    accepted_protocol_act_hash: acceptance.accepted_protocol_act_hash,
-  };
+  // Signed over the act's own envelope (Section 7.3.1), built from the very
+  // message the state machine receives.
   acceptance.acceptance_signature = signJws(
-    hashObject(payload),
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
     RESPONDER_PRIVATE_KEY,
     verificationMethod,
   );
@@ -356,13 +351,15 @@ test("message on terminal session raises", () => {
     message_type: "withdrawal",
     message_id: "w-1",
     session_id: sess.session_id,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "tc-agent",
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
-  mgr.processMessage(sess, withdrawal);
+  const signedWithdrawal = signDecline(withdrawal, INITIATOR_PRIVATE_KEY, `${INITIATOR_DID}#key-1`);
+  mgr.processMessage(sess, signedWithdrawal);
   expect(sess.state).toBe(SessionState.WITHDRAWN);
 
   // Now try to send another message
@@ -428,7 +425,12 @@ test("rejection at max rounds transitions to rejected final", () => {
     timestamp: "2026-03-24T10:05:00Z",
     reason_code: "PRICE_TOO_LOW",
   };
-  mgr.processMessage(sess, rejection);
+  const signedRejection = signDecline(
+    rejection,
+    RESPONDER_PRIVATE_KEY,
+    `${RESPONDER_DID}#key-2026-01`,
+  );
+  mgr.processMessage(sess, signedRejection);
   expect(sess.state).toBe(SessionState.REJECTED_FINAL);
 });
 
@@ -777,13 +779,15 @@ test("audit metadata defaults to autonomous without approval receipts", () => {
     message_type: "withdrawal",
     message_id: "withdrawal-autonomous",
     session_id: sess.session_id,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "tc-agent",
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
-  mgr.processMessage(sess, withdrawal);
+  const signedWithdrawal = signDecline(withdrawal, INITIATOR_PRIVATE_KEY, `${INITIATOR_DID}#key-1`);
+  mgr.processMessage(sess, signedWithdrawal);
 
   const metadata = generateAuditLog(sess).audit_metadata as Dict;
 

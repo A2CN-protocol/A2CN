@@ -55,6 +55,25 @@ RESPONDER_DID = "did:web:acme-corp.com"
 SERVER_DID = "did:web:localhost"
 
 
+def sign_decline(act: dict, private_key, verification_method: str) -> dict:
+    """A live decline as a signing party sends it: signed over its own envelope.
+
+    A rejection or withdrawal on the wire from an A2CN party must be signed
+    (Sections 7.5, 7.6), under the session's negotiated wire version.
+    """
+    from a2cn.crypto import sign_jws
+    from a2cn.messages import PROTOCOL_ACT_VERSION, SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
+
+    signed = dict(act)
+    signed["sender_verification_method"] = verification_method
+    signed[SIGNED_ACT_SIGNATURE_FIELDS[signed["message_type"]]] = sign_jws(
+        signed_act_hash(signed, version_when_absent=PROTOCOL_ACT_VERSION),
+        private_key,
+        kid=verification_method,
+    )
+    return signed
+
+
 def make_did_document(did: str, key_id: str, public_key_jwk: dict) -> dict:
     """Build a minimal W3C-compliant DID document."""
     vm_id = f"{did}#{key_id}"
@@ -191,7 +210,7 @@ def make_session_init(message_id: str | None = None) -> dict:
     return {
         "message_type": "session_init",
         "message_id": message_id or str(uuid.uuid4()),
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",

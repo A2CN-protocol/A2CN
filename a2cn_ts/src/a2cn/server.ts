@@ -34,6 +34,7 @@ import { generateSessionEvidenceRecord } from "./evidence.js";
 import { InvitationStore } from "./invitation.js";
 import { buildFulfillmentAttestation } from "./fulfillment.js";
 import {
+  PROTOCOL_ACT_VERSION,
   WebhookPayload,
   INVITATION_NOT_FOUND,
   INVITATION_EXPIRED,
@@ -585,7 +586,7 @@ function installRoutes(ctx: ServerContext): void {
     const cfg = ctx.responderConfig;
     const agentInfo = (cfg.agent_info as Dict) ?? {};
     return sendA2cn(reply, {
-      a2cn_version: "0.2",
+      a2cn_version: PROTOCOL_ACT_VERSION,
       agent_did: (agentInfo.did as string) ?? "",
       conformance_level: 2,
       deal_types: (cfg.deal_types as string[]) ?? ["saas_renewal"],
@@ -637,11 +638,14 @@ function installRoutes(ctx: ServerContext): void {
       });
     }
 
-    if (body.protocol_version !== "0.2") {
+    // One wire version per live session (Section 12.1.7). A peer on an earlier
+    // one is refused here, on the version, rather than later on a signature
+    // it cannot produce; stored acts at an earlier version still verify.
+    if (body.protocol_version !== PROTOCOL_ACT_VERSION) {
       return sendError(
         reply,
         "PROTOCOL_VERSION_MISMATCH",
-        "Only protocol_version '0.2' is supported",
+        `Only protocol_version '${PROTOCOL_ACT_VERSION}' is supported`,
         400,
         { messageId },
       );
@@ -682,7 +686,7 @@ function installRoutes(ctx: ServerContext): void {
       message_id: randomUUID(),
       session_id: sessionId,
       in_reply_to: messageId,
-      protocol_version: "0.2",
+      protocol_version: PROTOCOL_ACT_VERSION,
       session_params_accepted: {
         deal_type: sessionParams.deal_type,
         currency: sessionParams.currency,
@@ -1392,7 +1396,7 @@ function installRoutes(ctx: ServerContext): void {
   app.post("/invitations", async (request, reply) => {
     const body = parseBody(request);
 
-    if (body.a2cn_version !== "0.2") {
+    if (body.a2cn_version !== PROTOCOL_ACT_VERSION) {
       return sendError(
         reply,
         INVITATION_VERSION_MISMATCH,

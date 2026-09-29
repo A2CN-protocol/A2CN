@@ -36,7 +36,12 @@ import {
   verifyInvitationSignature,
 } from "../src/a2cn/crypto.js";
 import { InvitationStore } from "../src/a2cn/invitation.js";
-import { InvitationStatus, WebhookPayload, SessionInvitation } from "../src/a2cn/messages.js";
+import {
+  InvitationStatus,
+  WebhookPayload,
+  SessionInvitation,
+  signedActHash,
+} from "../src/a2cn/messages.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import { generateTransactionRecord } from "../src/a2cn/record.js";
 import { createServerContext } from "../src/a2cn/server.js";
@@ -410,7 +415,7 @@ async function main(): Promise<void> {
     const exp = nowFixed(900);
     const msgId = randomUUID();
     const act = {
-      protocol_version: "0.2",
+      protocol_version: sessionObj.protocol_version,
       session_id: sessId,
       round_number: rnd,
       sequence_number: seq,
@@ -505,21 +510,7 @@ async function main(): Promise<void> {
   const ts = sessionNow();
   const msgId = randomUUID();
   // Acceptance uses current round (3), not a new round; sequence advances.
-  // Signed payload is the 5-field acceptance object (Section 7.4), not a
-  // full protocol act — Acceptance messages carry no terms/expires_at.
-  const acceptancePayload = {
-    session_id: sessionId,
-    round_number: 3,
-    sequence_number: 4,
-    accepted_offer_id: r3Offer.message_id,
-    accepted_protocol_act_hash: r3Offer.protocol_act_hash,
-  };
-  const acceptanceSignature = signJws(
-    hashObject(acceptancePayload),
-    supplierPriv,
-    `${SUPPLIER_DID}#key-1`,
-  );
-  const supplierAcceptance = {
+  const supplierAcceptance: Dict = {
     message_type: "acceptance",
     message_id: msgId,
     session_id: sessionId,
@@ -532,8 +523,17 @@ async function main(): Promise<void> {
     sender_agent_id: "supply-agent-ts-001",
     sender_verification_method: `${SUPPLIER_DID}#key-1`,
     timestamp: ts,
-    acceptance_signature: acceptanceSignature,
   };
+  // Signed over the acceptance's own envelope (Section 7.3.1): the common header
+  // plus accepted_offer_id and accepted_protocol_act_hash, under the wire version
+  // the session was negotiated at.
+  supplierAcceptance.acceptance_signature = signJws(
+    signedActHash(supplierAcceptance, {
+      versionWhenAbsent: sessionObj.protocol_version,
+    }) as string,
+    supplierPriv,
+    `${SUPPLIER_DID}#key-1`,
+  );
   serverCtx.manager.processMessage(sessionObj, supplierAcceptance);
   client.processIncoming(sessionId, supplierAcceptance);
   log(
@@ -571,7 +571,7 @@ async function main(): Promise<void> {
     occurred_at: sessionNow(),
     session_state: "COMPLETED",
     terminal: true,
-    a2cn_version: "0.2",
+    a2cn_version: "0.3",
     record_hash: serverRecord.record_hash as string,
   });
   log("WEBHOOK PAYLOAD  (would be POST'd to webhook_url on terminal transition)", {

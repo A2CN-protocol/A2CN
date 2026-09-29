@@ -33,6 +33,7 @@ from a2cn.crypto import (
     sign_jws,
 )
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import (
     FINAL_OFFER_ACT_FIELDS,
     REASON_BASIS_MISMATCH,
@@ -59,6 +60,7 @@ VECTOR = json.loads(
 WITHOUT_BASIS = VECTOR["without_basis"]
 # The record this implementation produces for the basis session, and the "0.2"
 # record an implementation that predates the agreed_terms binding produced.
+EXPECTED_0_4 = VECTOR["expected"]["record_version_0_4"]
 EXPECTED_0_3 = VECTOR["expected"]["record_version_0_3"]
 EXPECTED_0_2 = VECTOR["expected"]["record_version_0_2"]
 _ABSENT = object()
@@ -157,7 +159,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
     session_init = {
         "message_type": "session_init",
         "message_id": "basis-local-init",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {**params, "subject": "Local basis record"},
         "initiator": {
             "organization_name": "TechCorp",
@@ -173,7 +175,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
         "message_id": "basis-local-ack",
         "session_id": session_id,
         "in_reply_to": "basis-local-init",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": params,
         "responder": {
             "organization_name": "Acme",
@@ -204,7 +206,7 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
 
     terms = {"total_value": 9_500_000, "currency": "USD", "basis": "gross"}
     act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -235,29 +237,28 @@ def _locally_signed_basis_record() -> tuple[dict, dict]:
             ),
         },
     )
-    payload = {
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": "basis-local-acc",
+        "in_reply_to": "basis-local-offer",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 2,
         "accepted_offer_id": "basis-local-offer",
         "accepted_protocol_act_hash": act_hash,
+        "sender_did": RESPONDER_DID,
+        "sender_agent_id": "seller-agent",
+        "sender_verification_method": _BASIS_RESPONDER_VM,
+        "timestamp": "2026-03-24T10:03:00Z",
     }
-    manager.process_message(
-        session,
-        {
-            "message_type": "acceptance",
-            "message_id": "basis-local-acc",
-            "in_reply_to": "basis-local-offer",
-            **payload,
-            "sender_did": RESPONDER_DID,
-            "sender_agent_id": "seller-agent",
-            "sender_verification_method": _BASIS_RESPONDER_VM,
-            "timestamp": "2026-03-24T10:03:00Z",
-            "acceptance_signature": sign_jws(
-                hash_object(payload), _BASIS_RESPONDER_KEY, kid=_BASIS_RESPONDER_VM
-            ),
-        },
+    # Signed over the act's own envelope (Section 7.3.1), built from the very
+    # message the state machine receives.
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), _BASIS_RESPONDER_KEY, kid=_BASIS_RESPONDER_VM
     )
+    manager.process_message(session, acceptance)
     assert session.state == SessionState.COMPLETED
     return generate_transaction_record(session), did_documents
 
@@ -288,12 +289,18 @@ def _resigned_over_its_act(record: dict) -> tuple[dict, list[str]]:
     )
     acceptance = record["final_acceptance"]
     acceptance["accepted_protocol_act_hash"] = act_hash
+    # The acceptance's own Section 7.3.1 envelope, rebuilt from the fields the
+    # record stores for it. Nothing is read from final_offer.
     acceptance["acceptance_signature"] = sign_jws(
         hash_object(
             {
+                "protocol_version": acceptance["protocol_version"],
                 "session_id": record["session_id"],
                 "round_number": acceptance["round_number"],
                 "sequence_number": acceptance["sequence_number"],
+                "message_type": acceptance["message_type"],
+                "sender_did": acceptance["sender_did"],
+                "timestamp": acceptance["timestamp"],
                 "accepted_offer_id": acceptance["accepted_offer_id"],
                 "accepted_protocol_act_hash": act_hash,
             }
@@ -344,8 +351,8 @@ def test_basis_record_vector_replays_to_the_expected_record():
     assert record["basis"] == VECTOR["session_ack"]["session_params_accepted"]["basis"]
     # agreed_terms is the final offer's terms, which restate the basis.
     assert record["agreed_terms"]["basis"] == record["basis"]
-    assert record == EXPECTED_0_3["full_record"]
-    assert record["record_hash"] == EXPECTED_0_3["record_hash"]
+    assert record == EXPECTED_0_4["full_record"]
+    assert record["record_hash"] == EXPECTED_0_4["record_hash"]
     assert _verifies(record)
 
 
@@ -373,16 +380,16 @@ def test_client_side_record_matches_the_vector():
     for message in copy.deepcopy(VECTOR["messages"]):
         client.process_incoming(session_id, message)
 
-    assert client.build_client_side_record(session_id) == EXPECTED_0_3["full_record"]
+    assert client.build_client_side_record(session_id) == EXPECTED_0_4["full_record"]
 
 
-def test_a_session_without_basis_replays_to_its_0_3_record():
+def test_a_session_without_basis_replays_to_its_bound_record():
     """A session that fixed no basis carries no basis, at whatever version."""
     record = generate_transaction_record(_replay_without_basis())
-    current = WITHOUT_BASIS["record_version_0_3"]
+    current = WITHOUT_BASIS["record_version_0_4"]
 
     assert "basis" not in record
-    assert record["record_version"] == "0.3"
+    assert record["record_version"] == "0.4"
     # The same fields in the same order: the same bytes, so the same hash (Section 9.2).
     assert json.dumps(record) == json.dumps(current["full_record"])
     assert record["record_hash"] == current["record_hash"]
@@ -392,7 +399,7 @@ def test_a_session_without_basis_replays_to_its_0_3_record():
 def test_client_side_record_for_a_session_without_basis_matches_the_vector():
     record = _client_side_record(WITHOUT_BASIS)
 
-    assert json.dumps(record) == json.dumps(WITHOUT_BASIS["record_version_0_3"]["full_record"])
+    assert json.dumps(record) == json.dumps(WITHOUT_BASIS["record_version_0_4"]["full_record"])
 
 
 def test_a_record_version_0_1_record_is_refused_as_unbound():
@@ -483,7 +490,7 @@ RECORD_BUILDERS = {"server": _server_side_record, "client": _client_side_record}
 def test_a_proposed_basis_the_session_ack_omits_is_not_recorded(basis, builder):
     """Section 9.3: the record's basis follows the SessionAck."""
     record = RECORD_BUILDERS[builder](_without_basis_proposing(basis))
-    current = WITHOUT_BASIS["record_version_0_3"]
+    current = WITHOUT_BASIS["record_version_0_4"]
 
     assert "basis" not in record
     assert json.dumps(record) == json.dumps(current["full_record"])
@@ -496,7 +503,7 @@ def test_a_proposed_basis_the_session_ack_omits_is_not_recorded(basis, builder):
 def test_a_proposed_basis_the_session_ack_omits_leaves_a_0_3_schema_record(basis, builder):
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(
-        (REPO_ROOT / "spec" / "schemas" / "transaction-record-0.3.schema.json").read_text()
+        (REPO_ROOT / "spec" / "schemas" / "transaction-record-0.4.schema.json").read_text()
     )
     record = RECORD_BUILDERS[builder](_without_basis_proposing(basis))
 
@@ -529,24 +536,26 @@ async def test_client_side_record_matches_the_server_record(
     offer = client._sessions[session_id]["latest_offer"]
 
     responder_vm = f"{RESPONDER_DID}#key-2026-01"
-    payload = {
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": str(uuid.uuid4()),
+        "in_reply_to": offer["message_id"],
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 2,
         "accepted_offer_id": offer["message_id"],
         "accepted_protocol_act_hash": offer["protocol_act_hash"],
-    }
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": str(uuid.uuid4()),
-        "in_reply_to": offer["message_id"],
-        **payload,
         "sender_did": RESPONDER_DID,
         "sender_agent_id": "sales-agent-acme-007",
         "sender_verification_method": responder_vm,
         "timestamp": offer["timestamp"],
-        "acceptance_signature": sign_jws(hash_object(payload), responder_keypair[0], kid=responder_vm),
     }
+    # Signed over the act's own envelope (Section 7.3.1).
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), responder_keypair[0], kid=responder_vm
+    )
     r = await responder_test_client.post(
         f"/sessions/{session_id}/messages",
         json=acceptance,
@@ -752,6 +761,6 @@ def test_basis_fixed_session_evidence_record_seals_the_record_and_verifies():
         producer_verification_method=producer["verification_method"],
     )
 
-    assert evidence["transaction_record_hash"] == EXPECTED_0_3["record_hash"]
-    assert evidence["record_hash"] == EXPECTED_0_3["evidence_record_hash"]
+    assert evidence["transaction_record_hash"] == EXPECTED_0_4["record_hash"]
+    assert evidence["record_hash"] == EXPECTED_0_4["evidence_record_hash"]
     assert verify_session_evidence_record(evidence, VECTOR["did_documents"])

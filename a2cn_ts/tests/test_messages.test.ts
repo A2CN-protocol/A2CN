@@ -206,15 +206,25 @@ test("acceptance payload", () => {
     acceptance_signature: "eyJ...",
   });
   const payload = acc.acceptancePayload();
+  // The Section 7.3.1 envelope: the common header plus the acceptance's own
+  // payload. It gained protocol_version, message_type, sender_did and timestamp
+  // over the five fields Section 7.4 used to sign, and dropped none.
   expect(new Set(Object.keys(payload))).toEqual(
     new Set([
+      "protocol_version",
       "session_id",
       "round_number",
       "sequence_number",
+      "message_type",
+      "sender_did",
+      "timestamp",
       "accepted_offer_id",
       "accepted_protocol_act_hash",
     ]),
   );
+  expect(payload.message_type).toBe("acceptance");
+  expect(payload.sender_did).toBe("did:web:buyer.example");
+  expect(payload.timestamp).toBe("2026-03-24T10:05:00Z");
 });
 
 test("none fields omitted", () => {

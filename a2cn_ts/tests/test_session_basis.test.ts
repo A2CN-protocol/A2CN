@@ -46,7 +46,7 @@ const VECTORS = JSON.parse(
   offer_cases: Dict[];
 };
 const INVITATION_SCHEMA = JSON.parse(
-  readFileSync(join(REPO_ROOT, "spec", "schemas", "session-invitation.schema.json"), "utf-8"),
+  readFileSync(join(REPO_ROOT, "spec", "schemas", "session-invitation-0.3.schema.json"), "utf-8"),
 ) as Dict;
 const MONEY_PARAM_FIXTURES: Record<string, Dict> = Object.fromEntries(
   ["offer_basis_diverges_from_session", "offer_currency_diverges_from_session"].map((name) => [
@@ -88,7 +88,7 @@ function initAndAck(proposed: Dict, accepted: Dict): [Dict, Dict] {
     message_id: randomUUID(),
     session_id: "sess-basis",
     in_reply_to: sessionInit.message_id,
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: { ...timing, ...accepted },
     responder: { did: RESPONDER_DID },
     responder_mandate: { mandate_type: "declared" },
@@ -116,7 +116,7 @@ function signedOffer(
   const messageType = rnd === 1 ? "offer" : "counteroffer";
   const signedTerms = structuredClone(terms);
   const protocolActHash = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: rnd,
@@ -612,7 +612,7 @@ function clientAnsweringWith(accepted: unknown, posted: Dict[] = []): A2CNClient
       message_id: randomUUID(),
       session_id: "sess-basis",
       in_reply_to: (JSON.parse(init?.body as string) as Dict).message_id,
-      protocol_version: "0.2",
+      protocol_version: "0.3",
       responder: { did: RESPONDER_DID },
       responder_mandate: { mandate_type: "declared" },
       session_created_at: NOW,

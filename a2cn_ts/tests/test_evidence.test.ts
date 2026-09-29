@@ -29,7 +29,7 @@ import {
   verifyTransactionRecord,
 } from "../src/a2cn/record.js";
 import { Session, SessionManager, SessionState } from "../src/a2cn/session.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const { privateKey: INITIATOR_PRIVATE_KEY, publicKey: INITIATOR_PUBLIC_KEY } = generateKeypair();
@@ -47,7 +47,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -70,7 +70,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -138,7 +138,7 @@ function makeOffer(
   const privateKey =
     senderDid === INITIATOR_DID ? INITIATOR_PRIVATE_KEY : RESPONDER_PRIVATE_KEY;
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: roundNumber,
     sequence_number: sequenceNumber,
@@ -171,14 +171,7 @@ function makeOffer(
 }
 
 function makeAcceptance(sessionId: string, offer: Dict): Dict {
-  const payload = {
-    session_id: sessionId,
-    round_number: offer.round_number,
-    sequence_number: 2,
-    accepted_offer_id: offer.message_id,
-    accepted_protocol_act_hash: offer.protocol_act_hash,
-  };
-  return {
+  const acceptance: Dict = {
     message_type: "acceptance",
     message_id: "acceptance-1",
     session_id: sessionId,
@@ -191,8 +184,15 @@ function makeAcceptance(sessionId: string, offer: Dict): Dict {
     sender_agent_id: "seller-agent",
     sender_verification_method: RESPONDER_VM,
     timestamp: "2026-03-24T10:03:00Z",
-    acceptance_signature: signJws(hashObject(payload), RESPONDER_PRIVATE_KEY, RESPONDER_VM),
   };
+  // Signed over the act's own envelope (Section 7.3.1): the common header plus
+  // an acceptance's payload, accepted_offer_id and accepted_protocol_act_hash.
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    RESPONDER_PRIVATE_KEY,
+    RESPONDER_VM,
+  );
+  return acceptance;
 }
 
 function markTimedOut(session: Session): void {
@@ -235,7 +235,7 @@ function externalCounteroffer(): Dict {
 
 function thirdPartyOffer(sessionId: string): Dict {
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 3,
@@ -282,7 +282,7 @@ function malformedSignedObservation(
   }
 
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: (act.session_id as string) ?? "",
     round_number: act.round_number,
     sequence_number: act.sequence_number,
@@ -413,11 +413,18 @@ test("signed local offer and timeout are unilateral", () => {
 });
 
 test("timestamp and message id are nullable for incomplete unsigned terminal act", () => {
-  const [manager, session, didDocuments] = makeSession();
-  manager.processMessage(session, {
+  // A live withdrawal must now be signed, so an incomplete unsigned one reaches a
+  // record only as a stored act, not through the state machine (Section 7.6).
+  const [, session, didDocuments] = makeSession();
+  session._message_log.push({
     message_type: "withdrawal",
+    round_number: 1,
     sender_did: INITIATOR_DID,
   });
+  session.state = SessionState.WITHDRAWN;
+  session.current_turn = "none";
+  session.terminal_reason = "withdrawal";
+  session.terminal_message_id = null;
 
   const evidence = generateEvidence(session);
   const terminal = evidence.terminal as Dict;
@@ -659,6 +666,84 @@ test.each([
   expect(evidence.transaction_record_hash).toBeNull();
   expect(evidence.evidence_level).toBe("unilateral");
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
+});
+
+const DECLINE_PARITY_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "spec",
+  "test-vectors",
+  "session-evidence-record-decline.json",
+);
+
+/** The record the decline vector's session produces — generated, not loaded. */
+function declineParityRecord(fixture: Dict): Dict {
+  const source = fixture.session as Dict;
+  const producer = fixture.producer as Dict;
+  const session = new Session({
+    session_id: source.session_id as string,
+    state: source.state as string,
+    current_turn: "none",
+    terminal_reason: source.terminal_reason as string,
+    terminal_message_id: source.terminal_message_id as string | null,
+    session_created_at: source.session_created_at as string,
+    state_updated_at: source.state_updated_at as string,
+    session_params: source.session_params as Dict,
+    initiator_mandate: source.initiator_mandate as Dict,
+    responder_mandate: source.responder_mandate as Dict,
+    _session_init: source.session_init as Dict,
+    _session_ack: source.session_ack as Dict,
+    _message_log: source.message_log as Dict[],
+  });
+  return generateSessionEvidenceRecord(session, {
+    producerPrivateKey: privateKeyFromJwk(fixture.producer_private_jwk as Dict),
+    producerDid: producer.did as string,
+    producerAgentId: producer.agent_id as string,
+    producerVerificationMethod: producer.verification_method as string,
+    observedActs: fixture.observed_acts as Dict[] | null,
+  });
+}
+
+test("decline-bearing record has Python/TypeScript hash parity", () => {
+  // Both implementations EMIT identical bytes for a record carrying a signed
+  // decline. Generate-and-compare, never load-and-verify: this family exists to
+  // prove that today's two generators agree, and a loaded record would pass
+  // while proving neither implementation generated anything.
+  //
+  // Signed declines are this change's headline feature and nothing crossed them
+  // with the repository's cross-language byte-parity property: decline ACTS had
+  // a shared vector (signed-decline-acts.json), decline-bearing RECORDS had
+  // none. The pinned values were produced by the Python generator, so a failure
+  // here is a real divergence rather than a stale fixture.
+  const fixture = JSON.parse(readFileSync(DECLINE_PARITY_PATH, "utf-8")) as Dict;
+  const record = declineParityRecord(fixture);
+  const expected = fixture.expected as Dict;
+
+  expect(record.record_version).toBe(expected.record_version);
+  expect(record.evidence_id).toBe(expected.evidence_id);
+  expect(record.generated_at).toBe(expected.generated_at);
+  expect(record.evidence_level).toBe(expected.evidence_level);
+  expect((record.acts as Dict[]).map((entry) => entry.act_hash)).toEqual(expected.act_hashes);
+  expect(record.act_chain_hash).toBe(expected.act_chain_hash);
+  expect(record.record_hash).toBe(expected.record_hash);
+  expect(verifySessionEvidenceRecord(record, fixture.did_documents as Record<string, Dict>)).toBe(
+    true,
+  );
+});
+
+test("the decline parity vector actually carries decline vocabulary", () => {
+  // A guard on the fixture, so the parity test above cannot come to prove
+  // nothing. Without it, an edit that dropped the signature from the stored
+  // rejection would leave the hash comparison passing on an ordinary record,
+  // silently retiring the only cross-language coverage a signed decline has.
+  const fixture = JSON.parse(readFileSync(DECLINE_PARITY_PATH, "utf-8")) as Dict;
+  const record = declineParityRecord(fixture);
+
+  const signatureTypes = (record.acts as Dict[]).map((entry) => entry.signature_type);
+  expect(signatureTypes).toContain("rejection_signature");
+  expect(record.record_version).toBe("0.4");
+  expect((record.acts as Dict[]).every((e) => e.attribution === "verified_signature")).toBe(true);
 });
 
 test("shared session evidence vector has Python/TypeScript hash parity", () => {
@@ -933,6 +1018,8 @@ test("an observed responder claiming a verified signature is rejected", () => {
     messageId: "portal-quote-1",
     timestamp: "2026-03-24T10:02:00Z",
   });
+  // Recorded as a record states an act: with the wire version it was signed under.
+  signedAct.protocol_version = PROTOCOL_ACT_VERSION;
   const attack = structuredClone(healthy);
   (attack.acts as Dict[])[1] = {
     sequence_number: 2,
@@ -1654,16 +1741,16 @@ function bilateralRecord(): [Dict, Record<string, Dict>, Session] {
 
 // --- (i) and (ii): each completion witness on its own ------------------------
 
-test("a bilateral COMPLETED record keeps its transaction record hash at 0.2", () => {
+test("a bilateral COMPLETED record keeps its transaction record hash", () => {
   const [evidence, didDocuments, session] = bilateralRecord();
 
-  expect(evidence.record_version).toBe("0.2");
+  expect(evidence.record_version).toBe("0.4");
   expect(evidence.transaction_record_hash).toBe(generateTransactionRecord(session).record_hash);
   expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
 });
 
-test("an external-channel COMPLETED record is valid at 0.3", () => {
+test("an external-channel COMPLETED record is valid", () => {
   const [session, didDocuments] = externalChannelSession();
   // No TransactionRecord exists for this session: the counterparty never signed
   // an A2CN act. So the record below is produced without generating one.
@@ -1674,7 +1761,7 @@ test("an external-channel COMPLETED record is valid at 0.3", () => {
     externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
   });
 
-  expect(evidence.record_version).toBe("0.3");
+  expect(evidence.record_version).toBe("0.4");
   expect((evidence.terminal as Dict).outcome).toBe(SessionState.COMPLETED);
   expect(evidence.transaction_record_hash).toBeNull();
   expect(evidence.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
@@ -1723,6 +1810,26 @@ test("a COMPLETED record with neither witness is rejected", () => {
   reseal(bilateral);
 
   expect(verifySessionEvidenceRecord(bilateral, bilateralDocuments)).toBe(false);
+});
+
+test("a 0.4 COMPLETED record with neither witness is rejected", () => {
+  // The case above relabels to "0.2" precisely so the version rule passes and
+  // only the witness rule can fire. At "0.4" that isolation is free: the
+  // reference is OPTIONAL there, so removing it leaves the version rule silent
+  // and nothing but Section 9A.6 step 9 to refuse the record. Nothing else
+  // covered the version the generator actually produces.
+  const [healthy, didDocuments] = externalChannelRecord();
+  expect(healthy.record_version).toBe("0.4");
+  expect(verifySessionEvidenceRecord(healthy, didDocuments)).toBe(true);
+
+  const neither = structuredClone(healthy);
+  delete neither.external_commitment_reference;
+  reseal(neither);
+
+  // No relabel: the record is refused while still carrying the version it was
+  // generated with.
+  expect(neither.record_version).toBe("0.4");
+  expect(verifySessionEvidenceRecord(neither, didDocuments)).toBe(false);
 });
 
 test.each([
@@ -2031,7 +2138,7 @@ test("a null reference is not supplied", () => {
 
   const evidence = generateEvidenceWith(session, null, { externalCommitmentReference: null });
 
-  expect(evidence.record_version).toBe("0.2");
+  expect(evidence.record_version).toBe("0.4");
   expect(hasKey(evidence, "external_commitment_reference")).toBe(false);
   expect(verifySessionEvidenceRecord(evidence, didDocuments)).toBe(true);
 });
@@ -2045,7 +2152,7 @@ test("a null reference is not supplied", () => {
  * reference sealed exactly this record, over a TransactionRecord whose responder
  * was empty.
  */
-test.each(["0.2", "0.1"])(
+test.each(["0.4", "0.2", "0.1"])(
   "an observed completion with a transaction record hash is rejected: %s",
   (version) => {
     const [healthy, didDocuments] = externalChannelRecord();

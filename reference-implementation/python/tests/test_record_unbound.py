@@ -29,7 +29,7 @@ from a2cn.record import (
     KNOWN_TRANSACTION_RECORD_VERSIONS,
     REASON_UNBOUND_RECORD_VERSION,
     REASON_UNRECOGNIZED_RECORD_VERSION,
-    TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+    TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
     verify_transaction_record,
     verify_transaction_record_reason,
 )
@@ -42,7 +42,7 @@ RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
 TR_VERSIONS = RECORD_VERSIONS["transaction_record"]
 WITHOUT_BASIS = VECTOR["without_basis"]
 DOWNGRADE = VECTOR["downgrade_attack"]
-BOUND = VECTOR["expected"]["record_version_0_3"]["full_record"]
+BOUND = VECTOR["expected"]["record_version_0_4"]["full_record"]
 # The cases both suites apply to that record, one for each reason a verifier can
 # give, so the two implementations must name the same cause for the same bytes.
 REASON_API = VECTOR["reason_api"]
@@ -57,7 +57,7 @@ ALL_REASON_CODES = {
 
 # The recorded session each record shape came from, for its DID documents and
 # its offer chain.
-SHAPE_VECTOR = {"0.1": WITHOUT_BASIS, "0.2": VECTOR, "0.3": VECTOR}
+SHAPE_VECTOR = {"0.1": WITHOUT_BASIS, "0.2": VECTOR, "0.3": VECTOR, "0.4": VECTOR}
 
 
 def _offer_hashes(vector: dict) -> list[str]:
@@ -70,8 +70,10 @@ def _offer_hashes(vector: dict) -> list[str]:
 
 def _shape(version: str) -> dict:
     """A valid record of the given shape, as its producer emitted it."""
-    if version == "0.3":
+    if version == "0.4":
         return copy.deepcopy(BOUND)
+    if version == "0.3":
+        return copy.deepcopy(VECTOR["expected"]["record_version_0_3"]["full_record"])
     if version == "0.2":
         return copy.deepcopy(VECTOR["expected"]["record_version_0_2"]["full_record"])
     return copy.deepcopy(WITHOUT_BASIS["record_version_0_1"]["full_record"])
@@ -84,7 +86,7 @@ def _resealed(record: dict) -> dict:
     return record
 
 
-def _verdict(record: dict, shape: str = "0.3") -> tuple[bool, str | None]:
+def _verdict(record: dict, shape: str = "0.4") -> tuple[bool, str | None]:
     """The boolean and the reason, which must always agree."""
     vector = SHAPE_VECTOR[shape]
     args = (record, vector["did_documents"], _offer_hashes(vector))
@@ -112,19 +114,77 @@ def test_a_downgraded_record_is_rejected(case):
     assert reason == case["expected_reason"] == REASON_UNBOUND_RECORD_VERSION
 
 
-def test_the_untouched_downgrade_is_the_historical_record_itself():
-    """Stripping the act fields and relabelling reproduces the "0.2" record exactly.
+_MISSING = object()
 
-    That is what made the unbound tier a downgrade oracle: the forged shape and
-    the genuine older artifact are the same bytes, so accepting one accepted the
-    other.
+
+def _flatten(node, prefix=""):
+    """Every leaf of a record, as a dotted path."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield from _flatten(value, f"{prefix}.{key}" if prefix else key)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _flatten(value, f"{prefix}[{index}]")
+    else:
+        yield prefix, node
+
+
+def _differing_paths(left: dict, right: dict) -> set[str]:
+    """The paths whose values differ, or that only one side carries."""
+    left_flat = dict(_flatten(left))
+    right_flat = dict(_flatten(right))
+    return {
+        path
+        for path in left_flat.keys() | right_flat.keys()
+        if left_flat.get(path, _MISSING) != right_flat.get(path, _MISSING)
+    }
+
+
+def _downgrade_case(name: str) -> dict:
+    return next(case for case in DOWNGRADE["cases"] if case["name"] == name)
+
+
+def test_the_untouched_downgrade_differs_from_the_historical_record_in_one_signature():
+    """The forgery and the genuine older artifact are the same record but for a
+    signature.
+
+    That is what made the unbound tier a downgrade oracle: a verifier that
+    accepted an unbound version could not tell them apart by anything that
+    matters, so accepting one accepted the other.
+
+    This used to assert byte-equality. That held only while both artifacts were
+    signed by the same key, and the key that signed the historical record was
+    never stored -- the fact that forced this vector's session to be re-keyed --
+    so the claim is stated as the exact difference instead. Naming the differing
+    paths is sharper than the byte-equality was: it says precisely what an
+    unbound-accepting verifier would have to distinguish them by, and it fails
+    loudly if anything else ever diverges. A key-set or shape comparison would
+    pass even with agreed_terms corrupted; this does not.
     """
-    untouched = next(
-        case for case in DOWNGRADE["cases"]
-        if case["name"] == "stripped-and-relabelled-0.2-terms-untouched"
-    )
+    untouched = _downgrade_case("stripped-and-relabelled-0.2-terms-untouched")
+    historical = VECTOR["expected"]["record_version_0_2"]["full_record"]
 
-    assert untouched["record_hash"] == VECTOR["expected"]["record_version_0_2"]["record_hash"]
+    assert _differing_paths(untouched["full_record"], historical) == {
+        "final_acceptance.acceptance_signature",
+        "record_hash",
+    }
+
+
+def test_the_downgrade_diff_is_sensitive_rather_than_blind():
+    """The positive control for the test above.
+
+    A diff that reported "only the signature differs" for every case would prove
+    nothing. The case that alters the terms must show the extra path, exactly
+    where the alteration is.
+    """
+    altered = _downgrade_case("stripped-and-relabelled-0.2-with-altered-terms")
+    historical = VECTOR["expected"]["record_version_0_2"]["full_record"]
+
+    assert _differing_paths(altered["full_record"], historical) == {
+        "final_acceptance.acceptance_signature",
+        "record_hash",
+        "agreed_terms.total_value",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -133,16 +193,16 @@ def test_the_untouched_downgrade_is_the_historical_record_itself():
 
 def test_only_the_bound_version_is_accepted():
     assert ACCEPTED_TRANSACTION_RECORD_VERSIONS == (
-        TRANSACTION_RECORD_VERSION_RECOMPUTABLE_ACT,
+        TRANSACTION_RECORD_VERSION_SIGNED_ACCEPTANCE,
     )
     assert list(ACCEPTED_TRANSACTION_RECORD_VERSIONS) == TR_VERSIONS["accepted"]
     # The older shapes are still known, because their schema files are published.
-    assert set(KNOWN_TRANSACTION_RECORD_VERSIONS) == {"0.1", "0.2", "0.3"}
+    assert set(KNOWN_TRANSACTION_RECORD_VERSIONS) == {"0.1", "0.2", "0.3", "0.4"}
     assert set(ACCEPTED_TRANSACTION_RECORD_VERSIONS) < set(KNOWN_TRANSACTION_RECORD_VERSIONS)
 
 
 def test_the_bound_record_still_verifies():
-    verified, reason = _verdict(_shape("0.3"))
+    verified, reason = _verdict(_shape("0.4"))
 
     assert verified is True
     assert reason is None
@@ -168,7 +228,7 @@ def test_a_known_but_unbindable_version_is_rejected_as_unbound(case):
 )
 def test_a_value_that_is_not_a_known_version_is_rejected_as_unrecognized(case):
     """The generic rejection stays, and is distinct from the unbound one."""
-    record = _shape("0.3")
+    record = _shape("0.4")
     if "record_version" in case:
         record["record_version"] = copy.deepcopy(case["record_version"])
     else:
@@ -188,7 +248,7 @@ def test_a_value_that_is_not_a_known_version_is_rejected_as_unrecognized(case):
 def test_the_boolean_verifier_keeps_its_signature_and_return_type():
     """Callers that only want a verdict are untouched by the reason API."""
     vector = VECTOR
-    record = _shape("0.3")
+    record = _shape("0.4")
 
     assert verify_transaction_record(record, vector["did_documents"]) is False
     verdict = verify_transaction_record(
@@ -225,7 +285,7 @@ def test_the_reason_is_none_exactly_when_the_boolean_is_true():
 
 def _mutated(case: dict) -> dict:
     """Apply one shared case to the bound record, resealing when it says to."""
-    record = _shape("0.3")
+    record = _shape("0.4")
     mutation = case["mutation"]
     value = case.get("value")
 

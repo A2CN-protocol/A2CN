@@ -22,13 +22,19 @@ from a2cn.crypto import (
     sign_jws,
     create_jwt,
 )
-from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    negotiated_protocol_version,
+    protocol_act_object,
+    signed_act_hash,
+)
 from a2cn.record import generate_transaction_record, A2CN_NAMESPACE
 from a2cn.session import (
     A2CNError,
     Session,
     SessionState,
     check_fixed_money_params,
+    check_session_versions,
     check_offer_money_params,
 )
 
@@ -96,7 +102,7 @@ class A2CNClient:
         session_init = {
             "message_type": "session_init",
             "message_id": message_id,
-            "protocol_version": "0.2",
+            "protocol_version": PROTOCOL_ACT_VERSION,
             "session_params": session_params,
             "initiator": self.agent_info,
             "initiator_mandate": self.mandate,
@@ -118,7 +124,9 @@ class A2CNClient:
         if not isinstance(ack, dict):
             raise A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400)
 
-        # The responder must echo currency, and any basis it carries, unchanged (Section 6.4.1)
+        # The responder must state the version this client proposed (Section 12.1.7),
+        # and echo currency, and any basis it carries, unchanged (Section 6.4.1)
+        check_session_versions(session_init, ack)
         check_fixed_money_params(session_params, ack.get("session_params_accepted"))
 
         # Cache session state
@@ -166,7 +174,9 @@ class A2CNClient:
 
         # Build protocol act object (Section 7.3.1)
         protocol_act = protocol_act_object(
-            protocol_version=PROTOCOL_ACT_VERSION,
+            protocol_version=negotiated_protocol_version(
+                state["session_init"], state["session_ack"]
+            ),
             session_id=session_id,
             round_number=round_number,
             sequence_number=sequence_number,
@@ -252,21 +262,6 @@ class A2CNClient:
         accepted_offer_id = offer["message_id"]
         accepted_hash = offer["protocol_act_hash"]
 
-        # Build acceptance payload for signing (Section 7.4)
-        acceptance_payload = {
-            "session_id": session_id,
-            "round_number": round_number,
-            "sequence_number": sequence_number,
-            "accepted_offer_id": accepted_offer_id,
-            "accepted_protocol_act_hash": accepted_hash,
-        }
-
-        acceptance_signature = sign_jws(
-            hash_object(acceptance_payload),
-            self.private_key,
-            kid=self.agent_info["verification_method"],
-        )
-
         acceptance = {
             "message_type": "acceptance",
             "message_id": message_id,
@@ -280,8 +275,22 @@ class A2CNClient:
             "sender_agent_id": self.agent_info["agent_id"],
             "sender_verification_method": self.agent_info["verification_method"],
             "timestamp": timestamp,
-            "acceptance_signature": acceptance_signature,
         }
+
+        # Signed over the act's own envelope (Section 7.3.1): the common header
+        # plus an acceptance's payload, accepted_offer_id and
+        # accepted_protocol_act_hash. The act is built first so that what is
+        # signed is rebuilt from the very message that goes on the wire.
+        acceptance["acceptance_signature"] = sign_jws(
+            signed_act_hash(
+                acceptance,
+                version_when_absent=negotiated_protocol_version(
+                    state["session_init"], state["session_ack"]
+                ),
+            ),
+            self.private_key,
+            kid=self.agent_info["verification_method"],
+        )
 
         headers = {
             "Content-Type": A2CN_CONTENT_TYPE,

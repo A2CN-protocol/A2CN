@@ -32,10 +32,11 @@ from a2cn.line_items import (
     session_currency_is_supported,
     to_minor_units,
 )
+from a2cn.messages import PROTOCOL_ACT_VERSION
 from a2cn.session import A2CNError, check_offer_money_params
 
 REPO_ROOT = Path(__file__).parents[3]
-SCHEMA = json.loads((REPO_ROOT / "spec" / "schemas" / "offer.schema.json").read_text())
+SCHEMA = json.loads((REPO_ROOT / "spec" / "schemas" / "offer-0.3.schema.json").read_text())
 VECTOR = json.loads(
     (REPO_ROOT / "spec" / "test-vectors" / "offer-line-item-keys.json").read_text()
 )
@@ -65,7 +66,7 @@ def _ids(cases: list[dict]) -> list[str]:
 def test_the_offer_schema_is_published_at_the_wire_version():
     """An offer is a wire message, so its schema's $id carries the wire version."""
     assert SCHEMA["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert SCHEMA["$id"] == "https://a2cn.dev/schemas/offer/0.2"
+    assert SCHEMA["$id"] == f"https://a2cn.dev/schemas/offer/{PROTOCOL_ACT_VERSION}"
 
 
 def test_the_vector_offer_validates_against_the_schema():

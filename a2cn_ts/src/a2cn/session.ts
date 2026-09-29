@@ -17,7 +17,16 @@ import {
   lineItemKeyViolations,
   sessionCurrencyIsSupported,
 } from "./line_items.js";
-import { PROTOCOL_ACT_VERSION, protocolActObject, type Dict } from "./messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  RESERVED_WIRE_KEYS,
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  isActInteger,
+  negotiatedProtocolVersion,
+  protocolActObject,
+  signedActHash,
+  type Dict,
+} from "./messages.js";
 
 // Re-exported: see the note beside their old home further down this file.
 export { A2CNError, now };
@@ -55,7 +64,7 @@ export const SessionState = {
 export class Session {
   // Identity
   session_id: string;
-  protocol_version = "0.2";
+  protocol_version = PROTOCOL_ACT_VERSION;
 
   // State machine
   state: string = SessionState.PENDING;
@@ -181,6 +190,25 @@ function isJsonObject(value: unknown): value is Dict {
  * SESSION_PARAM_CHANGED, naming the parameter, is left for a well-formed value
  * that differs (Section 12.3).
  */
+/**
+ * The wire version both messages agree on, or PROTOCOL_VERSION_MISMATCH (Section 12.1.7).
+ *
+ * A SessionAck states the version of the SessionInit it answers. A message that
+ * states none, states one this implementation does not recognise, or states
+ * another than its counterpart is refused rather than filled in, so no party
+ * signs under a version it did not propose.
+ */
+export function checkSessionVersions(sessionInit: unknown, sessionAck: unknown): string {
+  try {
+    if (sessionAck === null || sessionAck === undefined) {
+      throw new Error("SessionAck protocol_version must be a non-empty string");
+    }
+    return negotiatedProtocolVersion(sessionInit, sessionAck);
+  } catch (exc) {
+    throw new A2CNError("PROTOCOL_VERSION_MISMATCH", (exc as Error).message, 400);
+  }
+}
+
 export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
   if (!isJsonObject(proposed)) {
     throw new A2CNError("INVALID_REQUEST", "SessionInit session_params must be an object", 400);
@@ -386,6 +414,17 @@ const VALID_MESSAGE_TYPES = new Set([
 ]);
 
 /** In-memory store + state machine for all sessions. */
+/**
+ * The wire version a live act of this session is signed and verified under.
+ *
+ * It is the version the session was negotiated at, read from the session's own
+ * SessionAck and SessionInit (Section 12.1.7), never the version this
+ * implementation happens to emit.
+ */
+function wireVersion(session: Session): string {
+  return negotiatedProtocolVersion(session._session_init, session._session_ack);
+}
+
 export class SessionManager {
   _sessions: Record<string, Session> = {};
   // Pre-session idempotency: message_id → response dict
@@ -414,6 +453,7 @@ export class SessionManager {
   }
 
   createSession(sessionId: string, sessionInit: Dict, sessionAck: Dict, now: string): Session {
+    const protocolVersion = checkSessionVersions(sessionInit, sessionAck);
     // Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
     const proposed = sessionInit.session_params === undefined ? {} : sessionInit.session_params;
     const accepted =
@@ -436,6 +476,7 @@ export class SessionManager {
     });
     session._session_init = sessionInit;
     session._session_ack = sessionAck;
+    session.protocol_version = protocolVersion;
     this._sessions[sessionId] = session;
     return session;
   }
@@ -490,6 +531,72 @@ export class SessionManager {
           { sessionId: session.session_id, messageId },
         );
       }
+    }
+
+    // A withdrawal's round_number is required too, signed or not: it is part of
+    // the header every signed act covers (Section 7.6), and the schema requires
+    // it. It is the round in progress, so a withdrawal sent before any offer
+    // carries 1. It is judged by value, as the signed act's rebuild judges it, so
+    // 2.0 is the integer 2 and a boolean is not a number.
+    if (messageType === "withdrawal") {
+      const rnd = message.round_number;
+      if (!(isActInteger(rnd) && rnd >= 1)) {
+        throw new A2CNError(
+          "INVALID_REQUEST",
+          "round_number must be a positive integer on a withdrawal",
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
+
+    // A wire act never carries the evidence record's own members (Section 7.3.1): an
+    // act that did would read, once recorded, as a record entry that states its
+    // own attribution and signature, or wraps another act. Checked with `in`, so a
+    // key a library caller's object inherits through its prototype is refused too:
+    // any property read sees it, though JSON cannot produce it.
+    for (const fieldName of [...RESERVED_WIRE_KEYS].sort()) {
+      if (fieldName in message) {
+        throw new A2CNError(
+          "INVALID_REQUEST",
+          `${messageType} carries ${fieldName}, which is reserved for the evidence record`,
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
+
+    // Each act type has its own signature field (Section 7.3.1). A field that
+    // belongs to another type is refused whatever its value, null included:
+    // nothing here would verify it, while the evidence record reads it as a
+    // signature claim, so admitting it would leave the session with a record
+    // that cannot verify.
+    const ownField = SIGNED_ACT_SIGNATURE_FIELDS[messageType];
+    for (const fieldName of [...new Set(Object.values(SIGNED_ACT_SIGNATURE_FIELDS))].sort()) {
+      if (fieldName !== ownField && Object.prototype.hasOwnProperty.call(message, fieldName)) {
+        throw new A2CNError(
+          "INVALID_SIGNATURE",
+          `${messageType} carries ${fieldName}, which is not its signature field`,
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
+
+    // A live act is signed under the session's negotiated wire version
+    // (Section 7.3.1). An act need not state it, but one that states another
+    // version is refused here rather than admitted under a version it did not
+    // claim (Section 12.1.7).
+    if (
+      Object.prototype.hasOwnProperty.call(message, "protocol_version") &&
+      message.protocol_version !== wireVersion(session)
+    ) {
+      throw new A2CNError(
+        "PROTOCOL_VERSION_MISMATCH",
+        "protocol_version does not match the session's negotiated version",
+        400,
+        { sessionId: session.session_id, messageId },
+      );
     }
   }
 
@@ -701,7 +808,7 @@ export class SessionManager {
     const timestamp = (message.timestamp as string) ?? "";
     const expiresAt = (message.expires_at as string) ?? "";
     const protocolAct = protocolActObject({
-      protocol_version: PROTOCOL_ACT_VERSION, // Section 7.3.1
+      protocol_version: wireVersion(session), // Section 7.3.1
       session_id: (message.session_id as string) ?? "",
       round_number: message.round_number,
       sequence_number: message.sequence_number,
@@ -1033,14 +1140,23 @@ export class SessionManager {
     // Sequence check
     this.checkSequence(session, message);
 
-    const acceptancePayload = {
-      session_id: (message.session_id as string) ?? "",
-      round_number: message.round_number,
-      sequence_number: message.sequence_number,
-      accepted_offer_id: acceptedOfferId,
-      accepted_protocol_act_hash: acceptedHash,
-    };
-    this.verifySenderSignature(session, message, hashObject(acceptancePayload), "acceptance_signature");
+    // The acceptance's signed act (Section 7.3.1), rebuilt from the message's
+    // own fields by the same primitive the evidence and record verifiers use, so
+    // all three agree on what a signature covers. An acceptance that does not
+    // carry those fields cannot be rebound, and is refused rather than checked
+    // against a payload assembled out of defaults.
+    const acceptancePayloadHash = signedActHash(message, {
+      versionWhenAbsent: wireVersion(session),
+    });
+    if (acceptancePayloadHash === null) {
+      throw new A2CNError(
+        "INVALID_SIGNATURE",
+        "Acceptance does not carry the fields its signature must cover",
+        400,
+        { sessionId: session.session_id, messageId },
+      );
+    }
+    this.verifySenderSignature(session, message, acceptancePayloadHash, "acceptance_signature");
 
     // Offer hash match
     if (acceptedOfferId !== session.latest_offer_id) {
@@ -1110,10 +1226,63 @@ export class SessionManager {
     return session.toStateDict();
   }
 
+  /**
+   * Require and verify a decline's signature (Sections 7.5, 7.6).
+   *
+   * A party's rejection or withdrawal must be signed, exactly as its offers and
+   * acceptances are, and is checked the same way: a missing signature is
+   * refused as it is for them, never recorded as an unsigned observation. That
+   * path belongs only to an act observed from a party that does not sign
+   * (Section 9A.3), which enters a record through the evidence generator, not
+   * through this state machine. Nothing about the act's own content can turn
+   * the check off, including an act that cannot be rebuilt, which is refused
+   * rather than skipped.
+   *
+   * This runs on handler entry, ahead of the state and sequence guards. A
+   * withdrawal is dispatched before the turn and approval guards and its
+   * sequence check is conditional, so a check placed after them would miss the
+   * shortest path into the handler.
+   */
+  private verifyDeclineSignature(session: Session, message: Dict): void {
+    const signatureField = SIGNED_ACT_SIGNATURE_FIELDS[message.message_type as string];
+    if (signatureField === undefined) {
+      return;
+    }
+    // A present field that is null, empty or not a string is refused as such; an
+    // absent one falls through to the same check an acceptance gets, which
+    // refuses it as a missing signature.
+    const signature = message[signatureField];
+    if (
+      Object.prototype.hasOwnProperty.call(message, signatureField) &&
+      (typeof signature !== "string" || signature === "")
+    ) {
+      throw new A2CNError("INVALID_SIGNATURE", `${signatureField} must be a non-empty string`, 400, {
+        sessionId: session.session_id,
+        messageId: message.message_id as string | undefined,
+      });
+    }
+
+    const payloadHash = signedActHash(message, { versionWhenAbsent: wireVersion(session) });
+    if (payloadHash === null) {
+      throw new A2CNError(
+        "INVALID_SIGNATURE",
+        `Act does not carry the fields its ${signatureField} must cover`,
+        400,
+        {
+          sessionId: session.session_id,
+          messageId: message.message_id as string | undefined,
+        },
+      );
+    }
+    this.verifySenderSignature(session, message, payloadHash, signatureField);
+  }
+
   private handleRejection(session: Session, message: Dict): Dict {
     const messageId = (message.message_id as string) ?? "";
     const senderDid = (message.sender_did as string) ?? "";
     const sequenceNumber = message.sequence_number as number;
+
+    this.verifyDeclineSignature(session, message);
 
     // State guard: rejection only valid in NEGOTIATING (finding 2.8)
     if (session.state !== SessionState.NEGOTIATING) {
@@ -1156,6 +1325,12 @@ export class SessionManager {
   private handleWithdrawal(session: Session, message: Dict): Dict {
     const messageId = (message.message_id as string) ?? "";
     const sequenceNumber = message.sequence_number as number | undefined;
+
+    this.verifyDeclineSignature(session, message);
+
+    // Only a party to the session may withdraw from it (Section 7.6). A valid
+    // signature proves who signed, not that the signer is a party.
+    this.senderRole(session, (message.sender_did as string) ?? "");
 
     // Sequence check for withdrawal (if applicable)
     if (sequenceNumber !== undefined && sequenceNumber !== null) {

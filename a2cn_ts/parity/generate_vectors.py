@@ -35,6 +35,7 @@ from a2cn.crypto import (
     sign_invitation,
     sign_jws,
 )
+from a2cn.messages import signed_act_hash
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SessionManager
 
@@ -265,13 +266,6 @@ counter_1 = build_offer(
     in_reply_to="parity-offer-1",
 )
 
-acceptance_payload = {
-    "session_id": SESSION_ID,
-    "round_number": 2,
-    "sequence_number": 3,
-    "accepted_offer_id": "parity-counter-1",
-    "accepted_protocol_act_hash": counter_1["protocol_act_hash"],
-}
 acceptance = {
     "message_type": "acceptance",
     "message_id": "parity-acc-1",
@@ -285,10 +279,15 @@ acceptance = {
     "sender_agent_id": "parity-agent",
     "sender_verification_method": f"{BUYER_DID}#key-1",
     "timestamp": "2026-03-24T10:03:00Z",
-    "acceptance_signature": sign_jws(
-        hash_object(acceptance_payload), buyer_priv, kid=f"{BUYER_DID}#key-1"
-    ),
 }
+# Signed over the act's own envelope (Section 7.3.1): the common header plus an
+# acceptance's payload. The act is built first so that what is signed is rebuilt
+# from the very message the vector carries.
+acceptance["acceptance_signature"] = sign_jws(
+    signed_act_hash(acceptance, version_when_absent=session_ack["protocol_version"]),
+    buyer_priv,
+    kid=f"{BUYER_DID}#key-1",
+)
 
 # Replay through the Python state machine to derive the expected record.
 manager = SessionManager()

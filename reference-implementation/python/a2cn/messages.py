@@ -8,9 +8,12 @@ omitting None fields (optional fields that were not set).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any
+
+from a2cn.crypto import hash_object
 
 
 def _drop_none(d: dict) -> dict:
@@ -32,14 +35,28 @@ def _drop_none(d: dict) -> dict:
 # The signed protocol act (Section 7.3.1)
 # ---------------------------------------------------------------------------
 
-# The wire version the protocol act object states. It is the a2cn_version /
-# protocol_version of Section 6.3.1, and it is part of what the signature
-# covers, so a signer and a verifier must use the same value.
-PROTOCOL_ACT_VERSION = "0.2"
+# The wire version this implementation emits and negotiates. It is the
+# a2cn_version / protocol_version of Section 6.3.1, and it is the first field of
+# every signed act object (Section 7.3.1), so a signer and a verifier must use
+# the same value for a live act. A responder negotiates only this version for a
+# live session (Section 12.1.7).
+PROTOCOL_ACT_VERSION = "0.3"
 
-# The protocol act object's fields, in the order Section 7.3.1 lists them. JCS
-# sorts keys before hashing, so the order is for readers.
-PROTOCOL_ACT_FIELDS = (
+# The wire version a recorded act that states no protocol_version is rebuilt
+# under (Section 7.3.1). Acts were recorded without their version until records
+# began stating it, and every such act was signed under "0.2". The value is
+# pinned for that reason and never follows PROTOCOL_ACT_VERSION: tying it to the
+# emit version would leave every earlier record unverifiable after each bump.
+LEGACY_VERSIONLESS_WIRE_VERSION = "0.2"
+
+# The wire versions this implementation recognises. A session runs at one of
+# them; "0.2" remains so that a session negotiated at it can still be replayed
+# and its acts rebuilt.
+SUPPORTED_WIRE_VERSIONS = (LEGACY_VERSIONLESS_WIRE_VERSION, PROTOCOL_ACT_VERSION)
+
+# The header every signed act carries, whatever its type, in the order Section
+# 7.3.1 lists them. JCS sorts keys before hashing, so the order is for readers.
+SIGNED_ACT_HEADER_FIELDS = (
     "protocol_version",
     "session_id",
     "round_number",
@@ -47,9 +64,113 @@ PROTOCOL_ACT_FIELDS = (
     "message_type",
     "sender_did",
     "timestamp",
-    "expires_at",
-    "terms",
 )
+
+# What each act type signs beside the header. expires_at belongs to the offer
+# and counteroffer rather than to the header: an acceptance, rejection or
+# withdrawal has no deadline of its own, and putting it in the header would make
+# all three sign an empty string as a stand-in for one. Keeping it here also
+# leaves the offer's signed object exactly the nine flat keys it has always had,
+# so no stored record's protocol_act_hash moves.
+SIGNED_ACT_PAYLOAD_FIELDS = {
+    "offer": ("expires_at", "terms"),
+    "counteroffer": ("expires_at", "terms"),
+    "acceptance": ("accepted_offer_id", "accepted_protocol_act_hash"),
+    "rejection": ("rejected_offer_id", "reason_code"),
+    "withdrawal": ("reason_code",),
+}
+
+# The field each act type carries its signature in. Offer and counteroffer share
+# one, because they are one act under two names. Rejection and withdrawal get
+# their own rather than reusing another type's: a signature field that means one
+# act type is what lets a verifier refuse an act relabelled as another, because
+# the rebuild then demands the type the signature was made under.
+SIGNED_ACT_SIGNATURE_FIELDS = {
+    "offer": "protocol_act_signature",
+    "counteroffer": "protocol_act_signature",
+    "acceptance": "acceptance_signature",
+    "rejection": "rejection_signature",
+    "withdrawal": "withdrawal_signature",
+}
+
+# A SessionEvidenceRecord act entry (Section 9A.3) has two kinds of member. Some
+# restate a field the act itself carries on the wire; the rest are the record's
+# own, added by the producer when it records the act. The entry's field set is
+# the union of the two, and nothing else.
+RECORD_ENTRY_WIRE_FIELDS = frozenset(
+    {
+        "sequence_number",
+        "round_number",
+        "message_type",
+        "message_id",
+        "sender_did",
+        "timestamp",
+        "sender_verification_method",
+    }
+)
+RECORD_ENTRY_WRAPPER_FIELDS = frozenset(
+    {"act", "act_hash", "attribution", "signature", "signature_type", "source_protocol"}
+)
+
+# The record's own members are reserved: an inbound wire act that carries one is
+# refused (Section 7.3.1), because a message carrying them would read, once
+# recorded, as a record entry stating its own attribution or wrapping another
+# act. Taken from the entry set above, so the two cannot drift apart.
+RESERVED_WIRE_KEYS = RECORD_ENTRY_WRAPPER_FIELDS
+
+# The offer's signed object, still named for readers of Section 7.3.1: the
+# common header followed by the offer's own payload.
+PROTOCOL_ACT_FIELDS = SIGNED_ACT_HEADER_FIELDS + SIGNED_ACT_PAYLOAD_FIELDS["offer"]
+
+# The covered fields that are numbers, and the one that is an object. Every
+# other covered field is a string.
+_ACT_INTEGER_FIELDS = frozenset({"round_number", "sequence_number"})
+_ACT_OBJECT_FIELDS = frozenset({"terms"})
+
+# The offer path's own rule: a missing timestamp or expires_at rebuilds as "".
+# Neither is validated on the wire, and both state machines have always rebuilt
+# an offer's act that way, so an offer that omits one is signed over "" and is
+# recorded that way (Section 9.5). Demanding more would refuse an act whose
+# signature genuinely covers those bytes.
+#
+# This belongs to offer and counteroffer alone. An acceptance carries a REQUIRED
+# timestamp of its own, so defaulting one for it would let an acceptance sign the
+# empty filler that moving expires_at out of the header exists to prevent.
+_OFFER_DEFAULTED_FIELDS = frozenset({"timestamp", "expires_at"})
+_NO_DEFAULTED_FIELDS: frozenset[str] = frozenset()
+
+
+def signed_act_object(
+    *,
+    protocol_version: str,
+    session_id: Any,
+    round_number: Any,
+    sequence_number: Any,
+    message_type: Any,
+    sender_did: Any,
+    timestamp: Any,
+    payload: Mapping[str, Any],
+) -> dict:
+    """The flat object a signed act's signature covers (Section 7.3.1).
+
+    One envelope for all five act types: the common header, then the type's own
+    payload, every field at the top level. Flat rather than nested, because a
+    nested payload would add a level and bytes to the offer's signed object and
+    so could never reproduce the hash the offer's signature already covers.
+
+    Every value is the caller's, and nothing is defaulted here, so each caller
+    keeps its own handling of an absent field.
+    """
+    return {
+        "protocol_version": protocol_version,
+        "session_id": session_id,
+        "round_number": round_number,
+        "sequence_number": sequence_number,
+        "message_type": message_type,
+        "sender_did": sender_did,
+        "timestamp": timestamp,
+        **payload,
+    }
 
 
 def protocol_act_object(
@@ -66,23 +187,152 @@ def protocol_act_object(
 ) -> dict:
     """The object a protocol_act_signature covers (Section 7.3.1).
 
-    One definition for every site that builds it: a client signing an offer, the
-    state machine checking one it received, the evidence record rebuilding an act
-    it holds, and the TransactionRecord rebuilding the act from the record
-    (Section 9.5). Every value is the caller's, and nothing is defaulted here, so
-    each caller keeps its own handling of an absent field.
+    The offer and counteroffer's envelope, named for the sites that build it: a
+    client signing an offer, the state machine checking one it received, the
+    evidence record rebuilding an act it holds, and the TransactionRecord
+    rebuilding the act from the record (Section 9.5). It is the envelope with
+    the offer's payload, not a second recipe beside it — which is what keeps the
+    offer's signed bytes identical without a legacy branch to maintain.
     """
-    return {
-        "protocol_version": protocol_version,
-        "session_id": session_id,
-        "round_number": round_number,
-        "sequence_number": sequence_number,
-        "message_type": message_type,
-        "sender_did": sender_did,
-        "timestamp": timestamp,
-        "expires_at": expires_at,
-        "terms": terms,
-    }
+    return signed_act_object(
+        protocol_version=protocol_version,
+        session_id=session_id,
+        round_number=round_number,
+        sequence_number=sequence_number,
+        message_type=message_type,
+        sender_did=sender_did,
+        timestamp=timestamp,
+        payload={"expires_at": expires_at, "terms": terms},
+    )
+
+
+def _is_act_integer(value: Any) -> bool:
+    """An integral JSON number, as an act's round and sequence numbers are.
+
+    RFC 8785 serializes 2.0 and 2 as the same number, so the two are one signed
+    act in different JSON spellings and must be judged alike. A bool is an int
+    in Python but is not a number in JSON, so it is excluded here; TypeScript's
+    typeof excludes it on its own.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and value.is_integer()
+
+
+def negotiated_protocol_version(session_init: Any, session_ack: Any) -> str:
+    """The wire version a session was negotiated at (Section 12.1.7).
+
+    The SessionInit proposes a version and the SessionAck must state the same
+    one; the session runs at it, and every live act of the session is signed and
+    verified under it. Raises ValueError, naming the first fault, when either
+    message states no version, a version this implementation does not recognise,
+    or when the two disagree. Nothing is filled in from the other message or from
+    this implementation's own version.
+
+    A session with no SessionAck at all (None), whose responder holds no A2CN
+    identity and so never answered (Section 9A.8), runs at the version its
+    SessionInit proposed. An ack that is present is never passed over.
+    """
+    messages = [("SessionInit", session_init)]
+    if session_ack is not None:
+        messages.append(("SessionAck", session_ack))
+    versions = []
+    for label, message in messages:
+        version = message.get("protocol_version") if isinstance(message, Mapping) else None
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"{label} protocol_version must be a non-empty string")
+        if version not in SUPPORTED_WIRE_VERSIONS:
+            raise ValueError(f"{label} protocol_version is not a supported wire version")
+        versions.append(version)
+    if len(versions) == 2 and versions[0] != versions[1]:
+        raise ValueError("SessionAck protocol_version does not match the SessionInit's")
+    return versions[0]
+
+
+def rebuild_signed_act(
+    act: Mapping[str, Any],
+    *,
+    version_when_absent: str = LEGACY_VERSIONLESS_WIRE_VERSION,
+) -> dict | None:
+    """Rebuild the object an act's signature covers, from the act's own fields.
+
+    The shared verify primitive: a caller hashes what this returns and requires
+    the act's signature to be over that hash. Returns None when the act cannot
+    be rebuilt — an act type the envelope does not name, or a covered field that
+    is missing or of a type that cannot be canonicalized — so an act that cannot
+    be rebound is refused rather than hashed best-effort over a filled-in blank.
+
+    The rebuild is gated on nothing. No record_version, schema version or field
+    presence decides whether it runs, and an act carrying members the envelope
+    does not name still rebuilds from the ones it does: a verifier must never
+    read a label and skip the binding check.
+
+    protocol_version is the one covered field an act may omit, and which
+    version stands in for it depends on where the act comes from (Section
+    7.3.1). An act that states one is always rebuilt under the version it
+    states. A live act received in a session states none, and its caller passes
+    the session's negotiated version. A recorded act that states none was
+    recorded before records stated their acts' versions, and is rebuilt under
+    the pinned LEGACY_VERSIONLESS_WIRE_VERSION, the default — never under the
+    version this implementation currently emits.
+
+    Values are constrained only so far as the act can be canonicalized from
+    them. An empty string is rebuilt as it stands, because the hash comparison,
+    not a field's length, is what decides: an offer may genuinely be signed over
+    an empty timestamp or expires_at (Section 9.5), and demanding more here
+    would refuse an act whose signature covers exactly those bytes.
+    """
+    if not isinstance(act, Mapping):
+        return None
+    message_type = act.get("message_type")
+    if not isinstance(message_type, str):
+        return None
+    payload_fields = SIGNED_ACT_PAYLOAD_FIELDS.get(message_type)
+    if payload_fields is None:
+        return None
+
+    defaulted_fields = (
+        _OFFER_DEFAULTED_FIELDS
+        if message_type in ("offer", "counteroffer")
+        else _NO_DEFAULTED_FIELDS
+    )
+    rebuilt: dict = {}
+    for name in SIGNED_ACT_HEADER_FIELDS + payload_fields:
+        if name == "protocol_version" and name not in act:
+            rebuilt[name] = version_when_absent
+            continue
+        if name not in act:
+            if name in defaulted_fields:
+                rebuilt[name] = ""
+                continue
+            return None
+        value = act[name]
+        if name in _ACT_INTEGER_FIELDS:
+            if not _is_act_integer(value):
+                return None
+        elif name in _ACT_OBJECT_FIELDS:
+            if not isinstance(value, dict):
+                return None
+        elif not isinstance(value, str):
+            return None
+        rebuilt[name] = value
+    return rebuilt
+
+
+def signed_act_hash(
+    act: Mapping[str, Any],
+    *,
+    version_when_absent: str = LEGACY_VERSIONLESS_WIRE_VERSION,
+) -> str | None:
+    """The hash an act's signature must be over, or None if it cannot be rebuilt.
+
+    version_when_absent is as for rebuild_signed_act: a live act's caller passes
+    the session's negotiated version, and a recorded act takes the default.
+    """
+    rebuilt = rebuild_signed_act(act, version_when_absent=version_when_absent)
+    return None if rebuilt is None else hash_object(rebuilt)
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +449,7 @@ class TermsObject:
 class SessionInit:
     message_type: str  # "session_init"
     message_id: str
-    protocol_version: str  # "0.2"
+    protocol_version: str  # PROTOCOL_ACT_VERSION
     session_params: SessionParams
     initiator: AgentInfo
     initiator_mandate: DeclaredMandate | dict
@@ -228,7 +478,7 @@ class SessionAck:
     message_id: str
     session_id: str
     in_reply_to: str
-    protocol_version: str  # "0.2"
+    protocol_version: str  # PROTOCOL_ACT_VERSION
     session_params_accepted: dict
     responder: AgentInfo
     responder_mandate: DeclaredMandate | dict
@@ -376,14 +626,26 @@ class Acceptance:
         }
 
     def acceptance_payload(self) -> dict:
-        """The object signed to produce acceptance_signature (Section 7.4)."""
-        return {
-            "session_id": self.session_id,
-            "round_number": self.round_number,
-            "sequence_number": self.sequence_number,
-            "accepted_offer_id": self.accepted_offer_id,
-            "accepted_protocol_act_hash": self.accepted_protocol_act_hash,
-        }
+        """The object signed to produce acceptance_signature (Section 7.3.1).
+
+        The acceptance's envelope: the common header plus its own payload, the
+        offer it accepts and that offer's act hash. It is the envelope with the
+        acceptance's payload, not a second recipe beside it — the same
+        arrangement protocol_act_object has for the offer.
+        """
+        return signed_act_object(
+            protocol_version=PROTOCOL_ACT_VERSION,
+            session_id=self.session_id,
+            round_number=self.round_number,
+            sequence_number=self.sequence_number,
+            message_type=self.message_type,
+            sender_did=self.sender_did,
+            timestamp=self.timestamp,
+            payload={
+                "accepted_offer_id": self.accepted_offer_id,
+                "accepted_protocol_act_hash": self.accepted_protocol_act_hash,
+            },
+        )
 
 
 @dataclass
@@ -423,6 +685,7 @@ class Withdrawal:
     message_type: str  # "withdrawal"
     message_id: str
     session_id: str
+    round_number: int  # the round in progress; 1 before any offer (Section 7.6)
     sequence_number: int
     sender_did: str
     sender_agent_id: str
@@ -437,6 +700,7 @@ class Withdrawal:
             "message_id": self.message_id,
             "session_id": self.session_id,
             "in_reply_to": self.in_reply_to,
+            "round_number": self.round_number,
             "sequence_number": self.sequence_number,
             "sender_did": self.sender_did,
             "sender_agent_id": self.sender_agent_id,
@@ -461,7 +725,7 @@ class InvitationStatus(str, Enum):
 class SessionInvitation:
     message_type: str                  # always "session_invitation"
     invitation_id: str                 # UUID v4
-    a2cn_version: str                  # "0.2"
+    a2cn_version: str                  # PROTOCOL_ACT_VERSION
     inviter_did: str
     inviter_endpoint: str              # HTTPS URL of inviter's A2CN endpoint
     inviter_discovery_url: str
@@ -549,7 +813,7 @@ class WebhookPayload:
     occurred_at: str    # ISO 8601 UTC
     session_state: str
     terminal: bool      # always True for these events
-    a2cn_version: str = "0.2"
+    a2cn_version: str = PROTOCOL_ACT_VERSION
     record_hash: str = ""   # populated only for session.completed
 
     def to_dict(self) -> dict:
@@ -599,7 +863,7 @@ class DeliveryNoticeMessage:
     delivery_timestamp: str       # ISO 8601 — when delivery occurred
     delivery_reference: str | None = None  # Tracking number, PO ref, etc.
     notes: str | None = None
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "delivery_notice"
 
     def to_dict(self) -> dict:
@@ -631,7 +895,7 @@ class DeliveryAcknowledgedMessage:
     acknowledgment_timestamp: str     # ISO 8601
     accepted: bool                    # True = delivery accepted, False = disputed
     notes: str | None = None
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "delivery_acknowledged"
 
     def to_dict(self) -> dict:
@@ -669,7 +933,7 @@ class DisputeNoticeMessage:
     evidence_references: list[str] = None  # Document refs, hashes, URLs
     resolution_requested: str | None = None  # "renegotiate" | "cancel" | "neutral_review"
     dispute_timestamp: str = None  # ISO 8601, auto-set on creation
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "dispute_notice"
 
     def __post_init__(self):
@@ -726,7 +990,7 @@ class DisputeResolvedMessage:
     resolution_timestamp: str = None  # ISO 8601, auto-set on creation
     resolution_notes: str | None = None
     evidence_references: list[str] = None  # Supporting evidence for the ruling
-    protocol_version: str = "0.2"
+    protocol_version: str = PROTOCOL_ACT_VERSION
     message_type: str = "dispute_resolved"
 
     def __post_init__(self):

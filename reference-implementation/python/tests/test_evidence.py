@@ -22,6 +22,7 @@ from a2cn.evidence import (
     generate_session_evidence_record,
     verify_session_evidence_record,
 )
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record, verify_transaction_record
 from a2cn.session import Session, SessionManager, SessionState
 from tests.conftest import INITIATOR_DID, RESPONDER_DID, make_did_document
@@ -42,7 +43,7 @@ def _make_session():
     session_init = {
         "message_type": "session_init",
         "message_id": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -65,7 +66,7 @@ def _make_session():
         "message_id": "ack-1",
         "session_id": session_id,
         "in_reply_to": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -128,7 +129,7 @@ def _offer(
         INITIATOR_PRIVATE_KEY if sender_did == INITIATOR_DID else RESPONDER_PRIVATE_KEY
     )
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": round_number,
         "sequence_number": sequence_number,
@@ -164,14 +165,7 @@ def _offer(
 
 
 def _acceptance(session_id: str, offer: dict) -> dict:
-    payload = {
-        "session_id": session_id,
-        "round_number": offer["round_number"],
-        "sequence_number": 2,
-        "accepted_offer_id": offer["message_id"],
-        "accepted_protocol_act_hash": offer["protocol_act_hash"],
-    }
-    return {
+    acceptance = {
         "message_type": "acceptance",
         "message_id": "acceptance-1",
         "session_id": session_id,
@@ -184,12 +178,15 @@ def _acceptance(session_id: str, offer: dict) -> dict:
         "sender_agent_id": "seller-agent",
         "sender_verification_method": RESPONDER_VM,
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": sign_jws(
-            hash_object(payload),
-            RESPONDER_PRIVATE_KEY,
-            kid=RESPONDER_VM,
-        ),
     }
+    # Signed over the act's own envelope (Section 7.3.1): the common header plus
+    # an acceptance's payload, accepted_offer_id and accepted_protocol_act_hash.
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
+        RESPONDER_PRIVATE_KEY,
+        kid=RESPONDER_VM,
+    )
+    return acceptance
 
 
 def _mark_timed_out(session) -> None:
@@ -234,7 +231,7 @@ def _external_counteroffer() -> dict:
 
 def _third_party_offer(session_id: str) -> dict:
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 3,
@@ -282,7 +279,7 @@ def _malformed_signed_observation(
         act[null_field] = None
 
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": act.get("session_id", ""),
         "round_number": act.get("round_number"),
         "sequence_number": act.get("sequence_number"),
@@ -410,14 +407,20 @@ def test_signed_local_offer_and_timeout_are_unilateral():
 
 
 def test_timestamp_and_message_id_are_nullable_for_incomplete_unsigned_terminal_act():
+    # A live withdrawal must now be signed, so an incomplete unsigned one reaches a
+    # record only as a stored act, not through the state machine (Section 7.6).
     manager, session, did_documents = _make_session()
-    manager.process_message(
-        session,
+    session._message_log.append(
         {
             "message_type": "withdrawal",
+            "round_number": 1,
             "sender_did": INITIATOR_DID,
-        },
+        }
     )
+    session.state = SessionState.WITHDRAWN
+    session.current_turn = "none"
+    session.terminal_reason = "withdrawal"
+    session.terminal_message_id = None
 
     evidence = _generate(session)
 
@@ -671,6 +674,86 @@ def test_all_noncompleted_terminal_states_produce_unilateral_evidence(terminal_s
     assert evidence["transaction_record_hash"] is None
     assert evidence["evidence_level"] == "unilateral"
     assert verify_session_evidence_record(evidence, did_documents)
+
+
+DECLINE_PARITY_PATH = (
+    Path(__file__).parents[3]
+    / "spec"
+    / "test-vectors"
+    / "session-evidence-record-decline.json"
+)
+
+
+def _decline_parity_record(fixture: dict) -> dict:
+    """The record the decline vector's session produces -- generated, not loaded."""
+    source = fixture["session"]
+    producer = fixture["producer"]
+    session = Session(
+        session_id=source["session_id"],
+        state=source["state"],
+        current_turn="none",
+        terminal_reason=source["terminal_reason"],
+        terminal_message_id=source["terminal_message_id"],
+        session_created_at=source["session_created_at"],
+        state_updated_at=source["state_updated_at"],
+        session_params=source["session_params"],
+        initiator_mandate=source["initiator_mandate"],
+        responder_mandate=source["responder_mandate"],
+    )
+    session._session_init = source["session_init"]
+    session._session_ack = source["session_ack"]
+    session._message_log = source["message_log"]
+    return generate_session_evidence_record(
+        session,
+        producer_private_key=private_key_from_jwk(fixture["producer_private_jwk"]),
+        producer_did=producer["did"],
+        producer_agent_id=producer["agent_id"],
+        producer_verification_method=producer["verification_method"],
+        observed_acts=fixture["observed_acts"],
+    )
+
+
+def test_decline_bearing_record_has_python_typescript_hash_parity():
+    """Both implementations EMIT identical bytes for a record carrying a signed decline.
+
+    Generate-and-compare, never load-and-verify: this family exists to prove that
+    today's two generators agree, and a loaded record would pass while proving
+    neither implementation generated anything.
+
+    Signed declines are this change's headline feature and nothing crossed them
+    with the repository's cross-language byte-parity property: decline ACTS had a
+    shared vector (signed-decline-acts.json), decline-bearing RECORDS had none.
+    A battery that feeds identical constructed bytes to both implementations
+    measures the two verifiers; this measures the two generators.
+    """
+    fixture = json.loads(DECLINE_PARITY_PATH.read_text())
+    record = _decline_parity_record(fixture)
+    expected = fixture["expected"]
+
+    assert record["record_version"] == expected["record_version"]
+    assert record["evidence_id"] == expected["evidence_id"]
+    assert record["generated_at"] == expected["generated_at"]
+    assert record["evidence_level"] == expected["evidence_level"]
+    assert [entry["act_hash"] for entry in record["acts"]] == expected["act_hashes"]
+    assert record["act_chain_hash"] == expected["act_chain_hash"]
+    assert record["record_hash"] == expected["record_hash"]
+    assert verify_session_evidence_record(record, fixture["did_documents"])
+
+
+def test_the_decline_parity_vector_actually_carries_decline_vocabulary():
+    """A guard on the fixture, so the parity test above cannot come to prove nothing.
+
+    Without it, an edit that dropped the signature from the stored rejection
+    would leave the hash comparison passing on an ordinary record, silently
+    retiring the only cross-language coverage a signed decline has.
+    """
+    fixture = json.loads(DECLINE_PARITY_PATH.read_text())
+    record = _decline_parity_record(fixture)
+
+    signature_types = [entry["signature_type"] for entry in record["acts"]]
+    assert "rejection_signature" in signature_types, signature_types
+    assert record["record_version"] == "0.4"
+    assert all(entry["attribution"] == "verified_signature" for entry in record["acts"])
 
 
 def test_shared_session_evidence_vector_has_python_typescript_hash_parity():
@@ -933,6 +1016,8 @@ def test_observed_responder_claiming_a_verified_signature_is_rejected():
         message_id="portal-quote-1",
         timestamp="2026-03-24T10:02:00Z",
     )
+    # Recorded as a record states an act: with the wire version it was signed under.
+    signed_act["protocol_version"] = PROTOCOL_ACT_VERSION
     attack = copy.deepcopy(healthy)
     attack["acts"][1] = {
         "sequence_number": 2,
@@ -1453,7 +1538,7 @@ def test_every_extension_vector_validates_against_the_published_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1503,7 +1588,7 @@ def test_the_schema_rejects_what_the_verifier_rejects():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
     )
     validator = jsonschema.Draft202012Validator(schema)
     healthy, _ = _priced_record()
@@ -1547,7 +1632,7 @@ def test_the_pre_extension_parity_record_still_validates_against_the_schema():
     jsonschema = pytest.importorskip("jsonschema")
     root = Path(__file__).parents[3]
     schema = json.loads(
-        (root / "spec" / "schemas" / "session-evidence-record-0.2.schema.json").read_text()
+        (root / "spec" / "schemas" / "session-evidence-record-0.4.schema.json").read_text()
     )
     fixture = json.loads(
         (
@@ -1735,16 +1820,16 @@ def _bilateral_record():
 # --- (i) and (ii): each completion witness on its own ------------------------
 
 
-def test_a_bilateral_completed_record_keeps_its_transaction_record_hash_at_0_2():
+def test_a_bilateral_completed_record_keeps_its_transaction_record_hash():
     evidence, did_documents, session = _bilateral_record()
 
-    assert evidence["record_version"] == "0.2"
+    assert evidence["record_version"] == "0.4"
     assert evidence["transaction_record_hash"] == generate_transaction_record(session)["record_hash"]
     assert "external_commitment_reference" not in evidence
     assert verify_session_evidence_record(evidence, did_documents)
 
 
-def test_an_external_channel_completed_record_is_valid_at_0_3():
+def test_an_external_channel_completed_record_is_valid():
     session, did_documents = _external_channel_session()
     # No TransactionRecord exists for this session: the counterparty never signed
     # an A2CN act. So the record below is produced without generating one.
@@ -1758,7 +1843,7 @@ def test_an_external_channel_completed_record_is_valid_at_0_3():
         external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
 
-    assert evidence["record_version"] == "0.3"
+    assert evidence["record_version"] == "0.4"
     assert evidence["terminal"]["outcome"] == SessionState.COMPLETED
     assert evidence["transaction_record_hash"] is None
     assert evidence["external_commitment_reference"] == EXTERNAL_COMMITMENT_REFERENCE
@@ -1806,6 +1891,29 @@ def test_a_completed_record_with_neither_witness_is_rejected():
     _reseal(bilateral)
 
     assert not verify_session_evidence_record(bilateral, bilateral_documents)
+
+
+def test_a_0_4_completed_record_with_neither_witness_is_rejected():
+    """The shape the generator now emits, refused by the witness rule alone.
+
+    The case above relabels to "0.2" precisely so the version rule passes and
+    only the witness rule can fire. At "0.4" that isolation is free: the
+    reference is OPTIONAL there, so removing it leaves the version rule silent
+    and nothing but Section 9A.6 step 9 to refuse the record. Nothing else
+    covered the version the generator actually produces.
+    """
+    healthy, did_documents = _external_channel_record()
+    assert healthy["record_version"] == "0.4"
+    assert verify_session_evidence_record(healthy, did_documents)
+
+    neither = copy.deepcopy(healthy)
+    del neither["external_commitment_reference"]
+    _reseal(neither)
+
+    # No relabel: the record is refused while still carrying the version it was
+    # generated with.
+    assert neither["record_version"] == "0.4"
+    assert not verify_session_evidence_record(neither, did_documents)
 
 
 @pytest.mark.parametrize(
@@ -2066,12 +2174,12 @@ def test_a_reference_of_none_is_not_supplied():
 
     evidence = _generate(session, external_commitment_reference=None)
 
-    assert evidence["record_version"] == "0.2"
+    assert evidence["record_version"] == "0.4"
     assert "external_commitment_reference" not in evidence
     assert verify_session_evidence_record(evidence, did_documents)
 
 
-@pytest.mark.parametrize("version", ["0.2", "0.1"])
+@pytest.mark.parametrize("version", ["0.4", "0.2", "0.1"])
 def test_an_observed_completion_with_a_transaction_record_hash_is_rejected(version):
     """The completion witness matches the responder in both directions (Section 9A.2).
 
@@ -2080,6 +2188,11 @@ def test_an_observed_completion_with_a_transaction_record_hash_is_rejected(versi
     session is refused at every version. The generators that predate the
     external commitment reference sealed exactly this record, over a
     TransactionRecord whose responder was empty.
+
+    "0.3" is deliberately absent: there, deleting the reference makes the
+    version rule fire, so the case would be refused for a reason other than the
+    witness rule under test. At every other version the witness rule decides
+    alone.
     """
     healthy, did_documents = _external_channel_record()
 

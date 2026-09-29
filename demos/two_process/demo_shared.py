@@ -202,7 +202,7 @@ def supplier_counteroffer(session: Any, terms: dict, in_reply_to: str) -> dict:
     expires_at = now_iso(900)
     private_key = supplier_private_key()
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session.session_id,
         "round_number": round_number,
         "sequence_number": sequence_number,

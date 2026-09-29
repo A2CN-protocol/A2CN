@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  PROTOCOL_ACT_VERSION,
   SessionInvitation,
   InvitationAcceptance,
   InvitationDecline,
@@ -99,7 +100,7 @@ export class InvitationStore {
     const invitation = new SessionInvitation({
       message_type: "session_invitation",
       invitation_id: invitationId,
-      a2cn_version: "0.2",
+      a2cn_version: PROTOCOL_ACT_VERSION,
       inviter_did: options.inviterDid,
       inviter_endpoint: options.inviterEndpoint,
       inviter_discovery_url: options.inviterDiscoveryUrl,

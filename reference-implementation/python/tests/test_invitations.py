@@ -54,7 +54,7 @@ class TestInvitationCreation:
     def test_create_invitation_has_correct_fields(self):
         store, invitation, _, _ = _make_store_with_invitation()
         assert invitation.message_type == "session_invitation"
-        assert invitation.a2cn_version == "0.2"
+        assert invitation.a2cn_version == "0.3"
         assert invitation.proposed_deal_type == "goods_procurement"
         assert invitation.inviter_did == "did:web:buyer.example"
         assert "accept" in invitation.accept_endpoint

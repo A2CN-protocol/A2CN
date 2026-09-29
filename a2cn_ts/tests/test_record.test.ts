@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
 import { generateTransactionRecord, verifyTransactionRecord } from "../src/a2cn/record.js";
 import { Session, SessionManager } from "../src/a2cn/session.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const { privateKey: INITIATOR_PRIVATE_KEY, publicKey: INITIATOR_PUBLIC_KEY } = generateKeypair();
@@ -17,7 +17,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -40,7 +40,7 @@ function makeSession(): [SessionManager, Session, Record<string, Dict>] {
     message_id: "ack-1",
     session_id: sessionId,
     in_reply_to: "init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: {
       deal_type: "saas_renewal",
       currency: "USD",
@@ -101,7 +101,7 @@ function makeOffer(
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: roundNumber,
     sequence_number: sequenceNumber,
@@ -149,14 +149,7 @@ function makeAcceptance(
   const privateKey = senderDid === INITIATOR_DID ? INITIATOR_PRIVATE_KEY : RESPONDER_PRIVATE_KEY;
   const verificationMethod =
     senderDid === INITIATOR_DID ? `${INITIATOR_DID}#key-1` : `${RESPONDER_DID}#key-2026-01`;
-  const payload = {
-    session_id: sessionId,
-    round_number: offer.round_number,
-    sequence_number: sequenceNumber,
-    accepted_offer_id: offer.message_id,
-    accepted_protocol_act_hash: offer.protocol_act_hash,
-  };
-  return {
+  const acceptance: Dict = {
     message_type: "acceptance",
     message_id: messageId,
     session_id: sessionId,
@@ -169,8 +162,14 @@ function makeAcceptance(
     sender_agent_id: "seller-agent",
     sender_verification_method: verificationMethod,
     timestamp: "2026-03-24T10:03:00Z",
-    acceptance_signature: signJws(hashObject(payload), privateKey, verificationMethod),
   };
+  // Signed over the act's own envelope (Section 7.3.1).
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    privateKey,
+    verificationMethod,
+  );
+  return acceptance;
 }
 
 function completedRecord(): [Dict, Record<string, Dict>, string[]] {

@@ -25,6 +25,7 @@ import {
   makeSessionInit,
   makeTestClient,
   freshServer,
+  signDecline,
   type TestClient,
 } from "./conftest.js";
 
@@ -41,7 +42,7 @@ test("discovery document", async () => {
   const r = await client.get("/.well-known/a2cn-agent");
   expect(r.statusCode).toBe(200);
   const doc = r.json();
-  expect(doc.a2cn_version).toBe("0.2");
+  expect(doc.a2cn_version).toBe("0.3");
   expect(doc.deal_types).toContain("saas_renewal");
   expect(doc.conformance_level).toBe(2);
   expect(doc.agent_did).toBe(RESPONDER_DID);
@@ -153,7 +154,7 @@ test("receive invitation does not require bearer token", async () => {
   const invitation: Dict = {
     message_type: "session_invitation",
     invitation_id: randomUUID(),
-    a2cn_version: "0.2",
+    a2cn_version: "0.3",
     inviter_did: inviterDid,
     inviter_endpoint: "https://buyer.example/a2cn",
     inviter_discovery_url: "https://buyer.example/.well-known/a2cn-agent",
@@ -266,7 +267,7 @@ test("deliver webhook uses did key jws signature", async () => {
     occurred_at: "2026-05-20T05:00:00Z",
     session_state: "COMPLETED",
     terminal: true,
-    a2cn_version: "0.2",
+    a2cn_version: "0.3",
   };
 
   await ctx.deliverWebhook(
@@ -324,7 +325,7 @@ function makeOfferMsg(
   const expiresAt = "2030-01-01T00:00:00Z";
   const terms = { total_value: 9_500_000, currency: "USD" };
   const protocolAct = {
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: rnd,
     sequence_number: seq,
@@ -495,20 +496,26 @@ test("evidence not available for active session", async () => {
 });
 
 test("evidence available after withdrawal", async () => {
-  const { client } = freshServer();
+  const { client, initiatorKeypair } = freshServer();
   const sessionId = await createSession(client);
   const withdrawal = {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "test-agent",
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
+  const signedWithdrawal = signDecline(
+    withdrawal,
+    initiatorKeypair.privateKey,
+    `${INITIATOR_DID}#key-1`,
+  );
   await client.post(`/sessions/${sessionId}/messages`, {
-    json: withdrawal,
+    json: signedWithdrawal,
     headers: initHeaders(withdrawal.message_id),
   });
 
@@ -524,18 +531,25 @@ test("evidence available after withdrawal", async () => {
 });
 
 test("evidence rejects authenticated nonparty", async () => {
-  const { ctx, client } = freshServer();
+  const { ctx, client, initiatorKeypair } = freshServer();
   const sessionId = await createSession(client);
   const withdrawal = {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     timestamp: "2026-03-24T10:02:00Z",
+    reason_code: "STRATEGY_DECISION",
   };
+  const signedWithdrawal = signDecline(
+    withdrawal,
+    initiatorKeypair.privateKey,
+    `${INITIATOR_DID}#key-1`,
+  );
   await client.post(`/sessions/${sessionId}/messages`, {
-    json: withdrawal,
+    json: signedWithdrawal,
     headers: initHeaders(withdrawal.message_id),
   });
 
@@ -558,27 +572,28 @@ test("evidence rejects authenticated nonparty", async () => {
   expect((response.json().error as Dict).code).toBe("NOT_SESSION_PARTY");
 });
 
-test("evidence available after incomplete withdrawal", async () => {
+test("an incomplete unsigned withdrawal is refused on the wire", async () => {
+  // A live withdrawal must be signed, and one this incomplete cannot even be
+  // rebuilt. It was once accepted and recorded as an unsigned observation with
+  // null message_id and timestamp. A party's own decline is now signed (Section
+  // 7.6), so the session stays open; the evidence record's handling of an
+  // incomplete unsigned act is covered where such an act is recorded.
   const { client } = freshServer();
   const sessionId = await createSession(client);
   const withdrawal = {
     message_type: "withdrawal",
+    round_number: 1,
     sender_did: INITIATOR_DID,
   };
   const response = await client.post(`/sessions/${sessionId}/messages`, {
     json: withdrawal,
     headers: initHeaders("incomplete-withdrawal"),
   });
-  expect(response.statusCode).toBe(200);
 
+  expect(response.statusCode).toBe(400);
+  expect((response.json().error as Dict).code).toBe("INVALID_SIGNATURE");
   const evidenceResponse = await client.get(`/sessions/${sessionId}/evidence`);
-
-  expect(evidenceResponse.statusCode).toBe(200);
-  const evidence = evidenceResponse.json();
-  expect((evidence.terminal as Dict).outcome).toBe("WITHDRAWN");
-  expect((evidence.terminal as Dict).message_id).toBeNull();
-  expect((evidence.acts as Dict[])[0].message_id).toBeNull();
-  expect((evidence.acts as Dict[])[0].timestamp).toBeNull();
+  expect(evidenceResponse.statusCode).toBe(409);
 });
 
 // ---------------------------------------------------------------------------
@@ -593,20 +608,26 @@ test("audit not available for active session", async () => {
 });
 
 test("audit available after withdrawal", async () => {
-  const { client } = freshServer();
+  const { client, initiatorKeypair } = freshServer();
   const sessionId = await createSession(client);
   const withdrawal = {
     message_type: "withdrawal",
     message_id: randomUUID(),
     session_id: sessionId,
+    round_number: 1,
     sequence_number: 1,
     sender_did: INITIATOR_DID,
     sender_agent_id: "test-agent",
     timestamp: "2026-03-24T10:02:00Z",
     reason_code: "STRATEGY_DECISION",
   };
+  const signedWithdrawal = signDecline(
+    withdrawal,
+    initiatorKeypair.privateKey,
+    `${INITIATOR_DID}#key-1`,
+  );
   await client.post(`/sessions/${sessionId}/messages`, {
-    json: withdrawal,
+    json: signedWithdrawal,
     headers: initHeaders(withdrawal.message_id),
   });
   const r = await client.get(`/sessions/${sessionId}/audit`);

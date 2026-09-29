@@ -6,9 +6,12 @@ artifact with each value and must reach the same verdict. A TransactionRecord's
 version follows its content: a "0.3" record carries the Section 7.3.1 act fields
 in final_offer, a "0.2" record carries a top-level basis and no act fields, and a
 "0.1" record carries neither (Section 9.5, steps 3 and 8). A "0.3"
-SessionEvidenceRecord carries external_commitment_reference and no other version
-does (Section 9A.2). A value outside an artifact's accepted set is rejected,
-never parsed best-effort (Sections 9.5 and 9A.6).
+SessionEvidenceRecord carries external_commitment_reference; at "0.4", the
+version every producer now emits, that reference is OPTIONAL, so both shapes are
+legal at one version (Section 9A.2). The evidence record's accepted set is
+additive, so a record sealed under an earlier version stays valid. A value
+outside an artifact's accepted set is rejected, never parsed best-effort
+(Sections 9.5 and 9A.6).
 """
 
 from __future__ import annotations
@@ -50,7 +53,12 @@ EXTERNAL_CHANNEL_VECTOR = json.loads(
 # The recorded session each TransactionRecord shape came from, for its DID
 # documents and its offer chain. A TransactionRecord shape is named by the
 # version whose content it carries (Section 9.3).
-SHAPE_VECTOR = {"0.1": WITHOUT_BASIS, "0.2": TR_VECTOR, "0.3": TR_VECTOR}
+SHAPE_VECTOR = {
+    "0.1": WITHOUT_BASIS,
+    "0.2": TR_VECTOR,
+    "0.3": TR_VECTOR,
+    "0.4": TR_VECTOR,
+}
 TR_EMITTED = RECORD_VERSIONS["producers_emit"]["transaction_record"]
 
 # The vector behind each SessionEvidenceRecord shape, and the version a producer
@@ -84,11 +92,14 @@ def _transaction_record_session(vector: dict):
 def _shape(version: str) -> dict:
     """A valid TransactionRecord whose content fits ``version``.
 
-    "0.3" is what this implementation produces; "0.2" and "0.1" are the records
-    earlier implementations produced for the same two sessions.
+    "0.4" is what this implementation produces; "0.3", "0.2" and "0.1" are the
+    records earlier implementations produced for the same two sessions, kept in
+    the vector so a case can assert what a verifier now does with each of them.
     """
-    if version == "0.3":
+    if version == "0.4":
         return generate_transaction_record(_transaction_record_session(TR_VECTOR))
+    if version == "0.3":
+        return copy.deepcopy(TR_VECTOR["expected"]["record_version_0_3"]["full_record"])
     if version == "0.2":
         return copy.deepcopy(TR_VECTOR["expected"]["record_version_0_2"]["full_record"])
     return copy.deepcopy(WITHOUT_BASIS["record_version_0_1"]["full_record"])
@@ -123,6 +134,14 @@ SER_CASES = (
             case["shape"], case, True, id=f"accepted-{case['record_version']}-{case['shape']}"
         )
         for case in SER_VERSIONS["accepted"]
+    ]
+    # accepted carries one row per version, because it is also the ordered
+    # version list the recognizer must equal. "0.4" is the first version at
+    # which both shapes are legal, so the accepted combination it cannot
+    # express lives beside it rather than in cross_shape, which means violation.
+    + [
+        pytest.param(case["shape"], case, True, id=case["name"])
+        for case in SER_VERSIONS["additional_accepted_shapes"]
     ]
     + [
         pytest.param(case["shape"], case, False, id=case["name"])
@@ -214,8 +233,8 @@ def test_session_evidence_record_verifier_accepts_only_recognized_versions(shape
 
 @pytest.mark.parametrize("vector_name", ["with_basis", "without_basis"])
 def test_producers_emit_the_transaction_record_version(vector_name):
-    """Every record this implementation produces carries the act fields, so every
-    one is "0.3", whether or not the session fixed a basis (Section 9.3)."""
+    """Every record this implementation produces carries both acts' fields, so
+    every one is "0.4", whether or not the session fixed a basis (Section 9.3)."""
     vector = TR_VECTOR if vector_name == "with_basis" else WITHOUT_BASIS
 
     assert TR_EMITTED in TR_VERSIONS["accepted"]
@@ -253,17 +272,21 @@ def test_each_verifier_accepts_exactly_the_versions_the_vector_accepts():
 def test_each_artifacts_version_set_is_its_own():
     """"0.3" means a different thing to each artifact, and neither set is merged.
 
-    For the TransactionRecord it is the record whose final_offer carries the act
-    fields, and the only version a verifier accepts (Section 9.3); for the
-    SessionEvidenceRecord it is the record that carries
-    external_commitment_reference, one of three it accepts (Section 9A.2). One
+    For the TransactionRecord it is one of three versions it no longer accepts
+    (Section 9.3); for the SessionEvidenceRecord it is the record that carries
+    external_commitment_reference, one of four it accepts (Section 9A.2). One
     artifact's rules never decide the other's: the TransactionRecord refusing
     "0.1" and "0.2" says nothing about an evidence record carrying them.
+
+    Each accepted list is asserted against its implementation's own recognizer in
+    test_each_verifier_accepts_exactly_the_versions_the_vector_accepts. Restating
+    the literals here would be a second copy of the same list, free to drift.
     """
-    assert TR_VERSIONS["accepted"] == ["0.3"]
     ser_accepted = [case["record_version"] for case in SER_VERSIONS["accepted"]]
-    assert ser_accepted == ["0.1", "0.2", "0.3"]
-    assert {"name": "next-minor", "record_version": "0.4"} in SER_VERSIONS["rejected"]
+    # Not redundant with the parametrized rejected cases: those assert that every
+    # entry in the list fails, which passes vacuously if the list is emptied.
+    # This membership assertion is what keeps the list non-empty.
+    assert {"name": "next-minor", "record_version": "0.5"} in SER_VERSIONS["rejected"]
     # The versions the TransactionRecord refuses as unbound are still accepted by
     # the evidence record, which is the point of keeping the two sets apart.
     unbound = {case["record_version"] for case in TR_VERSIONS["unbound"]}

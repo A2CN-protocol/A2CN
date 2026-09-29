@@ -36,7 +36,7 @@ import {
   verifyTransactionRecordReason,
 } from "../src/a2cn/record.js";
 import { SessionManager, SessionState } from "../src/a2cn/session.js";
-import { PROTOCOL_ACT_VERSION, type Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument } from "./conftest.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -129,15 +129,21 @@ function reasonFor(value: Dict, vector: Dict = VECTOR): string | null {
 }
 
 /**
- * The record of the given version: "0.3" generated, "0.2" the vector's.
+ * The record of the given version: "0.4" generated, the rest the vector's.
  *
- * Only "0.3" is accepted now; the older shape is still built here so a case can
- * assert what a verifier does with it.
+ * Only "0.4" is accepted now; the older shapes are still built here so a case
+ * can assert what a verifier does with each of them.
  */
 function recordOfVersion(recordVersion: string): Dict {
-  return recordVersion === "0.3"
-    ? record()
-    : structuredClone(EXPECTED_0_2.full_record as Dict);
+  if (recordVersion === "0.4") {
+    return record();
+  }
+  if (recordVersion === "0.3") {
+    return structuredClone(
+      ((VECTOR.expected as Dict).record_version_0_3 as Dict).full_record as Dict,
+    );
+  }
+  return structuredClone(EXPECTED_0_2.full_record as Dict);
 }
 
 /**
@@ -190,11 +196,15 @@ test.each(CARRIED_FIELD_CASES)(
 test.each(Object.keys(VECTORS).sort())(
   "final_offer states the wire version the act was hashed under: %s",
   (vectorName) => {
-    // The offer message carries no protocol_version, so the record states it.
+    // The offer message carries no protocol_version, so the record states it. It
+    // states the session's negotiated version, the one the act was signed under,
+    // which for this vector's session is earlier than the one emitted now.
     const vector = VECTORS[vectorName];
 
     expect("protocol_version" in acceptedOffer(vector)).toBe(false);
-    expect((record(vector).final_offer as Dict).protocol_version).toBe(PROTOCOL_ACT_VERSION);
+    expect((record(vector).final_offer as Dict).protocol_version).toBe(
+      (vector.session_ack as Dict).protocol_version,
+    );
   },
 );
 
@@ -214,7 +224,7 @@ test.each(Object.keys(VECTORS).sort())(
   "a record that carries the act fields is 0.3: %s",
   (vectorName) => {
     // Section 9.3: the version follows the content, as it does for basis.
-    expect(record(VECTORS[vectorName]).record_version).toBe("0.3");
+    expect(record(VECTORS[vectorName]).record_version).toBe("0.4");
   },
 );
 
@@ -325,13 +335,13 @@ test.each(ACT_FIELDS)("a 0.3 record missing an act field fails verification: %s"
   expect(verifies(resealed(value))).toBe(false);
 });
 
-test("a 0.3 record with no act fields at all fails verification", () => {
+test("a bound record with no act fields at all fails verification", () => {
   const value = record();
   for (const fieldName of ACT_FIELDS) {
     delete (value.final_offer as Dict)[fieldName];
   }
 
-  expect(value.record_version).toBe("0.3");
+  expect(value.record_version).toBe("0.4");
   expect(verifies(resealed(value))).toBe(false);
 });
 
@@ -432,7 +442,7 @@ function locallySignedRecord(
   const sessionInit: Dict = {
     message_type: "session_init",
     message_id: "act-init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: { ...sessionParams, subject: "Act binding" },
     initiator: {
       organization_name: "TechCorp",
@@ -448,7 +458,7 @@ function locallySignedRecord(
     message_id: "act-ack-1",
     session_id: sessionId,
     in_reply_to: "act-init-1",
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params_accepted: sessionParams,
     responder: {
       organization_name: "Acme",
@@ -485,7 +495,7 @@ function locallySignedRecord(
   const terms = { total_value: 9_500_000, currency: "USD" };
   // What the state machine will rebuild: an omitted field defaults to "".
   const actHash = hashObject({
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 1,
@@ -512,24 +522,27 @@ function locallySignedRecord(
   if (!omit.includes("expires_at")) offer.expires_at = expiresAt;
   manager.processMessage(session, offer);
 
-  const payload = {
+  const acceptance: Dict = {
+    message_type: "acceptance",
+    message_id: "act-acc-1",
+    in_reply_to: "act-offer-1",
     session_id: sessionId,
     round_number: 1,
     sequence_number: 2,
     accepted_offer_id: "act-offer-1",
     accepted_protocol_act_hash: actHash,
-  };
-  manager.processMessage(session, {
-    message_type: "acceptance",
-    message_id: "act-acc-1",
-    in_reply_to: "act-offer-1",
-    ...payload,
     sender_did: RESPONDER_DID,
     sender_agent_id: "seller-agent",
     sender_verification_method: RESPONDER_VM,
     timestamp: "2026-03-24T10:03:00Z",
-    acceptance_signature: signJws(hashObject(payload), RESPONDER_PRIVATE_KEY, RESPONDER_VM),
-  });
+  };
+  // Signed over the act's own envelope (Section 7.3.1).
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    RESPONDER_PRIVATE_KEY,
+    RESPONDER_VM,
+  );
+  manager.processMessage(session, acceptance);
   expect(session.state).toBe(SessionState.COMPLETED);
   return [generateTransactionRecord(session), didDocuments];
 }
@@ -552,11 +565,17 @@ function resignedOverItsAct(record: Dict): [Dict, string[]] {
   );
   const acceptance = value.final_acceptance as Dict;
   acceptance.accepted_protocol_act_hash = actHash;
+  // The acceptance's own Section 7.3.1 envelope, rebuilt from the fields the
+  // record stores for it. Nothing is read from final_offer.
   acceptance.acceptance_signature = signJws(
     hashObject({
+      protocol_version: acceptance.protocol_version,
       session_id: value.session_id,
       round_number: acceptance.round_number,
       sequence_number: acceptance.sequence_number,
+      message_type: acceptance.message_type,
+      sender_did: acceptance.sender_did,
+      timestamp: acceptance.timestamp,
       accepted_offer_id: acceptance.accepted_offer_id,
       accepted_protocol_act_hash: actHash,
     }),
@@ -579,10 +598,10 @@ test("a record made under a later wire version still recomputes", () => {
   expect(verifyTransactionRecord(value, didDocuments, offerHashes)).toBe(true);
 });
 
-test("a locally signed record verifies and is 0.3", () => {
+test("a locally signed record verifies and is the bound version", () => {
   const [value, didDocuments] = locallySignedRecord();
 
-  expect(value.record_version).toBe("0.3");
+  expect(value.record_version).toBe("0.4");
   expect(
     verifyTransactionRecord(value, didDocuments, [
       (value.final_offer as Dict).protocol_act_hash as string,
@@ -611,7 +630,7 @@ test.each(ACCEPTANCE_FIELDS)(
     const value = record();
     (value.final_acceptance as Dict)[fieldName] = ALTERED_ACCEPTANCE_VALUES[fieldName];
 
-    expect(value.record_version).toBe("0.3");
+    expect(value.record_version).toBe("0.4");
     expect(verifies(resealed(value))).toBe(false);
   },
 );
@@ -654,8 +673,8 @@ test("the 0.1 record a pre-basis implementation produced is refused", () => {
 // A "0.3" record's act numbers and top-level currency, held to the signed act
 // ---------------------------------------------------------------------------
 
-const BINDING = VECTOR.record_version_0_3_binding as Dict;
-const BASIS_0_3 = ((VECTOR.expected as Dict).record_version_0_3 as Dict).full_record as Dict;
+const BINDING = VECTOR.record_version_0_4_binding as Dict;
+const BASIS_0_3 = ((VECTOR.expected as Dict).record_version_0_4 as Dict).full_record as Dict;
 
 test.each(
   (BINDING.act_integer_spellings as Dict[]).map(
@@ -686,7 +705,7 @@ test.each(
   (BINDING.currency_cases as Dict[]).map(
     (currencyCase) => [currencyCase.name as string, currencyCase] as [string, Dict],
   ),
-)("the top-level currency is bound to agreed_terms under 0.3: %s", (_name, currencyCase) => {
+)("the top-level currency is bound to agreed_terms under the bound version: %s", (_name, currencyCase) => {
   // Section 9.5 step 8: under "0.3" the top-level currency must equal the
   // signature-bound agreed_terms.currency. A "0.1" or "0.2" record's is not
   // checked, because per-offer currency consistency was only required from the
@@ -798,7 +817,7 @@ test("the empty expires_at vector replays and verifies", () => {
   // Both suites must reach the same record and the same verdict, so the rule
   // cannot drift between the two implementations.
   const vector = EMPTY_EXPIRES_AT;
-  const expected = vector.record_version_0_3 as Dict;
+  const expected = vector.record_version_0_4 as Dict;
   const offer = (vector.messages as Dict[])[0];
 
   expect("expires_at" in offer).toBe(false);

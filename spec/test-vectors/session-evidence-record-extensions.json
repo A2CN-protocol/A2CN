@@ -34,7 +34,7 @@
         "money_basis_basis": "net",
         "name": "net-over-gross-act",
         "placement": "act",
-        "resealed_record_hash": "FdZ1EFELpUrBaSofiruWDbxy9GOaV6b-3jMNF0nAXII",
+        "resealed_record_hash": "8nzYTJFwIPdpLN7-u4Ld9TTAyuRKl0rFlqGTOvFJfk8",
         "valid": false
       },
       {
@@ -42,7 +42,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-net-act",
         "placement": "act",
-        "resealed_record_hash": "a2DMqZGSKWLhMML8OXmSYel49X6lRKVDj2SIc17zNmU",
+        "resealed_record_hash": "WavERl8JPgvY6qdRXBgQbZHnVno-BrI0d9yqXhWU4ak",
         "valid": false
       },
       {
@@ -50,7 +50,7 @@
         "money_basis_basis": "net",
         "name": "net-over-gross-act-terminal",
         "placement": "terminal",
-        "resealed_record_hash": "WGgjTj5zg4M4DX9EPWNxIygvFFjtug54xikSaLjX9Xw",
+        "resealed_record_hash": "Pg_jO9hSG557GQ8O2JbsFgR5ebNUrv5D31fcQrYUBDs",
         "valid": false
       },
       {
@@ -58,7 +58,7 @@
         "money_basis_basis": "net",
         "name": "net-over-null-act-basis",
         "placement": "act",
-        "resealed_record_hash": "vgNTjhTXc6AfdPtSTcfKl3VvFmNSBfalYiYR-wLBKEs",
+        "resealed_record_hash": "7KRcPAH0pXsK3W8Vj2jVhGHKkUztnSiXi0_jgq8SyPw",
         "valid": false
       },
       {
@@ -66,7 +66,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-uppercase-act-basis",
         "placement": "act",
-        "resealed_record_hash": "urZhVv7k4pK_iQZQkKIb-6g5REmMLoHjCG_INfmuIEo",
+        "resealed_record_hash": "ZkqIcz3UKrDTvF1xFTnABpdaLw6X9qTGX10pfdxiEds",
         "valid": false
       },
       {
@@ -74,7 +74,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-gross-act",
         "placement": "act",
-        "record_hash": "dw2GywWKgEl_7da4PBcQEnHG9z82457dV5muaKTVZx0",
+        "record_hash": "IPU31XRbzDKIfXSGbQY0O6xDho7-31vciPCGALR_iVQ",
         "valid": true
       },
       {
@@ -82,7 +82,7 @@
         "money_basis_basis": "gross",
         "name": "gross-over-gross-act-terminal",
         "placement": "terminal",
-        "record_hash": "ng3DxGze7QINWr-Ttkl8DfbcCJP3RaRFN8jjOz0lKNU",
+        "record_hash": "p55qgn2Rob-uoji6k7W2rWU5NNOdlsXe_SQC0OPtHA4",
         "valid": true
       },
       {
@@ -90,7 +90,7 @@
         "money_basis_basis": "unspecified",
         "name": "unspecified-over-gross-act",
         "placement": "act",
-        "record_hash": "17i3l6VpbwoMBX06x6vf39OMNL_d_V3iBKdJgEw5nvs",
+        "record_hash": "fPczANdU9xhIyTsi6l-3e6ysm53v9K5eyL3XRZDV0Jk",
         "valid": true
       },
       {
@@ -98,14 +98,14 @@
         "money_basis_basis": "per_unit",
         "name": "per-unit-over-net-act",
         "placement": "act",
-        "record_hash": "pcvaJG4GwIispWCTd9n0f6qBzbEt6uJjyLcfqA2K5Ng",
+        "record_hash": "RYSnj32oF0DDjbPSgqznEBw7ACqpL0itTdsL5a-pwM8",
         "valid": true
       },
       {
         "money_basis_basis": "net",
         "name": "net-over-act-without-basis",
         "placement": "act",
-        "record_hash": "7VJwo9uvp4dwAE78MkUq8PUryFUpRYfYDmABciSTN6g",
+        "record_hash": "iQNfjSKMRB-i0I6T2vCYEXfgk-1mB50C8koWwc9hcNA",
         "valid": true
       }
     ],
@@ -200,14 +200,14 @@
   "vectors": {
     "halted_by_controls": {
       "expected": {
-        "act_chain_hash": "GIYgsUZmx_JmMhJ8vLJE7WHjs0F-ZPf_HQQjWHLJ0TE",
+        "act_chain_hash": "sr6TeNJVDhVvpbwQzTQo_CEHfpvhDk0Nl6OSOQovrVM",
         "act_hashes": [
-          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4"
+          "PG69cbE3M4BgSPsZ3N8HRjnFQTsx-CHtK5E90gSXziw"
         ],
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "UEFWfmZA9epWxekWSVzsO7BRqyxeZIMcHJy8PEC3NjQ",
+        "record_hash": "qKNwJoH5QUZrjhvidSNFOlI4aDNr-jznF1Je7XE9Tns",
         "terminal_outcome": "HALTED_BY_CONTROLS"
       },
       "message_log": [
@@ -248,15 +248,15 @@
     },
     "money_basis": {
       "expected": {
-        "act_chain_hash": "g7QcFlWIgGlrqkysaQdRIZ51J9Wmgexd8_q8k236ZCM",
+        "act_chain_hash": "ZgFn_sq5GivtWQtgCm8QKtgMgG0zgu2J77PK03e_WOo",
         "act_hashes": [
-          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4",
-          "YiDf_8vArq9h17yKylf28N11UkkMC7xINbmvqxZsaIo"
+          "PG69cbE3M4BgSPsZ3N8HRjnFQTsx-CHtK5E90gSXziw",
+          "bR3sKHABAWAfKvs0-NL3h_GVfmhvOkks7creqNkIsIk"
         ],
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "mixed",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "jt4918QDWMq_NZLwGkvZ74BKgs0ehsUQClEyr6U-hPs",
+        "record_hash": "WlDMbJT3ZSi16vBlipn6PAoUmnOuq_w9Zko18b6Bj-g",
         "terminal_outcome": "IMPASSE"
       },
       "message_log": [
@@ -329,15 +329,15 @@
     },
     "observed_party_responder": {
       "expected": {
-        "act_chain_hash": "g7QcFlWIgGlrqkysaQdRIZ51J9Wmgexd8_q8k236ZCM",
+        "act_chain_hash": "ZgFn_sq5GivtWQtgCm8QKtgMgG0zgu2J77PK03e_WOo",
         "act_hashes": [
-          "0shTzhPuddK3cyWJe07mYnDcISiF21XhCdxE4rCNLx4",
-          "YiDf_8vArq9h17yKylf28N11UkkMC7xINbmvqxZsaIo"
+          "PG69cbE3M4BgSPsZ3N8HRjnFQTsx-CHtK5E90gSXziw",
+          "bR3sKHABAWAfKvs0-NL3h_GVfmhvOkks7creqNkIsIk"
         ],
         "evidence_id": "a078f0b2-581e-537c-9832-7aa6d23afcae",
         "evidence_level": "unilateral",
         "generated_at": "2026-08-31T12:10:00Z",
-        "record_hash": "S7c1gp9gpSZNHViNElsoTZFR8HDEfZmDCBtjJjYLnbU",
+        "record_hash": "XrRBkUcva4adQvXYMhDuUNyvJtOnnyGEuU3GnwyjXrM",
         "terminal_outcome": "TIMED_OUT"
       },
       "message_log": [

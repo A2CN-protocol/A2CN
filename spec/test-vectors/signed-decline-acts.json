@@ -1,0 +1,177 @@
+{
+  "description": "Cross-language vector for the signed decline acts (Sections 7.5 and 7.6). Rejection and withdrawal had no in-band signature slot before this version, so a party that signed its own withdrawal had nowhere conformant to put the signature. Each act here is signed over the Section 7.3.1 signed act object: the common seven-field header plus that act type's payload, flat. Both suites rebuild each act's envelope from the act's own fields, hash it, and must agree on every verdict and on every byte. signed_object states exactly what each case's signature covers, and canonical_bytes is the length of its RFC 8785 serialization, so a scope change in either implementation shows up as a byte count before it shows up as a hash. withdrawal_round_number is the case ruling (4) asked for: a Withdrawal did not previously carry round_number, and it is REQUIRED now because round_number is part of the header every signed act covers. A Withdrawal that omits it cannot be rebuilt, so it cannot be signed or verified, and its own schema refuses it. reason_description is deliberately outside every signed scope: it is OPTIONAL and dropped when unset, so signing it would make the signed field set depend on whether the sender filled it in. The two acts below therefore hash identically with and without it, which is the property unsigned_field_is_not_covered pins. Keys are test-only public fixtures and MUST NOT be used outside tests.",
+  "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+  "signature_fields": {
+    "offer": "protocol_act_signature",
+    "counteroffer": "protocol_act_signature",
+    "acceptance": "acceptance_signature",
+    "rejection": "rejection_signature",
+    "withdrawal": "withdrawal_signature"
+  },
+  "header_fields": [
+    "protocol_version",
+    "session_id",
+    "round_number",
+    "sequence_number",
+    "message_type",
+    "sender_did",
+    "timestamp"
+  ],
+  "payload_fields": {
+    "offer": [
+      "expires_at",
+      "terms"
+    ],
+    "counteroffer": [
+      "expires_at",
+      "terms"
+    ],
+    "acceptance": [
+      "accepted_offer_id",
+      "accepted_protocol_act_hash"
+    ],
+    "rejection": [
+      "rejected_offer_id",
+      "reason_code"
+    ],
+    "withdrawal": [
+      "reason_code"
+    ]
+  },
+  "cases": [
+    {
+      "name": "rejection",
+      "rebuilds": true,
+      "act": {
+        "message_type": "rejection",
+        "message_id": "decline-rej-1",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "in_reply_to": "basis-counter-1",
+        "round_number": 2,
+        "sequence_number": 4,
+        "rejected_offer_id": "basis-counter-1",
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "basis-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "reason_code": "PRICE_TOO_HIGH",
+        "reason_description": "above mandate"
+      },
+      "signed_object": {
+        "protocol_version": "0.2",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "round_number": 2,
+        "sequence_number": 4,
+        "message_type": "rejection",
+        "sender_did": "did:web:techcorp.example",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "rejected_offer_id": "basis-counter-1",
+        "reason_code": "PRICE_TOO_HIGH"
+      },
+      "canonical_bytes": 286,
+      "signed_act_hash": "4KXrR0MvlVe5Br9CJBMdOyVktcTVsOGi5I9vw_ne3vQ"
+    },
+    {
+      "name": "withdrawal",
+      "rebuilds": true,
+      "act": {
+        "message_type": "withdrawal",
+        "message_id": "decline-wd-1",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "in_reply_to": "basis-counter-1",
+        "round_number": 2,
+        "sequence_number": 4,
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "basis-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "reason_code": "STRATEGY_DECISION",
+        "reason_description": "walking away"
+      },
+      "signed_object": {
+        "protocol_version": "0.2",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "round_number": 2,
+        "sequence_number": 4,
+        "message_type": "withdrawal",
+        "sender_did": "did:web:techcorp.example",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "reason_code": "STRATEGY_DECISION"
+      },
+      "canonical_bytes": 252,
+      "signed_act_hash": "1XcAu3fOEHb2PxB69jHMTfNM8EC4FWe5a7oXmeoJaOM"
+    },
+    {
+      "name": "withdrawal_round_number",
+      "note": "A Withdrawal that omits round_number cannot be rebuilt, so it cannot be signed or verified. round_number is REQUIRED as of this version; a receiver that predates the field ignores it.",
+      "rebuilds": false,
+      "omit": "round_number",
+      "act": {
+        "message_type": "withdrawal",
+        "message_id": "decline-wd-2",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "in_reply_to": "basis-counter-1",
+        "sequence_number": 4,
+        "sender_did": "did:web:techcorp.example",
+        "sender_agent_id": "basis-agent",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "reason_code": "STRATEGY_DECISION"
+      }
+    },
+    {
+      "name": "rejection_missing_reason_code",
+      "note": "reason_code is inside the signed scope, so an act without one cannot be rebuilt. Nothing is defaulted into a signature.",
+      "rebuilds": false,
+      "omit": "reason_code",
+      "act": {
+        "message_type": "rejection",
+        "message_id": "decline-rej-2",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "round_number": 2,
+        "sequence_number": 4,
+        "rejected_offer_id": "basis-counter-1",
+        "sender_did": "did:web:techcorp.example",
+        "sender_verification_method": "did:web:techcorp.example#key-1",
+        "timestamp": "2026-03-24T10:04:00Z"
+      }
+    },
+    {
+      "name": "unknown_act_type",
+      "note": "An act type the envelope does not name has no signed object at all.",
+      "rebuilds": false,
+      "act": {
+        "message_type": "not_an_act",
+        "message_id": "decline-unknown-1",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "round_number": 2,
+        "sequence_number": 4,
+        "sender_did": "did:web:techcorp.example",
+        "timestamp": "2026-03-24T10:04:00Z",
+        "reason_code": "STRATEGY_DECISION"
+      }
+    }
+  ],
+  "unsigned_field_is_not_covered": {
+    "note": "reason_description is OPTIONAL and outside every signed scope, so altering or removing it leaves the signed act object byte-identical. Both suites apply this to the rejection and withdrawal cases above.",
+    "field": "reason_description",
+    "altered_value": "something else entirely"
+  },
+  "relabel_cases": [
+    {
+      "name": "rejection-relabelled-withdrawal",
+      "from": "rejection",
+      "to": "withdrawal",
+      "note": "message_type is inside the header, so a relabel moves the hash; and the signature is still sitting in the slot of the type it was made for.",
+      "rebuilds": true,
+      "signed_act_hash": "BUm6H0j0aimHwmr58tdNKfbCCA7MdfLyTfnjbW0_U60"
+    },
+    {
+      "name": "withdrawal-relabelled-rejection",
+      "from": "withdrawal",
+      "to": "rejection",
+      "note": "A withdrawal relabelled a rejection cannot rebuild at all: a rejection's payload names rejected_offer_id, which a withdrawal does not carry.",
+      "rebuilds": false
+    }
+  ]
+}

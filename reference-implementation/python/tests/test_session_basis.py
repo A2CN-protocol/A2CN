@@ -27,7 +27,7 @@ VECTORS = json.loads(
     (REPO_ROOT / "spec" / "test-vectors" / "session-params-basis.json").read_text()
 )
 INVITATION_SCHEMA = json.loads(
-    (REPO_ROOT / "spec" / "schemas" / "session-invitation.schema.json").read_text()
+    (REPO_ROOT / "spec" / "schemas" / "session-invitation-0.3.schema.json").read_text()
 )
 MONEY_PARAM_FIXTURES = {
     name: json.loads((REPO_ROOT / "spec" / "conformance-fixtures" / f"{name}.json").read_text())
@@ -66,7 +66,7 @@ def _init_and_ack(proposed: dict, accepted: dict) -> tuple[dict, dict]:
         "message_id": str(uuid.uuid4()),
         "session_id": "sess-basis",
         "in_reply_to": session_init["message_id"],
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": {**timing, **accepted},
         "responder": {"did": RESPONDER_DID},
         "responder_mandate": {"mandate_type": "declared"},
@@ -87,7 +87,7 @@ def _signed_offer(session_id, rnd, sender_did, private_key, *, terms, in_reply_t
     message_type = "offer" if rnd == 1 else "counteroffer"
     terms = copy.deepcopy(terms)
     protocol_act_hash = hash_object({
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": rnd,
@@ -510,7 +510,7 @@ def _client_answering_with(accepted, posted: list | None = None) -> A2CNClient:
             "message_id": str(uuid.uuid4()),
             "session_id": "sess-basis",
             "in_reply_to": json.loads(request.content)["message_id"],
-            "protocol_version": "0.2",
+            "protocol_version": "0.3",
             "responder": {"did": RESPONDER_DID},
             "responder_mandate": {"mandate_type": "declared"},
             "session_created_at": NOW,
@@ -724,7 +724,7 @@ def _invitation(proposed_session_params: dict) -> dict:
     return {
         "message_type": "session_invitation",
         "invitation_id": "11111111-2222-3333-4444-555555555555",
-        "a2cn_version": "0.2",
+        "a2cn_version": "0.3",
         "inviter_did": INITIATOR_DID,
         "inviter_endpoint": "https://techcorp.example/api/a2cn",
         "inviter_discovery_url": "https://techcorp.example/.well-known/a2cn-agent",

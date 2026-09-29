@@ -10,7 +10,8 @@ import { expect, test } from "vitest";
 
 import { createMcpContext, type McpContext } from "../src/mcp_server.js";
 import { A2CNClient } from "../src/a2cn/client.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import { verifyJws } from "../src/a2cn/crypto.js";
+import { signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { A2CNError } from "../src/a2cn/session.js";
 
 // ---------------------------------------------------------------------------
@@ -22,7 +23,7 @@ const BASE_URL = "https://acme-corp.com";
 const SESSION_ID = "test-session-00000000-0000-0000-0000";
 
 const DISCOVERY_DOC: Dict = {
-  a2cn_version: "0.2",
+  a2cn_version: "0.3",
   agent_did: COUNTERPARTY_DID,
   conformance_level: 2,
   deal_types: ["saas_renewal"],
@@ -37,7 +38,7 @@ const SESSION_ACK: Dict = {
   message_id: randomUUID(),
   session_id: SESSION_ID,
   in_reply_to: "init-001",
-  protocol_version: "0.2",
+  protocol_version: "0.3",
   session_params_accepted: {
     deal_type: "saas_renewal",
     currency: "USD",
@@ -140,7 +141,7 @@ function seedSession(
   });
   // Bootstrap the client's internal session state
   client._sessions[sessionId] = {
-    session_init: {},
+    session_init: { protocol_version: SESSION_ACK.protocol_version },
     session_ack: SESSION_ACK,
     sequence_number: 1,
     round_number: 1,
@@ -201,7 +202,7 @@ test("discover a2cn capable", async () => {
   const result = await ctx.a2cnDiscover(COUNTERPARTY_DID);
 
   expect(result.a2cn_capable).toBe(true);
-  expect(result.a2cn_version).toBe("0.2");
+  expect(result.a2cn_version).toBe("0.3");
   expect(result.conformance_level).toBe(2);
   expect(result.deal_types).toContain("saas_renewal");
   expect(result.agent_did).toBe(COUNTERPARTY_DID);
@@ -475,15 +476,20 @@ test("accept session not found", async () => {
 
 test("reject success", async () => {
   // Active session → rejection sent, status REJECTED_FINAL.
+  const posted: Dict[] = [];
+  const route = routedFetch([
+    {
+      method: "POST",
+      pattern: new RegExp(`${BASE_URL}/sessions/.+/messages`),
+      status: 200,
+      json: { status: "received" },
+    },
+  ]);
   const ctx = createMcpContext({
-    fetchFn: routedFetch([
-      {
-        method: "POST",
-        pattern: new RegExp(`${BASE_URL}/sessions/.+/messages`),
-        status: 200,
-        json: { status: "received" },
-      },
-    ]),
+    fetchFn: (async (url: string | URL | Request, init?: RequestInit) => {
+      posted.push(JSON.parse(init?.body as string) as Dict);
+      return route(url, init);
+    }) as typeof fetch,
   });
   seedSession(ctx, { cpOffer: SAMPLE_CP_OFFER });
 
@@ -492,6 +498,14 @@ test("reject success", async () => {
   expect("error" in result).toBe(false);
   expect(result.status).toBe("REJECTED_FINAL");
   expect(ctx.sessions[SESSION_ID].status).toBe("REJECTED_FINAL");
+  // A party's rejection is signed (Section 7.5), under the negotiated version.
+  const sent = posted[posted.length - 1];
+  const client = ctx.sessions[SESSION_ID].client as A2CNClient;
+  expect(sent.sender_verification_method).toBe(client.agentInfo.verification_method);
+  const expected = signedActHash(sent, {
+    versionWhenAbsent: SESSION_ACK.protocol_version as string,
+  });
+  expect(verifyJws(sent.rejection_signature as string, ctx.publicKey)).toBe(expected);
 });
 
 test("reject terminal guard", async () => {

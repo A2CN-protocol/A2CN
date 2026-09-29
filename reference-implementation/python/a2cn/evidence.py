@@ -17,7 +17,13 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
-from a2cn.messages import PROTOCOL_ACT_VERSION, protocol_act_object
+from a2cn.messages import (
+    RECORD_ENTRY_WIRE_FIELDS,
+    RECORD_ENTRY_WRAPPER_FIELDS,
+    _is_act_integer,
+    negotiated_protocol_version,
+    rebuild_signed_act,
+)
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
@@ -30,7 +36,13 @@ SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3"
 # The versions a verifier accepts (Section 9A.2). Every other value is rejected.
 # Verification is the same for all of them, except that a record carries
 # external_commitment_reference exactly when it is "0.3".
-RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3")
+# Every record a producer emits is "0.4" (Section 9A.2). The two constants
+# above name versions that only historical records carry; they stay so those
+# records can still be read, because the SER recognizer is additive — a
+# version is added and none removed, and an older sealed record stays valid.
+SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4"
+
+RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4")
 SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record"
 
 EVIDENCE_BILATERAL = "bilateral"
@@ -42,6 +54,15 @@ ATTRIBUTION_UNSIGNED = "unsigned_observation"
 
 SIGNATURE_PROTOCOL_ACT = "protocol_act_signature"
 SIGNATURE_ACCEPTANCE = "acceptance_signature"
+SIGNATURE_REJECTION = "rejection_signature"
+SIGNATURE_WITHDRAWAL = "withdrawal_signature"
+
+# The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+# signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
+# no earlier version's schema lists these values and no earlier record can
+# legitimately carry one.
+_DECLINE_SIGNATURE_TYPES = frozenset({SIGNATURE_REJECTION, SIGNATURE_WITHDRAWAL})
+_VERSIONS_ADMITTING_DECLINE_VOCABULARY = frozenset({"0.4"})
 
 OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS"
 
@@ -56,6 +77,20 @@ _EVIDENCE_TERMINAL_OUTCOMES = _TERMINAL_STATES | {OUTCOME_HALTED_BY_CONTROLS}
 _SIGNED_MESSAGE_FIELDS = {
     SIGNATURE_PROTOCOL_ACT: SIGNATURE_PROTOCOL_ACT,
     SIGNATURE_ACCEPTANCE: SIGNATURE_ACCEPTANCE,
+    SIGNATURE_REJECTION: SIGNATURE_REJECTION,
+    SIGNATURE_WITHDRAWAL: SIGNATURE_WITHDRAWAL,
+}
+# The act types each signature slot may appear on. A slot that names one act
+# type is what lets a verifier refuse an act relabelled as another: the rebuild
+# then demands the scope the signature was made under, while the signature is
+# still sitting in the slot of the type it was made for. Before the declines had
+# slots of their own, a rejection or withdrawal carrying a signature was read as
+# an unsigned observation and its signature was never checked at all.
+_SIGNATURE_TYPE_MESSAGE_TYPES = {
+    SIGNATURE_PROTOCOL_ACT: ("offer", "counteroffer"),
+    SIGNATURE_ACCEPTANCE: ("acceptance",),
+    SIGNATURE_REJECTION: ("rejection",),
+    SIGNATURE_WITHDRAWAL: ("withdrawal",),
 }
 _RECORD_FIELDS = frozenset(
     {
@@ -78,23 +113,8 @@ _RECORD_FIELDS = frozenset(
 _RECORD_OPTIONAL_FIELDS = frozenset({"extensions", "external_commitment_reference"})
 _EXTERNAL_COMMITMENT_REFERENCE_FIELDS = frozenset({"external_commitment_id"})
 _EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = frozenset({"locator", "reference_note"})
-_ACT_FIELDS = frozenset(
-    {
-        "sequence_number",
-        "round_number",
-        "message_type",
-        "message_id",
-        "sender_did",
-        "timestamp",
-        "source_protocol",
-        "act",
-        "act_hash",
-        "sender_verification_method",
-        "signature_type",
-        "signature",
-        "attribution",
-    }
-)
+# The fields that restate the wire act, and the record's own (a2cn.messages).
+_ACT_FIELDS = RECORD_ENTRY_WIRE_FIELDS | RECORD_ENTRY_WRAPPER_FIELDS
 _ACT_OPTIONAL_FIELDS = frozenset({"money_basis"})
 _TERMINAL_FIELDS = frozenset({"outcome", "reason", "message_id", "timestamp"})
 _TERMINAL_OPTIONAL_FIELDS = frozenset({"money_basis"})
@@ -167,8 +187,9 @@ def generate_session_evidence_record(
     ``external_commitment_reference`` completes a session whose responder is
     observed: it names the external order or commitment the deal produced, in
     place of a TransactionRecord, which is bilateral (Section 9A.12). Such a
-    record is ``"0.3"``. It is required for that session and refused for any
-    other; ``None`` means it is not supplied.
+    record is ``"0.4"``, like every record this generator emits; the reference is
+    OPTIONAL at that version (Section 9A.2). It is required for that session and
+    refused for any other; ``None`` means it is not supplied.
     """
     if session.state not in _TERMINAL_STATES:
         raise ValueError("Session evidence is only available for terminal sessions")
@@ -218,12 +239,23 @@ def generate_session_evidence_record(
             "external_commitment_reference, because a TransactionRecord is bilateral"
         )
 
+    # Every recorded act states the wire version it was signed under, the
+    # session's negotiated version (Sections 7.3.1 and 9A.3), whether it is one
+    # of the session's own acts or an observed one, so the record can be verified
+    # by an implementation that has since moved to another. For a signed act the
+    # value checks itself, since a wrong one fails the signature; for an unsigned
+    # observation it only frames the act. An act that already states one keeps it.
+    wire_version = negotiated_protocol_version(session._session_init, session._session_ack)
     acts = [
-        _normalize_evidence_act(message, default_source_protocol="a2cn")
+        _normalize_evidence_act(
+            _stating_wire_version(message, wire_version), default_source_protocol="a2cn"
+        )
         for message in session._message_log
     ]
     acts.extend(
-        _normalize_evidence_act(observed, default_source_protocol=None)
+        _normalize_evidence_act(
+            _stating_wire_version(observed, wire_version), default_source_protocol=None
+        )
         for observed in (observed_acts or [])
     )
     acts = _order_evidence_acts(acts)
@@ -242,11 +274,7 @@ def generate_session_evidence_record(
 
     record = {
         "record_type": SESSION_EVIDENCE_RECORD_TYPE,
-        "record_version": (
-            SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
-            if reference is not None
-            else SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT
-        ),
+        "record_version": SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
         "evidence_id": str(
             uuid.uuid5(
                 A2CN_NAMESPACE,
@@ -300,11 +328,23 @@ def generate_session_evidence_record(
             "An external commitment reference requires an observed responder and "
             "unilateral evidence"
         )
-    if not _external_commitment_matches_version(record):
-        raise ValueError(
-            "record_version must be 0.3 exactly when the record carries "
-            "external_commitment_reference"
-        )
+    # _external_commitment_matches_version_0_3 was checked here, and is not any
+    # more. It cannot fire on anything this function builds: record_version is
+    # assigned SESSION_EVIDENCE_RECORD_VERSION_CURRENT once, unconditionally,
+    # above, and nothing mutates it in between, so the predicate always returns
+    # at its `version == CURRENT` branch. Its message ("record_version must be
+    # 0.3 exactly when the record carries external_commitment_reference") also
+    # states a rule that no longer holds for an emitted record, which is worse
+    # than merely unreachable.
+    #
+    # The predicate itself is NOT dead -- the verifier still calls it, where it
+    # governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
+    # live again the moment emission stops being universally "0.4". So if a
+    # later change makes the emitted version conditional, this site needs a
+    # guard AND A NEW MESSAGE, because the old one asserted a rule that is no
+    # longer true of anything we emit -- restoring it verbatim would be worse
+    # than the deletion it undoes. An unreachable guard is merely dead; a guard
+    # whose failure message states a false rule misleads whoever revives it.
     if not _external_commitment_producer_act_present(record):
         raise ValueError(
             "An external commitment reference requires at least one act signed by "
@@ -355,7 +395,9 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if record.get("record_version") not in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS:
             return assessment
-        if not _external_commitment_matches_version(record):
+        if not _decline_vocabulary_requires_0_4(record):
+            return assessment
+        if not _external_commitment_matches_version_0_3(record):
             return assessment
 
         terminal = record["terminal"]
@@ -826,15 +868,56 @@ def _external_commitment_rules_hold(record: dict) -> bool:
     )
 
 
-def _external_commitment_matches_version(record: dict) -> bool:
-    """A record carries external_commitment_reference exactly when it is "0.3" (Section 9A.2).
+def _external_commitment_matches_version_0_3(record: dict) -> bool:
+    """A "0.3" record carries external_commitment_reference exactly when it is "0.3".
 
-    This is the one verification rule that depends on the version. The
-    reference is present by key, so one whose value is null counts as carried.
+    A historical rule, kept so "0.3" records still read as they always did.
+    "0.4" carries no version-keyed witness rule at all: the reference is
+    OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule — which
+    holds at every record_version and is enforced independently of any version
+    — carries the weight instead. Keeping the biconditional for "0.4" would
+    refuse every external-channel record, since it would demand the version be
+    "0.3" to carry a reference.
+
+    The reference is present by key, so one whose value is null counts as
+    carried.
     """
+    version = record.get("record_version")
+    if version == SESSION_EVIDENCE_RECORD_VERSION_CURRENT:
+        return True
     carried = "external_commitment_reference" in record
-    is_0_3 = record.get("record_version") == SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT
-    return carried == is_0_3
+    return carried == (version == SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT)
+
+
+def _decline_vocabulary_requires_0_4(record: dict) -> bool:
+    """An act carrying a decline signature makes the record "0.4" or later.
+
+    ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
+    version, never the reverse. An ordinary "0.4" record carries no decline at
+    all, so this must not be read as "0.4" implying the vocabulary.
+
+    Keyed on ``signature_type`` rather than on the presence of a signature field
+    inside ``acts[].act``. That object is open, so a field there violates no
+    published schema and a rule keyed on it would refuse a record that is
+    perfectly valid at its own version -- an old record may legitimately carry a
+    vendor field of that name, since the decline schemas keep the message object
+    open. ``signature_type`` is coextensive with the schema violation instead:
+    the enum is the only place an earlier version's schema names the vocabulary.
+
+    NOTE the polarity, which is the opposite of the rule above: that one goes
+    quiet at "0.4" and governs only historical records; this one fires only
+    below "0.4" and governs only new vocabulary.
+    """
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return True  # shape is decided elsewhere; this rule judges vocabulary
+    carries_decline = any(
+        isinstance(entry, dict) and entry.get("signature_type") in _DECLINE_SIGNATURE_TYPES
+        for entry in acts
+    )
+    if not carries_decline:
+        return True
+    return record.get("record_version") in _VERSIONS_ADMITTING_DECLINE_VOCABULARY
 
 
 def _bilateral_witness_matches_responder(record: dict) -> bool:
@@ -1034,9 +1117,14 @@ def _evidence_act_shape_valid(entry: dict) -> bool:
         return False
     for field in ("sequence_number", "round_number"):
         value = entry.get(field)
-        if value is not None and (
-            isinstance(value, bool) or not isinstance(value, int) or value < 1
-        ):
+        # Judged by value, like every other act counter. An entry may omit a
+        # counter, so null stays permitted; _is_act_integer refuses None as well
+        # as a bool, hence the explicit is-not-None guard rather than folding it
+        # in. Before this, the shape check refused the integral float 2.0 that
+        # RFC 8785 makes identical to 2 — so an act could clear the payload-hash
+        # check and still be counted invalid here, while TypeScript's
+        # Number.isInteger accepted it and the two reached opposite verdicts.
+        if value is not None and not (_is_act_integer(value) and value >= 1):
             return False
     if not all(
         isinstance(entry.get(field), str) and entry[field]
@@ -1110,6 +1198,21 @@ def _terminal_timestamp(session: Session) -> str:
     if session.state_updated_at:
         return session.state_updated_at
     return _now()
+
+
+def _stating_wire_version(item: Any, wire_version: str) -> Any:
+    """The act as recorded: with protocol_version, which it may omit on the wire.
+
+    An observed item may wrap its act in "act" beside the entry's metadata; the
+    version belongs to the act either way. An act that states one keeps it.
+    """
+    if not isinstance(item, dict):
+        return item
+    if isinstance(item.get("act"), dict):
+        return {**item, "act": _stating_wire_version(item["act"], wire_version)}
+    if "protocol_version" not in item:
+        return {**item, "protocol_version": wire_version}
+    return item
 
 
 def _normalize_evidence_act(item: dict, *, default_source_protocol: str | None) -> dict:
@@ -1218,7 +1321,11 @@ def _order_evidence_acts(acts: list[dict]) -> list[dict]:
         else None
         for entry in acts
     ]
-    if all(isinstance(entry.get("sequence_number"), int) for entry in acts):
+    # Judged by value here too, so ordering and validity cannot disagree about
+    # what a counter is. isinstance(True, int) is True in Python, so a boolean
+    # sequence_number used to count as sortable; _is_act_integer refuses it and
+    # admits the integral float 2.0 that RFC 8785 makes identical to 2.
+    if all(_is_act_integer(entry.get("sequence_number")) for entry in acts):
         indexed.sort(
             key=lambda pair: (
                 pair[1]["sequence_number"],
@@ -1230,7 +1337,7 @@ def _order_evidence_acts(acts: list[dict]) -> list[dict]:
             key=lambda pair: (
                 timestamp_keys[pair[0]],
                 pair[1].get("sequence_number")
-                if isinstance(pair[1].get("sequence_number"), int)
+                if _is_act_integer(pair[1].get("sequence_number"))
                 else float("inf"),
                 pair[0],
             )
@@ -1358,77 +1465,59 @@ def _verify_evidence_act(
 
 
 def _signed_act_payload_hash(act: dict, signature_type: str) -> str | None:
-    if signature_type == SIGNATURE_PROTOCOL_ACT:
-        if act.get("message_type") not in ("offer", "counteroffer"):
-            return None
-        if not all(
-            isinstance(act.get(field_name), str) and bool(act[field_name])
-            for field_name in (
-                "session_id",
-                "message_type",
-                "sender_did",
-                "timestamp",
-                "expires_at",
-            )
-        ):
-            return None
-        if not all(
-            isinstance(act.get(field_name), int)
-            and not isinstance(act[field_name], bool)
-            and act[field_name] >= 1
-            for field_name in ("round_number", "sequence_number")
-        ):
-            return None
-        if not isinstance(act.get("terms"), dict):
-            return None
-        protocol_act = protocol_act_object(
-            protocol_version=PROTOCOL_ACT_VERSION,
-            session_id=act["session_id"],
-            round_number=act["round_number"],
-            sequence_number=act["sequence_number"],
-            message_type=act["message_type"],
-            sender_did=act["sender_did"],
-            timestamp=act["timestamp"],
-            expires_at=act["expires_at"],
-            terms=act["terms"],
-        )
-        expected_hash = hash_object(protocol_act)
-        if act.get("protocol_act_hash") != expected_hash:
-            return None
-        return expected_hash
+    """The hash an act's signature must cover, or None if it cannot be rebound.
 
-    if signature_type == SIGNATURE_ACCEPTANCE:
-        if act.get("message_type") != "acceptance":
-            return None
-        if not all(
-            isinstance(act.get(field_name), str) and bool(act[field_name])
-            for field_name in (
-                "session_id",
-                "accepted_offer_id",
-                "accepted_protocol_act_hash",
-            )
-        ):
-            return None
-        if not _HASH_PATTERN.fullmatch(act["accepted_protocol_act_hash"]):
-            return None
-        if not all(
-            isinstance(act.get(field_name), int)
-            and not isinstance(act[field_name], bool)
-            and act[field_name] >= 1
-            for field_name in ("round_number", "sequence_number")
-        ):
-            return None
-        return hash_object(
-            {
-                "session_id": act["session_id"],
-                "round_number": act["round_number"],
-                "sequence_number": act["sequence_number"],
-                "accepted_offer_id": act["accepted_offer_id"],
-                "accepted_protocol_act_hash": act["accepted_protocol_act_hash"],
-            }
-        )
+    One rebuild for every act type (Section 7.3.1), taken from a2cn.messages
+    and shared with the record verifier rather than re-derived here, so the two
+    cannot drift apart. What this adds is the evidence record's own, stricter
+    reading of an act it is about to vouch for.
 
-    return None
+    A signature slot names the act type it was made under, so an act relabelled
+    as another type is refused before its signature is ever checked.
+    """
+    allowed_message_types = _SIGNATURE_TYPE_MESSAGE_TYPES.get(signature_type)
+    if allowed_message_types is None:
+        return None
+    if act.get("message_type") not in allowed_message_types:
+        return None
+
+    rebuilt = rebuild_signed_act(act)
+    if rebuilt is None:
+        return None
+
+    # A producer states every covered field outright. The hash would happily
+    # cover a blank string or a zero counter — Section 9.5 lets a record rebind
+    # one, because there the hash alone decides — but an evidence record does
+    # not vouch for an act that leaves one of them empty.
+    for field_name, value in rebuilt.items():
+        if field_name == "terms":
+            continue
+        if field_name in ("round_number", "sequence_number"):
+            # Judged by value, not by Python's type. RFC 8785 serializes 2.0 and
+            # 2 as the same number, so they are one signed act in two JSON
+            # spellings and must reach one verdict — the record path and the
+            # primitive have always judged them alike, and this path judged 2.0
+            # invalid while TypeScript judged it valid. A bool is an int in
+            # Python but is not a JSON number, and stays refused.
+            if not (_is_act_integer(value) and value >= 1):
+                return None
+        elif not (isinstance(value, str) and value):
+            return None
+
+    if signature_type == SIGNATURE_ACCEPTANCE and not _HASH_PATTERN.fullmatch(
+        act["accepted_protocol_act_hash"]
+    ):
+        return None
+
+    expected_hash = hash_object(rebuilt)
+    # An offer states the hash its signature covers, so the two must agree. The
+    # other act types carry no such field; their hash is the rebuild alone.
+    if (
+        signature_type == SIGNATURE_PROTOCOL_ACT
+        and act.get("protocol_act_hash") != expected_hash
+    ):
+        return None
+    return expected_hash
 
 
 def _verify_signature(

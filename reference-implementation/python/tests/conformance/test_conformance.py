@@ -10,9 +10,11 @@ import pytest
 import pytest_asyncio
 
 from a2cn.crypto import generate_keypair, hash_object, sign_jws, create_jwt
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import generate_transaction_record
 from a2cn.session import SessionManager, SessionState, A2CNError
 from tests.conftest import (
+    sign_decline,
     make_session_init, INITIATOR_DID, RESPONDER_DID, SERVER_DID,
     make_did_document
 )
@@ -46,7 +48,7 @@ def _offer(session_id, seq, rnd, sender_did, private_key, msg_type="offer", in_r
     expires_at = "2030-01-01T00:00:00Z"
     terms = {"total_value": 10_000_000, "currency": "USD"}
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": rnd,
         "sequence_number": seq,
@@ -230,7 +232,7 @@ def test_transaction_record_deterministic():
     init_msg = {
         "message_type": "session_init",
         "message_id": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -254,7 +256,7 @@ def test_transaction_record_deterministic():
         "message_id": "ack-1",
         "session_id": session_id,
         "in_reply_to": "init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": {
             "deal_type": "saas_renewal",
             "currency": "USD",
@@ -282,7 +284,7 @@ def test_transaction_record_deterministic():
     _offer_expires = "2030-01-01T00:00:00Z"
     _offer_terms = {"total_value": 10_500_000, "currency": "USD"}
     _offer_pah = hash_object({
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -313,13 +315,6 @@ def test_transaction_record_deterministic():
         ),
     }
 
-    acceptance_payload = {
-        "session_id": session_id,
-        "round_number": 1,
-        "sequence_number": 2,
-        "accepted_offer_id": "offer-1",
-        "accepted_protocol_act_hash": _offer_pah,
-    }
     acceptance_msg = {
         "message_type": "acceptance",
         "message_id": "acc-1",
@@ -333,12 +328,13 @@ def test_transaction_record_deterministic():
         "sender_agent_id": "seller-agent",
         "sender_verification_method": f"{RESPONDER_DID}#key-2026-01",
         "timestamp": "2026-03-24T10:03:00Z",
-        "acceptance_signature": sign_jws(
-            hash_object(acceptance_payload),
-            RESPONDER_PRIVATE_KEY,
-            kid=f"{RESPONDER_DID}#key-2026-01",
-        ),
     }
+    # Signed over the act's own envelope (Section 7.3.1).
+    acceptance_msg["acceptance_signature"] = sign_jws(
+        signed_act_hash(acceptance_msg, version_when_absent=PROTOCOL_ACT_VERSION),
+        RESPONDER_PRIVATE_KEY,
+        kid=f"{RESPONDER_DID}#key-2026-01",
+    )
 
     mgr.process_message(sess, offer_msg)
     mgr.process_message(sess, acceptance_msg)
@@ -395,12 +391,14 @@ async def test_terminal_state_reentry(test_client, initiator_keypair):
         "message_type": "withdrawal",
         "message_id": str(uuid.uuid4()),
         "session_id": session_id,
+        "round_number": 1,
         "sequence_number": 1,
         "sender_did": INITIATOR_DID,
         "sender_agent_id": "test-agent",
         "timestamp": "2026-03-24T10:02:00Z",
         "reason_code": "NO_REASON_GIVEN",
     }
+    w = sign_decline(w, initiator_keypair[0], f"{INITIATOR_DID}#key-1")
     await test_client.post(
         f"/sessions/{session_id}/messages", json=w, headers=init_headers(w["message_id"])
     )

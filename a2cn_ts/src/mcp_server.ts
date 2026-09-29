@@ -35,9 +35,14 @@ import { randomUUID, type KeyObject } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { A2CNClient, HttpStatusError } from "./a2cn/client.js";
-import { generateKeypair, publicKeyToJwk, createJwt } from "./a2cn/crypto.js";
+import { generateKeypair, publicKeyToJwk, createJwt, signJws } from "./a2cn/crypto.js";
 import { now } from "./a2cn/session.js";
-import type { Dict } from "./a2cn/messages.js";
+import {
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  negotiatedProtocolVersion,
+  signedActHash,
+  type Dict,
+} from "./a2cn/messages.js";
 
 const TERMINAL_STATES = new Set([
   "COMPLETED",
@@ -649,6 +654,25 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
       if (reasonDescription) {
         rejection.reason_description = reasonDescription;
       }
+
+      // A party's rejection is signed like its offers and acceptances (Section
+      // 7.5), under the wire version the session was negotiated at.
+      let version: string;
+      try {
+        version = negotiatedProtocolVersion(clientState.session_init, clientState.session_ack);
+      } catch (exc) {
+        return {
+          error: "rejection_failed",
+          message: (exc as Error).message,
+          session_id: sessionId,
+        };
+      }
+      rejection.sender_verification_method = client.agentInfo.verification_method;
+      rejection[SIGNED_ACT_SIGNATURE_FIELDS.rejection] = signJws(
+        signedActHash(rejection, { versionWhenAbsent: version }) as string,
+        client.privateKey,
+        rejection.sender_verification_method as string,
+      );
 
       const headers: Record<string, string> = {
         "Content-Type": "application/a2cn+json",

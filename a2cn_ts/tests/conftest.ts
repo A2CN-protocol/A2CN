@@ -7,13 +7,35 @@ import {
   generateKeypair,
   generateEd25519Keypair,
   publicKeyToJwk,
+  signJws,
 } from "../src/a2cn/crypto.js";
 import { createServerContext, type ServerContext } from "../src/a2cn/server.js";
-import type { Dict } from "../src/a2cn/messages.js";
+import {
+  PROTOCOL_ACT_VERSION,
+  SIGNED_ACT_SIGNATURE_FIELDS,
+  signedActHash,
+  type Dict,
+} from "../src/a2cn/messages.js";
 
 export const INITIATOR_DID = "did:web:techcorp.example";
 export const RESPONDER_DID = "did:web:acme-corp.com";
 export const SERVER_DID = "did:web:localhost";
+
+/**
+ * A live decline as a signing party sends it: signed over its own envelope.
+ *
+ * A rejection or withdrawal on the wire from an A2CN party must be signed
+ * (Sections 7.5, 7.6), under the session's negotiated wire version.
+ */
+export function signDecline(act: Dict, privateKey: KeyObject, verificationMethod: string): Dict {
+  const signed: Dict = { ...act, sender_verification_method: verificationMethod };
+  signed[SIGNED_ACT_SIGNATURE_FIELDS[signed.message_type as string]] = signJws(
+    signedActHash(signed, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    privateKey,
+    verificationMethod,
+  );
+  return signed;
+}
 
 /** Build a minimal W3C-compliant DID document. */
 export function makeDidDocument(
@@ -106,7 +128,7 @@ export function makeSessionInit(messageId?: string | null): Dict {
   return {
     message_type: "session_init",
     message_id: messageId ?? `si-${Date.now()}-${sessionInitCounter}-${Math.random().toString(36).slice(2)}`,
-    protocol_version: "0.2",
+    protocol_version: "0.3",
     session_params: {
       deal_type: "saas_renewal",
       currency: "USD",

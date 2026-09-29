@@ -30,7 +30,7 @@ from a2cn.crypto import (
     public_key_to_jwk,
     sign_jws,
 )
-from a2cn.messages import PROTOCOL_ACT_VERSION
+from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
 from a2cn.record import (
     REASON_UNBOUND_RECORD_VERSION,
     generate_transaction_record,
@@ -125,13 +125,15 @@ def _reason(record: dict, vector: dict = VECTOR) -> str | None:
 
 
 def _record_of_version(record_version: str) -> dict:
-    """The record of the given version: "0.3" generated, "0.2" the vector's.
+    """The record of the given version: "0.4" generated, the rest the vector's.
 
-    Only "0.3" is accepted now; the older shape is still built here so a case can
-    assert what a verifier does with it.
+    Only "0.4" is accepted now; the older shapes are still built here so a case
+    can assert what a verifier does with each of them.
     """
-    if record_version == "0.3":
+    if record_version == "0.4":
         return _record()
+    if record_version == "0.3":
+        return copy.deepcopy(VECTOR["expected"]["record_version_0_3"]["full_record"])
     return copy.deepcopy(EXPECTED_0_2["full_record"])
 
 
@@ -180,11 +182,18 @@ def test_final_offer_carries_the_accepted_offers_act_field(vector_name, field_na
 
 @pytest.mark.parametrize("vector_name", sorted(VECTORS))
 def test_final_offer_states_the_wire_version_the_act_was_hashed_under(vector_name):
-    """The offer message carries no protocol_version, so the record states it."""
+    """The offer message carries no protocol_version, so the record states it.
+
+    It states the session's negotiated version, the one the act was signed
+    under, which for this vector's session is earlier than the one emitted now.
+    """
     vector = VECTORS[vector_name]
 
     assert "protocol_version" not in _accepted_offer(vector)
-    assert _record(vector)["final_offer"]["protocol_version"] == PROTOCOL_ACT_VERSION
+    assert (
+        _record(vector)["final_offer"]["protocol_version"]
+        == vector["session_ack"]["protocol_version"]
+    )
 
 
 @pytest.mark.parametrize("vector_name", sorted(VECTORS))
@@ -198,9 +207,9 @@ def test_the_act_hash_recomputes_from_the_record_alone(vector_name):
 
 
 @pytest.mark.parametrize("vector_name", sorted(VECTORS))
-def test_a_record_that_carries_the_act_fields_is_0_3(vector_name):
+def test_a_record_that_carries_both_acts_fields_is_the_bound_version(vector_name):
     """Section 9.3: the version follows the content, as it does for basis."""
-    assert _record(VECTORS[vector_name])["record_version"] == "0.3"
+    assert _record(VECTORS[vector_name])["record_version"] == "0.4"
 
 
 def test_a_0_3_record_carries_basis_exactly_when_agreed_terms_does():
@@ -308,12 +317,12 @@ def test_a_0_3_record_missing_an_act_field_fails_verification(field_name):
     assert not _verifies(_resealed(record))
 
 
-def test_a_0_3_record_with_no_act_fields_at_all_fails_verification():
+def test_a_bound_record_with_no_act_fields_at_all_fails_verification():
     record = _record()
     for field_name in ACT_FIELDS:
         del record["final_offer"][field_name]
 
-    assert record["record_version"] == "0.3"
+    assert record["record_version"] == "0.4"
     assert not _verifies(_resealed(record))
 
 
@@ -415,7 +424,7 @@ def _locally_signed_record(
     session_init = {
         "message_type": "session_init",
         "message_id": "act-init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params": {**session_params, "subject": "Act binding"},
         "initiator": {
             "organization_name": "TechCorp",
@@ -431,7 +440,7 @@ def _locally_signed_record(
         "message_id": "act-ack-1",
         "session_id": session_id,
         "in_reply_to": "act-init-1",
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_params_accepted": session_params,
         "responder": {
             "organization_name": "Acme",
@@ -464,7 +473,7 @@ def _locally_signed_record(
     terms = {"total_value": 9_500_000, "currency": "USD"}
     # What the state machine will rebuild: an omitted field defaults to "".
     protocol_act = {
-        "protocol_version": "0.2",
+        "protocol_version": "0.3",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 1,
@@ -496,29 +505,27 @@ def _locally_signed_record(
         offer["expires_at"] = expires_at
     manager.process_message(session, offer)
 
-    payload = {
+    acceptance = {
+        "message_type": "acceptance",
+        "message_id": "act-acc-1",
+        "in_reply_to": "act-offer-1",
         "session_id": session_id,
         "round_number": 1,
         "sequence_number": 2,
         "accepted_offer_id": "act-offer-1",
         "accepted_protocol_act_hash": act_hash,
+        "sender_did": RESPONDER_DID,
+        "sender_agent_id": "seller-agent",
+        "sender_verification_method": _RESPONDER_VM,
+        "timestamp": "2026-03-24T10:03:00Z",
     }
-    manager.process_message(
-        session,
-        {
-            "message_type": "acceptance",
-            "message_id": "act-acc-1",
-            "in_reply_to": "act-offer-1",
-            **payload,
-            "sender_did": RESPONDER_DID,
-            "sender_agent_id": "seller-agent",
-            "sender_verification_method": _RESPONDER_VM,
-            "timestamp": "2026-03-24T10:03:00Z",
-            "acceptance_signature": sign_jws(
-                hash_object(payload), _RESPONDER_PRIVATE_KEY, kid=_RESPONDER_VM
-            ),
-        },
+    # Signed over the act's own envelope (Section 7.3.1).
+    acceptance["acceptance_signature"] = sign_jws(
+        signed_act_hash(
+            acceptance, version_when_absent=PROTOCOL_ACT_VERSION
+        ), _RESPONDER_PRIVATE_KEY, kid=_RESPONDER_VM
     )
+    manager.process_message(session, acceptance)
     assert session.state == SessionState.COMPLETED
     return generate_transaction_record(session), did_documents
 
@@ -538,12 +545,18 @@ def _resigned_over_its_act(record: dict) -> tuple[dict, list[str]]:
     )
     acceptance = record["final_acceptance"]
     acceptance["accepted_protocol_act_hash"] = act_hash
+    # The acceptance's own Section 7.3.1 envelope, rebuilt from the fields the
+    # record stores for it. Nothing is read from final_offer.
     acceptance["acceptance_signature"] = sign_jws(
         hash_object(
             {
+                "protocol_version": acceptance["protocol_version"],
                 "session_id": record["session_id"],
                 "round_number": acceptance["round_number"],
                 "sequence_number": acceptance["sequence_number"],
+                "message_type": acceptance["message_type"],
+                "sender_did": acceptance["sender_did"],
+                "timestamp": acceptance["timestamp"],
                 "accepted_offer_id": acceptance["accepted_offer_id"],
                 "accepted_protocol_act_hash": act_hash,
             }
@@ -568,10 +581,10 @@ def test_a_record_made_under_a_later_wire_version_still_recomputes():
     assert verify_transaction_record(record, did_documents, offer_hashes)
 
 
-def test_a_locally_signed_record_verifies_and_is_0_3():
+def test_a_locally_signed_record_verifies_and_is_the_bound_version():
     record, did_documents = _locally_signed_record()
 
-    assert record["record_version"] == "0.3"
+    assert record["record_version"] == "0.4"
     assert verify_transaction_record(
         record, did_documents, [record["final_offer"]["protocol_act_hash"]]
     )
@@ -600,7 +613,7 @@ def test_an_altered_acceptance_field_fails_verification(field_name):
     record = _record()
     record["final_acceptance"][field_name] = ALTERED_ACCEPTANCE_VALUES[field_name]
 
-    assert record["record_version"] == "0.3"
+    assert record["record_version"] == "0.4"
     assert not _verifies(_resealed(record))
 
 
@@ -644,8 +657,8 @@ def test_the_0_1_record_a_pre_basis_implementation_produced_is_refused():
 # A "0.3" record's act numbers and top-level currency, held to the signed act
 # ---------------------------------------------------------------------------
 
-BINDING = VECTOR["record_version_0_3_binding"]
-BASIS_0_3 = VECTOR["expected"]["record_version_0_3"]["full_record"]
+BINDING = VECTOR["record_version_0_4_binding"]
+BASIS_0_3 = VECTOR["expected"]["record_version_0_4"]["full_record"]
 
 
 @pytest.mark.parametrize(
@@ -675,7 +688,7 @@ def test_an_act_integer_spelling_is_judged_by_the_rebuilt_hash(spelling):
 @pytest.mark.parametrize(
     "currency_case", BINDING["currency_cases"], ids=lambda case: case["name"]
 )
-def test_the_top_level_currency_is_bound_to_agreed_terms_under_0_3(currency_case):
+def test_the_top_level_currency_is_bound_to_agreed_terms_under_the_bound_version(currency_case):
     """Section 9.5 step 8: under "0.3" the record's currency is the signed one.
 
     A "0.1" or "0.2" record's is not checked, because per-offer currency
@@ -792,7 +805,7 @@ def test_the_empty_expires_at_vector_replays_and_verifies():
     cannot drift between the two implementations.
     """
     vector = EMPTY_EXPIRES_AT
-    expected = vector["record_version_0_3"]
+    expected = vector["record_version_0_4"]
     offer = vector["messages"][0]
 
     assert "expires_at" not in offer

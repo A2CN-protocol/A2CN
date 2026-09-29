@@ -52,6 +52,7 @@ from a2cn.crypto import (
     hash_object,
     sign_jws,
 )
+from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, negotiated_protocol_version, signed_act_hash
 from a2cn.session import _now
 
 # ---------------------------------------------------------------------------
@@ -733,6 +734,21 @@ async def a2cn_reject(
     }
     if reason_description:
         rejection["reason_description"] = reason_description
+
+    # A party's rejection is signed like its offers and acceptances (Section 7.5),
+    # under the wire version the session was negotiated at.
+    try:
+        version = negotiated_protocol_version(
+            client_state.get("session_init"), client_state.get("session_ack")
+        )
+    except ValueError as exc:
+        return {"error": "rejection_failed", "message": str(exc), "session_id": session_id}
+    rejection["sender_verification_method"] = client.agent_info["verification_method"]
+    rejection[SIGNED_ACT_SIGNATURE_FIELDS["rejection"]] = sign_jws(
+        signed_act_hash(rejection, version_when_absent=version),
+        client.private_key,
+        kid=rejection["sender_verification_method"],
+    )
 
     headers = {
         "Content-Type": "application/a2cn+json",
