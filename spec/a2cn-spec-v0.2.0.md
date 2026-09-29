@@ -61,7 +61,9 @@ A schema's `$id` version is the version of the thing that schema describes — t
 wire version for wire messages, the artifact's `record_version` for record
 artifacts.
 
-This document is specification version 0.2.0 and specifies wire protocol `"0.2"`.
+This document is specification version 0.2.0. It specifies wire protocol
+`"0.3"`, SessionEvidenceRecord `record_version` `"0.5"` and TransactionRecord
+`record_version` `"0.4"`.
 The specification document version tracks editorial revisions to the wire contract
 and is not the release version.
 
@@ -518,7 +520,8 @@ The conformance level supported by this endpoint. MUST be `1`, `2`, or `3` as
 defined in Section 16.2.
 
 **`a2cn_version`** (string, REQUIRED)  
-The version of A2CN supported. MUST be `"0.1"` for this version.
+The wire protocol version this endpoint establishes new sessions at. MUST be
+`"0.3"`, the current wire version (Section 11.2.1).
 
 **`organization.name`** (string, REQUIRED)  
 Human-readable name of the organization.
@@ -2944,7 +2947,7 @@ The outcome is GENERAL to either party. A seller's credit or inventory controls
 halt a run for the same reason a buyer's spend controls do.
 
 `HALTED_BY_CONTROLS` is an evidence-record outcome, not a session state: no wire
-message or state transition is added, and the wire version is unchanged. A
+message or state transition is added, and it does not move `protocol_version`. A
 producer MUST NOT relabel a `COMPLETED` session as halted, since that would
 erase an agreement and drop its required completion witness (Section 9A.2).
 Verification adds nothing beyond enum membership: the outcome is a producer
@@ -3631,7 +3634,7 @@ so the recipient can verify its authenticity.
 |-------|------|-------------|
 | `message_type` | string | MUST be `"session_invitation"` |
 | `invitation_id` | string | UUID v4 — unique identifier for this invitation |
-| `a2cn_version` | string | MUST be `"0.2"` or later |
+| `a2cn_version` | string | MUST be `"0.3"`, the current wire version (see below) |
 | `inviter_did` | string | DID of the inviting party |
 | `inviter_endpoint` | string | HTTPS URL where the inviter's A2CN responder can be reached |
 | `inviter_discovery_url` | string | URL of inviter's `/.well-known/a2cn-agent` document |
@@ -3644,6 +3647,16 @@ so the recipient can verify its authenticity.
 | `decline_endpoint` | string | HTTPS URL to POST decline to |
 | `inviter_verification_method` | string | Verification method ID used to sign the invitation |
 | `invitation_signature` | string | Base64url-encoded signature over the canonical invitation object |
+
+**A new session establishes only at the current wire version, `"0.3"`.** A
+superseded wire version, such as `"0.2"`, is recognized only for verifying the
+records produced under it (Section 7.3.1), never for establishing a new session.
+This rule prevents downgrade: a session established at `"0.2"` would run
+without the guarantees `"0.3"` added, including the required decline signatures
+(Sections 7.5 and 7.6). A recipient MUST reject a SessionInvitation whose
+`a2cn_version` is not the current wire version with
+`INVITATION_VERSION_MISMATCH`. Version negotiation (Section 12.1.7) applies the
+same floor to `protocol_version`.
 
 #### 11.2.2 Invitation Signature
 
@@ -3946,6 +3959,14 @@ answers, and the session runs at that version (Section 7.3.1). An initiator MUST
 reject a SessionAck that states another version, or none, with
 `PROTOCOL_VERSION_MISMATCH`, and MUST NOT sign any act of the session under a
 version it did not propose.
+
+A new session is established only at the current wire version (Section
+11.2.1). An initiator MUST NOT propose a superseded version. A responder MUST
+reject a SessionInit that proposes one, and an initiator MUST reject a
+SessionAck that states one, with `PROTOCOL_VERSION_MISMATCH`, even when the two
+messages agree on it. A superseded version remains recognized for verifying
+the records produced under it; an implementation that rebuilds such a session
+to verify its records is replaying it, not establishing it.
 
 Backward compatibility expectations: minor versions within 0.x are not guaranteed
 compatible. v1.0 and beyond will define compatibility guarantees.
@@ -5182,6 +5203,57 @@ messages that validate against these schemas.
 
 Entries below are changes to this specification document. For the repository and
 package release history, see `CHANGELOG.md`.
+
+### Unreleased — verified-identity completion; establishment floor
+
+- **Section 9A.12 — a DID-bearing responder may complete through an external
+  commitment reference.** At SessionEvidenceRecord `record_version` `"0.5"` or
+  later, `parties.responder` may be an `observed_party` or a DID-bearing party
+  whose acts are unsigned, at `evidence_level` `unilateral` or `mixed`. A
+  record labelled `"0.3"` or `"0.4"` keeps the earlier rule, which admits only
+  an `observed_party` responder.
+- **Section 9A.12 — only the initiator signs in an external-channel record.**
+  No act attributed `verified_signature` may carry a `sender_did` other than
+  `parties.initiator.did`, at every `record_version` and for both responder
+  shapes. The comparison is exact string equality.
+- **Section 9A.2 — SessionEvidenceRecord `record_version` `"0.5"`.** Every
+  producer emits `"0.5"`; `"0.1"` through `"0.4"` are still accepted, and
+  `session-evidence-record-0.5.schema.json` is published beside the earlier
+  files. The TransactionRecord stays `"0.4"`.
+- **Sections 11.2.1 and 12.1.7 — a new session establishes only at the current
+  wire version, `"0.3"`.** A superseded wire version is recognized only for
+  verifying the records produced under it. An initiator MUST NOT propose one
+  and MUST reject a SessionAck that states one; a responder MUST reject a
+  SessionInit that proposes one; a SessionInvitation's `a2cn_version` MUST be
+  the current wire version. This closes a downgrade to a version without the
+  `"0.3"` guarantees.
+- **Status of This Document and Section 4.3.2** now state the current wire
+  version, `"0.3"`, and the current record versions.
+
+### Unreleased — one signed-act envelope; wire protocol `"0.3"`
+
+- **Section 7.3.1 — one signed envelope for every act type.** Offer,
+  counteroffer, acceptance, rejection and withdrawal each sign a common header
+  plus a type-specific payload, each under its own signature field. The offer's
+  signed bytes are unchanged; the acceptance's signed scope changed and is not
+  backward compatible.
+- **Wire protocol `"0.2"` → `"0.3"`.** Every message that states a version
+  states `"0.3"`, and each `"0.3"` message schema is published beside the
+  unchanged `"0.2"` file.
+- **Sections 9.3 and 9A.2 — TransactionRecord and SessionEvidenceRecord
+  `record_version` `"0.4"`.** A TransactionRecord below `"0.4"` is no longer
+  accepted; every earlier SessionEvidenceRecord version still is.
+- **Sections 7.5 and 7.6 — a party's decline must be signed.** A receiver
+  refuses an unsigned rejection or withdrawal; an unsigned decline is recorded
+  only as the observation of a party that does not sign. A Withdrawal now
+  carries `round_number`.
+- **Section 7.3.1 — record-wrapper keys are refused on the wire.** A receiver
+  rejects an inbound act carrying `act`, `act_hash`, `attribution`,
+  `signature`, `signature_type` or `source_protocol` with `INVALID_REQUEST`.
+- **Section 7.3.1 — recorded acts state their wire version.** A
+  SessionEvidenceRecord writes the session's negotiated `protocol_version` into
+  every act it records. A recorded act that states none is rebuilt under the
+  pinned `"0.2"`, so every earlier record still verifies.
 
 ### Release 0.3.0 (2026-09-02)
 

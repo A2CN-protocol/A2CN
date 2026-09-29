@@ -114,6 +114,29 @@ now read an ordered floor, so neither needs editing when the next version lands.
 The third is the `0.5` floor on a DID-bearing external-channel responder
 described above, read through the same ordered floor.
 
+**A new session is established only at wire version `"0.3"`; `"0.2"` is
+recognized only for verifying records (Sections 11.2.1 and 12.1.7).** Before
+this, `"0.2"` was named as a version this implementation recognizes without
+saying for what, and `SessionManager.create_session` would still establish a
+session from a SessionInit and SessionAck that agreed on it. A session
+established at `"0.2"` would run without the guarantees `"0.3"` added, such as
+required decline signatures, so this was a downgrade path. Now the client
+proposes only `"0.3"` and refuses a SessionAck at any other version, the
+responder refuses a `"0.2"` SessionInit as before, and `create_session` refuses
+a pair agreeing on `"0.2"` with `PROTOCOL_VERSION_MISMATCH`. A
+SessionInvitation's and a discovery document's `a2cn_version` must be `"0.3"`.
+
+**This changes the library's behaviour for one kind of caller.** Code that
+rebuilds a recorded `"0.2"` session through `create_session`, to verify the
+records it produced, must now say so: `legacy_replay=True` in Python,
+`{ legacyReplay: true }` in TypeScript. That option accepts a pair that agrees
+on any recognized version, and still refuses a pair that disagrees or names an
+unrecognized one. It is for replay only, never for a live session. The test
+vectors that record `"0.2"` sessions are unchanged; the code that replays them
+passes the option. `ESTABLISHMENT_WIRE_VERSIONS` names the versions a session
+may be established at; `SUPPORTED_WIRE_VERSIONS` keeps its value and now means
+the versions recognized for verification.
+
 **One uniform signed-act envelope across all five act types, and a
 TransactionRecord that rebinds both signatures (wire-visible, record-breaking).**
 
