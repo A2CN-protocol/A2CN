@@ -500,6 +500,17 @@ test("an observed act's inherited act is not a wrapper", () => {
   expect(entry.act_hash).toBe(hashObject(entry.act));
 });
 
+test("an observed act that states its version: an inherited act is not a wrapper", () => {
+  // An act that states protocol_version reaches the reader as the caller's own
+  // object, prototype and all, so the reader's own-property check is what keeps
+  // the inherited act out.
+  const own = { ...makeDecline("observed-session", "withdrawal", false), protocol_version: "0.3" };
+  const entry = observedEntry(inheriting({ act: SUBSTITUTE }, own));
+  expect(entry).toEqual(observedEntry(structuredClone(own)));
+  expect(entry.act).toEqual(own);
+  expect(entry.act_hash).toBe(hashObject(own));
+});
+
 test("an observed wrapper's inherited metadata is inert", () => {
   const own = makeDecline("observed-session", "withdrawal", false);
   const inherited: Dict = {
