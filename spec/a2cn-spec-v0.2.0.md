@@ -490,7 +490,7 @@ The normative JSON Schema is published at `spec/schemas/discovery.schema.json`.
 
 ```json
 {
-  "a2cn_version": "0.1",
+  "a2cn_version": "0.3",
   "conformance_level": "integer",
   "organization": {
     "name": "string",
@@ -589,7 +589,7 @@ ISO 8601 timestamp of last update to this document.
 
 ```json
 {
-  "a2cn_version": "0.1",
+  "a2cn_version": "0.3",
   "conformance_level": 2,
   "organization": {
     "name": "Acme Corp",
@@ -5839,7 +5839,7 @@ GET https://acme-corp.com/.well-known/a2cn-agent
 Response:
 ```json
 {
-  "a2cn_version": "0.1",
+  "a2cn_version": "0.3",
   "conformance_level": 2,
   "organization": { "name": "Acme Corp", "did": "did:web:acme-corp.com" },
   "endpoint": "https://acme-corp.com/api/a2cn",
