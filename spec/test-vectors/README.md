@@ -282,6 +282,15 @@ refusal shows the stray act never reaches the record. An unsigned decline is
 refused whether or not it carries a stray field, because a party's own decline
 must be signed.
 
+`reserved-wire-keys.json` covers the evidence record's own members on a wire act
+(Section 7.3.1). A SessionEvidenceRecord act entry adds `act`, `act_hash`,
+`attribution`, `signature`, `signature_type` and `source_protocol` around the act
+it records; each of the five act types carrying any of them is refused with
+`INVALID_REQUEST`, and each signed control without one is accepted. Both suites
+then require the session's evidence record to verify, and the Python suite
+validates every case against its act type's schema, which refuses the same keys by
+name, so `schema_valid` and `accepted` agree.
+
 `session-evidence-record-extensions.json` covers the Section 9A extensions. Its
 `money_basis_act_basis_cases` apply the Section 9A.9 rule that a `money_basis`
 labelled `net` or `gross` must equal the `terms.basis` of the act it describes

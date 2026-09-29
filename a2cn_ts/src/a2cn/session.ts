@@ -19,6 +19,7 @@ import {
 } from "./line_items.js";
 import {
   PROTOCOL_ACT_VERSION,
+  RESERVED_WIRE_KEYS,
   SIGNED_ACT_SIGNATURE_FIELDS,
   isActInteger,
   negotiatedProtocolVersion,
@@ -543,6 +544,22 @@ export class SessionManager {
         throw new A2CNError(
           "INVALID_REQUEST",
           "round_number must be a positive integer on a withdrawal",
+          400,
+          { sessionId: session.session_id, messageId },
+        );
+      }
+    }
+
+    // A wire act never carries the evidence record's own members (Section 7.3.1): an
+    // act that did would read, once recorded, as a record entry that states its
+    // own attribution and signature, or wraps another act. Checked with `in`, so a
+    // key a library caller's object inherits through its prototype is refused too:
+    // any property read sees it, though JSON cannot produce it.
+    for (const fieldName of [...RESERVED_WIRE_KEYS].sort()) {
+      if (fieldName in message) {
+        throw new A2CNError(
+          "INVALID_REQUEST",
+          `${messageType} carries ${fieldName}, which is reserved for the evidence record`,
           400,
           { sessionId: session.session_id, messageId },
         );

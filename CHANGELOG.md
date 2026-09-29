@@ -44,12 +44,15 @@ also means an acceptance now attests who accepted, which it never did.
 `rejection_signature` and `withdrawal_signature`. Each act type has its own
 signature field, so a signature cannot travel across a relabelled act. An act
 carrying another act type's signature field is now refused, whatever its value.
-A party's decline is now signed like its offers and acceptances: a receiver
-refuses an unsigned rejection or withdrawal, and an unsigned decline is recorded
-only as the observation of a party that does not sign. `reason_code` is inside
-the signed scope because it is what a later dispute turns on;
-`reason_description` is deliberately outside it, being OPTIONAL free text whose
-presence would otherwise make the signed field set vary (Sections 7.5, 7.6).
+So is an inbound act carrying a member an evidence record adds around an act it
+records: `act`, `act_hash`, `attribution`, `signature`, `signature_type` or
+`source_protocol` (Section 7.3.1). A party's decline is now signed like its
+offers and acceptances: a receiver refuses an unsigned rejection or withdrawal,
+and an unsigned decline is recorded only as the observation of a party that does
+not sign. `reason_code` is inside the signed scope because it is what a later
+dispute turns on; `reason_description` is deliberately outside it, being
+OPTIONAL free text whose presence would otherwise make the signed field set vary
+(Sections 7.5, 7.6).
 
 **A Withdrawal now carries `round_number`, REQUIRED — an additive wire change.**
 It is part of the header every signed act covers, and without it a Withdrawal

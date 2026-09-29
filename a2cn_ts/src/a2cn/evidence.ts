@@ -26,6 +26,8 @@ import {
 } from "./record.js";
 import { SESSION_BASES, SessionState, now } from "./session.js";
 import {
+  RECORD_ENTRY_WIRE_FIELDS,
+  RECORD_ENTRY_WRAPPER_FIELDS,
   isActInteger,
   negotiatedProtocolVersion,
   rebuildSignedAct,
@@ -133,21 +135,8 @@ const RECORD_FIELDS = new Set([
   "record_hash",
   "producer_signature",
 ]);
-const ACT_FIELDS = new Set([
-  "sequence_number",
-  "round_number",
-  "message_type",
-  "message_id",
-  "sender_did",
-  "timestamp",
-  "source_protocol",
-  "act",
-  "act_hash",
-  "sender_verification_method",
-  "signature_type",
-  "signature",
-  "attribution",
-]);
+// The fields that restate the wire act, and the record's own (./messages.js).
+const ACT_FIELDS = new Set([...RECORD_ENTRY_WIRE_FIELDS, ...RECORD_ENTRY_WRAPPER_FIELDS]);
 const RECORD_OPTIONAL_FIELDS = new Set(["extensions", "external_commitment_reference"]);
 const EXTERNAL_COMMITMENT_REFERENCE_FIELDS = new Set(["external_commitment_id"]);
 const EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = new Set(["locator", "reference_note"]);
@@ -1406,7 +1395,9 @@ function statingWireVersion(item: Dict, wireVersion: string): Dict {
   if (item === null || typeof item !== "object" || Array.isArray(item)) {
     return item;
   }
-  const act = item.act;
+  // Own properties only, as the runtime's reserved-key check reads a live act: a
+  // wrapper is what the item itself carries, never what its prototype does.
+  const act = hasOwn(item, "act") ? item.act : undefined;
   if (act !== null && typeof act === "object" && !Array.isArray(act)) {
     return { ...item, act: statingWireVersion(act as Dict, wireVersion) };
   }
@@ -1420,9 +1411,13 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
   if (typeof item !== "object" || item === null || Array.isArray(item)) {
     throw new Error("Each observed act must be an object");
   }
-  const isWrapper = typeof item.act === "object" && item.act !== null && !Array.isArray(item.act);
+  // The wrapper and its metadata are the item's own properties only.
+  const ownAct = hasOwn(item, "act") ? item.act : undefined;
+  const isWrapper = typeof ownAct === "object" && ownAct !== null && !Array.isArray(ownAct);
   const metadata = isWrapper ? item : {};
-  const act = structuredClone((isWrapper ? item.act : item) as Dict);
+  const ownMetadata = (name: string): unknown =>
+    hasOwn(metadata, name) ? metadata[name] : undefined;
+  const act = structuredClone((isWrapper ? ownAct : item) as Dict);
 
   const field = (name: string, defaultValue: unknown = null): unknown => {
     if (hasOwn(metadata, name)) {
@@ -1434,7 +1429,7 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
   const signatureTypes = Object.entries(SIGNED_MESSAGE_FIELDS)
     .filter(([, actField]) => hasOwn(act, actField) && act[actField] !== null)
     .map(([signatureType]) => signatureType);
-  const explicitSignatureType = isWrapper ? metadata.signature_type : null;
+  const explicitSignatureType = isWrapper ? ownMetadata("signature_type") : null;
   let signatureType: string | null;
   if (explicitSignatureType !== null && explicitSignatureType !== undefined) {
     if (!(explicitSignatureType as string in SIGNED_MESSAGE_FIELDS)) {
@@ -1474,7 +1469,7 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
 
   const attribution =
     signatureType === null ? EvidenceAttribution.UNSIGNED : EvidenceAttribution.VERIFIED;
-  const explicitAttribution = isWrapper ? metadata.attribution : null;
+  const explicitAttribution = isWrapper ? ownMetadata("attribution") : null;
   if (
     explicitAttribution !== null &&
     explicitAttribution !== undefined &&
@@ -1505,10 +1500,10 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
     signature,
     attribution,
   };
-  if (isWrapper && metadata.money_basis != null) {
+  if (isWrapper && ownMetadata("money_basis") != null) {
     // A producer annotation ABOUT the act, never inside it: `act` stays the
     // verbatim observed bytes that act_hash protects.
-    entry.money_basis = structuredClone(metadata.money_basis);
+    entry.money_basis = structuredClone(ownMetadata("money_basis"));
   }
   if (typeof entry.message_type !== "string" || !entry.message_type) {
     throw new Error("Evidence acts require message_type");

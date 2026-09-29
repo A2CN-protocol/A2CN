@@ -65,5 +65,9 @@
       "minLength": 1,
       "description": "Attached JWS Compact Serialization over base64url(ASCII(hash)) of the Section 7.3.1 signed act object. Not a JWT claim set."
     }
+  },
+  "propertyNames": {
+    "not": { "enum": ["act", "act_hash", "attribution", "signature", "signature_type", "source_protocol"] },
+    "description": "The evidence record's own members are reserved and never appear on a wire act (Section 7.3.1): an act carrying one would read, once recorded, as a record entry that states its own attribution and signature, or wraps another act. They are refused by name rather than by closing the object, which stays open for deal-type and vendor fields."
   }
 }

@@ -1360,6 +1360,10 @@ Each act type has its **own** signature field. A signature field names the act
 type it was made under, so a signature cannot be carried across a relabelled act.
 An act MUST NOT carry the signature field of another act type, and a receiver
 MUST reject one that does, whatever that field's value.
+Nor may an act carry `act`, `act_hash`, `attribution`, `signature`,
+`signature_type` or `source_protocol`, the members a SessionEvidenceRecord adds
+around an act it records (Section 9A.3); a receiver MUST reject an inbound act
+that carries any of them with `INVALID_REQUEST`, whatever the value.
 
 `terms.basis` (Section 7.2), when present, is inside `terms`, so it is signed
 like the rest of the terms; the signed act object is unchanged.

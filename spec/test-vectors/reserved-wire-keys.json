@@ -1,0 +1,368 @@
+{
+  "description": "Cross-language vector for the evidence record's reserved members on a wire act (Section 7.3.1). A SessionEvidenceRecord act entry adds act, act_hash, attribution, signature, signature_type and source_protocol around the act it records; a wire act never carries them, and a receiver refuses one that does, whatever the value. Each case builds its act_type's act, signed, exactly as foreign-signature-slots.json's act_setup describes, then sets reserved_key to that key's entry in values. Both suites send it through the state machine and must reach its verdict, error code and error message; they then close the session, if it is still open, with a signed withdrawal from the initiator, generate the initiator's evidence record, and require it to verify. schema_valid always equals accepted: the Python suite validates each act against its act type's schema (offer-0.3.schema.json for an offer or counteroffer), which refuses the same keys by name.",
+  "reserved_keys": [
+    "act",
+    "act_hash",
+    "attribution",
+    "signature",
+    "signature_type",
+    "source_protocol"
+  ],
+  "values": {
+    "act": {},
+    "act_hash": "reserved-act-hash",
+    "attribution": "verified_signature",
+    "signature": "reserved-signature",
+    "signature_type": "protocol_act_signature",
+    "source_protocol": "a2cn"
+  },
+  "schemas": {
+    "offer": "offer-0.3",
+    "counteroffer": "offer-0.3",
+    "acceptance": "acceptance",
+    "rejection": "rejection",
+    "withdrawal": "withdrawal"
+  },
+  "cases": [
+    {
+      "name": "offer-control",
+      "act_type": "offer",
+      "accepted": true,
+      "state_after": "NEGOTIATING",
+      "schema_valid": true,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+act",
+      "act_type": "offer",
+      "reserved_key": "act",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries act, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+act_hash",
+      "act_type": "offer",
+      "reserved_key": "act_hash",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries act_hash, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+attribution",
+      "act_type": "offer",
+      "reserved_key": "attribution",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries attribution, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+signature",
+      "act_type": "offer",
+      "reserved_key": "signature",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries signature, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+signature_type",
+      "act_type": "offer",
+      "reserved_key": "signature_type",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries signature_type, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "offer+source_protocol",
+      "act_type": "offer",
+      "reserved_key": "source_protocol",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "offer carries source_protocol, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer-control",
+      "act_type": "counteroffer",
+      "accepted": true,
+      "state_after": "NEGOTIATING",
+      "schema_valid": true,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+act",
+      "act_type": "counteroffer",
+      "reserved_key": "act",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries act, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+act_hash",
+      "act_type": "counteroffer",
+      "reserved_key": "act_hash",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries act_hash, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+attribution",
+      "act_type": "counteroffer",
+      "reserved_key": "attribution",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries attribution, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+signature",
+      "act_type": "counteroffer",
+      "reserved_key": "signature",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries signature, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+signature_type",
+      "act_type": "counteroffer",
+      "reserved_key": "signature_type",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries signature_type, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "counteroffer+source_protocol",
+      "act_type": "counteroffer",
+      "reserved_key": "source_protocol",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "counteroffer carries source_protocol, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance-control",
+      "act_type": "acceptance",
+      "accepted": true,
+      "state_after": "COMPLETED",
+      "schema_valid": true,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+act",
+      "act_type": "acceptance",
+      "reserved_key": "act",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries act, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+act_hash",
+      "act_type": "acceptance",
+      "reserved_key": "act_hash",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries act_hash, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+attribution",
+      "act_type": "acceptance",
+      "reserved_key": "attribution",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries attribution, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+signature",
+      "act_type": "acceptance",
+      "reserved_key": "signature",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries signature, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+signature_type",
+      "act_type": "acceptance",
+      "reserved_key": "signature_type",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries signature_type, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "acceptance+source_protocol",
+      "act_type": "acceptance",
+      "reserved_key": "source_protocol",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "acceptance carries source_protocol, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection-control",
+      "act_type": "rejection",
+      "accepted": true,
+      "state_after": "NEGOTIATING",
+      "schema_valid": true,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+act",
+      "act_type": "rejection",
+      "reserved_key": "act",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries act, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+act_hash",
+      "act_type": "rejection",
+      "reserved_key": "act_hash",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries act_hash, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+attribution",
+      "act_type": "rejection",
+      "reserved_key": "attribution",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries attribution, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+signature",
+      "act_type": "rejection",
+      "reserved_key": "signature",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries signature, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+signature_type",
+      "act_type": "rejection",
+      "reserved_key": "signature_type",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries signature_type, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "rejection+source_protocol",
+      "act_type": "rejection",
+      "reserved_key": "source_protocol",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "rejection carries source_protocol, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal-control",
+      "act_type": "withdrawal",
+      "accepted": true,
+      "state_after": "WITHDRAWN",
+      "schema_valid": true,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+act",
+      "act_type": "withdrawal",
+      "reserved_key": "act",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries act, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+act_hash",
+      "act_type": "withdrawal",
+      "reserved_key": "act_hash",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries act_hash, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+attribution",
+      "act_type": "withdrawal",
+      "reserved_key": "attribution",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries attribution, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+signature",
+      "act_type": "withdrawal",
+      "reserved_key": "signature",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries signature, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+signature_type",
+      "act_type": "withdrawal",
+      "reserved_key": "signature_type",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries signature_type, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    },
+    {
+      "name": "withdrawal+source_protocol",
+      "act_type": "withdrawal",
+      "reserved_key": "source_protocol",
+      "accepted": false,
+      "error_code": "INVALID_REQUEST",
+      "error_message": "withdrawal carries source_protocol, which is reserved for the evidence record",
+      "schema_valid": false,
+      "record_verifies": true
+    }
+  ]
+}

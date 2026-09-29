@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-import { PROTOCOL_ACT_VERSION, type Dict } from "../src/a2cn/messages.js";
+import { PROTOCOL_ACT_VERSION, RESERVED_WIRE_KEYS, type Dict } from "../src/a2cn/messages.js";
 
 const SCHEMAS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "spec", "schemas");
 
@@ -54,8 +54,16 @@ for (const name of Object.keys(PUBLISHED_0_2_SHA256).sort()) {
   });
 
   test(`the 0.3 schema differs from its 0.2 file only in the version: ${name}`, () => {
-    const current = load(`${name}-0.3`);
+    // Apart from the version, a 0.3 message schema adds one thing only: the
+    // offer's refusal of the evidence record's reserved members (Section 7.3.1).
+    const current = structuredClone(load(`${name}-0.3`));
     const published = structuredClone(load(name));
+    if (name === "offer") {
+      const refusal = current.propertyNames as Dict;
+      delete current.propertyNames;
+      expect(refusal.not).toEqual({ enum: [...RESERVED_WIRE_KEYS].sort() });
+      expect("propertyNames" in published).toBe(false);
+    }
 
     const expectedId = (published.$id as string).slice(0, -"0.2".length) + PROTOCOL_ACT_VERSION;
     expect(current.$id).toBe(expectedId);

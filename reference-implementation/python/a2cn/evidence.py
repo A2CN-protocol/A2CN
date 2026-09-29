@@ -17,7 +17,13 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
-from a2cn.messages import _is_act_integer, negotiated_protocol_version, rebuild_signed_act
+from a2cn.messages import (
+    RECORD_ENTRY_WIRE_FIELDS,
+    RECORD_ENTRY_WRAPPER_FIELDS,
+    _is_act_integer,
+    negotiated_protocol_version,
+    rebuild_signed_act,
+)
 from a2cn.record import A2CN_NAMESPACE, generate_transaction_record
 from a2cn.session import SESSION_BASES, Session, SessionState, _now
 
@@ -107,23 +113,8 @@ _RECORD_FIELDS = frozenset(
 _RECORD_OPTIONAL_FIELDS = frozenset({"extensions", "external_commitment_reference"})
 _EXTERNAL_COMMITMENT_REFERENCE_FIELDS = frozenset({"external_commitment_id"})
 _EXTERNAL_COMMITMENT_REFERENCE_OPTIONAL_FIELDS = frozenset({"locator", "reference_note"})
-_ACT_FIELDS = frozenset(
-    {
-        "sequence_number",
-        "round_number",
-        "message_type",
-        "message_id",
-        "sender_did",
-        "timestamp",
-        "source_protocol",
-        "act",
-        "act_hash",
-        "sender_verification_method",
-        "signature_type",
-        "signature",
-        "attribution",
-    }
-)
+# The fields that restate the wire act, and the record's own (a2cn.messages).
+_ACT_FIELDS = RECORD_ENTRY_WIRE_FIELDS | RECORD_ENTRY_WRAPPER_FIELDS
 _ACT_OPTIONAL_FIELDS = frozenset({"money_basis"})
 _TERMINAL_FIELDS = frozenset({"outcome", "reason", "message_id", "timestamp"})
 _TERMINAL_OPTIONAL_FIELDS = frozenset({"money_basis"})

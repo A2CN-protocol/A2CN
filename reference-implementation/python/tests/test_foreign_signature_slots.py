@@ -14,6 +14,7 @@ The TypeScript suite runs the same cases.
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from pathlib import Path
@@ -22,7 +23,17 @@ import pytest
 
 from a2cn.crypto import public_key_to_jwk, sign_jws
 from a2cn.evidence import generate_session_evidence_record, verify_session_evidence_record
-from a2cn.messages import PROTOCOL_ACT_VERSION, SIGNED_ACT_SIGNATURE_FIELDS, signed_act_hash
+from a2cn.evidence import _ACT_FIELDS
+from a2cn.messages import (
+    PROTOCOL_ACT_VERSION,
+    RECORD_ENTRY_WIRE_FIELDS,
+    RECORD_ENTRY_WRAPPER_FIELDS,
+    RESERVED_WIRE_KEYS,
+    SIGNED_ACT_HEADER_FIELDS,
+    SIGNED_ACT_PAYLOAD_FIELDS,
+    SIGNED_ACT_SIGNATURE_FIELDS,
+    signed_act_hash,
+)
 from a2cn.session import A2CNError
 from tests.conftest import make_did_document, sign_decline
 from tests.test_session import (
@@ -155,3 +166,109 @@ def test_foreign_signature_slot(case):
 
     record = _close_and_record(manager, session)
     assert verify_session_evidence_record(record, DID_DOCUMENTS) is case["record_verifies"]
+
+
+# ---------------------------------------------------------------------------
+# The evidence record's own members are reserved on the wire (Section 7.3.1)
+# ---------------------------------------------------------------------------
+
+RESERVED_VECTOR = json.loads(
+    (REPO_ROOT / "spec" / "test-vectors" / "reserved-wire-keys.json").read_text()
+)
+RESERVED_CASES = RESERVED_VECTOR["cases"]
+SCHEMAS = REPO_ROOT / "spec" / "schemas"
+
+
+def _reserved_act(manager, session, case: dict) -> dict:
+    """The case's act, signed, with its reserved key set as the vector says."""
+    stray = {"act_type": case["act_type"], "signed": True}
+    if "reserved_key" in case:
+        stray["stray_field"] = case["reserved_key"]
+        stray["stray_value"] = copy.deepcopy(RESERVED_VECTOR["values"][case["reserved_key"]])
+    return _act_for(manager, session, stray)
+
+
+def test_the_reserved_keys_are_the_record_entrys_own_members():
+    """Derived, not copied: the entry's field set is the wire part plus the reserved
+    part, the two do not overlap, and no field an act carries on the wire is reserved."""
+    assert _ACT_FIELDS == {
+        "sequence_number",
+        "round_number",
+        "message_type",
+        "message_id",
+        "sender_did",
+        "timestamp",
+        "source_protocol",
+        "act",
+        "act_hash",
+        "sender_verification_method",
+        "signature_type",
+        "signature",
+        "attribution",
+    }
+    assert RECORD_ENTRY_WIRE_FIELDS | RECORD_ENTRY_WRAPPER_FIELDS == _ACT_FIELDS
+    assert not RECORD_ENTRY_WIRE_FIELDS & RECORD_ENTRY_WRAPPER_FIELDS
+    assert RESERVED_WIRE_KEYS == RECORD_ENTRY_WRAPPER_FIELDS
+    assert sorted(RESERVED_WIRE_KEYS) == RESERVED_VECTOR["reserved_keys"]
+    carried = set(SIGNED_ACT_HEADER_FIELDS) | set(SIGNED_ACT_SIGNATURE_FIELDS.values())
+    for payload in SIGNED_ACT_PAYLOAD_FIELDS.values():
+        carried |= set(payload)
+    carried |= RECORD_ENTRY_WIRE_FIELDS | {"protocol_act_hash", "in_reply_to", "sender_agent_id"}
+    assert not RESERVED_WIRE_KEYS & carried
+
+
+@pytest.mark.parametrize("case", RESERVED_CASES, ids=[c["name"] for c in RESERVED_CASES])
+def test_a_reserved_key(case):
+    manager, session = _new_session(VECTOR["session"]["session_id"])
+    act = _reserved_act(manager, session, case)
+
+    if case["accepted"]:
+        manager.process_message(session, act)
+        assert session.state == case["state_after"]
+        assert act in session._message_log
+    else:
+        state_before = session.state
+        with pytest.raises(A2CNError) as excinfo:
+            manager.process_message(session, act)
+        assert (excinfo.value.code, excinfo.value.message) == (
+            case["error_code"],
+            case["error_message"],
+        )
+        assert session.state == state_before
+        assert act not in session._message_log
+
+    record = _close_and_record(manager, session)
+    assert verify_session_evidence_record(record, DID_DOCUMENTS) is case["record_verifies"]
+    # Every act the record vouches for is one the runtime admitted, verbatim but
+    # for the wire version it states, and none is an unsigned observation.
+    for entry in record["acts"]:
+        assert entry["attribution"] == "verified_signature"
+        assert set(entry["act"]) & RESERVED_WIRE_KEYS == set()
+
+
+@pytest.mark.parametrize("case", RESERVED_CASES, ids=[c["name"] for c in RESERVED_CASES])
+def test_a_reserved_key_schema_agrees_with_the_runtime(case):
+    jsonschema = pytest.importorskip("jsonschema")
+    manager, session = _new_session(VECTOR["session"]["session_id"])
+    act = _reserved_act(manager, session, case)
+    schema = json.loads(
+        (SCHEMAS / f"{RESERVED_VECTOR['schemas'][case['act_type']]}.schema.json").read_text()
+    )
+
+    assert case["schema_valid"] == case["accepted"]
+    errors = list(jsonschema.Draft202012Validator(schema).iter_errors(act))
+    assert (errors == []) is case["schema_valid"], [e.message for e in errors]
+
+
+def test_a_retransmission_carrying_a_reserved_key_is_not_admitted():
+    """The idempotency cache answers a repeated message_id before validation runs,
+    so the altered repeat gets the original's response. It is not processed: the
+    log still holds only the act the runtime first admitted."""
+    manager, session = _new_session(VECTOR["session"]["session_id"])
+    offer = _make_offer(session.session_id, 1, 1, INITIATOR_DID)
+    first = manager.process_message(session, offer)
+    repeat = {**copy.deepcopy(offer), "act": {"message_type": "offer"}}
+
+    assert manager.process_message(session, repeat) == first
+    assert session._message_log == [offer]
+    assert all("act" not in m for m in session._message_log)

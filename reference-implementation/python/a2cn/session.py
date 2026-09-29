@@ -25,6 +25,7 @@ from a2cn.line_items import (
 )
 from a2cn.messages import (
     PROTOCOL_ACT_VERSION,
+    RESERVED_WIRE_KEYS,
     SIGNED_ACT_SIGNATURE_FIELDS,
     _is_act_integer,
     negotiated_protocol_version,
@@ -518,6 +519,20 @@ class SessionManager:
                 raise A2CNError(
                     "INVALID_REQUEST",
                     "round_number must be a positive integer on a withdrawal",
+                    400,
+                    session_id=session.session_id,
+                    message_id=message_id,
+                )
+
+        # A wire act never carries the evidence record's own members (Section
+        # 7.3.1): an act that did would read, once recorded, as a record entry
+        # that states its own attribution and signature, or wraps another act.
+        for field_name in sorted(RESERVED_WIRE_KEYS):
+            if field_name in message:
+                raise A2CNError(
+                    "INVALID_REQUEST",
+                    f"{message_type} carries {field_name}, "
+                    "which is reserved for the evidence record",
                     400,
                     session_id=session.session_id,
                     message_id=message_id,

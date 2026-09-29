@@ -151,6 +151,38 @@ export const SIGNED_ACT_SIGNATURE_FIELDS: Record<string, string> = {
 };
 
 /**
+ * A SessionEvidenceRecord act entry (Section 9A.3) has two kinds of member. Some
+ * restate a field the act itself carries on the wire; the rest are the record's
+ * own, added by the producer when it records the act. The entry's field set is
+ * the union of the two, and nothing else.
+ */
+export const RECORD_ENTRY_WIRE_FIELDS: ReadonlySet<string> = new Set([
+  "sequence_number",
+  "round_number",
+  "message_type",
+  "message_id",
+  "sender_did",
+  "timestamp",
+  "sender_verification_method",
+]);
+export const RECORD_ENTRY_WRAPPER_FIELDS: ReadonlySet<string> = new Set([
+  "act",
+  "act_hash",
+  "attribution",
+  "signature",
+  "signature_type",
+  "source_protocol",
+]);
+
+/**
+ * The record's own members are reserved: an inbound wire act that carries one is
+ * refused (Section 7.3.1), because a message carrying them would read, once
+ * recorded, as a record entry stating its own attribution or wrapping another
+ * act. Taken from the entry set above, so the two cannot drift apart.
+ */
+export const RESERVED_WIRE_KEYS: ReadonlySet<string> = RECORD_ENTRY_WRAPPER_FIELDS;
+
+/**
  * The offer's signed object, still named for readers of Section 7.3.1: the
  * common header followed by the offer's own payload.
  */

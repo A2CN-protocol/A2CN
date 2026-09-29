@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from a2cn.messages import PROTOCOL_ACT_VERSION
+from a2cn.messages import PROTOCOL_ACT_VERSION, RESERVED_WIRE_KEYS
 
 SCHEMAS = Path(__file__).parents[3] / "spec" / "schemas"
 
@@ -54,8 +54,14 @@ def test_a_published_0_2_message_schema_is_unchanged(name):
 
 @pytest.mark.parametrize("name", sorted(PUBLISHED_0_2_SHA256))
 def test_the_0_3_schema_differs_from_its_0_2_file_only_in_the_version(name):
-    current = _load(f"{name}-0.3")
+    """Apart from the version, a 0.3 message schema adds one thing only: the
+    offer's refusal of the evidence record's reserved members (Section 7.3.1)."""
+    current = copy.deepcopy(_load(f"{name}-0.3"))
     published = copy.deepcopy(_load(name))
+    if name == "offer":
+        refusal = current.pop("propertyNames")
+        assert refusal["not"] == {"enum": sorted(RESERVED_WIRE_KEYS)}
+        assert "propertyNames" not in published
 
     assert current["$id"] == published["$id"][: -len("0.2")] + PROTOCOL_ACT_VERSION
     published["$id"] = current["$id"]

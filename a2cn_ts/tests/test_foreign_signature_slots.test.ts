@@ -27,11 +27,16 @@ import {
 } from "../src/a2cn/evidence.js";
 import {
   PROTOCOL_ACT_VERSION,
+  RECORD_ENTRY_WIRE_FIELDS,
+  RECORD_ENTRY_WRAPPER_FIELDS,
+  RESERVED_WIRE_KEYS,
+  SIGNED_ACT_HEADER_FIELDS,
+  SIGNED_ACT_PAYLOAD_FIELDS,
   SIGNED_ACT_SIGNATURE_FIELDS,
   signedActHash,
   type Dict,
 } from "../src/a2cn/messages.js";
-import { A2CNError, Session, SessionManager } from "../src/a2cn/session.js";
+import { A2CNError, Session, SessionManager, SessionState } from "../src/a2cn/session.js";
 import { INITIATOR_DID, RESPONDER_DID, makeDidDocument, signDecline } from "./conftest.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -302,3 +307,210 @@ for (const testCase of CASES) {
     expect(verifySessionEvidenceRecord(record, DID_DOCUMENTS)).toBe(testCase.record_verifies);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The evidence record's own members are reserved on the wire (Section 7.3.1)
+// ---------------------------------------------------------------------------
+
+const RESERVED_VECTOR = JSON.parse(
+  readFileSync(join(REPO_ROOT, "spec", "test-vectors", "reserved-wire-keys.json"), "utf-8"),
+) as Dict;
+const RESERVED_CASES = RESERVED_VECTOR.cases as Dict[];
+const RESERVED_VALUES = RESERVED_VECTOR.values as Dict;
+
+/** The case's act, signed, with its reserved key set as the vector says. */
+function reservedAct(mgr: SessionManager, sess: Session, testCase: Dict): Dict {
+  const stray: Dict = { act_type: testCase.act_type, signed: true };
+  if (hasOwn(testCase, "reserved_key")) {
+    stray.stray_field = testCase.reserved_key;
+    stray.stray_value = structuredClone(RESERVED_VALUES[testCase.reserved_key as string]);
+  }
+  return actFor(mgr, sess, stray);
+}
+
+test("the reserved keys are the record entry's own members", () => {
+  // Derived, not copied: the entry's field set is the wire part plus the reserved
+  // part, the two do not overlap, and no field an act carries on the wire is
+  // reserved. The evidence module builds its entry set from these two parts.
+  const entry = new Set([...RECORD_ENTRY_WIRE_FIELDS, ...RECORD_ENTRY_WRAPPER_FIELDS]);
+  expect(entry).toEqual(
+    new Set([
+      "sequence_number",
+      "round_number",
+      "message_type",
+      "message_id",
+      "sender_did",
+      "timestamp",
+      "source_protocol",
+      "act",
+      "act_hash",
+      "sender_verification_method",
+      "signature_type",
+      "signature",
+      "attribution",
+    ]),
+  );
+  expect([...RECORD_ENTRY_WIRE_FIELDS].filter((k) => RECORD_ENTRY_WRAPPER_FIELDS.has(k))).toEqual(
+    [],
+  );
+  expect(RESERVED_WIRE_KEYS).toEqual(RECORD_ENTRY_WRAPPER_FIELDS);
+  expect([...RESERVED_WIRE_KEYS].sort()).toEqual(RESERVED_VECTOR.reserved_keys);
+  const carried = new Set<string>([
+    ...SIGNED_ACT_HEADER_FIELDS,
+    ...Object.values(SIGNED_ACT_SIGNATURE_FIELDS),
+    ...Object.values(SIGNED_ACT_PAYLOAD_FIELDS).flat(),
+    ...RECORD_ENTRY_WIRE_FIELDS,
+    "protocol_act_hash",
+    "in_reply_to",
+    "sender_agent_id",
+  ]);
+  expect([...RESERVED_WIRE_KEYS].filter((k) => carried.has(k))).toEqual([]);
+});
+
+for (const testCase of RESERVED_CASES) {
+  test(`reserved key: ${testCase.name}`, () => {
+    const [mgr, sess] = freshSession();
+    const act = reservedAct(mgr, sess, testCase);
+
+    expect(testCase.schema_valid).toBe(testCase.accepted);
+    if (testCase.accepted) {
+      mgr.processMessage(sess, act);
+      expect(sess.state).toBe(testCase.state_after);
+      expect(sess._message_log).toContain(act);
+    } else {
+      const stateBefore = sess.state;
+      let caught: unknown = null;
+      try {
+        mgr.processMessage(sess, act);
+      } catch (exc) {
+        caught = exc;
+      }
+      expect(caught).toBeInstanceOf(A2CNError);
+      const err = caught as A2CNError;
+      expect([err.code, err.message]).toEqual([testCase.error_code, testCase.error_message]);
+      expect(sess.state).toBe(stateBefore);
+      expect(sess._message_log).not.toContain(act);
+    }
+
+    const record = closeAndRecord(mgr, sess);
+    expect(verifySessionEvidenceRecord(record, DID_DOCUMENTS)).toBe(testCase.record_verifies);
+    // Every act the record vouches for is one the runtime admitted, and none is
+    // an unsigned observation.
+    for (const entry of record.acts as Dict[]) {
+      expect(entry.attribution).toBe("verified_signature");
+      expect(Object.keys(entry.act as Dict).filter((k) => RESERVED_WIRE_KEYS.has(k))).toEqual([]);
+    }
+  });
+}
+
+test("a retransmission carrying a reserved key is not admitted", () => {
+  // The idempotency cache answers a repeated message_id before validation runs,
+  // so the altered repeat gets the original's response. It is not processed: the
+  // log still holds only the act the runtime first admitted.
+  const [mgr, sess] = freshSession();
+  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
+  const first = mgr.processMessage(sess, offer);
+  const repeat = { ...structuredClone(offer), act: { message_type: "offer" } };
+
+  expect(mgr.processMessage(sess, repeat)).toEqual(first);
+  expect(sess._message_log).toEqual([offer]);
+  expect(sess._message_log.every((m) => !("act" in m))).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// A key reached through the prototype is the key
+// ---------------------------------------------------------------------------
+//
+// JSON yields only own properties, but a library caller can hand in an object
+// whose prototype carries a reserved key. Every property read sees it, so the
+// runtime refuses it as it refuses the own key, and the evidence reader takes
+// an entry's wrapper and metadata from own properties only. Python has no
+// counterpart: a dict has no prototype.
+
+const SUBSTITUTE: Dict = { message_type: "withdrawal", reason_code: "SUBSTITUTED" };
+
+function inheriting(proto: Dict, own: Dict): Dict {
+  return Object.assign(Object.create(proto) as Dict, own);
+}
+
+for (const actType of ["rejection", "withdrawal"]) {
+  for (const key of [...RESERVED_WIRE_KEYS].sort()) {
+    test(`reserved key inherited through the prototype: ${actType} + ${key}`, () => {
+      const [mgr, sess] = freshSession();
+      mgr.processMessage(sess, makeOffer(sess.session_id, 1, 1, INITIATOR_DID));
+      const value = key === "act" ? SUBSTITUTE : structuredClone(RESERVED_VALUES[key]);
+      const own = makeDecline(sess.session_id, actType, true);
+      const act = inheriting({ [key]: value }, own);
+      expect(hasOwn(act, key)).toBe(false);
+
+      let caught: unknown = null;
+      try {
+        mgr.processMessage(sess, act);
+      } catch (exc) {
+        caught = exc;
+      }
+      expect(caught, "expected an A2CNError, but the call succeeded").toBeInstanceOf(A2CNError);
+      const err = caught as A2CNError;
+      expect([err.code, err.message]).toEqual([
+        "INVALID_REQUEST",
+        `${actType} carries ${key}, which is reserved for the evidence record`,
+      ]);
+      expect(sess.state).toBe(SessionState.NEGOTIATING);
+      expect(sess._message_log).not.toContain(act);
+
+      const record = closeAndRecord(mgr, sess);
+      expect(verifySessionEvidenceRecord(record, DID_DOCUMENTS)).toBe(true);
+      for (const entry of record.acts as Dict[]) {
+        expect(entry.attribution).toBe("verified_signature");
+        expect(entry.act).not.toEqual(SUBSTITUTE);
+      }
+    });
+  }
+}
+
+function markTimedOut(session: Session): void {
+  session.state = SessionState.TIMED_OUT;
+  session.current_turn = "none";
+  session.terminal_reason = "session_timeout";
+  session.terminal_message_id = null;
+  session.state_updated_at = "2026-03-24T10:10:00Z";
+}
+
+/** The entry an observed item becomes, after the session's own offer. */
+function observedEntry(item: Dict): Dict {
+  const [mgr, sess] = freshSession();
+  mgr.processMessage(sess, makeOffer(sess.session_id, 1, 1, INITIATOR_DID));
+  markTimedOut(sess);
+  const record = generateSessionEvidenceRecord(sess, {
+    producerPrivateKey: INITIATOR_PRIVATE_KEY,
+    producerDid: INITIATOR_DID,
+    producerAgentId: "buyer-agent",
+    producerVerificationMethod: INITIATOR_VM,
+    observedActs: [item],
+  });
+  expect(verifySessionEvidenceRecord(record, DID_DOCUMENTS)).toBe(true);
+  return (record.acts as Dict[])[(record.acts as Dict[]).length - 1];
+}
+
+test("an observed act's inherited act is not a wrapper", () => {
+  const own = makeDecline("observed-session", "withdrawal", false);
+  const entry = observedEntry(inheriting({ act: SUBSTITUTE }, own));
+  expect(entry).toEqual(observedEntry(structuredClone(own)));
+  expect(entry.act).not.toEqual(expect.objectContaining(SUBSTITUTE));
+  expect(entry.act_hash).toBe(hashObject(entry.act));
+});
+
+test("an observed wrapper's inherited metadata is inert", () => {
+  const own = makeDecline("observed-session", "withdrawal", false);
+  const inherited: Dict = {
+    signature_type: "withdrawal_signature",
+    signature: "not-a-signature",
+    attribution: "verified_signature",
+    source_protocol: "inherited",
+    money_basis: { label: "inherited" },
+  };
+  const entry = observedEntry(inheriting(inherited, { act: structuredClone(own) }));
+  expect(entry).toEqual(observedEntry({ act: structuredClone(own) }));
+  expect(entry.attribution).toBe("unsigned_observation");
+  expect(hasOwn(entry, "money_basis")).toBe(false);
+});
