@@ -189,7 +189,14 @@ def _session_at(version: str, session_id: str) -> tuple[SessionManager, object]:
         manager.register_did_document(did, document)
     init = {**source["session_init"], "protocol_version": version}
     ack = {**source["session_ack"], "protocol_version": version}
-    session = manager.create_session(session_id, init, ack, source["session_created_at"])
+    # A session at a superseded version exists only as a replay (Section 11.2.1).
+    session = manager.create_session(
+        session_id,
+        init,
+        ack,
+        source["session_created_at"],
+        legacy_replay=version != PROTOCOL_ACT_VERSION,
+    )
     session.session_timeout_seconds = 86400 * 365 * 100
     return manager, session
 

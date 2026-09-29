@@ -297,7 +297,11 @@ manager.register_did_document(
 manager.register_did_document(
     SUPPLIER_DID, make_did_document(SUPPLIER_DID, "key-1", supplier_pub_jwk)
 )
-session = manager.create_session(SESSION_ID, session_init, session_ack, "2026-03-24T10:00:00Z")
+# The vector's session was recorded at "0.2", which is replayed, never established
+# (Section 11.2.1).
+session = manager.create_session(
+    SESSION_ID, session_init, session_ack, "2026-03-24T10:00:00Z", legacy_replay=True
+)
 session.session_timeout_seconds = 86400 * 365 * 100
 manager.process_message(session, offer_1)
 manager.process_message(session, counter_1)

@@ -24,6 +24,7 @@ from a2cn.line_items import (
     session_currency_is_supported,
 )
 from a2cn.messages import (
+    ESTABLISHMENT_WIRE_VERSIONS,
     PROTOCOL_ACT_VERSION,
     RESERVED_WIRE_KEYS,
     SIGNED_ACT_SIGNATURE_FIELDS,
@@ -164,20 +165,35 @@ _FIXED_MONEY_PARAMS = ("currency", "basis")
 _ABSENT = object()
 
 
-def check_session_versions(session_init: Any, session_ack: Any) -> str:
+def check_session_versions(
+    session_init: Any, session_ack: Any, *, legacy_replay: bool = False
+) -> str:
     """The wire version both messages agree on, or PROTOCOL_VERSION_MISMATCH (Section 12.1.7).
 
     A SessionAck states the version of the SessionInit it answers. A message that
     states none, states one this implementation does not recognise, or states
     another than its counterpart is refused rather than filled in, so no party
     signs under a version it did not propose.
+
+    A new session is established only at a version in ESTABLISHMENT_WIRE_VERSIONS
+    (Section 11.2.1), so a pair agreeing on a superseded version is refused as
+    well. legacy_replay lifts that one refusal, and only for rebuilding a recorded
+    session to verify its records; see SessionManager.create_session.
     """
     try:
         if session_ack is None:
             raise ValueError("SessionAck protocol_version must be a non-empty string")
-        return negotiated_protocol_version(session_init, session_ack)
+        version = negotiated_protocol_version(session_init, session_ack)
     except ValueError as exc:
         raise A2CNError("PROTOCOL_VERSION_MISMATCH", str(exc), 400) from exc
+    if not legacy_replay and version not in ESTABLISHMENT_WIRE_VERSIONS:
+        raise A2CNError(
+            "PROTOCOL_VERSION_MISMATCH",
+            f"protocol_version {version} is recognised only for verifying records; "
+            f"a new session establishes at {PROTOCOL_ACT_VERSION}",
+            400,
+        )
+    return version
 
 
 def check_fixed_money_params(proposed: Any, accepted: Any) -> None:
@@ -425,8 +441,23 @@ class SessionManager:
         session_init: dict,
         session_ack: dict,
         now: str,
+        *,
+        legacy_replay: bool = False,
     ) -> Session:
-        protocol_version = check_session_versions(session_init, session_ack)
+        """Create the session a SessionInit and its SessionAck establish.
+
+        The pair must agree on the current wire version (Sections 11.2.1 and
+        12.1.7), or PROTOCOL_VERSION_MISMATCH is raised.
+
+        legacy_replay=True is for rebuilding a recorded session, to verify the
+        records it produced, and never for establishing a live one. It admits a
+        pair that agrees on any version this implementation recognises, "0.2"
+        included; a pair that disagrees, or names an unrecognised version, is
+        refused all the same.
+        """
+        protocol_version = check_session_versions(
+            session_init, session_ack, legacy_replay=legacy_replay
+        )
         # Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
         proposed = session_init.get("session_params", {})
         accepted = session_ack.get("session_params_accepted", proposed)

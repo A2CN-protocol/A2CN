@@ -153,7 +153,9 @@ export class A2CNClient {
     }
 
     // The responder must state the version this client proposed (Section 12.1.7),
-    // and echo currency, and any basis it carries, unchanged (Section 6.4.1)
+    // which is the current one: a live session is never established at a
+    // superseded version, so no legacy replay here (Section 11.2.1). It must
+    // also echo currency, and any basis it carries, unchanged (Section 6.4.1)
     checkSessionVersions(sessionInit, ack);
     checkFixedMoneyParams(sessionParams, ack.session_params_accepted);
 

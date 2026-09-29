@@ -54,14 +54,21 @@ export const PROTOCOL_ACT_VERSION = "0.3";
 export const LEGACY_VERSIONLESS_WIRE_VERSION = "0.2";
 
 /**
- * The wire versions this implementation recognises. A session runs at one of
- * them; "0.2" remains so that a session negotiated at it can still be replayed
- * and its acts rebuilt.
+ * The wire versions this implementation recognises, for verifying what a
+ * session produced: its recorded acts, or the session replayed to rebuild them.
+ * "0.2" is here for that alone; it is never established (Section 11.2.1).
  */
 export const SUPPORTED_WIRE_VERSIONS: readonly string[] = [
   LEGACY_VERSIONLESS_WIRE_VERSION,
   PROTOCOL_ACT_VERSION,
 ];
+
+/**
+ * The wire versions a new session may be established at: the current one only
+ * (Section 11.2.1). A superseded version stays recognised above, so records made
+ * under it still verify, but a session is never negotiated down to it.
+ */
+export const ESTABLISHMENT_WIRE_VERSIONS: readonly string[] = [PROTOCOL_ACT_VERSION];
 
 /**
  * The wire version a session was negotiated at (Section 12.1.7).

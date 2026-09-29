@@ -8,6 +8,10 @@ initiator's client did not look at the ack's version at all, and signed its
 offers under whatever the responder stated. Both now refuse any pair that does
 not agree on a version this implementation recognises, and fill nothing in.
 
+A new session establishes only at the current version (Section 11.2.1). "0.2" is
+recognised for verifying records alone, so a pair agreeing on it is refused too,
+unless the session manager is told it is replaying a recorded session.
+
 session-version-negotiation.json pins the cases. The TypeScript suite runs them
 too.
 """
@@ -22,8 +26,12 @@ import pytest
 
 from a2cn.client import A2CNClient
 from a2cn.crypto import generate_keypair
-from a2cn.messages import PROTOCOL_ACT_VERSION, SUPPORTED_WIRE_VERSIONS
-from a2cn.session import A2CNError, SessionManager
+from a2cn.messages import (
+    ESTABLISHMENT_WIRE_VERSIONS,
+    PROTOCOL_ACT_VERSION,
+    SUPPORTED_WIRE_VERSIONS,
+)
+from a2cn.session import A2CNError, SessionManager, check_session_versions
 
 VECTOR = json.loads(
     (
@@ -31,7 +39,9 @@ VECTOR = json.loads(
     ).read_text()
 )
 CASES = VECTOR["cases"]
-CLIENT_CASES = [c for c in CASES if c.get("init_protocol_version") == PROTOCOL_ACT_VERSION]
+# A live establishment: the client never replays, so it never passes the option.
+LIVE_CASES = [c for c in CASES if not c.get("legacy_replay", False)]
+CLIENT_CASES = [c for c in LIVE_CASES if c.get("init_protocol_version") == PROTOCOL_ACT_VERSION]
 
 INITIATOR_DID = "did:web:techcorp.example"
 RESPONDER_DID = "did:web:acme-corp.com"
@@ -86,7 +96,11 @@ def _ack(case: dict, in_reply_to: str = "neg-init-1") -> dict:
 
 def test_the_vector_names_the_versions_this_implementation_recognises():
     assert list(SUPPORTED_WIRE_VERSIONS) == VECTOR["supported_wire_versions"]
+    assert list(ESTABLISHMENT_WIRE_VERSIONS) == VECTOR["establishment_wire_versions"]
+    assert ESTABLISHMENT_WIRE_VERSIONS == (PROTOCOL_ACT_VERSION,)
     assert {c["accepted"] for c in CASES} == {True, False}
+    replay = [c for c in CASES if c.get("legacy_replay", False)]
+    assert {c["accepted"] for c in replay} == {True, False}
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
@@ -94,14 +108,20 @@ def test_the_session_manager_negotiates_one_version(case):
     manager = SessionManager()
     init, ack = _init(case), _ack(case)
 
+    replay = case.get("legacy_replay", False)
+
     if case["accepted"]:
-        session = manager.create_session("sess-neg", init, ack, "2026-03-24T10:00:00Z")
+        session = manager.create_session(
+            "sess-neg", init, ack, "2026-03-24T10:00:00Z", legacy_replay=replay
+        )
         assert session.protocol_version == case["runs_at"]
         assert session.to_state_dict()["protocol_version"] == case["runs_at"]
         return
 
     with pytest.raises(A2CNError) as excinfo:
-        manager.create_session("sess-neg", init, ack, "2026-03-24T10:00:00Z")
+        manager.create_session(
+            "sess-neg", init, ack, "2026-03-24T10:00:00Z", legacy_replay=replay
+        )
     assert (excinfo.value.code, excinfo.value.message) == (
         case["error_code"],
         case["error_message"],
@@ -156,3 +176,20 @@ async def test_the_client_refuses_an_ack_that_changes_its_version(case):
 
 def test_the_client_cases_cover_both_verdicts():
     assert {c["accepted"] for c in CLIENT_CASES} == {True, False}
+
+
+@pytest.mark.parametrize("case", LIVE_CASES, ids=lambda case: case["name"])
+def test_the_clients_check_refuses_every_pair_a_live_session_refuses(case):
+    # The client runs this check, with no replay option, on the SessionAck it
+    # receives; it holds for a pair the client itself would never propose, such
+    # as one agreeing on "0.2".
+    init, ack = _init(case), _ack(case)
+    if case["accepted"]:
+        assert check_session_versions(init, ack) == case["runs_at"]
+        return
+    with pytest.raises(A2CNError) as excinfo:
+        check_session_versions(init, ack)
+    assert (excinfo.value.code, excinfo.value.message) == (
+        case["error_code"],
+        case["error_message"],
+    )

@@ -10,6 +10,10 @@
  * any pair that does not agree on a version this implementation recognises, and
  * fill nothing in.
  *
+ * A new session establishes only at the current version (Section 11.2.1). "0.2"
+ * is recognised for verifying records alone, so a pair agreeing on it is refused
+ * too, unless the session manager is told it is replaying a recorded session.
+ *
  * session-version-negotiation.json pins the cases. The Python suite runs them
  * too.
  */
@@ -22,18 +26,21 @@ import { expect, test } from "vitest";
 import { A2CNClient } from "../src/a2cn/client.js";
 import { generateKeypair } from "../src/a2cn/crypto.js";
 import {
+  ESTABLISHMENT_WIRE_VERSIONS,
   PROTOCOL_ACT_VERSION,
   SUPPORTED_WIRE_VERSIONS,
   type Dict,
 } from "../src/a2cn/messages.js";
-import { A2CNError, SessionManager } from "../src/a2cn/session.js";
+import { A2CNError, SessionManager, checkSessionVersions } from "../src/a2cn/session.js";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const VECTOR = JSON.parse(
   readFileSync(join(REPO_ROOT, "spec", "test-vectors", "session-version-negotiation.json"), "utf-8"),
 ) as Dict;
 const CASES = VECTOR.cases as Dict[];
-const CLIENT_CASES = CASES.filter((c) => c.init_protocol_version === PROTOCOL_ACT_VERSION);
+// A live establishment: the client never replays, so it never passes the option.
+const LIVE_CASES = CASES.filter((c) => c.legacy_replay !== true);
+const CLIENT_CASES = LIVE_CASES.filter((c) => c.init_protocol_version === PROTOCOL_ACT_VERSION);
 
 const INITIATOR_DID = "did:web:techcorp.example";
 const RESPONDER_DID = "did:web:acme-corp.com";
@@ -92,7 +99,11 @@ function ackFor(testCase: Dict, inReplyTo = "neg-init-1"): Dict {
 
 test("the vector names the versions this implementation recognises", () => {
   expect([...SUPPORTED_WIRE_VERSIONS]).toEqual(VECTOR.supported_wire_versions);
+  expect([...ESTABLISHMENT_WIRE_VERSIONS]).toEqual(VECTOR.establishment_wire_versions);
+  expect([...ESTABLISHMENT_WIRE_VERSIONS]).toEqual([PROTOCOL_ACT_VERSION]);
   expect(new Set(CASES.map((c) => c.accepted))).toEqual(new Set([true, false]));
+  const replay = CASES.filter((c) => c.legacy_replay === true);
+  expect(new Set(replay.map((c) => c.accepted))).toEqual(new Set([true, false]));
 });
 
 for (const testCase of CASES) {
@@ -100,9 +111,12 @@ for (const testCase of CASES) {
     const manager = new SessionManager();
     const init = initFor(testCase);
     const ack = ackFor(testCase);
+    const legacyReplay = testCase.legacy_replay === true;
 
     if (testCase.accepted) {
-      const session = manager.createSession("sess-neg", init, ack, "2026-03-24T10:00:00Z");
+      const session = manager.createSession("sess-neg", init, ack, "2026-03-24T10:00:00Z", {
+        legacyReplay,
+      });
       expect(session.protocol_version).toBe(testCase.runs_at);
       expect(session.toStateDict().protocol_version).toBe(testCase.runs_at);
       return;
@@ -110,7 +124,7 @@ for (const testCase of CASES) {
 
     let caught: unknown = null;
     try {
-      manager.createSession("sess-neg", init, ack, "2026-03-24T10:00:00Z");
+      manager.createSession("sess-neg", init, ack, "2026-03-24T10:00:00Z", { legacyReplay });
     } catch (exc) {
       caught = exc;
     }
@@ -174,3 +188,26 @@ for (const testCase of CLIENT_CASES) {
 test("the client cases cover both verdicts", () => {
   expect(new Set(CLIENT_CASES.map((c) => c.accepted))).toEqual(new Set([true, false]));
 });
+
+for (const testCase of LIVE_CASES) {
+  test(`the client's check refuses every pair a live session refuses: ${testCase.name}`, () => {
+    // The client runs this check, with no replay option, on the SessionAck it
+    // receives; it holds for a pair the client itself would never propose, such
+    // as one agreeing on "0.2".
+    const init = initFor(testCase);
+    const ack = ackFor(testCase);
+    if (testCase.accepted) {
+      expect(checkSessionVersions(init, ack)).toBe(testCase.runs_at);
+      return;
+    }
+    let caught: unknown = null;
+    try {
+      checkSessionVersions(init, ack);
+    } catch (exc) {
+      caught = exc;
+    }
+    expect(caught).toBeInstanceOf(A2CNError);
+    const err = caught as A2CNError;
+    expect([err.code, err.message]).toEqual([testCase.error_code, testCase.error_message]);
+  });
+}

@@ -207,6 +207,29 @@ async def test_session_init_wrong_protocol_version(test_client):
     assert r.json()["error"]["code"] == "PROTOCOL_VERSION_MISMATCH"
 
 
+@pytest.mark.asyncio
+async def test_session_init_at_a_superseded_version_is_refused(test_client):
+    # "0.2" is recognised for verifying records, never for establishing a session
+    # (Section 11.2.1).
+    body = make_session_init()
+    body["protocol_version"] = "0.2"
+    r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "PROTOCOL_VERSION_MISMATCH"
+    assert r.json()["error"]["message"] == "Only protocol_version '0.3' is supported"
+    assert "session_id" not in r.json()
+
+
+@pytest.mark.asyncio
+async def test_invitation_at_a_superseded_version_is_refused(raw_test_client):
+    r = await raw_test_client.post(
+        "/invitations",
+        json={"message_type": "session_invitation", "a2cn_version": "0.2"},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVITATION_VERSION_MISMATCH"
+
+
 # ---------------------------------------------------------------------------
 # GET /sessions/{session_id}
 # ---------------------------------------------------------------------------

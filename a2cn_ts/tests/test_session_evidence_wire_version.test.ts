@@ -195,7 +195,10 @@ function sessionAt(version: string, sessionId: string): [SessionManager, Session
   }
   const init = { ...(SOURCE.session_init as Dict), protocol_version: version };
   const ack = { ...(SOURCE.session_ack as Dict), protocol_version: version };
-  const session = manager.createSession(sessionId, init, ack, SOURCE.session_created_at as string);
+  // A session at a superseded version exists only as a replay (Section 11.2.1).
+  const session = manager.createSession(sessionId, init, ack, SOURCE.session_created_at as string, {
+    legacyReplay: version !== PROTOCOL_ACT_VERSION,
+  });
   session.session_timeout_seconds = 86400 * 365 * 100;
   return [manager, session];
 }

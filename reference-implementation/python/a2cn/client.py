@@ -125,7 +125,9 @@ class A2CNClient:
             raise A2CNError("INVALID_REQUEST", "SessionAck must be a JSON object", 400)
 
         # The responder must state the version this client proposed (Section 12.1.7),
-        # and echo currency, and any basis it carries, unchanged (Section 6.4.1)
+        # which is the current one: a live session is never established at a
+        # superseded version, so no legacy replay here (Section 11.2.1). It must
+        # also echo currency, and any basis it carries, unchanged (Section 6.4.1)
         check_session_versions(session_init, ack)
         check_fixed_money_params(session_params, ack.get("session_params_accepted"))
 

@@ -216,6 +216,31 @@ test("session init wrong protocol version", async () => {
   expect((r.json().error as Dict).code).toBe("PROTOCOL_VERSION_MISMATCH");
 });
 
+test("session init at a superseded version is refused", async () => {
+  // "0.2" is recognised for verifying records, never for establishing a session
+  // (Section 11.2.1).
+  const { client } = freshServer();
+  const body = makeSessionInit();
+  body.protocol_version = "0.2";
+  const r = await client.post("/sessions", {
+    json: body,
+    headers: initHeaders(body.message_id as string),
+  });
+  expect(r.statusCode).toBe(400);
+  expect((r.json().error as Dict).code).toBe("PROTOCOL_VERSION_MISMATCH");
+  expect((r.json().error as Dict).message).toBe("Only protocol_version '0.3' is supported");
+  expect("session_id" in r.json()).toBe(false);
+});
+
+test("invitation at a superseded version is refused", async () => {
+  const { rawClient } = freshServer();
+  const r = await rawClient.post("/invitations", {
+    json: { message_type: "session_invitation", a2cn_version: "0.2" },
+  });
+  expect(r.statusCode).toBe(400);
+  expect((r.json().error as Dict).code).toBe("INVITATION_VERSION_MISMATCH");
+});
+
 // ---------------------------------------------------------------------------
 // GET /sessions/{session_id}
 // ---------------------------------------------------------------------------

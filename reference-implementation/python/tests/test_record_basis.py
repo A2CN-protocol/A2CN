@@ -72,7 +72,11 @@ def _replay(session_id, session_init, session_ack, did_documents, messages):
     for did, did_document in did_documents.items():
         manager.register_did_document(did, did_document)
     session = manager.create_session(
-        session_id, session_init, session_ack, session_ack["session_created_at"]
+        session_id,
+        session_init,
+        session_ack,
+        session_ack["session_created_at"],
+        legacy_replay=True,  # a recorded session, possibly negotiated at "0.2"
     )
     session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
     for message in copy.deepcopy(messages):

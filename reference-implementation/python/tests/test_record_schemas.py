@@ -77,6 +77,7 @@ def _replay(vector: dict, session_init: dict | None = None) -> dict:
         session_init or vector["session_init"],
         session_ack,
         session_ack["session_created_at"],
+        legacy_replay=True,  # a recorded session, possibly negotiated at "0.2"
     )
     session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
     for message in copy.deepcopy(vector["messages"]):

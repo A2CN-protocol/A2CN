@@ -18,6 +18,7 @@ import {
   sessionCurrencyIsSupported,
 } from "./line_items.js";
 import {
+  ESTABLISHMENT_WIRE_VERSIONS,
   PROTOCOL_ACT_VERSION,
   RESERVED_WIRE_KEYS,
   SIGNED_ACT_SIGNATURE_FIELDS,
@@ -197,16 +198,35 @@ function isJsonObject(value: unknown): value is Dict {
  * states none, states one this implementation does not recognise, or states
  * another than its counterpart is refused rather than filled in, so no party
  * signs under a version it did not propose.
+ *
+ * A new session is established only at a version in ESTABLISHMENT_WIRE_VERSIONS
+ * (Section 11.2.1), so a pair agreeing on a superseded version is refused as
+ * well. legacyReplay lifts that one refusal, and only for rebuilding a recorded
+ * session to verify its records; see SessionManager.createSession.
  */
-export function checkSessionVersions(sessionInit: unknown, sessionAck: unknown): string {
+export function checkSessionVersions(
+  sessionInit: unknown,
+  sessionAck: unknown,
+  { legacyReplay = false }: { legacyReplay?: boolean } = {},
+): string {
+  let version: string;
   try {
     if (sessionAck === null || sessionAck === undefined) {
       throw new Error("SessionAck protocol_version must be a non-empty string");
     }
-    return negotiatedProtocolVersion(sessionInit, sessionAck);
+    version = negotiatedProtocolVersion(sessionInit, sessionAck);
   } catch (exc) {
     throw new A2CNError("PROTOCOL_VERSION_MISMATCH", (exc as Error).message, 400);
   }
+  if (!legacyReplay && !ESTABLISHMENT_WIRE_VERSIONS.includes(version)) {
+    throw new A2CNError(
+      "PROTOCOL_VERSION_MISMATCH",
+      `protocol_version ${version} is recognised only for verifying records; ` +
+        `a new session establishes at ${PROTOCOL_ACT_VERSION}`,
+      400,
+    );
+  }
+  return version;
 }
 
 export function checkFixedMoneyParams(proposed: unknown, accepted: unknown): asserts accepted is Dict {
@@ -452,8 +472,26 @@ export class SessionManager {
     this._init_responses[messageId] = response;
   }
 
-  createSession(sessionId: string, sessionInit: Dict, sessionAck: Dict, now: string): Session {
-    const protocolVersion = checkSessionVersions(sessionInit, sessionAck);
+  /**
+   * Create the session a SessionInit and its SessionAck establish.
+   *
+   * The pair must agree on the current wire version (Sections 11.2.1 and
+   * 12.1.7), or PROTOCOL_VERSION_MISMATCH is thrown.
+   *
+   * legacyReplay: true is for rebuilding a recorded session, to verify the
+   * records it produced, and never for establishing a live one. It admits a pair
+   * that agrees on any version this implementation recognises, "0.2" included; a
+   * pair that disagrees, or names an unrecognised version, is refused all the
+   * same.
+   */
+  createSession(
+    sessionId: string,
+    sessionInit: Dict,
+    sessionAck: Dict,
+    now: string,
+    { legacyReplay = false }: { legacyReplay?: boolean } = {},
+  ): Session {
+    const protocolVersion = checkSessionVersions(sessionInit, sessionAck, { legacyReplay });
     // Read accepted params — the responder may have reduced max_rounds (Section 6.4.1)
     const proposed = sessionInit.session_params === undefined ? {} : sessionInit.session_params;
     const accepted =
