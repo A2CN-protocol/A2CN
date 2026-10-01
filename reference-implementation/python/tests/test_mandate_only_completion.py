@@ -23,11 +23,12 @@ a producer that suppresses a ``transaction_record_hash`` it could have carried.
 While the proxies stood, condition 3's ``unilateral`` and the ``observed_party``
 requirement did the excluding between them. Relaxing both at once left the
 property unenforced, and a record whose counterparty signed the acceptance
-verified. It is now a check of its own, ``_external_commitment_acceptance_holds``:
-a counterparty may sign NEGOTIATION acts, but no completion both parties signed
--- a signed acceptance beside a counterparty signature -- may sit behind the
-reference. The acceptance-rule section of this file is what would catch its
-removal.
+verified. It is now checked on its own: a counterparty may sign NEGOTIATION
+acts and nothing else (``_responder_signed_only_negotiation``), and no
+acceptance, signed or unsigned, may name an act the counterparty signed
+(``_no_acceptance_of_responder_signed_act``), so the record attests no in-band
+acceptance of a counterparty-signed act. The completion-rule section of this
+file is what would catch either's removal.
 
 WHAT MUST NOT MOVE, asserted here rather than assumed: the counterparty's acts
 stay ``unsigned_observation`` (no attribution inflation), a record still carries
@@ -38,6 +39,7 @@ relaxation can widen past its target and nothing else would notice.
 
 from __future__ import annotations
 
+import base64
 import copy
 
 import pytest
@@ -49,7 +51,7 @@ from a2cn.evidence import (
     generate_transaction_record,
     verify_session_evidence_record,
 )
-from a2cn.messages import PROTOCOL_ACT_VERSION, signed_act_hash
+from a2cn.messages import PROTOCOL_ACT_VERSION, rebuild_signed_act, signed_act_hash
 from a2cn.session import SessionState
 from tests.conftest import make_did_document
 from tests.test_evidence import (
@@ -328,10 +330,10 @@ def test_stamping_a_verified_signature_on_an_unsigned_counterparty_act_is_refuse
 # That property is about the COMPLETION, not about every act. A counterparty
 # that signed a counteroffer negotiated; it completed nothing, and no
 # TransactionRecord exists for such a session (Section 9.3). What completes an
-# A2CN session is an acceptance, so Section 9A.12 keys the rule on it: a
-# verified acceptance is admitted only when the INITIATOR signed it and the
-# responder signed no act at all. A completion both parties signed is a
-# TransactionRecord, not an external witness.
+# A2CN session is an acceptance of a signed offer, so Section 9A.12 keys the
+# rule on that pair: the responder may sign only an offer or a counteroffer, and
+# no acceptance -- signed or unsigned -- may name one the responder signed: the
+# record attests no in-band acceptance of a responder-signed act.
 #
 # ``mixed`` is what made this load-bearing rather than theoretical.
 # ``_classify_evidence_level`` returned ``bilateral`` only when NOTHING was
@@ -340,7 +342,7 @@ def test_stamping_a_verified_signature_on_an_unsigned_counterparty_act_is_refuse
 # condition 3 admits, and a counterparty's signed acceptance could ride in under
 # an admitted classification. The classifier now never returns ``bilateral`` for
 # a record carrying the reference, so the level cannot do the excluding at all:
-# the acceptance rule is what does.
+# the completion rule is what does.
 
 
 _COUNTERPARTY_ENVELOPE = (
@@ -540,14 +542,13 @@ def test_the_generator_emits_a_signed_negotiation_completing_externally_as_mixed
 def test_a_completion_whose_counterparty_signed_the_acceptance_is_refused():
     """A responder-signed acceptance is a completion the counterparty signed.
 
-    The acceptance is A2CN's completion act. A verified acceptance is admitted
-    in an external-channel record only when the INITIATOR signed it and the
-    responder signed no act; this one fails both halves, since the responder
-    signed it and so holds a verified act. The session-party check admits it --
-    its signer is ``parties.responder.did`` exactly -- so the acceptance rule is
-    the only one that objects. This session does produce a TransactionRecord
-    (Section 9.3): a completion both parties signed belongs there, not behind an
-    external reference.
+    The acceptance is A2CN's completion act, and in an external-channel record the
+    responder may sign only an offer or a counteroffer. The session-party check
+    admits this act -- its signer is ``parties.responder.did`` exactly -- and the
+    acceptance names the initiator's offer, which the responder did not sign, so
+    the responder-act-type rule is the one that objects. This session does
+    produce a TransactionRecord (Section 9.3): a completion both parties signed
+    belongs there, not behind an external reference.
     """
     honest, did_documents, session = _mandate_only_pair(_UNSIGNED_ACCEPTANCE)
     assert verify_session_evidence_record(honest, did_documents)
@@ -578,17 +579,16 @@ def test_a_completion_whose_counterparty_signed_the_acceptance_is_refused():
 def test_the_generator_refuses_a_completion_whose_counterparty_signed_the_acceptance():
     """The generator runs the same rule, so a producer cannot emit one either.
 
-    The assertion matches the message, which names the rule: a signed acceptance
-    is admitted only from the initiator, and only while the responder signed
-    nothing. The message is part of the contract, which is why a test asserts on
-    it at all.
+    The assertion matches the message, which names the rule: the responder may
+    sign only an offer or a counteroffer. The message is part of the contract,
+    which is why a test asserts on it at all.
     """
     manager, session, _did_documents = _make_session()
     offer = _offer(session.session_id)
     manager.process_message(session, offer)
     _mark_completed_externally(session)
 
-    with pytest.raises(ValueError, match="admits a signed acceptance only"):
+    with pytest.raises(ValueError, match="responder signature only on an offer or counteroffer"):
         _generate(
             session,
             [_acceptance(session.session_id, offer), _order_confirmation()],
@@ -887,9 +887,10 @@ def test_a_responder_signature_spelled_as_a_did_url_is_refused():
 
     A COUNTEROFFER on purpose. A signed counteroffer by a session party is
     admitted, so the bare spelling below VERIFIES and the spelling is the only
-    variable between the two arms. An acceptance would be refused under both
-    spellings by the acceptance rule, which would leave this refusal with two
-    causes; that case is the next test.
+    variable between the two arms. A responder acceptance would be refused under
+    both spellings, the bare one because the responder may sign only an offer or
+    counteroffer, which would leave this refusal with two causes; that case is
+    the next test.
 
     UNDER A DEREFERENCING RESOLVER ON PURPOSE. Under an exact-match resolver the
     DID URL does not resolve, the act is INVALID, and the record is refused for a
@@ -940,8 +941,10 @@ def test_a_responder_acceptance_is_refused_under_either_spelling():
     """A signed acceptance by the responder never rides in, however it is written.
 
     The bare spelling is ``parties.responder.did``, which the session-party check
-    admits, and the acceptance rule refuses it. The DID-URL spelling is refused
-    by both. Either way the verdict does not turn on how the DID is written.
+    admits, and the rule that the responder signs only an offer or counteroffer
+    refuses it. The DID-URL spelling is neither party's DID, so the session-party
+    check refuses it. Either way the verdict does not turn on how the DID is
+    written.
     """
     manager, session, did_documents = _make_session()
     offer = _offer(session.session_id)
@@ -1055,26 +1058,33 @@ def test_the_initiator_signing_under_two_spellings_of_its_own_did_is_refused():
 
 
 # ---------------------------------------------------------------------------
-# The acceptance rule: a completion both parties signed is a TransactionRecord
+# The completion rule: no in-band acceptance of a responder-signed act
 #
-# The acceptance is A2CN's completion act. In a record carrying
-# external_commitment_reference, a verified acceptance is admitted only when its
-# signer is the INITIATOR, by exact DID, and the RESPONDER has no verified act in
-# the record. Refused when a verified acceptance is present and either
+# The acceptance is A2CN's completion act, and a TransactionRecord is a
+# responder-signed offer plus an acceptance that names it. A record carrying
+# external_commitment_reference must not attest such an acceptance in-band, so:
 #
-#   (i)  its signer is not parties.initiator.did, or
-#   (ii) parties.responder has any verified act.
+#   (a) the responder may sign only NEGOTIATION -- an offer or a counteroffer.
+#       A responder-signed acceptance, rejection or withdrawal is refused.
+#   (b) no acceptance, SIGNED OR UNSIGNED, may name (by its
+#       accepted_protocol_act_hash) an offer or counteroffer the responder
+#       signed; and while the responder has signed anything, an acceptance whose
+#       target resolves to no offer or counteroffer in the record is refused too.
 #
-# What it admits is the shape an external channel actually produces: the
-# initiator signs its own acceptance of terms it observed, and the counterparty
-# confirms the order outside A2CN. What it refuses is any record from which a
-# bilateral completion could be assembled -- the counterparty signing the
-# acceptance, or the initiator signing an acceptance while the counterparty's
-# signatures sit beside it. An UNSIGNED acceptance is not a signature and
-# witnesses nothing, so it is admitted.
+# (b) is keyed on the ACCEPTED act, not on the acceptance's own signature: an
+# acceptance recorded unsigned still names the act it accepted, and is still an
+# acceptance the record attests in-band. What stays admitted is the shape an
+# external channel produces -- the initiator signs its acceptance of an offer
+# the counterparty did not sign -- and negotiation signed by either party.
 #
-# Each refusal below has a twin that differs from it in ONE signature and
-# VERIFIES, so the refusal is that signature's doing and nothing else's.
+# What the rule does NOT prevent: a keyholder can always sign its own acceptance
+# of a responder-signed counteroffer out of band and build a TransactionRecord
+# elsewhere. That is inherent to admitting a counterparty's signed negotiation
+# act. The record attests what was recorded in-band, not what a keyholder could
+# build elsewhere.
+#
+# Each refusal below has a twin that differs from it in ONE signature or ONE
+# target and VERIFIES, so the refusal is that difference's doing.
 # ---------------------------------------------------------------------------
 
 
@@ -1090,6 +1100,31 @@ def _signed_negotiation(session, *between, confirmation=True):
     return observed
 
 
+_SIGNERS = {
+    "initiator": (INITIATOR_DID, INITIATOR_VM, INITIATOR_PRIVATE_KEY, "buyer-agent"),
+    "responder": (RESPONDER_DID, RESPONDER_VM, RESPONDER_PRIVATE_KEY, "seller-agent"),
+    "third_party": (THIRD_PARTY_DID, THIRD_PARTY_VM, THIRD_PARTY_PRIVATE_KEY, "processor-agent"),
+}
+
+
+def _signed_act(message: dict, signer: str) -> dict:
+    """``message`` with the signer's envelope fields and its real signature (Section 7.3.1)."""
+    sender_did, verification_method, private_key, agent_id = _SIGNERS[signer]
+    act = {
+        **message,
+        "sender_did": sender_did,
+        "sender_agent_id": agent_id,
+        "sender_verification_method": verification_method,
+    }
+    signature_field = f"{act['message_type']}_signature"
+    act[signature_field] = sign_jws(
+        signed_act_hash(act, version_when_absent=PROTOCOL_ACT_VERSION),
+        private_key,
+        kid=verification_method,
+    )
+    return act
+
+
 def _acceptance_by(
     session_id: str,
     *,
@@ -1102,40 +1137,48 @@ def _acceptance_by(
     signer: str = "initiator",
 ) -> dict:
     """A real acceptance of the act named, signed per Section 7.3.1 by ``signer``."""
-    sender_did, verification_method, private_key, agent_id = {
-        "initiator": (INITIATOR_DID, INITIATOR_VM, INITIATOR_PRIVATE_KEY, "buyer-agent"),
-        "responder": (RESPONDER_DID, RESPONDER_VM, RESPONDER_PRIVATE_KEY, "seller-agent"),
-        "third_party": (
-            THIRD_PARTY_DID,
-            THIRD_PARTY_VM,
-            THIRD_PARTY_PRIVATE_KEY,
-            "processor-agent",
-        ),
-    }[signer]
-    acceptance = {
-        "message_type": "acceptance",
-        "message_id": message_id,
-        "session_id": session_id,
-        "in_reply_to": accepted_id,
-        "round_number": round_number,
-        "sequence_number": sequence_number,
-        "accepted_offer_id": accepted_id,
-        "accepted_protocol_act_hash": accepted_hash,
-        "sender_did": sender_did,
-        "sender_agent_id": agent_id,
-        "sender_verification_method": verification_method,
-        "timestamp": timestamp,
-    }
-    acceptance["acceptance_signature"] = sign_jws(
-        signed_act_hash(acceptance, version_when_absent=PROTOCOL_ACT_VERSION),
-        private_key,
-        kid=verification_method,
+    return _signed_act(
+        {
+            "message_type": "acceptance",
+            "message_id": message_id,
+            "session_id": session_id,
+            "in_reply_to": accepted_id,
+            "round_number": round_number,
+            "sequence_number": sequence_number,
+            "accepted_offer_id": accepted_id,
+            "accepted_protocol_act_hash": accepted_hash,
+            "timestamp": timestamp,
+        },
+        signer,
     )
-    return acceptance
+
+
+def _responder_decline(session_id: str, message_type: str) -> dict:
+    """The responder's real signed rejection or withdrawal of the initiator's offer."""
+    message = {
+        "message_type": message_type,
+        "message_id": f"{message_type}-1",
+        "session_id": session_id,
+        "in_reply_to": "offer-1",
+        "round_number": 1,
+        "sequence_number": 3,
+        "reason_code": "PRICE_TOO_HIGH",
+        "timestamp": "2026-03-24T10:03:00Z",
+    }
+    if message_type == "rejection":
+        message["rejected_offer_id"] = "offer-1"
+    return _signed_act(message, "responder")
+
+
+_TARGET_FIELDS = ("accepted_offer_id", "accepted_protocol_act_hash", "protocol_act_hash", "terms")
 
 
 def _unsigned_observation_of(message: dict) -> dict:
-    """The same act as an unsigned observation: its envelope, and no signature."""
+    """The same act as an unsigned observation: its content, and no signature.
+
+    An acceptance keeps the act it names and an offer keeps the hash it states,
+    so recording an act unsigned changes its attribution and nothing it says.
+    """
     return {
         **{field: message[field] for field in _COUNTERPARTY_ENVELOPE},
         "sender_did": message["sender_did"],
@@ -1144,6 +1187,7 @@ def _unsigned_observation_of(message: dict) -> dict:
             "message_type": message["message_type"],
             "message_id": message["message_id"],
             "timestamp": message["timestamp"],
+            **{field: message[field] for field in _TARGET_FIELDS if field in message},
         },
     }
 
@@ -1151,9 +1195,9 @@ def _unsigned_observation_of(message: dict) -> dict:
 def _sign_observed_act(record: dict, message: dict, signature_type: str) -> dict:
     """Replace the unsigned observation of ``message`` with ``message`` itself, signed.
 
-    The twin of each refusal below is generated with the act unsigned; this swaps
-    in the real signature at the same position, so ordering, envelope and level
-    are untouched and the signature is the only difference.
+    The twin of a refusal is generated with the act unsigned; this swaps in the
+    real signature at the same position, so ordering, envelope and level are
+    untouched and the signature is the only difference.
     """
     patched = copy.deepcopy(record)
     entry = next(item for item in patched["acts"] if item["message_id"] == message["message_id"])
@@ -1187,27 +1231,51 @@ def _counteroffer_acceptance(session_id: str, *, signer: str, **kwargs) -> dict:
     )
 
 
+def _later_unsigned_offer() -> dict:
+    """A responder offer the producer observed unsigned, stating its protocol_act_hash.
+
+    It states the hash an acceptance of it names, as an observed quote does, so
+    the acceptance's target resolves to an act in the record.
+    """
+    later = _unsigned_counterparty_act(
+        "counteroffer",
+        "counteroffer-2",
+        sequence_number=3,
+        round_number=3,
+        timestamp="2026-03-24T10:03:00Z",
+    )
+    later["act"]["terms"] = {"total_value": 9_300_000, "currency": "USD"}
+    later["act"]["protocol_act_hash"] = hash_object(later["act"])
+    return later
+
+
 def test_the_responders_signed_acceptance_after_a_signed_negotiation_is_refused(monkeypatch):
-    """A counterparty-signed acceptance cannot ride in behind a signed negotiation.
+    """Clause (a): the responder signs negotiation only.
 
-    The responder signed a counteroffer, and then signed an acceptance. Both are
-    session-party acts, so the session-party check admits them; the classifier
-    gives ``mixed``, which condition 3 admits; and the reference is the only
-    witness, which the exactly-one-witness rule admits. The acceptance rule is
-    the only thing that objects, and both of its clauses do.
+    The responder signed a counteroffer and then signed an acceptance of the
+    INITIATOR's offer. Every act is a session party's, the classifier gives
+    ``mixed``, and the acceptance names an act the initiator signed, so (b) does
+    not object. (a) does: a responder-signed acceptance is a completion the
+    counterparty signed.
 
-    The twin is the same record with the acceptance UNSIGNED -- an observation
-    witnesses nothing -- and it verifies. With the acceptance rule switched off,
-    the signed record verifies too, so the rule is the single cause.
+    The twin is the same acceptance recorded unsigned, and it verifies: an
+    unsigned act is not a responder signature, and the acceptance names the
+    initiator's offer rather than a responder-signed act. With (a) switched off
+    the signed record verifies too, so (a) is the single cause.
     """
     session, did_documents = _mandate_only_session()
-    acceptance = _counteroffer_acceptance(session.session_id, signer="responder")
-    # The responder accepting its own counteroffer is not a coherent negotiation,
-    # and does not need to be: the rule judges who signed an acceptance, not
-    # what it accepted, and any accepted act gives the same verdict.
-    observed = _signed_negotiation(session, _unsigned_observation_of(acceptance))
+    offer = next(message for message in session._message_log if message["message_type"] == "offer")
+    acceptance = _acceptance_by(
+        session.session_id,
+        accepted_id=offer["message_id"],
+        accepted_hash=offer["protocol_act_hash"],
+        round_number=offer["round_number"],
+        signer="responder",
+    )
     twin = _generate(
-        session, observed, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE
+        session,
+        _signed_negotiation(session, _unsigned_observation_of(acceptance)),
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
     assert twin["evidence_level"] == "mixed"
     assert verify_session_evidence_record(twin, did_documents), "the unsigned twin"
@@ -1223,7 +1291,7 @@ def test_the_responders_signed_acceptance_after_a_signed_negotiation_is_refused(
     assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
     assert not verify_session_evidence_record(signed, did_documents)
 
-    with pytest.raises(ValueError, match="admits a signed acceptance only"):
+    with pytest.raises(ValueError, match="responder signature only on an offer or counteroffer"):
         _generate(
             session,
             [_signed_counteroffer(session.session_id), acceptance, _order_confirmation()],
@@ -1231,125 +1299,452 @@ def test_the_responders_signed_acceptance_after_a_signed_negotiation_is_refused(
         )
 
     monkeypatch.setattr(
-        evidence_module, "_external_commitment_acceptance_holds", lambda record: True
+        evidence_module, "_responder_signed_only_negotiation", lambda record: True
     )
     assert verify_session_evidence_record(signed, did_documents), "single cause"
 
 
-def test_the_initiators_signed_acceptance_of_a_signed_counteroffer_is_refused():
-    """Clause (ii): the initiator accepting what the counterparty SIGNED.
+@pytest.mark.parametrize("message_type", ["rejection", "withdrawal"])
+def test_a_responder_signed_decline_in_a_completed_external_record_is_refused(message_type):
+    """Clause (a): a responder's signed "no" cannot sit in a COMPLETED external record.
 
-    The signer is the initiator, so clause (i) holds. But the counterparty signed
-    the counteroffer being accepted, so both parties have signed the agreement:
-    that is a TransactionRecord, not an external witness, and clause (ii) refuses
-    it because the responder holds a verified act.
-
-    The twin differs in ONE signature, the counteroffer's: with the counteroffer
-    unsigned the same initiator-signed acceptance VERIFIES, which is the shape an
-    external channel produces. So the counterparty's signature is the cause.
+    A rejection or withdrawal the responder signed is a terminal act of its own,
+    and it would be the only counterparty signature in a record whose completion
+    the counterparty never witnessed. The twin records the same decline unsigned,
+    and verifies.
     """
     session, did_documents = _mandate_only_session()
-    acceptance = _counteroffer_acceptance(session.session_id, signer="initiator")
-    counteroffer = _signed_counteroffer(session.session_id)
-
-    message_type, message_id, envelope = _UNSIGNED_COUNTEROFFER
+    decline = _responder_decline(session.session_id, message_type)
     twin = _generate(
         session,
-        [
-            _unsigned_counterparty_act(message_type, message_id, **envelope),
-            acceptance,
-            _order_confirmation(),
-        ],
+        [_unsigned_observation_of(decline), _order_confirmation()],
         external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
-    assert _verified(twin) == [("offer", INITIATOR_DID), ("acceptance", INITIATOR_DID)]
-    assert verify_session_evidence_record(twin, did_documents), "counteroffer unsigned"
+    assert verify_session_evidence_record(twin, did_documents), "the unsigned twin"
 
-    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+    signed = _sign_observed_act(twin, decline, f"{message_type}_signature")
 
-    assert _verified(signed) == [
-        ("offer", INITIATOR_DID),
-        ("counteroffer", RESPONDER_DID),
-        ("acceptance", INITIATOR_DID),
-    ]
-    assert signed["evidence_level"] == twin["evidence_level"] == "mixed"
+    assert _verified(signed) == [("offer", INITIATOR_DID), (message_type, RESPONDER_DID)]
+    assert signed["terminal"]["outcome"] == SessionState.COMPLETED
+    assert signed["evidence_level"] == "mixed"
     assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
     assert not verify_session_evidence_record(signed, did_documents)
 
-    with pytest.raises(ValueError, match="admits a signed acceptance only"):
+    with pytest.raises(ValueError, match="responder signature only on an offer or counteroffer"):
         _generate(
             session,
-            [counteroffer, acceptance, _order_confirmation()],
+            [decline, _order_confirmation()],
             external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
         )
 
 
-def test_the_initiators_acceptance_after_any_responder_signature_is_refused():
-    """Clause (ii) at its boundary: fail-closed, and deliberately stricter than needed.
+@pytest.mark.parametrize("acceptance_signed", [False, True], ids=["unsigned", "signed"])
+def test_an_acceptance_of_a_responder_signed_counteroffer_is_refused(acceptance_signed):
+    """Clause (b): the accepted act, not the acceptance's signature, decides.
 
-    The responder signed an EARLIER counteroffer; the initiator then accepted a
-    LATER offer of the responder's that is unsigned. Strictly, nobody signed
-    both halves of the agreement accepted here, so no TransactionRecord could be
-    assembled from it. The rule refuses it anyway: clause (ii) asks whether the
-    responder holds ANY verified act, not whether it signed the act accepted.
-    Tracing which act an acceptance accepts would make admission depend on
-    reference-chasing a producer controls; refusing whenever both a signed
-    acceptance and a counterparty signature are present does not. Such a session
-    completes on the TransactionRecord path or records its acceptance unsigned.
+    The responder signed a counteroffer and the initiator accepted THAT
+    counteroffer. Recorded signed, the record attests an in-band acceptance of
+    the responder's signed act. Recorded UNSIGNED, it still does: the acceptance
+    still names the responder's signed act. Both are refused.
 
-    The twin differs in ONE signature, the earlier counteroffer's, and verifies.
+    The twin differs in ONE signature, the counteroffer's: with the counteroffer
+    unsigned the acceptance names no responder-signed act, and the same
+    acceptance VERIFIES.
     """
     session, did_documents = _mandate_only_session()
-    later_offer = _unsigned_counterparty_act(
-        "counteroffer",
-        "counteroffer-2",
-        sequence_number=3,
-        round_number=3,
-        timestamp="2026-03-24T10:03:00Z",
+    counteroffer = _signed_counteroffer(session.session_id)
+    acceptance = _counteroffer_acceptance(session.session_id, signer="initiator")
+    recorded = acceptance if acceptance_signed else _unsigned_observation_of(acceptance)
+
+    twin = _generate(
+        session,
+        [_unsigned_observation_of(counteroffer), recorded, _order_confirmation()],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
+    assert verify_session_evidence_record(twin, did_documents), "counteroffer unsigned"
+
+    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+
+    entry = next(item for item in signed["acts"] if item["message_type"] == "acceptance")
+    assert entry["act"]["accepted_protocol_act_hash"] == counteroffer["protocol_act_hash"]
+    assert entry["attribution"] == (
+        "verified_signature" if acceptance_signed else "unsigned_observation"
+    )
+    assert ("counteroffer", RESPONDER_DID) in _verified(signed)
+    assert signed["evidence_level"] == twin["evidence_level"] == "mixed"
+    assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
+    assert not verify_session_evidence_record(signed, did_documents)
+
+    with pytest.raises(ValueError, match="accepts an offer or counteroffer the responder signed"):
+        _generate(
+            session,
+            [counteroffer, recorded, _order_confirmation()],
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+def test_an_acceptance_whose_target_resolves_nowhere_is_refused_once_the_responder_signed():
+    """Clause (b), fail-closed: an acceptance naming nothing in the record.
+
+    While the responder has signed an act, an acceptance whose
+    accepted_protocol_act_hash matches no offer or counteroffer in the record is
+    refused: the verifier cannot show it does not accept a signed act the
+    producer left out. Its twins verify -- the same acceptance with the
+    responder's counteroffer unsigned (the fail-closed branch needs a responder
+    signature), and an acceptance that names the initiator's own offer.
+    """
+    session, did_documents = _mandate_only_session()
+    counteroffer = _signed_counteroffer(session.session_id)
+    dangling = _acceptance_by(
+        session.session_id,
+        accepted_id="offer-not-recorded",
+        accepted_hash=hash_object({"an": "act this record does not carry"}),
+        round_number=2,
+    )
+
+    twin = _generate(
+        session,
+        [_unsigned_observation_of(counteroffer), dangling, _order_confirmation()],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(twin, did_documents), "responder signed nothing"
+
+    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+    targets = {
+        item["act"].get("protocol_act_hash")
+        for item in signed["acts"]
+        if item["message_type"] in ("offer", "counteroffer")
+    }
+    assert dangling["accepted_protocol_act_hash"] not in targets
+    assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
+    assert not verify_session_evidence_record(signed, did_documents)
+
+    offer = next(message for message in session._message_log if message["message_type"] == "offer")
+    of_the_offer = _acceptance_by(
+        session.session_id,
+        accepted_id=offer["message_id"],
+        accepted_hash=offer["protocol_act_hash"],
+        round_number=offer["round_number"],
+    )
+    resolved = _generate(
+        session,
+        [counteroffer, of_the_offer, _order_confirmation()],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(resolved, did_documents), "names a recorded act"
+
+    with pytest.raises(ValueError, match="accepts an offer or counteroffer the responder signed"):
+        _generate(
+            session,
+            [counteroffer, dangling, _order_confirmation()],
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+def test_the_initiators_acceptance_of_an_unsigned_offer_beside_a_signed_counteroffer_verifies():
+    """Clause (b) admits an acceptance that names no responder-signed act.
+
+    The responder signed an EARLIER counteroffer; the initiator then signed an
+    acceptance of a LATER offer of the responder's that is unsigned. The
+    acceptance names an act the responder did not sign, so the record attests no
+    in-band acceptance of a responder-signed act: it is admitted, and is
+    ``mixed``.
+
+    Its refused twin names the signed counteroffer instead.
+    """
+    session, did_documents = _mandate_only_session()
+    later = _later_unsigned_offer()
     acceptance = _acceptance_by(
         session.session_id,
         accepted_id="counteroffer-2",
-        accepted_hash=hash_object(later_offer["act"]),
+        accepted_hash=later["act"]["protocol_act_hash"],
         round_number=3,
         sequence_number=4,
         timestamp="2026-03-24T10:04:00Z",
     )
-    counteroffer = _signed_counteroffer(session.session_id)
-
-    message_type, message_id, envelope = _UNSIGNED_COUNTEROFFER
-    twin = _generate(
+    record = _generate(
         session,
-        [
-            _unsigned_counterparty_act(message_type, message_id, **envelope),
-            later_offer,
-            acceptance,
-            _order_confirmation(),
-        ],
+        _signed_negotiation(session, later, acceptance),
         external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
-    assert verify_session_evidence_record(twin, did_documents), "earlier counteroffer unsigned"
 
-    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
-
-    later = next(entry for entry in signed["acts"] if entry["message_id"] == "counteroffer-2")
-    assert later["attribution"] == "unsigned_observation", "the accepted act is unsigned"
-    assert _verified(signed) == [
+    assert _verified(record) == [
         ("offer", INITIATOR_DID),
         ("counteroffer", RESPONDER_DID),
         ("acceptance", INITIATOR_DID),
     ]
-    assert signed["evidence_level"] == twin["evidence_level"] == "mixed"
+    entry = next(item for item in record["acts"] if item["message_id"] == "counteroffer-2")
+    assert entry["attribution"] == "unsigned_observation", "the accepted act is unsigned"
+    assert record["evidence_level"] == "mixed"
+    assert verify_session_evidence_record(record, did_documents)
+
+    counteroffer = _signed_counteroffer(session.session_id)
+    of_the_signed = _acceptance_by(
+        session.session_id,
+        accepted_id=counteroffer["message_id"],
+        accepted_hash=counteroffer["protocol_act_hash"],
+        round_number=3,
+        sequence_number=4,
+        timestamp="2026-03-24T10:04:00Z",
+    )
+    with pytest.raises(ValueError, match="accepts an offer or counteroffer the responder signed"):
+        _generate(
+            session,
+            _signed_negotiation(session, later, of_the_signed),
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+
+
+def _retarget(record: dict, message_id: str, **act_changes) -> dict:
+    """Edit one unsigned act's inner fields (None deletes one) and reseal.
+
+    Only an ``unsigned_observation`` is edited, so no signature is disturbed;
+    ``message_type`` moves on the entry and the act together.
+    """
+    edited = copy.deepcopy(record)
+    entry = next(item for item in edited["acts"] if item["message_id"] == message_id)
+    assert entry["attribution"] == "unsigned_observation"
+    for field, value in act_changes.items():
+        if value is None:
+            entry["act"].pop(field, None)
+        else:
+            entry["act"][field] = value
+        if field == "message_type":
+            entry["message_type"] = value
+    entry["act_hash"] = hash_object(entry["act"])
+    return _reseal(edited)
+
+
+def _accepted_counteroffer_record():
+    """The evasion: the initiator's UNSIGNED acceptance of the responder's SIGNED counteroffer.
+
+    Returns the refused record, the twin it was built from (counteroffer
+    unsigned, which verifies) and the parts each variant below edits.
+    """
+    session, did_documents = _mandate_only_session()
+    counteroffer = _signed_counteroffer(session.session_id)
+    acceptance = _counteroffer_acceptance(session.session_id, signer="initiator")
+    twin = _generate(
+        session,
+        [
+            _unsigned_observation_of(counteroffer),
+            _unsigned_observation_of(acceptance),
+            _order_confirmation(),
+        ],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(twin, did_documents), "counteroffer unsigned"
+    refused = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+    return refused, did_documents, session, counteroffer, acceptance
+
+
+def _hash_spellings(digest: str) -> dict:
+    raw = base64.urlsafe_b64decode(digest + "=" * (-len(digest) % 4))
+    return {
+        "padded": digest + "=",
+        "hex": raw.hex(),
+        "leading-space": " " + digest,
+    }
+
+
+_DISGUISES = [
+    "message_type=order_acceptance",
+    "message_type=Acceptance",
+    "crossed:hash=initiator-offer,id=counteroffer",
+    "crossed:hash=counteroffer,id=initiator-offer",
+    "id-only:counteroffer",
+    "hash-padded",
+    "hash-hex",
+    "hash-leading-space",
+    "order_confirmation-carries-the-target",
+]
+
+
+@pytest.mark.parametrize("disguise", _DISGUISES)
+def test_an_acceptance_of_a_signed_act_is_refused_in_any_disguise(disguise):
+    """Clause (b) applies to any act that ACCEPTS, by either target field, in any spelling.
+
+    Nothing constrains an unsigned act's ``message_type``, so an act is an
+    acceptance when it carries ``accepted_protocol_act_hash`` or
+    ``accepted_offer_id``, whatever it is called. Either field naming the
+    responder's signed counteroffer refuses the record, so a crossed pair cannot
+    hide one behind the other. A target in another spelling of the same digest
+    resolves to nothing EXACTLY, which -- once the responder has signed -- is
+    refused too.
+    """
+    refused, did_documents, session, counteroffer, acceptance = _accepted_counteroffer_record()
+    assert not verify_session_evidence_record(refused, did_documents)
+    offer = next(message for message in session._message_log if message["message_type"] == "offer")
+    accepted_id = acceptance["message_id"]
+    spellings = _hash_spellings(counteroffer["protocol_act_hash"])
+    if disguise.startswith("message_type="):
+        record = _retarget(refused, accepted_id, message_type=disguise.split("=", 1)[1])
+    elif disguise == "crossed:hash=initiator-offer,id=counteroffer":
+        record = _retarget(refused, accepted_id, accepted_protocol_act_hash=offer["protocol_act_hash"])
+        assert record["acts"][2]["act"]["accepted_offer_id"] == counteroffer["message_id"]
+    elif disguise == "crossed:hash=counteroffer,id=initiator-offer":
+        record = _retarget(refused, accepted_id, accepted_offer_id=offer["message_id"])
+    elif disguise == "id-only:counteroffer":
+        record = _retarget(
+            refused, accepted_id, accepted_protocol_act_hash=None, message_type="order_acceptance"
+        )
+    elif disguise.startswith("hash-"):
+        record = _retarget(
+            refused,
+            accepted_id,
+            accepted_protocol_act_hash=spellings[disguise.split("-", 1)[1]],
+            accepted_offer_id="an-id-nothing-has",
+        )
+    else:
+        record = _retarget(
+            refused,
+            accepted_id,
+            message_type="observation_note",
+            accepted_protocol_act_hash=None,
+            accepted_offer_id=None,
+        )
+        record = _retarget(
+            record,
+            "order-confirmation-1",
+            accepted_protocol_act_hash=counteroffer["protocol_act_hash"],
+            accepted_offer_id=counteroffer["message_id"],
+        )
+
+    assert ("counteroffer", RESPONDER_DID) in _verified(record)
+    assert assess_session_evidence_record(record, did_documents)["invalid_acts"] == 0
+    assert record["evidence_level"] == "mixed"
+    assert not verify_session_evidence_record(record, did_documents)
+
+
+def test_an_unsigned_forgery_of_a_signed_act_does_not_launder_its_acceptance():
+    """A duplicate claiming the signed counteroffer's message_id and hash gives no escape.
+
+    The forgery is unsigned, so the acceptance's target now also "resolves" to
+    an act the responder did not sign. Membership in the responder-signed set
+    is checked first, so the acceptance is still refused.
+    """
+    session, did_documents = _mandate_only_session()
+    counteroffer = _signed_counteroffer(session.session_id)
+    acceptance = _counteroffer_acceptance(
+        session.session_id, signer="initiator", sequence_number=4, timestamp="2026-03-24T10:04:00Z"
+    )
+    forgery = _unsigned_observation_of(counteroffer)
+    forgery.update(sequence_number=3, timestamp="2026-03-24T10:03:00Z", sender_did=None)
+    forgery["act"].update(timestamp="2026-03-24T10:03:00Z", terms={"total_value": 1, "currency": "USD"})
+    twin = _generate(
+        session,
+        [
+            _unsigned_observation_of(counteroffer),
+            forgery,
+            _unsigned_observation_of(acceptance),
+            _order_confirmation(),
+        ],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(twin, did_documents), "nothing of the responder's signed"
+
+    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+
+    claims = [
+        item
+        for item in signed["acts"]
+        if item["act"].get("protocol_act_hash") == counteroffer["protocol_act_hash"]
+    ]
+    assert [item["attribution"] for item in claims] == ["verified_signature", "unsigned_observation"]
     assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
     assert not verify_session_evidence_record(signed, did_documents)
+
+
+@pytest.mark.parametrize("acceptance_signed", [False, True], ids=["unsigned", "signed"])
+def test_an_acceptance_of_a_responder_signed_offer_is_refused(acceptance_signed):
+    """The responder's signed OFFER is negotiation it may sign, and accepting it is a completion."""
+    session, did_documents = _mandate_only_session()
+    responder_offer = _offer(
+        session.session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=2,
+        round_number=2,
+        message_type="offer",
+        message_id="responder-offer-1",
+        timestamp="2026-03-24T10:02:00Z",
+    )
+    acceptance = _acceptance_by(
+        session.session_id,
+        accepted_id=responder_offer["message_id"],
+        accepted_hash=responder_offer["protocol_act_hash"],
+        round_number=2,
+    )
+    recorded = acceptance if acceptance_signed else _unsigned_observation_of(acceptance)
+    twin = _generate(
+        session,
+        [_unsigned_observation_of(responder_offer), recorded, _order_confirmation()],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(twin, did_documents), "offer unsigned"
+
+    signed = _sign_observed_act(twin, responder_offer, "protocol_act_signature")
+
+    assert ("offer", RESPONDER_DID) in _verified(signed)
+    assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
+    assert not verify_session_evidence_record(signed, did_documents)
+
+
+def test_an_unsigned_offer_stating_no_hash_resolves_by_its_rebuild():
+    """An acceptance may name an unsigned offer by the hash of its rebuilt act.
+
+    An offer's protocol_act_hash IS the hash of its signed act, so an unsigned
+    observation that states no hash is still named by its rebuild. The
+    initiator's signed acceptance of such an offer, beside the responder's
+    signed counteroffer, resolves and is admitted.
+    """
+    session, did_documents = _mandate_only_session()
+    later = _offer(
+        session.session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=3,
+        round_number=3,
+        message_type="counteroffer",
+        message_id="counteroffer-2",
+        timestamp="2026-03-24T10:03:00Z",
+    )
+    observed_act = {
+        field: value
+        for field, value in later.items()
+        if field not in ("protocol_act_hash", "protocol_act_signature", "sender_verification_method")
+    }
+    observed_act["protocol_version"] = PROTOCOL_ACT_VERSION
+    observed = {
+        **{field: later[field] for field in _COUNTERPARTY_ENVELOPE},
+        "sender_did": RESPONDER_DID,
+        "source_protocol": "supplier_portal",
+        "act": observed_act,
+    }
+    rebuilt_hash = hash_object(rebuild_signed_act(observed_act))
+    acceptance = _acceptance_by(
+        session.session_id,
+        accepted_id="counteroffer-2",
+        accepted_hash=rebuilt_hash,
+        round_number=3,
+        sequence_number=4,
+        timestamp="2026-03-24T10:04:00Z",
+    )
+    record = _generate(
+        session,
+        _signed_negotiation(session, observed, acceptance),
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+
+    stated = next(item for item in record["acts"] if item["message_id"] == "counteroffer-2")
+    assert "protocol_act_hash" not in stated["act"], "the observed offer states no hash"
+    assert ("counteroffer", RESPONDER_DID) in _verified(record)
+    assert verify_session_evidence_record(record, did_documents)
 
 
 def test_a_third_party_signed_acceptance_is_refused():
     """An acceptance signed by a DID that is neither party.
 
-    Refused by the session-party check, and by clause (i) as well, since its
-    signer is not the initiator. The twin is the same acceptance signed by the
-    INITIATOR, with nothing of the responder's signed, and it verifies.
+    Refused by the session-party check. The twin is the same acceptance signed by
+    the INITIATOR, with nothing of the responder's signed, and it verifies.
     """
     session, did_documents = _third_party_resolving_session()
     quote = _observed_quote(sender_did=RESPONDER_DID)
@@ -1390,29 +1785,39 @@ def test_a_third_party_signed_acceptance_is_refused():
         )
 
 
-def test_an_unsigned_acceptance_is_admitted_in_an_external_channel_record():
-    """An observation witnesses nothing, so the acceptance rule does not reach it.
+def test_an_unsigned_acceptance_is_admitted_when_it_names_no_responder_signed_act():
+    """An unsigned acceptance is judged by what it names, like a signed one.
 
-    Two shapes: the responder's unsigned acceptance after a signed negotiation,
-    and after an unsigned one. Both verify, and both are ``mixed``.
+    Two admitted shapes: the responder's unsigned acceptance of the INITIATOR's
+    offer beside the responder's signed counteroffer, and an unsigned acceptance
+    in a record where the responder signed nothing. Both verify, and both are
+    ``mixed``.
     """
     session, did_documents = _mandate_only_session()
-    acceptance = _counteroffer_acceptance(session.session_id, signer="responder")
-    observed = _signed_negotiation(session, _unsigned_observation_of(acceptance))
-    after_signed = _generate(
-        session, observed, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE
+    offer = next(message for message in session._message_log if message["message_type"] == "offer")
+    acceptance = _acceptance_by(
+        session.session_id,
+        accepted_id=offer["message_id"],
+        accepted_hash=offer["protocol_act_hash"],
+        round_number=offer["round_number"],
+        signer="responder",
+    )
+    beside_signed = _generate(
+        session,
+        _signed_negotiation(session, _unsigned_observation_of(acceptance)),
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
     )
     observed_acceptance = next(
-        entry for entry in after_signed["acts"] if entry["message_type"] == "acceptance"
+        entry for entry in beside_signed["acts"] if entry["message_type"] == "acceptance"
     )
     assert observed_acceptance["attribution"] == "unsigned_observation"
-    assert observed_acceptance["sender_did"] == RESPONDER_DID
-    assert after_signed["evidence_level"] == "mixed"
-    assert verify_session_evidence_record(after_signed, did_documents)
+    assert observed_acceptance["act"]["accepted_protocol_act_hash"] == offer["protocol_act_hash"]
+    assert beside_signed["evidence_level"] == "mixed"
+    assert verify_session_evidence_record(beside_signed, did_documents)
 
-    after_unsigned, did_documents, _session = _mandate_only_pair(_UNSIGNED_ACCEPTANCE)
-    assert after_unsigned["evidence_level"] == "mixed"
-    assert verify_session_evidence_record(after_unsigned, did_documents)
+    nothing_signed, did_documents, _session = _mandate_only_pair(_UNSIGNED_ACCEPTANCE)
+    assert nothing_signed["evidence_level"] == "mixed"
+    assert verify_session_evidence_record(nothing_signed, did_documents)
 
 
 def _initiator_session(responder: str):
@@ -1432,10 +1837,10 @@ def test_the_initiators_acceptance_of_an_observed_offer_verifies(responder, path
     OBSERVED -- the counterparty signed nothing -- and the order is confirmed
     outside A2CN. ``negotiated`` carries the initiator's signed offer before it;
     ``after_the_fact`` carries the acceptance alone, as a producer does that
-    records a commitment after the fact. The acceptance's signer is the
-    initiator and the responder holds no verified act, so the acceptance rule
-    admits it; nothing in it is the counterparty's signature, so the record is
-    ``unilateral``.
+    records a commitment after the fact. The acceptance names an act the
+    responder did not sign, and the responder holds no verified act, so the
+    completion rule admits it; nothing in it is the counterparty's signature, so
+    the record is ``unilateral``.
     """
     manager, session, did_documents, extra = _initiator_session(responder)
     if path == "negotiated":

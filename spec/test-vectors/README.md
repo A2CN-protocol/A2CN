@@ -395,8 +395,8 @@ observed, and is `unilateral`, because the level of a record whose responder is
 an `observed_party` is asserted rather than derived (Section 9A.5);
 `initiator-signed-acceptance-of-an-observed-offer` adds an observed seller quote,
 the producer's own signed acceptance of it and the order confirmation — the shape
-an external channel produces — and is admitted, because a verified acceptance is
-allowed when the initiator signed it and the responder signed nothing. Each
+an external channel produces — and is admitted, because no acceptance in it names
+an act the responder signed. Each
 `invalid_records` case edits `expected.record` as its `set` and `remove` say,
 and names the rule it breaks: both completion witnesses, neither, a reference on
 another outcome, `mixed` or `bilateral` evidence **against an `observed_party`
@@ -405,21 +405,25 @@ DID-bearing responder at `bilateral`, the record labelled `"0.2"` or `"0.1"`,
 `"0.3"` without the reference, an `observed_party` responder carrying a
 `transaction_record_hash` (at `"0.2"` and at `"0.1"`), no act the producer
 signed, no acts at all, a record sealed by a DID that is not its initiator, a
-record carrying a verified signature from a THIRD party, and four records carrying
-a verified acceptance that Section 9A.12 refuses: one the responder signed, one the
-initiator signed of the responder's signed counteroffer, one the initiator signed
-after the responder signed an earlier act (fail-closed: the rule asks whether the
-responder signed anything, not what was accepted), and one a third party signed.
+record carrying a verified signature from a THIRD party, and seven records from
+which Section 9A.12 condition 7 or the session-party rule refuses a completion:
+an acceptance the responder signed; the responder's signed rejection, and its
+signed withdrawal; the initiator's acceptance of the responder's signed
+counteroffer, recorded signed and recorded UNSIGNED — the rule is keyed on the
+accepted act, not on the acceptance's signature; an acceptance naming an act the
+record does not carry once the responder has signed (fail-closed); and an
+acceptance a third party signed.
 The sealed-by case is sealed with `second_producer`, whose `private_jwk` is
 test-only, as its `sealed_by` says, so its seal verifies and only the producer
 binding refuses it; a case whose `schema_expresses` is false states a rule a JSON
 Schema cannot express, so every schema describing the record accepts it and only
-the verifier refuses it. Six cases are of that kind, and all compare members of
+the verifier refuses it. Nine cases are of that kind, and all compare members of
 the record: the sealed-by one; the third-party one, which compares the parties'
 DIDs against each act's `sender_did` — no act may claim `verified_signature`
 unless its `sender_did` is `parties.initiator.did` or `parties.responder.did`
-(Section 9A.12 with Section 9A.8 rule 1); and the four acceptance ones — a
-completion both parties signed is a TransactionRecord, not an external witness.
+(Section 9A.12 with Section 9A.8 rule 1); and the seven completion ones — the
+record must not attest an in-band acceptance of a responder-signed act, and the
+responder may sign only an offer or counteroffer.
 **The third-party case and the valid case
 `reference-with-a-counterparty-signed-counteroffer` carry the SAME signed act and
 differ in one field, `parties.responder`**, so its signer is the responder in one
@@ -447,8 +451,9 @@ counteroffer (`mixed`);
 both parties' signed negotiation with nothing unsigned, which is still `mixed`
 because a record carrying the reference is never `bilateral` (Section 9A.5); the
 initiator's signed acceptance of an observed offer, with and without the
-initiator's offer before it; and a counterparty's UNSIGNED acceptance beside its
-signed counteroffer, which witnesses nothing. The bucket is separate from `valid_variants`, which varies only
+initiator's offer before it; and the initiator's signed acceptance of an unsigned
+offer beside a counteroffer the responder signed but nobody accepted, which
+attests no in-band acceptance of a responder-signed act. The bucket is separate from `valid_variants`, which varies only
 `observed_acts`: one structure carrying two contracts cannot tell a reader which
 dimension a given entry varies.
 

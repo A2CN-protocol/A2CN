@@ -2149,8 +2149,8 @@ def test_the_generator_refuses_a_reference_for_a_bilateral_session():
 
     Both parties signed, and the responder signed the ACCEPTANCE -- the
     completion. A completion both parties signed is a TransactionRecord, so the
-    acceptance rule refuses the reference: a verified acceptance is admitted only
-    when the initiator signed it and the responder signed no act.
+    reference is refused: in an external-channel record the responder may sign
+    only an offer or a counteroffer.
 
     This once exercised the ``bilateral`` level exclusion instead, because the
     session has nothing unsigned. It cannot any more: the classifier never
@@ -2164,7 +2164,7 @@ def test_the_generator_refuses_a_reference_for_a_bilateral_session():
     manager.process_message(session, offer)
     manager.process_message(session, _acceptance(session.session_id, offer))
 
-    with pytest.raises(ValueError, match="admits a signed acceptance only"):
+    with pytest.raises(ValueError, match="responder signature only on an offer or counteroffer"):
         _generate(session, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE)
 
 

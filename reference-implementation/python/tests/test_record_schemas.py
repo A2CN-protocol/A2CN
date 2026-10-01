@@ -603,10 +603,10 @@ def test_the_0_5_schema_refuses_every_invalid_external_channel_record(case):
       ``reference-with-a-counterparty-signed-counteroffer`` and differs only in
       ``parties.responder``, so the signer is the responder there and a third
       party here.
-    * the four acceptance cases: Section 9A.12 admits a verified acceptance only
-      when its signer is ``parties.initiator.did`` and no verified act is
-      ``parties.responder.did``'s, which compares the parties against the acts
-      and the acts against each other.
+    * the seven completion cases: Section 9A.12 lets the responder sign only an
+      offer or counteroffer, and refuses an acceptance, signed or unsigned, that
+      names an act the responder signed, which compares the parties against the
+      acts and the acts against each other.
 
     That is the whole point of the flag, and it is not a gap: it marks the
     cases where schema silence is correct rather than missing. Do not read a

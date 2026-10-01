@@ -2500,9 +2500,10 @@ unchanged by the `"0.5"` relaxation, which widens only which responders may carr
 the external reference. In a record carrying that reference every verified act
 is a session party's: a third party's signature is excluded, because an act that
 cannot be placed in a known role is refused rather than admitted (Section 9A.8
-rule 1). The counterparty may have signed its negotiation acts, but a verified
-Acceptance is admitted only when the initiator signed it and the counterparty
-signed no act, because a completion both parties signed is a TransactionRecord.
+rule 1). The counterparty may have signed its negotiation acts, and nothing
+else: no Acceptance in the record, signed or unsigned, may name an act the
+counterparty signed, because such a record would attest an in-band acceptance of
+a counterparty-signed act.
 
 ### 9A.3 Evidence Acts and External Observations
 
@@ -2760,15 +2761,19 @@ version published after this text was written. It then:
     or later, a DID-bearing party; no act may claim `verified_signature` unless
     its `sender_did` equals `parties.initiator.did` or `parties.responder.did`,
     compared exactly (Section 9A.8 rule 1, which holds here for both responder
-    shapes); a verified Acceptance is admitted only when its `sender_did` equals
-    `parties.initiator.did` and no verified act's `sender_did` equals
-    `parties.responder.did`; `evidence_level` MUST be `unilateral` or `mixed`
+    shapes); an act the responder signed MUST be an Offer or Counteroffer; no
+    act that accepts, signed or unsigned and whatever its `message_type`, may
+    name by its `accepted_protocol_act_hash` or `accepted_offer_id` an Offer or
+    Counteroffer the responder signed, and once the responder has signed an act
+    every such target MUST resolve exactly to an Offer or Counteroffer in the
+    record; `evidence_level` MUST be `unilateral` or `mixed`
     and never `bilateral`; `producer.did` MUST equal `parties.initiator.did`;
     and at least one act MUST claim `verified_signature` with a `sender_did`
     equal to `parties.initiator.did`. Do not dereference its `locator`. The
-    Acceptance check is the one that carries the property, so a verifier that
-    omits it admits a completion both parties signed: the level check does not
-    cover it, because step 8 never computes `bilateral` for such a record. These
+    responder-act and accepted-act checks are the ones that carry the property,
+    so a verifier that omits them admits a completion both parties signed: the
+    level check does not cover it, because step 8 never computes `bilateral` for
+    such a record. These
     two rules are stated apart deliberately: fusing them is what once made the
     external witness depend on the responder's identity shape rather than on the
     property that no counterparty signature witnesses the completion.
@@ -3031,10 +3036,10 @@ by the producer's external-order reference, not by any act of the
 counterparty's. The property is about the *completion*, not about every act. A
 counterparty that signed an Offer or a Counteroffer negotiated; it completed
 nothing, and no TransactionRecord exists for such a session. What completes an
-A2CN session is an Acceptance, so the conditions below key on it: **a
-completion both parties signed is a TransactionRecord, not an external
-witness.** That property, not the counterparty's identity shape, is what the
-conditions enforce. A record that carries the reference MUST satisfy all of the
+A2CN session is an Acceptance, so the conditions below key on it: **the record
+MUST NOT attest an in-band Acceptance of an act the responder signed, and the
+responder may sign only an Offer or a Counteroffer.** That property, not the
+counterparty's identity shape, is what the conditions enforce. A record that carries the reference MUST satisfy all of the
 following, and a verifier MUST reject it otherwise:
 
 1. `terminal.outcome` is `COMPLETED` and `transaction_record_hash` is `null`
@@ -3067,16 +3072,24 @@ following, and a verifier MUST reject it otherwise:
 5. `producer.did` equals `parties.initiator.did`.
 6. At least one act claims `verified_signature` with a `sender_did` equal to
    `parties.initiator.did`.
-7. **A verified Acceptance is admitted only when its signer is the initiator and
-   the responder has no verified act in the record.** A verifier MUST reject the
-   record when any act claiming `verified_signature` is an Acceptance — its
-   `message_type` is `acceptance`, or its `signature_type` is
-   `acceptance_signature` — and either (i) that act's `sender_did` is not
-   `parties.initiator.did`, or (ii) any act claiming `verified_signature` has a
-   `sender_did` equal to `parties.responder.did`. A completion both parties
-   signed is a TransactionRecord, not an external witness. An *unsigned*
-   Acceptance, recorded as an `unsigned_observation`, is not a signature and
-   witnesses nothing; this condition does not apply to it.
+7. **The record attests no in-band Acceptance of an act the responder
+   signed.** A verifier MUST reject the record when (a) an act claiming `verified_signature`
+   whose `sender_did` equals `parties.responder.did` has a `message_type` other
+   than `offer` or `counteroffer`; or (b) an act that accepts — one whose
+   `message_type` is `acceptance`, or whose inner `act` carries
+   `accepted_protocol_act_hash` or `accepted_offer_id`, whatever its
+   `message_type` and whether or not it is signed — names an `offer` or
+   `counteroffer` that claims `verified_signature` with a `sender_did` equal to
+   `parties.responder.did`, either by an `accepted_protocol_act_hash` equal to
+   that act's hash or by an `accepted_offer_id` equal to its `message_id`; or,
+   once any act claiming `verified_signature` has a `sender_did` equal to
+   `parties.responder.did`, an act that accepts carries no
+   `accepted_protocol_act_hash`, or carries a target field that does not equal,
+   exactly, the hash or `message_id` of an `offer` or `counteroffer` in the
+   record, the hash written as a 43-character base64url digest (fail-closed). An
+   `offer` or `counteroffer` is named by the `protocol_act_hash` it states and by
+   the hash of its signed act rebuilt (Section 7.3.1), which for a verified act
+   are the same value.
 
 Below `"0.5"` conditions 2 and 3 are narrower, as condition 4 states: they
 require an `observed_party` responder at `unilateral`. That pair is an
@@ -3098,27 +3111,51 @@ conditions 2 and 3 named an `observed_party` at `unilateral`, they excluded a
 counterparty signature between them and the point never arose; admitting a
 DID-bearing responder is what makes condition 7 load-bearing.
 
-Condition 7 is keyed on the act, which is where A2CN puts completion, and on
-attribution, which is where Section 9A.3 puts "signed": an act attributed
-`unsigned_observation` carries no signature, and one whose complete `act` still
-holds an A2CN signature field fails already, as an invalid act. A signature slot
-names the act type it may sign, so a verified act whose `signature_type` is
-`acceptance_signature` is an Acceptance and nothing else. A transport signature
-the producer merely observed is not an A2CN signature and is unaffected.
+A TransactionRecord is a responder-signed Offer or Counteroffer together with
+an Acceptance whose `accepted_protocol_act_hash` names it (Section 9.3).
+Condition 7 refuses both ways a record could attest one in-band. Clause (a)
+limits the responder to negotiation: a responder-signed Acceptance is a completion the
+counterparty signed, and a responder-signed Rejection or Withdrawal is its
+signed refusal, which cannot sit in a record stating that the session
+completed. Clause (b) is keyed on the **accepted act**, not on the Acceptance's
+own signature: an Acceptance recorded as an `unsigned_observation` still names
+what it accepted, and is still an Acceptance the record attests in-band, so a
+rule asking only whether the Acceptance was signed would admit exactly the
+record it exists to refuse. For the same reason it does not ask what an act is
+called: nothing constrains an unsigned act's `message_type`, so any act carrying
+a target field accepts, and either field naming a responder-signed act is
+enough, so a crossed pair cannot hide one behind the other. The target is
+resolved the way the TransactionRecord binds it, by comparing
+`accepted_protocol_act_hash` with an Offer's `protocol_act_hash`; for an Offer
+that claims `verified_signature` that hash is the one its signature covers
+(Section 9A.6). The responder-signed acts are matched first, so an unsigned copy
+or forgery claiming a signed act's `message_id` or hash gives an Acceptance of
+the signed act nowhere else to resolve. Once the responder has signed anything,
+an Acceptance naming nothing in the record — or naming it in any other spelling
+or encoding of the digest — is refused, because nothing then shows it does not
+accept a signed act the producer left out.
 
 What condition 7 admits is the shape an external channel produces: the initiator
-signs its own Acceptance of terms it observed, and the counterparty, which
-signed nothing, confirms the order off-protocol. Its clause (ii) asks whether
-the responder signed *any* act, not whether it signed the act accepted. That is
-stricter than strictly needed, and deliberately: an initiator-signed Acceptance
-of a later unsigned offer, after the responder signed an earlier Counteroffer,
-is refused too. Tracing which act an Acceptance names would make admission turn
-on a reference the producer controls; refusing whenever a signed Acceptance and
-a counterparty signature meet does not. Such a session completes through its
-TransactionRecord, or records its Acceptance unsigned. Clause (i) is implied by
-condition 2 together with clause (ii) — an Acceptance not signed by the
-initiator is the responder's, or a non-party's — and is stated so that the
-condition says what it means on its own.
+signs its own Acceptance of an offer the counterparty did not sign, and the
+counterparty confirms the order off-protocol. It also admits negotiation signed
+by either party, and an Acceptance of an unsigned offer beside a Counteroffer the
+responder signed but nobody accepted: none of these attests an in-band Acceptance
+of a responder-signed act.
+
+**What condition 7 does not prevent.** Admitting a counterparty's signed
+negotiation act means a party holding its own signing key can, outside the
+record, sign an Acceptance of a responder-signed Counteroffer and assemble a
+TransactionRecord that verifies. Condition 7 does not prevent that, and no
+condition on the record could: the record attests what was recorded in-band,
+not what a keyholder could build elsewhere. A TransactionRecord produced that
+way is a separate artifact, and its verification is Section 9's, not this
+record's.
+
+Condition 7 is read through attribution, which is where Section
+9A.3 puts "signed": an act attributed `unsigned_observation` carries no
+signature, and one whose complete `act` still holds an A2CN signature field
+fails already, as an invalid act. A transport signature the producer merely
+observed is not an A2CN signature and is unaffected.
 
 **Condition 2 names both session parties, and nothing wider.** A verified
 signature from any DID that is neither party — an agent, a delegate, a payment
@@ -3152,13 +3189,19 @@ rather than of the record.
 > **A case that means to exercise this section's exclusions needs a DID-bearing
 > responder**, since only then does Section 9A.8 stand aside.
 
-A producer MUST NOT attach `external_commitment_reference` to a record that
-contains a verified Acceptance unless the initiator signed it and the responder
-signed no act — a completion both parties signed is a TransactionRecord, not an
-external witness, and such a session completes with its TransactionRecord — nor
-to a record whose outcome is not `COMPLETED`. A counterparty's verified Offer or
-Counteroffer does not bar the reference: it is negotiation, not completion, and
-the record is `mixed`.
+An external-channel record MUST NOT contain (1) a responder-signed act other
+than an Offer or Counteroffer, or (2) an Acceptance, signed or unsigned and
+under whatever `message_type`, of an Offer or Counteroffer the responder signed
+— failing closed on an Acceptance whose target cannot be resolved once the
+responder has signed anything; that is, no record attesting an in-band
+Acceptance of a responder-signed act. A producer MUST NOT attach
+`external_commitment_reference` to such a record — a session whose Acceptance
+of a responder-signed act was recorded in-band completes with its
+TransactionRecord — nor to a record whose
+outcome is not `COMPLETED`. An initiator-signed Acceptance of an unsigned
+counterparty offer, and Offer or Counteroffer acts by either party, are
+permitted, and the record is `mixed` or `unilateral`; the completion stays the
+single external reference.
 
 External-channel completion is asymmetric, and this section defines that
 direction only: the A2CN party is the producer and `parties.initiator`, and the
@@ -5268,10 +5311,15 @@ package release history, see `CHANGELOG.md`.
   `record_version` and for both responder shapes. The comparison is exact
   string equality. A counterparty's signed Offer or Counteroffer is
   negotiation, and is admitted.
-- **Section 9A.12 — a completion both parties signed is a TransactionRecord.**
-  In an external-channel record a verified Acceptance is admitted only when its
-  signer is `parties.initiator.did` and the responder has no verified act;
-  otherwise the record is rejected. An unsigned Acceptance is unaffected.
+- **Section 9A.12 — no in-band Acceptance of a responder-signed act.**
+  In an external-channel record the responder may sign only an Offer or
+  Counteroffer, and no Acceptance, signed or unsigned, may name an Offer or
+  Counteroffer the responder signed; once the responder has signed anything,
+  an Acceptance whose target is not in the record is rejected too. An
+  initiator-signed Acceptance of an unsigned offer is admitted. The record
+  attests what was recorded in-band; it does not prevent a keyholder from
+  building a TransactionRecord out of band from a responder-signed
+  Counteroffer.
 - **Section 9A.5 — an external-channel record is never `bilateral`.** Its
   completion counts as a locally observed terminal fact, so both parties'
   verified acts give `mixed`.

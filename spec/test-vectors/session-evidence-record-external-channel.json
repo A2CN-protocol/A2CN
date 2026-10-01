@@ -828,7 +828,7 @@
     {
       "name": "reference-with-a-responder-signed-acceptance",
       "resealed_record_hash": "mpA5bq4tBS2WJJrDvn9L-17dpR3EG4nb8_w7NImACKw",
-      "rule": "Section 9A.12: a completion both parties signed is a TransactionRecord, not an external witness. In a record carrying external_commitment_reference a verified acceptance is admitted only when its signer is parties.initiator.did and the responder has no verified act; this acceptance is the responder's, so both clauses refuse it. The signer IS a session party, so the session-party rule admits it, and evidence_level stays mixed, which the classifier agrees with and condition 3 admits; invalid_acts is 0. SINGLE-CAUSE: removing the acceptance rule makes the record VERIFY. Its twin reference-with-an-unsigned-acceptance-after-a-signed-counteroffer differs in this one signature. A JSON Schema cannot express the rule at any version, because it compares the sender_did of each act against parties, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "rule": "Section 9A.12: a completion both parties signed is a TransactionRecord, not an external witness. In a record carrying external_commitment_reference the responder may sign only an offer or a counteroffer, and this acceptance is the responder's. The signer IS a session party, so the session-party rule admits it; the acceptance names the initiator's offer, which the responder did not sign, so the accepted-act rule does not object either; evidence_level stays mixed, which the classifier agrees with, and invalid_acts is 0. SINGLE-CAUSE: removing the responder-act-type rule makes the record VERIFY. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
       "schema_expresses": false,
       "set": [
         {
@@ -984,7 +984,7 @@
     {
       "name": "reference-with-an-initiator-signed-acceptance-of-a-signed-counteroffer",
       "resealed_record_hash": "7tq9jh9Y5aGG61xxzAM5btnqmEQpxZFIzbQM4kN1cT4",
-      "rule": "Section 9A.12: the initiator accepting what the counterparty SIGNED is a completion both parties signed, which is a TransactionRecord. The acceptance's signer is parties.initiator.did, so the first clause holds, and the record is refused by the second: the responder has a verified act. SINGLE-CAUSE: with that clause removed the record VERIFIES; its sibling reference-with-an-initiator-signed-acceptance-of-an-observed-offer is the admitted shape, where the counterparty signed nothing. A JSON Schema cannot express the rule at any version, because it compares the sender_did of each act against parties, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "rule": "Section 9A.12: the initiator accepting what the counterparty SIGNED is a completion both parties signed, which is a TransactionRecord. No acceptance may name an offer or counteroffer the responder signed, and this one's accepted_protocol_act_hash is the signed counteroffer's protocol_act_hash. The responder signed only a counteroffer, so the responder-act-type rule admits the record. SINGLE-CAUSE: with the accepted-act rule removed the record VERIFIES. Its unsigned twin reference-with-an-unsigned-acceptance-of-a-signed-counteroffer is refused for the same reason, and its sibling reference-with-an-initiator-signed-acceptance-of-an-unsigned-offer-beside-a-signed-counteroffer, which names an unsigned offer, is admitted. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
       "schema_expresses": false,
       "set": [
         {
@@ -1138,189 +1138,9 @@
       ]
     },
     {
-      "name": "reference-with-an-initiator-signed-acceptance-after-a-responder-signature",
-      "resealed_record_hash": "Df1l8kHXXEvHypREP5zybdFqEKBULHZn_EX_RPDON8w",
-      "rule": "Section 9A.12, fail-closed and deliberately stricter than needed: the responder signed an EARLIER counteroffer, and the initiator signed an acceptance of a LATER offer of the responder's that is unsigned. Nobody signed both halves of the agreement accepted, but the second clause asks whether the responder has ANY verified act, not whether it signed the act accepted, so the record is refused. Admission must not turn on which act an acceptance names, which the producer controls. SINGLE-CAUSE: with the second clause removed the record VERIFIES. A JSON Schema cannot express the rule at any version, because it compares the sender_did of each act against parties, so every schema that describes this record accepts it and only the verifier refuses it.",
-      "schema_expresses": false,
-      "set": [
-        {
-          "path": [
-            "parties",
-            "responder"
-          ],
-          "value": {
-            "agent_id": "shop-agent",
-            "did": "did:example:agent",
-            "mandate_type": "declared",
-            "organization_name": "Example Shop",
-            "verification_method": "did:example:agent#key-1"
-          }
-        },
-        {
-          "path": [
-            "acts"
-          ],
-          "value": [
-            {
-              "act": {
-                "expires_at": "2026-09-01T12:16:00Z",
-                "message_id": "ec-offer-1",
-                "message_type": "offer",
-                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
-                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
-                "protocol_version": "0.2",
-                "round_number": 1,
-                "sender_agent_id": "buyer-agent",
-                "sender_did": "did:example:buyer",
-                "sender_verification_method": "did:example:buyer#key-1",
-                "sequence_number": 1,
-                "session_id": "00000000-0000-4000-8000-000000000300",
-                "terms": {
-                  "currency": "USD",
-                  "total_value": 18750
-                },
-                "timestamp": "2026-09-01T12:01:00Z"
-              },
-              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
-              "attribution": "verified_signature",
-              "message_id": "ec-offer-1",
-              "message_type": "offer",
-              "round_number": 1,
-              "sender_did": "did:example:buyer",
-              "sender_verification_method": "did:example:buyer#key-1",
-              "sequence_number": 1,
-              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
-              "signature_type": "protocol_act_signature",
-              "source_protocol": "a2cn",
-              "timestamp": "2026-09-01T12:01:00Z"
-            },
-            {
-              "act": {
-                "expires_at": "2026-09-01T12:18:00Z",
-                "message_id": "ec-counteroffer-1",
-                "message_type": "counteroffer",
-                "protocol_act_hash": "s4tMDmbOK1sjcrWP_CDQwhHHrdZjaAjUCA-ZMiiUrmc",
-                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
-                "protocol_version": "0.2",
-                "round_number": 2,
-                "sender_agent_id": "shop-agent",
-                "sender_did": "did:example:agent",
-                "sender_verification_method": "did:example:agent#key-1",
-                "sequence_number": 2,
-                "session_id": "00000000-0000-4000-8000-000000000300",
-                "terms": {
-                  "currency": "USD",
-                  "total_value": 18750
-                },
-                "timestamp": "2026-09-01T12:03:00Z"
-              },
-              "act_hash": "CmnxEHcQBRJbErVFKS6GwPYMUu_Bs8iAATbNBpvOHVw",
-              "attribution": "verified_signature",
-              "message_id": "ec-counteroffer-1",
-              "message_type": "counteroffer",
-              "round_number": 2,
-              "sender_did": "did:example:agent",
-              "sender_verification_method": "did:example:agent#key-1",
-              "sequence_number": 2,
-              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
-              "signature_type": "protocol_act_signature",
-              "source_protocol": "a2cn",
-              "timestamp": "2026-09-01T12:03:00Z"
-            },
-            {
-              "sequence_number": 3,
-              "round_number": 3,
-              "message_type": "counteroffer",
-              "message_id": "ucp-quote-2",
-              "sender_did": "did:example:agent",
-              "timestamp": "2026-09-01T12:03:30Z",
-              "source_protocol": "ucp",
-              "act": {
-                "message_type": "counteroffer",
-                "message_id": "ucp-quote-2",
-                "protocol_version": "0.2",
-                "timestamp": "2026-09-01T12:03:30Z",
-                "terms": {
-                  "currency": "USD",
-                  "total_value": 18500
-                }
-              },
-              "act_hash": "yFGOaz0BMGOjdEzt3DjPmJWOJpawJNyT2eLRT-TMmt8",
-              "sender_verification_method": null,
-              "signature_type": null,
-              "signature": null,
-              "attribution": "unsigned_observation"
-            },
-            {
-              "sequence_number": 4,
-              "round_number": 3,
-              "message_type": "acceptance",
-              "message_id": "ec-acceptance-1",
-              "sender_did": "did:example:buyer",
-              "timestamp": "2026-09-01T12:04:00Z",
-              "source_protocol": "a2cn",
-              "act": {
-                "protocol_version": "0.2",
-                "message_type": "acceptance",
-                "message_id": "ec-acceptance-1",
-                "session_id": "00000000-0000-4000-8000-000000000300",
-                "in_reply_to": "ucp-quote-2",
-                "round_number": 3,
-                "sequence_number": 4,
-                "accepted_offer_id": "ucp-quote-2",
-                "accepted_protocol_act_hash": "yFGOaz0BMGOjdEzt3DjPmJWOJpawJNyT2eLRT-TMmt8",
-                "sender_did": "did:example:buyer",
-                "sender_agent_id": "buyer-agent",
-                "sender_verification_method": "did:example:buyer#key-1",
-                "timestamp": "2026-09-01T12:04:00Z",
-                "acceptance_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.ZzJmcE9LMUIyQVFPcE83MjNYNzJfNGhRdmZEcklybGhkblFJVlk0NTJKZw.2CzJpycAH8vh-xkhRdixzuA4AYGibGDTSU5kYZ5NEfVosXVKuNMlIRQ3hqu3emBQjdUpiUs55hq7D7sGJ4XwCQ"
-              },
-              "act_hash": "ih6u5rAomqFkH2ApXQjncEWeC5WuxPBNYwxuLrj58BA",
-              "sender_verification_method": "did:example:buyer#key-1",
-              "signature_type": "acceptance_signature",
-              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.ZzJmcE9LMUIyQVFPcE83MjNYNzJfNGhRdmZEcklybGhkblFJVlk0NTJKZw.2CzJpycAH8vh-xkhRdixzuA4AYGibGDTSU5kYZ5NEfVosXVKuNMlIRQ3hqu3emBQjdUpiUs55hq7D7sGJ4XwCQ",
-              "attribution": "verified_signature"
-            },
-            {
-              "act": {
-                "message_id": "ucp-order-confirmation-1",
-                "message_type": "order_confirmation",
-                "order": {
-                  "currency": "USD",
-                  "id": "ORD-2026-000123",
-                  "status": "confirmed",
-                  "total_minor": 18750
-                },
-                "protocol_version": "0.2",
-                "timestamp": "2026-09-01T12:05:00Z"
-              },
-              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
-              "attribution": "unsigned_observation",
-              "message_id": "ucp-order-confirmation-1",
-              "message_type": "order_confirmation",
-              "round_number": null,
-              "sender_did": null,
-              "sender_verification_method": null,
-              "sequence_number": null,
-              "signature": null,
-              "signature_type": null,
-              "source_protocol": "ucp",
-              "timestamp": "2026-09-01T12:05:00Z"
-            }
-          ]
-        },
-        {
-          "path": [
-            "evidence_level"
-          ],
-          "value": "mixed"
-        }
-      ]
-    },
-    {
       "name": "reference-with-a-third-party-signed-acceptance",
       "resealed_record_hash": "YSW1u6fXjZxJUr8Ahss-Old8XEwV8upOVnTs_WqpI2Y",
-      "rule": "Section 9A.12 with Section 9A.8 rule 1: an acceptance signed by did:example:agent, which is NEITHER party -- the responder here is did:example:shop. It is refused by the session-party rule, since an act that cannot be placed in a known role is refused rather than admitted, and by the acceptance rule, since its signer is not parties.initiator.did. The signer's DID resolves because second_producer's identity is in did_documents, so the act verifies and invalid_acts is 0. A JSON Schema cannot express the rule at any version, because it compares the sender_did of each act against parties, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "rule": "Section 9A.12 with Section 9A.8 rule 1: an acceptance signed by did:example:agent, which is NEITHER party -- the responder here is did:example:shop. It is refused by the session-party rule, since an act that cannot be placed in a known role is refused rather than admitted. The signer's DID resolves because second_producer's identity is in did_documents, so the act verifies and invalid_acts is 0. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
       "schema_expresses": false,
       "set": [
         {
@@ -1431,6 +1251,559 @@
               "timestamp": "2026-09-01T12:05:00Z"
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "reference-with-an-unsigned-acceptance-of-a-signed-counteroffer",
+      "resealed_record_hash": "8-g3m9eP_KCjO8280mbeT6PU73R8J7E0Q5NMZxGxlM8",
+      "rule": "Section 9A.12: no acceptance, SIGNED OR UNSIGNED, may name an offer or counteroffer the responder signed. The responder signed a counteroffer and the initiator's acceptance of THAT counteroffer is recorded unsigned: its accepted_protocol_act_hash equals the counteroffer's protocol_act_hash. The record attests an in-band acceptance of the responder's signed act whether or not that acceptance is signed, so the rule is keyed on the accepted act, not on the acceptance's own signature. Every act is a session party's, evidence_level stays mixed and invalid_acts is 0. SINGLE-CAUSE: with that rule removed the record VERIFIES. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "schema_expresses": false,
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:agent",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:agent#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts"
+          ],
+          "value": [
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:16:00Z",
+                "message_id": "ec-offer-1",
+                "message_type": "offer",
+                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+                "protocol_version": "0.2",
+                "round_number": 1,
+                "sender_agent_id": "buyer-agent",
+                "sender_did": "did:example:buyer",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "sequence_number": 1,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:01:00Z"
+              },
+              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
+              "attribution": "verified_signature",
+              "message_id": "ec-offer-1",
+              "message_type": "offer",
+              "round_number": 1,
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:18:00Z",
+                "message_id": "ec-counteroffer-1",
+                "message_type": "counteroffer",
+                "protocol_act_hash": "s4tMDmbOK1sjcrWP_CDQwhHHrdZjaAjUCA-ZMiiUrmc",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+                "protocol_version": "0.2",
+                "round_number": 2,
+                "sender_agent_id": "shop-agent",
+                "sender_did": "did:example:agent",
+                "sender_verification_method": "did:example:agent#key-1",
+                "sequence_number": 2,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:03:00Z"
+              },
+              "act_hash": "CmnxEHcQBRJbErVFKS6GwPYMUu_Bs8iAATbNBpvOHVw",
+              "attribution": "verified_signature",
+              "message_id": "ec-counteroffer-1",
+              "message_type": "counteroffer",
+              "round_number": 2,
+              "sender_did": "did:example:agent",
+              "sender_verification_method": "did:example:agent#key-1",
+              "sequence_number": 2,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:03:00Z"
+            },
+            {
+              "sequence_number": 3,
+              "round_number": 2,
+              "message_type": "acceptance",
+              "message_id": "ec-acceptance-1",
+              "sender_did": "did:example:buyer",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "source_protocol": "ucp",
+              "act": {
+                "protocol_version": "0.2",
+                "message_type": "acceptance",
+                "message_id": "ec-acceptance-1",
+                "in_reply_to": "ec-counteroffer-1",
+                "round_number": 2,
+                "sequence_number": 3,
+                "accepted_offer_id": "ec-counteroffer-1",
+                "accepted_protocol_act_hash": "s4tMDmbOK1sjcrWP_CDQwhHHrdZjaAjUCA-ZMiiUrmc",
+                "timestamp": "2026-09-01T12:04:00Z",
+                "session_id": "00000000-0000-4000-8000-000000000300"
+              },
+              "act_hash": "I5i37sP5MoJ8y_lFdtlyHgj3UZBWG3DiaLvULsZ-TAs",
+              "sender_verification_method": null,
+              "signature_type": null,
+              "signature": null,
+              "attribution": "unsigned_observation"
+            },
+            {
+              "act": {
+                "message_id": "ucp-order-confirmation-1",
+                "message_type": "order_confirmation",
+                "order": {
+                  "currency": "USD",
+                  "id": "ORD-2026-000123",
+                  "status": "confirmed",
+                  "total_minor": 18750
+                },
+                "protocol_version": "0.2",
+                "timestamp": "2026-09-01T12:05:00Z"
+              },
+              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
+              "attribution": "unsigned_observation",
+              "message_id": "ucp-order-confirmation-1",
+              "message_type": "order_confirmation",
+              "round_number": null,
+              "sender_did": null,
+              "sender_verification_method": null,
+              "sequence_number": null,
+              "signature": null,
+              "signature_type": null,
+              "source_protocol": "ucp",
+              "timestamp": "2026-09-01T12:05:00Z"
+            }
+          ]
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
+        }
+      ]
+    },
+    {
+      "name": "reference-with-an-acceptance-of-an-unrecorded-act",
+      "resealed_record_hash": "F_tZb8J-47K71btWZ-4CUJjD1vDVeZS9cZ-g8TCfAks",
+      "rule": "Section 9A.12, fail-closed: once the responder has signed an act, an acceptance whose accepted_protocol_act_hash matches the protocol_act_hash of no offer or counteroffer in the record is refused, since nothing shows it does not accept a signed act the producer left out. The responder signed a counteroffer here, and the initiator's signed acceptance names an act the record does not carry. SINGLE-CAUSE: with that branch removed the record VERIFIES. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "schema_expresses": false,
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:agent",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:agent#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts"
+          ],
+          "value": [
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:16:00Z",
+                "message_id": "ec-offer-1",
+                "message_type": "offer",
+                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+                "protocol_version": "0.2",
+                "round_number": 1,
+                "sender_agent_id": "buyer-agent",
+                "sender_did": "did:example:buyer",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "sequence_number": 1,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:01:00Z"
+              },
+              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
+              "attribution": "verified_signature",
+              "message_id": "ec-offer-1",
+              "message_type": "offer",
+              "round_number": 1,
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:18:00Z",
+                "message_id": "ec-counteroffer-1",
+                "message_type": "counteroffer",
+                "protocol_act_hash": "s4tMDmbOK1sjcrWP_CDQwhHHrdZjaAjUCA-ZMiiUrmc",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+                "protocol_version": "0.2",
+                "round_number": 2,
+                "sender_agent_id": "shop-agent",
+                "sender_did": "did:example:agent",
+                "sender_verification_method": "did:example:agent#key-1",
+                "sequence_number": 2,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:03:00Z"
+              },
+              "act_hash": "CmnxEHcQBRJbErVFKS6GwPYMUu_Bs8iAATbNBpvOHVw",
+              "attribution": "verified_signature",
+              "message_id": "ec-counteroffer-1",
+              "message_type": "counteroffer",
+              "round_number": 2,
+              "sender_did": "did:example:agent",
+              "sender_verification_method": "did:example:agent#key-1",
+              "sequence_number": 2,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.czR0TURtYk9LMXNqY3JXUF9DRFF3aEhIcmRaamFBalVDQS1aTWlpVXJtYw.EuVtR1a1S4Y02SClrqSYZFvJaVEHYLiLowHJ0o06SCcewdhiKgH-PBfslW_GhOgozkpfzJaN_78hlXb698lzBg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:03:00Z"
+            },
+            {
+              "sequence_number": 3,
+              "round_number": 2,
+              "message_type": "acceptance",
+              "message_id": "ec-acceptance-1",
+              "sender_did": "did:example:buyer",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "source_protocol": "a2cn",
+              "act": {
+                "protocol_version": "0.2",
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "message_type": "acceptance",
+                "message_id": "ec-acceptance-1",
+                "in_reply_to": "offer-not-recorded",
+                "round_number": 2,
+                "sequence_number": 3,
+                "accepted_offer_id": "offer-not-recorded",
+                "accepted_protocol_act_hash": "9pRekEcsukLhVUoIjFjLmBBKZbFkQ0XosWxjSNUeo1M",
+                "timestamp": "2026-09-01T12:04:00Z",
+                "sender_did": "did:example:buyer",
+                "sender_agent_id": "buyer-agent",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "acceptance_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.eTFPTzB1WThHYVRwbTJKbHI2eDBfbWd2eXFxZ1IyZUY0M0xmbTY2NUVhVQ.RFkzakDjJ4FvFi4BL2KJOCMqmzZ1_PQrk7yq04AkxrJhHw-2usIwmRKSBmC2_x2p2IaNlrkgqu07DA-zMX7lCA"
+              },
+              "act_hash": "oeNDQpBJO-wuVy_M4n0z7AvhmS72YolbcUNXQ828aAQ",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "signature_type": "acceptance_signature",
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.eTFPTzB1WThHYVRwbTJKbHI2eDBfbWd2eXFxZ1IyZUY0M0xmbTY2NUVhVQ.RFkzakDjJ4FvFi4BL2KJOCMqmzZ1_PQrk7yq04AkxrJhHw-2usIwmRKSBmC2_x2p2IaNlrkgqu07DA-zMX7lCA",
+              "attribution": "verified_signature"
+            },
+            {
+              "act": {
+                "message_id": "ucp-order-confirmation-1",
+                "message_type": "order_confirmation",
+                "order": {
+                  "currency": "USD",
+                  "id": "ORD-2026-000123",
+                  "status": "confirmed",
+                  "total_minor": 18750
+                },
+                "protocol_version": "0.2",
+                "timestamp": "2026-09-01T12:05:00Z"
+              },
+              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
+              "attribution": "unsigned_observation",
+              "message_id": "ucp-order-confirmation-1",
+              "message_type": "order_confirmation",
+              "round_number": null,
+              "sender_did": null,
+              "sender_verification_method": null,
+              "sequence_number": null,
+              "signature": null,
+              "signature_type": null,
+              "source_protocol": "ucp",
+              "timestamp": "2026-09-01T12:05:00Z"
+            }
+          ]
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
+        }
+      ]
+    },
+    {
+      "name": "reference-with-a-responder-signed-rejection",
+      "resealed_record_hash": "ifsePlMJ9PNUf3WlKHnEpQVPBBvkm1IOTsO3CrEo0t4",
+      "rule": "Section 9A.12: in a record carrying external_commitment_reference the responder may sign only an offer or a counteroffer. Its signed rejection is the counterparty's signed refusal, which cannot sit in a record stating that the session completed. The signer is a session party, evidence_level is mixed and invalid_acts is 0. SINGLE-CAUSE: with that rule removed the record VERIFIES. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "schema_expresses": false,
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:agent",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:agent#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts"
+          ],
+          "value": [
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:16:00Z",
+                "message_id": "ec-offer-1",
+                "message_type": "offer",
+                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+                "protocol_version": "0.2",
+                "round_number": 1,
+                "sender_agent_id": "buyer-agent",
+                "sender_did": "did:example:buyer",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "sequence_number": 1,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:01:00Z"
+              },
+              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
+              "attribution": "verified_signature",
+              "message_id": "ec-offer-1",
+              "message_type": "offer",
+              "round_number": 1,
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            {
+              "sequence_number": 3,
+              "round_number": 1,
+              "message_type": "rejection",
+              "message_id": "ec-rejection-1",
+              "sender_did": "did:example:agent",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "source_protocol": "a2cn",
+              "act": {
+                "protocol_version": "0.2",
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "message_type": "rejection",
+                "message_id": "ec-rejection-1",
+                "rejected_offer_id": "ec-offer-1",
+                "in_reply_to": "ec-offer-1",
+                "round_number": 1,
+                "sequence_number": 3,
+                "reason_code": "PRICE_TOO_HIGH",
+                "timestamp": "2026-09-01T12:04:00Z",
+                "sender_did": "did:example:agent",
+                "sender_agent_id": "shop-agent",
+                "sender_verification_method": "did:example:agent#key-1",
+                "rejection_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.bUxsaUZaNV9jN2JQU3o0QkU0dmFTODdQYW1YVXhSTGk2eVhOTGJaV2pxbw.o4eygCZpPe0w4xUcwFzgbJpmrtpJU0_vmzB8WO-25urtsfh6ntuhOeZBrJKpqIU4DMMSZbY1RcG05jbzbqikDQ"
+              },
+              "act_hash": "TSg9dq1oKpDX39LRzObLl5rx64GIl1HpT_3VK8TSWQM",
+              "sender_verification_method": "did:example:agent#key-1",
+              "signature_type": "rejection_signature",
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.bUxsaUZaNV9jN2JQU3o0QkU0dmFTODdQYW1YVXhSTGk2eVhOTGJaV2pxbw.o4eygCZpPe0w4xUcwFzgbJpmrtpJU0_vmzB8WO-25urtsfh6ntuhOeZBrJKpqIU4DMMSZbY1RcG05jbzbqikDQ",
+              "attribution": "verified_signature"
+            },
+            {
+              "act": {
+                "message_id": "ucp-order-confirmation-1",
+                "message_type": "order_confirmation",
+                "order": {
+                  "currency": "USD",
+                  "id": "ORD-2026-000123",
+                  "status": "confirmed",
+                  "total_minor": 18750
+                },
+                "protocol_version": "0.2",
+                "timestamp": "2026-09-01T12:05:00Z"
+              },
+              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
+              "attribution": "unsigned_observation",
+              "message_id": "ucp-order-confirmation-1",
+              "message_type": "order_confirmation",
+              "round_number": null,
+              "sender_did": null,
+              "sender_verification_method": null,
+              "sequence_number": null,
+              "signature": null,
+              "signature_type": null,
+              "source_protocol": "ucp",
+              "timestamp": "2026-09-01T12:05:00Z"
+            }
+          ]
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
+        }
+      ]
+    },
+    {
+      "name": "reference-with-a-responder-signed-withdrawal",
+      "resealed_record_hash": "9XluxhAzWtxGY302iIHeWiMuntT-5yMpUwyF9uzgNgk",
+      "rule": "Section 9A.12: in a record carrying external_commitment_reference the responder may sign only an offer or a counteroffer. Its signed withdrawal is the counterparty's signed exit, which cannot sit in a record stating that the session completed. The signer is a session party, evidence_level is mixed and invalid_acts is 0. SINGLE-CAUSE: with that rule removed the record VERIFIES. A JSON Schema cannot express the rule at any version, because it compares acts against parties and against each other, so every schema that describes this record accepts it and only the verifier refuses it.",
+      "schema_expresses": false,
+      "set": [
+        {
+          "path": [
+            "parties",
+            "responder"
+          ],
+          "value": {
+            "agent_id": "shop-agent",
+            "did": "did:example:agent",
+            "mandate_type": "declared",
+            "organization_name": "Example Shop",
+            "verification_method": "did:example:agent#key-1"
+          }
+        },
+        {
+          "path": [
+            "acts"
+          ],
+          "value": [
+            {
+              "act": {
+                "expires_at": "2026-09-01T12:16:00Z",
+                "message_id": "ec-offer-1",
+                "message_type": "offer",
+                "protocol_act_hash": "nW_EMKyEKT0cOHViISYByIBOTh6X-hfSeRBnRZUX8LM",
+                "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+                "protocol_version": "0.2",
+                "round_number": 1,
+                "sender_agent_id": "buyer-agent",
+                "sender_did": "did:example:buyer",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "sequence_number": 1,
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18750
+                },
+                "timestamp": "2026-09-01T12:01:00Z"
+              },
+              "act_hash": "GRj87JLlE2g7b27vI_TtNomJblyCaqYh2aYo5MaoYDg",
+              "attribution": "verified_signature",
+              "message_id": "ec-offer-1",
+              "message_type": "offer",
+              "round_number": 1,
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bldfRU1LeUVLVDBjT0hWaUlTWUJ5SUJPVGg2WC1oZlNlUkJuUlpVWDhMTQ.YAqHXX1cFdfUoAQMIFzJoQmJB5GJ55zroBzWeV0V8v48HvYihxPa5zmxPYpzwECeTczO5IywMg3YrAJl9WreAg",
+              "signature_type": "protocol_act_signature",
+              "source_protocol": "a2cn",
+              "timestamp": "2026-09-01T12:01:00Z"
+            },
+            {
+              "sequence_number": 3,
+              "round_number": 1,
+              "message_type": "withdrawal",
+              "message_id": "ec-withdrawal-1",
+              "sender_did": "did:example:agent",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "source_protocol": "a2cn",
+              "act": {
+                "protocol_version": "0.2",
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "message_type": "withdrawal",
+                "message_id": "ec-withdrawal-1",
+                "in_reply_to": "ec-offer-1",
+                "round_number": 1,
+                "sequence_number": 3,
+                "reason_code": "PRICE_TOO_HIGH",
+                "timestamp": "2026-09-01T12:04:00Z",
+                "sender_did": "did:example:agent",
+                "sender_agent_id": "shop-agent",
+                "sender_verification_method": "did:example:agent#key-1",
+                "withdrawal_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.YkMwTndDSmRCcWk5WHFKOW5tZnJiN2k4aDZuUURmczVqbnNhZC1OREo1cw.J2nqjy-rYGmMO1eVy4LLXDffYleEgEsg1rfSSVZyKa3EMRwbPMg3qOzntMNxRxM9mD9SpXsHWSKPhXmij5ZdBw"
+              },
+              "act_hash": "Z4P1FKFqwPu1Jytu8R29WGWpNmvk4KjZWzVQjvONADE",
+              "sender_verification_method": "did:example:agent#key-1",
+              "signature_type": "withdrawal_signature",
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmFnZW50I2tleS0xIn0.YkMwTndDSmRCcWk5WHFKOW5tZnJiN2k4aDZuUURmczVqbnNhZC1OREo1cw.J2nqjy-rYGmMO1eVy4LLXDffYleEgEsg1rfSSVZyKa3EMRwbPMg3qOzntMNxRxM9mD9SpXsHWSKPhXmij5ZdBw",
+              "attribution": "verified_signature"
+            },
+            {
+              "act": {
+                "message_id": "ucp-order-confirmation-1",
+                "message_type": "order_confirmation",
+                "order": {
+                  "currency": "USD",
+                  "id": "ORD-2026-000123",
+                  "status": "confirmed",
+                  "total_minor": 18750
+                },
+                "protocol_version": "0.2",
+                "timestamp": "2026-09-01T12:05:00Z"
+              },
+              "act_hash": "qWsxyYH2vGerj2Kg7o76elrjUZGRuYR5XjLVpP-JKNg",
+              "attribution": "unsigned_observation",
+              "message_id": "ucp-order-confirmation-1",
+              "message_type": "order_confirmation",
+              "round_number": null,
+              "sender_did": null,
+              "sender_verification_method": null,
+              "sequence_number": null,
+              "signature": null,
+              "signature_type": null,
+              "source_protocol": "ucp",
+              "timestamp": "2026-09-01T12:05:00Z"
+            }
+          ]
+        },
+        {
+          "path": [
+            "evidence_level"
+          ],
+          "value": "mixed"
         }
       ]
     }
@@ -1700,7 +2073,7 @@
   },
   "session_evidence_record_0_2_schema_sha256": "0344b8ee57bb431e28b04f0c5a48b9bce4d7cca90e046ea11668b2c0b1887734",
   "session_evidence_record_0_4_schema_sha256": "334174ba4aff97dc01975564f881279e6bbb71e7751ec757dec59a59cba9d756",
-  "session_evidence_record_0_5_schema_sha256": "cf26223265c3bc431287675dda54e44fce4f3b1d510c8062783c9b0c786088dd",
+  "session_evidence_record_0_5_schema_sha256": "e3efaea771e0c2b673a5d824a05a4fa20298ea903827c42a40a6933892ecc82e",
   "valid_records": [
     {
       "name": "reference-with-verified-identity-and-unsigned-acts",
@@ -1759,7 +2132,7 @@
     {
       "name": "reference-with-a-counterparty-signed-counteroffer",
       "record_hash": "EfABiuYmV66RwUBSHCaRTJorUwb3vMDG9CMZaUBZ9K8",
-      "rule": "Section 9A.12: a counterparty's signed NEGOTIATION act is admitted beside the external witness, and the record is mixed. The initiator signed its offer, the responder signed a counteroffer, and the order was confirmed outside A2CN: both parties have authenticated negotiation evidence and nobody signed the completion, whose only witness is the reference. No acceptance means no TransactionRecord exists for the session either. Every verified act is a session party's (parties.initiator.did or parties.responder.did, compared exactly), and no verified acceptance is present, so the acceptance rule does not apply. Its sibling reference-with-a-third-party-signed-act is the SAME act with parties.responder changed, so the signer is a third party instead, and is refused. The signer's DID resolves because second_producer's identity is in did_documents.",
+      "rule": "Section 9A.12: a counterparty's signed NEGOTIATION act is admitted beside the external witness, and the record is mixed. The initiator signed its offer, the responder signed a counteroffer, and the order was confirmed outside A2CN: both parties have authenticated negotiation evidence and nobody signed the completion, whose only witness is the reference. No acceptance means no TransactionRecord exists for the session either. Every verified act is a session party's (parties.initiator.did or parties.responder.did, compared exactly), the responder signed only a counteroffer, and no acceptance names it. Its sibling reference-with-a-third-party-signed-act is the SAME act with parties.responder changed, so the signer is a third party instead, and is refused. The signer's DID resolves because second_producer's identity is in did_documents.",
       "set": [
         {
           "path": [
@@ -1983,7 +2356,7 @@
     {
       "name": "reference-with-an-initiator-signed-acceptance-of-an-observed-offer",
       "record_hash": "uWEjPBWiZlEEWOafUA1ENQdtOqINwFtrI23I7Zcm3HA",
-      "rule": "Section 9A.12: the shape an external channel produces. The initiator signs its own acceptance of the counterparty's offer, which it OBSERVED -- the counterparty signed nothing -- and the order is confirmed outside A2CN. A verified acceptance is admitted when its signer is the initiator and the responder has no verified act, both of which hold. The responder holds a DID but signed nothing, and the observed offer carries no sender_did, so the level is unilateral. The same shape with an observed_party responder is the valid_variants case initiator-signed-acceptance-of-an-observed-offer.",
+      "rule": "Section 9A.12: the shape an external channel produces. The initiator signs its own acceptance of the counterparty's offer, which it OBSERVED -- the counterparty signed nothing -- and the order is confirmed outside A2CN. The acceptance names no act the responder signed, and the responder signed nothing, so the record attests no in-band acceptance of a responder-signed act. The responder holds a DID but signed nothing, and the observed offer carries no sender_did, so the level is unilateral. The same shape with an observed_party responder is the valid_variants case initiator-signed-acceptance-of-an-observed-offer.",
       "set": [
         {
           "path": [
@@ -2123,7 +2496,7 @@
     {
       "name": "reference-with-only-an-initiator-signed-acceptance",
       "record_hash": "dQCCr8ooxUAoqoOp9CHlSt3CSvx1bJZAkjaNcHXzE3g",
-      "rule": "Section 9A.12: a producer recording a commitment after the fact carries the initiator's signed acceptance and nothing else it signed. The acceptance is the initiator's act that Section 9A.12 condition 6 requires, and the acceptance rule admits it, since its signer is the initiator and the responder signed nothing.",
+      "rule": "Section 9A.12: a producer recording a commitment after the fact carries the initiator's signed acceptance and nothing else it signed. The acceptance is the initiator's act that Section 9A.12 condition 6 requires. Its target is not in the record, which is refused only once the responder has signed an act; this responder signed nothing, so the record is admitted.",
       "set": [
         {
           "path": [
@@ -2204,9 +2577,9 @@
       ]
     },
     {
-      "name": "reference-with-an-unsigned-acceptance-after-a-signed-counteroffer",
-      "record_hash": "sWEq_DkXqSPxHbh7j54JU59941bJnhKfZvw0z1QizlI",
-      "rule": "Section 9A.12: an UNSIGNED acceptance witnesses nothing, so the acceptance rule does not reach it, even beside the counterparty's signed counteroffer. The counterparty's acceptance here is an unsigned_observation carrying its DID, and the record is mixed.",
+      "name": "reference-with-an-initiator-signed-acceptance-of-an-unsigned-offer-beside-a-signed-counteroffer",
+      "record_hash": "nRf2r7rlcJG1jwCbfxlkT6CRCm4ZSnKO4bnBmo14Uns",
+      "rule": "Section 9A.12: an acceptance is judged by the act it names. The responder signed an EARLIER counteroffer, and the initiator signed an acceptance of a LATER offer of the responder's that is unsigned; the observed offer states the protocol_act_hash the acceptance names, so the target resolves to an act in the record. The acceptance names no act the responder signed, so the record attests no in-band acceptance of a responder-signed act, and is admitted, mixed. Its sibling reference-with-an-initiator-signed-acceptance-of-a-signed-counteroffer names the signed counteroffer instead, and is refused.",
       "set": [
         {
           "path": [
@@ -2294,23 +2667,60 @@
             },
             {
               "sequence_number": 3,
-              "round_number": 1,
-              "message_type": "acceptance",
-              "message_id": "ec-acceptance-1",
+              "round_number": 3,
+              "message_type": "counteroffer",
+              "message_id": "ucp-quote-2",
               "sender_did": "did:example:agent",
-              "timestamp": "2026-09-01T12:04:00Z",
+              "timestamp": "2026-09-01T12:03:30Z",
               "source_protocol": "ucp",
               "act": {
-                "message_type": "acceptance",
-                "message_id": "ec-acceptance-1",
                 "protocol_version": "0.2",
-                "timestamp": "2026-09-01T12:04:00Z"
+                "message_type": "counteroffer",
+                "message_id": "ucp-quote-2",
+                "round_number": 3,
+                "sequence_number": 3,
+                "timestamp": "2026-09-01T12:03:30Z",
+                "terms": {
+                  "currency": "USD",
+                  "total_value": 18500
+                },
+                "protocol_act_hash": "8q37MSS-XkEaSDScizRWM1SWzmaNbGZHKCa0rDiS0ps"
               },
-              "act_hash": "eAaJ7FLVNM2n0-IkH1MfhF0KSPDdjqK3GW7SPfUA1-M",
+              "act_hash": "JEdizG9KBseqiDx-znZZL1d92tQ-ZM4EMikKBQqLOyo",
               "sender_verification_method": null,
               "signature_type": null,
               "signature": null,
               "attribution": "unsigned_observation"
+            },
+            {
+              "sequence_number": 4,
+              "round_number": 3,
+              "message_type": "acceptance",
+              "message_id": "ec-acceptance-1",
+              "sender_did": "did:example:buyer",
+              "timestamp": "2026-09-01T12:04:00Z",
+              "source_protocol": "a2cn",
+              "act": {
+                "protocol_version": "0.2",
+                "session_id": "00000000-0000-4000-8000-000000000300",
+                "message_type": "acceptance",
+                "message_id": "ec-acceptance-1",
+                "in_reply_to": "ucp-quote-2",
+                "round_number": 3,
+                "sequence_number": 4,
+                "accepted_offer_id": "ucp-quote-2",
+                "accepted_protocol_act_hash": "8q37MSS-XkEaSDScizRWM1SWzmaNbGZHKCa0rDiS0ps",
+                "timestamp": "2026-09-01T12:04:00Z",
+                "sender_did": "did:example:buyer",
+                "sender_agent_id": "buyer-agent",
+                "sender_verification_method": "did:example:buyer#key-1",
+                "acceptance_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.NVE0U1ExSWxiT0JzTnZUTGN1WnU1TGdOWDVuaW5NRWRfZVpVZzNlOVZ1WQ.8tYtRJ_E116skKZ4gDbch1LsRUnbY2H5eahHw0Eh-TSvRgot2OB5WEg2XIuqzPKn0rMsEbDPqpUI1A9evmZpCw"
+              },
+              "act_hash": "DR3Efqp2rlI676lTLxuey7UQBF6fc8Ubc2Iikdl9SWU",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "signature_type": "acceptance_signature",
+              "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.NVE0U1ExSWxiT0JzTnZUTGN1WnU1TGdOWDVuaW5NRWRfZVpVZzNlOVZ1WQ.8tYtRJ_E116skKZ4gDbch1LsRUnbY2H5eahHw0Eh-TSvRgot2OB5WEg2XIuqzPKn0rMsEbDPqpUI1A9evmZpCw",
+              "attribution": "verified_signature"
             },
             {
               "act": {
@@ -2452,7 +2862,7 @@
         }
       ],
       "record_hash": "gExStgZio5nRzRG4yIvEkVGpShoTGSTNKpqNpg6WGaA",
-      "rule": "Section 9A.12: the shape an external channel produces, at an observed_party responder. The initiator signs its own acceptance of the offer it observed -- the counterparty holds no A2CN identity and signed nothing -- and the order is confirmed outside A2CN. A verified acceptance is admitted when its signer is the initiator and the responder has no verified act; an observed_party has none by construction. The level of a record whose responder is an observed_party is asserted unilateral."
+      "rule": "Section 9A.12: the shape an external channel produces, at an observed_party responder. The initiator signs its own acceptance of the offer it observed -- the counterparty holds no A2CN identity and signed nothing -- and the order is confirmed outside A2CN. No act names a responder-signed act, since an observed_party signs nothing. The level of a record whose responder is an observed_party is asserted unilateral."
     }
   ],
   "valid_variants_description": "Each case generates the record with its observed_acts instead of the vector's. The record has evidence_level and record_hash, and verifies."

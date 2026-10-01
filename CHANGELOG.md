@@ -61,19 +61,28 @@ condition removes.
 are gone — and it is checked on the completion, not on every act.** The
 property is about who witnessed the *completion*. A counterparty that signed a
 counteroffer negotiated; it completed nothing, and no TransactionRecord exists
-for that session. What completes an A2CN session is an acceptance, so a verifier
-and a generator both refuse an external-channel record in which a verified
-acceptance is present and either its signer is not `parties.initiator.did`, or
-`parties.responder` has any verified act. **A completion both parties signed is a
-TransactionRecord, not an external witness.** What stays admitted is the shape an
-external channel produces: the initiator signs its own acceptance of terms it
-observed, and the counterparty, which signed nothing, confirms the order
-off-protocol. A counterparty's signed offer or counteroffer beside an external
-reference is admitted, and the record is `mixed`. The second clause asks whether
-the responder signed *anything*, not whether it signed the act accepted, which is
-deliberately stricter than needed: admission does not turn on which act an
-acceptance names, a reference the producer controls. An unsigned acceptance is
-not a signature and is unaffected.
+for that session. A TransactionRecord is a responder-signed offer plus an
+acceptance that names it, so a verifier and a generator both refuse an
+external-channel record in which the responder signed anything other than an
+offer or counteroffer — a responder-signed acceptance, rejection or withdrawal —
+or in which any act that accepts — **signed or unsigned, under whatever
+`message_type`** — names an offer or counteroffer the responder signed, by its
+`accepted_protocol_act_hash` or its `accepted_offer_id`. Once the responder has
+signed anything, an acceptance whose target does not resolve exactly to an act
+in the record is refused too (fail-closed). **An external-channel record must not
+attest an in-band acceptance of a responder-signed act.** The check is keyed on
+the accepted act rather than on the acceptance's own signature: an acceptance
+recorded unsigned still names what it accepted, and is still an acceptance the
+record attests in-band. What stays admitted is the shape an external channel produces: the
+initiator signs its own acceptance of an offer the counterparty did not sign,
+and the counterparty confirms the order off-protocol. A counterparty's signed
+offer or counteroffer beside an external reference is admitted, and the record
+is `mixed` — including beside an initiator-signed acceptance of a different,
+unsigned offer, which attests no in-band acceptance of a responder-signed act.
+The record attests what was recorded in-band. It does not, and cannot, prevent a
+party holding its own signing key from accepting a responder-signed counteroffer
+out of band and building a TransactionRecord elsewhere; that is inherent to
+admitting a counterparty's signed negotiation act.
 
 Nothing else in the record excludes a counterparty-signed completion: the
 producer-signed-act rule asks for an act of the *initiator's* and is satisfied

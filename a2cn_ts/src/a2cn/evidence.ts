@@ -105,6 +105,11 @@ const VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4";
 // observed_party there. Also a floor, read through versionAtOrAfter.
 const VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER = "0.5";
 
+// The act types a responder may sign in a record carrying
+// external_commitment_reference (Section 9A.12): negotiation, never a completion
+// or a refusal.
+const NEGOTIATION_MESSAGE_TYPES: readonly string[] = ["offer", "counteroffer"];
+
 export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
 
 export const MONEY_BASIS_LABELS = new Set<string>([
@@ -386,17 +391,25 @@ export function generateSessionEvidenceRecord(
       "A COMPLETED record carries exactly one completion witness, and no other outcome carries one",
     );
   }
+  if (!responderSignedOnlyNegotiation(record)) {
+    throw new Error(
+      "An external commitment reference admits a responder signature only on " +
+        "an offer or counteroffer: a responder-signed acceptance, rejection or " +
+        "withdrawal is not negotiation",
+    );
+  }
   if (!externalCommitmentRulesHold(record)) {
     throw new Error(
       "An external commitment reference requires that every signed act is a " +
         "session party's, and unilateral or mixed evidence",
     );
   }
-  if (!externalCommitmentAcceptanceHolds(record)) {
+  if (!noAcceptanceOfResponderSignedAct(record)) {
     throw new Error(
-      "An external commitment reference admits a signed acceptance only when " +
-        "the initiator signed it and the responder signed no act: a completion " +
-        "both parties signed is a TransactionRecord",
+      "An external commitment reference refuses an acceptance that accepts an " +
+        "offer or counteroffer the responder signed, or whose accepted act is not " +
+        "in the record once the responder signed an act: the record must not " +
+        "attest an in-band acceptance of a responder-signed act",
     );
   }
   // externalCommitmentMatchesVersion03 was checked here, and is not any more. It
@@ -563,7 +576,7 @@ export function assessSessionEvidenceRecord(
     if (!externalCommitmentRulesHold(record)) {
       return assessment;
     }
-    if (!externalCommitmentAcceptanceHolds(record)) {
+    if (!noAcceptanceOfResponderSignedAct(record)) {
       return assessment;
     }
     if (!externalCommitmentProducerActPresent(record)) {
@@ -1034,15 +1047,16 @@ function completionWitnessHolds(record: Dict): boolean {
  * no-DID case, it incidentally excluded a verified-identity counterparty, a shape
  * an observed_party cannot even express, since that descriptor requires the
  * declared-markers to be literally false. The proxy is relaxed to the property
- * here, and BECAUSE it is relaxed, the property has to be CHECKED — which is
- * externalCommitmentAcceptanceHolds's job, not this function's. This one decides
- * who may sign at all.
+ * here, and BECAUSE it is relaxed, the property has to be CHECKED. This function
+ * decides who may sign, and what the responder may sign;
+ * noAcceptanceOfResponderSignedAct decides what an acceptance may name.
  *
  * The property is about the completion, not every act. A counterparty that
  * signed a counteroffer negotiated; it completed nothing, and no
  * TransactionRecord exists for that session. So a verified act is admitted from
- * either SESSION PARTY, and everyVerifiedActIsASessionPartys carries the argument
- * for why a third party is not.
+ * either SESSION PARTY — everyVerifiedActIsASessionPartys carries the argument
+ * for why a third party is not — and the responder's only as negotiation,
+ * responderSignedOnlyNegotiation.
  *
  * evidence_level was a SECOND identity proxy on the same property, and it is
  * relaxed for the same reason. unilateral and mixed both describe a record whose
@@ -1093,7 +1107,10 @@ function externalCommitmentRulesHold(record: Dict): boolean {
   ) {
     return false;
   }
-  return everyVerifiedActIsASessionPartys(record);
+  if (!everyVerifiedActIsASessionPartys(record)) {
+    return false;
+  }
+  return responderSignedOnlyNegotiation(record);
 }
 
 /**
@@ -1185,44 +1202,21 @@ function everyVerifiedActIsASessionPartys(record: Dict): boolean {
 }
 
 /**
- * No completion both parties signed hides behind an external reference.
+ * In an external-channel record the responder signs negotiation, and nothing else.
  *
- * Section 9A.12: in a record carrying external_commitment_reference, a verified
- * acceptance is admitted only when its signer is the INITIATOR, by exact DID, and
- * the RESPONDER has no verified act in the record. Refused when a verified
- * acceptance is present and either
+ * Section 9A.12: an act attributed verified_signature whose sender_did is
+ * parties.responder.did (exact) has message_type offer or counteroffer. A
+ * responder-signed acceptance is a completion the counterparty signed, which is a
+ * TransactionRecord rather than an external witness; a responder-signed rejection
+ * or withdrawal is the counterparty's signed refusal, which cannot sit in a record
+ * stating that the session completed. Either way a counterparty signature would
+ * bear on the completion the reference alone is supposed to witness.
  *
- *   (i)  its sender_did is not parties.initiator.did, or
- *   (ii) any verified act's sender_did is parties.responder.did.
- *
- * The acceptance is A2CN's completion act, so this is the property "no
- * counterparty signature witnesses the completion" stated at the act level. A
- * completion both parties signed is a TransactionRecord, not an external
- * witness: a responder-signed acceptance is one, and so is an initiator-signed
- * acceptance beside the counterparty's signatures. What remains admitted is the
- * shape an external channel produces — the initiator signs its own acceptance of
- * terms it observed, and the counterparty, which signed nothing, confirms the
- * order off-protocol.
- *
- * Clause (ii) asks whether the responder signed ANYTHING, not whether it signed
- * the act accepted. That is stricter than strictly needed, and deliberately:
- * tracing which act an acceptance accepts would make admission turn on
- * references a producer controls. Fail-closed costs a session that mixed a
- * signed counteroffer with a signed acceptance nothing it cannot have elsewhere:
- * it completes on the TransactionRecord path, or records its acceptance unsigned.
- *
- * An UNSIGNED acceptance is not a signature and witnesses nothing, so it is out
- * of scope here. A verified act is an acceptance when its message_type is
- * acceptance or its signature_type is the acceptance slot; for a verified act
- * the two coincide, because the slot names the act type it may sign
- * (SIGNATURE_TYPE_MESSAGE_TYPES), and either is enough to refuse.
- *
- * Clause (i) is implied by the session-party check together with clause (ii): a
- * verified acceptance signed by anyone but the initiator is the responder's,
- * which (ii) refuses, or a non-party's, which that check refuses. It is stated
- * anyway, so this rule says what it means on its own.
+ * A third party's verified act never reaches this rule's question: the
+ * session-party check refuses it first. An observed_party responder holds no DID,
+ * so it signs nothing and the rule holds vacuously.
  */
-function externalCommitmentAcceptanceHolds(record: Dict): boolean {
+function responderSignedOnlyNegotiation(record: Dict): boolean {
   if (!hasOwn(record, "external_commitment_reference")) {
     return true;
   }
@@ -1234,27 +1228,179 @@ function externalCommitmentAcceptanceHolds(record: Dict): boolean {
   if (sessionDids === null) {
     return false;
   }
-  const [initiatorDid, responderDid] = sessionDids;
+  const responderDid = sessionDids[1];
   const acts = record.acts;
   if (!Array.isArray(acts)) {
     return false;
   }
-  const verified = acts.filter(
-    (entry): entry is Dict =>
-      isActEntry(entry) && entry.attribution === EvidenceAttribution.VERIFIED,
-  );
-  const acceptances = verified.filter(
-    (entry) =>
-      entry.message_type === "acceptance" ||
-      entry.signature_type === EvidenceSignatureType.ACCEPTANCE,
-  );
-  if (acceptances.length === 0) {
+  if (responderDid === null) {
     return true;
   }
-  if (acceptances.some((entry) => entry.sender_did !== initiatorDid)) {
+  return acts.every(
+    (entry) =>
+      !isActEntry(entry) ||
+      entry.attribution !== EvidenceAttribution.VERIFIED ||
+      entry.sender_did !== responderDid ||
+      NEGOTIATION_MESSAGE_TYPES.includes(entry.message_type as string),
+  );
+}
+
+/**
+ * The hashes an acceptance may name an offer or counteroffer by.
+ *
+ * An offer's protocol_act_hash IS the hash of its signed act (Section 7.3.1), so
+ * an act is named by the hash it states and by the hash of its rebuild; for a
+ * verified offer the two are equal, because the verifier has already refused one
+ * whose stated hash differs from its rebuild. An unsigned observation may state
+ * neither, and is then named by its rebuild alone.
+ */
+function negotiationActHashes(act: Dict): string[] {
+  const hashes: string[] = [];
+  const stated = hasOwn(act, "protocol_act_hash") ? act.protocol_act_hash : undefined;
+  if (typeof stated === "string" && stated) {
+    hashes.push(stated);
+  }
+  try {
+    const rebuilt = rebuildSignedAct(act);
+    if (rebuilt !== null) {
+      hashes.push(hashObject(rebuilt));
+    }
+  } catch {
+    // an act that cannot be rebuilt is named by nothing else
+  }
+  return hashes;
+}
+
+/**
+ * No act in an external-channel record accepts an act the responder signed.
+ *
+ * Section 9A.12: an external-channel record MUST NOT attest an in-band acceptance
+ * of an act the responder signed. Out-of-band reconstruction is not what this
+ * prevents: a keyholder can always sign its own acceptance of a responder-signed
+ * counteroffer elsewhere, which admitting a counterparty's signed negotiation act
+ * concedes. The record attests what was recorded in-band, and this rule bounds
+ * that. An act ACCEPTS when its
+ * message_type is acceptance or its inner act carries accepted_protocol_act_hash
+ * or accepted_offer_id — whatever its type and whether or not it is signed,
+ * because nothing constrains an unsigned act's message_type and a target field is
+ * what makes an act an acceptance of something. For each such act:
+ *
+ *   - if its accepted_protocol_act_hash names, or its accepted_offer_id is the
+ *     message_id of, an offer or counteroffer the responder signed, the record is
+ *     refused — either field is enough, so a crossed pair cannot hide one behind
+ *     the other;
+ *   - once the responder has any verified act, each target field it carries must
+ *     resolve EXACTLY to an offer or counteroffer in the record, the hash written
+ *     as a canonical 43-character base64url digest; an acceptance carrying no
+ *     hash, a target in another spelling or encoding, or one naming nothing in
+ *     the record is refused (fail-closed): nothing shows it does not accept a
+ *     signed act the producer left out.
+ *
+ * Keyed on the ACCEPTED act, not on the acceptance's own signature. An acceptance
+ * recorded unsigned still names what it accepted, and is still an acceptance the
+ * record attests in-band, so a rule that asked whether the acceptance was signed
+ * would admit exactly the record it exists to refuse.
+ *
+ * The hash is resolved the way the TransactionRecord binds it: the acceptance's
+ * accepted_protocol_act_hash against an offer's protocol_act_hash (record.ts; the
+ * session does the same), which is the hash of the offer's signed act
+ * (negotiationActHashes). Membership in the responder-signed sets is checked
+ * FIRST, so an unsigned duplicate or forgery claiming a signed act's message_id or
+ * hash can never launder an acceptance of the signed one by giving its target
+ * somewhere else to resolve. Every field is read as an own property only.
+ *
+ * What stays admitted: an acceptance — the initiator's, typically signed — of an
+ * offer the counterparty did not sign, beside any negotiation either party
+ * signed. The record then attests no in-band acceptance of a responder-signed act.
+ */
+function noAcceptanceOfResponderSignedAct(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties;
+  if (typeof parties !== "object" || parties === null) {
     return false;
   }
-  return responderDid === null || verified.every((entry) => entry.sender_did !== responderDid);
+  const sessionDids = externalSessionDids(parties as Dict);
+  if (sessionDids === null) {
+    return false;
+  }
+  const responderDid = sessionDids[1];
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  if (responderDid === null) {
+    return true;
+  }
+  const entries = acts.filter(isActEntry);
+  const responderSigned = entries.some(
+    (entry) =>
+      entry.attribution === EvidenceAttribution.VERIFIED && entry.sender_did === responderDid,
+  );
+  if (!responderSigned) {
+    return true;
+  }
+  const signedHashes: string[] = [];
+  const signedIds: string[] = [];
+  const recordedHashes: string[] = [];
+  const recordedIds: string[] = [];
+  for (const entry of entries) {
+    const act = entry.act;
+    if (
+      !NEGOTIATION_MESSAGE_TYPES.includes(entry.message_type as string) ||
+      !isActEntry(act)
+    ) {
+      continue;
+    }
+    const hashes = negotiationActHashes(act);
+    const messageId = hasOwn(act, "message_id") ? act.message_id : undefined;
+    const ids = typeof messageId === "string" && messageId ? [messageId] : [];
+    recordedHashes.push(...hashes);
+    recordedIds.push(...ids);
+    if (entry.attribution === EvidenceAttribution.VERIFIED && entry.sender_did === responderDid) {
+      signedHashes.push(...hashes);
+      signedIds.push(...ids);
+    }
+  }
+  for (const entry of entries) {
+    const act = entry.act;
+    if (!isActEntry(act)) {
+      if (entry.message_type === "acceptance") {
+        return false;
+      }
+      continue;
+    }
+    const hasHash = hasOwn(act, "accepted_protocol_act_hash");
+    const hasId = hasOwn(act, "accepted_offer_id");
+    if (entry.message_type !== "acceptance" && !hasHash && !hasId) {
+      continue;
+    }
+    const targetHash = hasHash ? act.accepted_protocol_act_hash : undefined;
+    const targetId = hasId ? act.accepted_offer_id : undefined;
+    if (
+      (typeof targetHash === "string" && signedHashes.includes(targetHash)) ||
+      (typeof targetId === "string" && signedIds.includes(targetId))
+    ) {
+      return false;
+    }
+    if (!hasHash) {
+      return false;
+    }
+    if (
+      !(
+        typeof targetHash === "string" &&
+        HASH_PATTERN.test(targetHash) &&
+        recordedHashes.includes(targetHash)
+      )
+    ) {
+      return false;
+    }
+    if (hasId && !(typeof targetId === "string" && recordedIds.includes(targetId))) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
