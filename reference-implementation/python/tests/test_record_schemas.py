@@ -588,21 +588,25 @@ def test_the_earlier_schemas_refuse_the_reference_under_their_own_version(schema
 def test_the_0_5_schema_refuses_every_invalid_external_channel_record(case):
     """The healthy record goes first: a schema that refused everything would pass every case.
 
-    The ``schema_expresses is False`` branch is LIVE and three cases take it, all
-    for the same reason: the rule compares two members of the record, which a
-    JSON Schema cannot state at all, so the schema accepts the record and only
+    The ``schema_expresses is False`` branch is LIVE and several cases take it,
+    all for the same reason: the rule compares two members of the record, which
+    a JSON Schema cannot state at all, so the schema accepts the record and only
     the verifier refuses it.
 
     * ``producer-not-initiator``: Section 9A.12 requires ``producer.did`` to
       equal ``parties.initiator.did``.
-    * ``reference-with-a-counterparty-signed-act`` and
-      ``reference-with-a-third-party-signed-act``: Section 9A.12 with
+    * ``reference-with-a-third-party-signed-act``: Section 9A.12 with
       Section 9A.8 rule 1 requires that no act claim ``verified_signature``
-      unless its ``sender_did`` equals ``parties.initiator.did``, which compares
-      ``parties.initiator.did`` against each entry of ``acts``. Those two carry
-      the SAME signed act and differ only in ``parties.responder``, so the signer
-      is the responder in one and a third party in the other; a rule keyed on the
-      responder's ``did`` admits the second.
+      unless its ``sender_did`` equals ``parties.initiator.did`` or
+      ``parties.responder.did``, which compares the parties against each entry
+      of ``acts``. It carries the SAME signed act as the valid case
+      ``reference-with-a-counterparty-signed-counteroffer`` and differs only in
+      ``parties.responder``, so the signer is the responder there and a third
+      party here.
+    * the four acceptance cases: Section 9A.12 admits a verified acceptance only
+      when its signer is ``parties.initiator.did`` and no verified act is
+      ``parties.responder.did``'s, which compares the parties against the acts
+      and the acts against each other.
 
     That is the whole point of the flag, and it is not a gap: it marks the
     cases where schema silence is correct rather than missing. Do not read a
@@ -637,10 +641,9 @@ def test_the_0_5_schema_refuses_every_malformed_reference(case):
 def test_the_0_5_schema_accepts_every_valid_external_channel_record(case):
     """The bucket that MUST verify must also fit the schema that admits it.
 
-    Both cases carry a DID-bearing full-party responder, which "0.4" refused
-    outright; the pair differs only in whether the counterparty's unsigned act
-    carries a ``sender_did``, which is what makes one "unilateral" and the other
-    "mixed". Both are admitted at "0.5".
+    Every case carries a DID-bearing full-party responder, which "0.4" refused
+    outright, and every one is admitted at "0.5". The observed_party shapes live
+    in valid_variants, which the generator builds.
     """
     record = copy.deepcopy(EXTERNAL_CHANNEL_VECTOR["expected"]["record"])
     assert _errors(SER_0_5, record) == []

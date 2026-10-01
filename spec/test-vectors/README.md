@@ -392,7 +392,11 @@ reference replaced and resealed has `resealed_record_hash` and fails
 verification. Each `valid_variants` case generates the record with another
 act list: `producer-acts-only` has the producer's signed offer and nothing
 observed, and is `unilateral`, because the level of a record whose responder is
-an `observed_party` is asserted rather than derived (Section 9A.5). Each
+an `observed_party` is asserted rather than derived (Section 9A.5);
+`initiator-signed-acceptance-of-an-observed-offer` adds an observed seller quote,
+the producer's own signed acceptance of it and the order confirmation — the shape
+an external channel produces — and is admitted, because a verified acceptance is
+allowed when the initiator signed it and the responder signed nothing. Each
 `invalid_records` case edits `expected.record` as its `set` and `remove` say,
 and names the rule it breaks: both completion witnesses, neither, a reference on
 another outcome, `mixed` or `bilateral` evidence **against an `observed_party`
@@ -400,28 +404,32 @@ responder** (refused by Section 9A.8's coupling, not by Section 9A.12), a
 DID-bearing responder at `bilateral`, the record labelled `"0.2"` or `"0.1"`,
 `"0.3"` without the reference, an `observed_party` responder carrying a
 `transaction_record_hash` (at `"0.2"` and at `"0.1"`), no act the producer
-signed, no acts at all, a record sealed by a DID that is not its initiator, and a
-record whose DID-bearing responder SIGNED an act that verifies, and a record
-carrying a verified signature from a THIRD party. The sealed-by
-case is sealed with `second_producer`, whose `private_jwk` is
+signed, no acts at all, a record sealed by a DID that is not its initiator, a
+record carrying a verified signature from a THIRD party, and four records carrying
+a verified acceptance that Section 9A.12 refuses: one the responder signed, one the
+initiator signed of the responder's signed counteroffer, one the initiator signed
+after the responder signed an earlier act (fail-closed: the rule asks whether the
+responder signed anything, not what was accepted), and one a third party signed.
+The sealed-by case is sealed with `second_producer`, whose `private_jwk` is
 test-only, as its `sealed_by` says, so its seal verifies and only the producer
 binding refuses it; a case whose `schema_expresses` is false states a rule a JSON
 Schema cannot express, so every schema describing the record accepts it and only
-the verifier refuses it. Three cases are of that kind, and all compare two members
-of the record: the sealed-by one, and the two signed-act ones, which compare
-`parties.initiator.did` against each act's `sender_did` — no act may claim
-`verified_signature` unless its `sender_did` is the initiator's (Section 9A.12
-with Section 9A.8 rule 1). **Those two carry the SAME signed act and differ in one
-field, `parties.responder`**, so its signer is the responder in one case and a
-third party in the other; a rule comparing `sender_did` to the responder's `did`
-refuses the first and admits the second, which is what the pair exists to catch.
-Both borrow `second_producer`'s identity for the signer so the DID RESOLVES and
-the signature verifies — an act merely claiming a signature would be refused as
-invalid instead, which is the wrong reason. Both are deliberately SINGLE-CAUSE:
-`evidence_level` is left at the value the classifier computes (`mixed` where the
-signer is the responder and so a represented party, `unilateral` where it is a
-third party and so counts for neither), and no act is invalid, so removing that
-one verifier check makes each record verify. Resealed, each has `resealed_record_hash` and fails
+the verifier refuses it. Six cases are of that kind, and all compare members of
+the record: the sealed-by one; the third-party one, which compares the parties'
+DIDs against each act's `sender_did` — no act may claim `verified_signature`
+unless its `sender_did` is `parties.initiator.did` or `parties.responder.did`
+(Section 9A.12 with Section 9A.8 rule 1); and the four acceptance ones — a
+completion both parties signed is a TransactionRecord, not an external witness.
+**The third-party case and the valid case
+`reference-with-a-counterparty-signed-counteroffer` carry the SAME signed act and
+differ in one field, `parties.responder`**, so its signer is the responder in one
+and a third party in the other: a counterparty's signed negotiation act is
+admitted, a non-party's is refused. Every signed act borrows `second_producer`'s
+identity for its signer so the DID RESOLVES and the signature verifies — an act
+merely claiming a signature would be refused as invalid instead, which is the
+wrong reason. The refusals are SINGLE-CAUSE: `evidence_level` is left at the value
+the classifier computes and no act is invalid, so removing the one verifier check
+each names makes its record verify. Resealed, each has `resealed_record_hash` and fails
 verification. The Python suite validates every valid record against
 `session-evidence-record-0.5.schema.json`, checks that every invalid one fails it
 unless `schema_expresses` says otherwise, and checks that the `"0.1"` and `"0.2"`
@@ -429,11 +437,18 @@ schemas refuse the reference.
 
 `valid_records` mirrors `invalid_records` — same `set`/`remove` shape, same
 derivation, opposite verdict — so a case moving between the two buckets is a move
-rather than a rewrite. Its one case is a DID-bearing responder carrying the
-reference, which `"0.4"` refused and `"0.5"` admits; it lands at `unilateral`,
-not `mixed`, because it sets only `parties.responder` while the inherited
-observed act carries a null `sender_did`. **A DID-bearing responder does not
-imply `mixed`.** The bucket is separate from `valid_variants`, which varies only
+rather than a rewrite. Every case has a DID-bearing responder carrying the
+reference, which `"0.4"` refused and `"0.5"` admits. The first sets only
+`parties.responder` and lands at `unilateral`, not `mixed`, because the inherited
+observed act carries a null `sender_did`: **a DID-bearing responder does not
+imply `mixed`.** The second puts the responder's verified DID on that observed act,
+which stays unsigned, and is `mixed`. The others admit a counterparty's signed
+counteroffer (`mixed`);
+both parties' signed negotiation with nothing unsigned, which is still `mixed`
+because a record carrying the reference is never `bilateral` (Section 9A.5); the
+initiator's signed acceptance of an observed offer, with and without the
+initiator's offer before it; and a counterparty's UNSIGNED acceptance beside its
+signed counteroffer, which witnesses nothing. The bucket is separate from `valid_variants`, which varies only
 `observed_acts`: one structure carrying two contracts cannot tell a reader which
 dimension a given entry varies.
 

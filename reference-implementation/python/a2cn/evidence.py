@@ -292,6 +292,7 @@ def generate_session_evidence_record(
         acts,
         outcome=outcome,
         parties=parties,
+        external_commitment=reference is not None,
     )
 
     record = {
@@ -347,8 +348,14 @@ def generate_session_evidence_record(
         )
     if not _external_commitment_rules_hold(record):
         raise ValueError(
-            "An external commitment reference requires that only the initiator "
-            "signed an act, and unilateral or mixed evidence"
+            "An external commitment reference requires that every signed act is a "
+            "session party's, and unilateral or mixed evidence"
+        )
+    if not _external_commitment_acceptance_holds(record):
+        raise ValueError(
+            "An external commitment reference admits a signed acceptance only when "
+            "the initiator signed it and the responder signed no act: a completion "
+            "both parties signed is a TransactionRecord"
         )
     # _external_commitment_matches_version_0_3 was checked here, and is not any
     # more. It cannot fire on anything this function builds: record_version is
@@ -496,6 +503,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if not _external_commitment_rules_hold(record):
             return assessment
+        if not _external_commitment_acceptance_holds(record):
+            return assessment
         if not _external_commitment_producer_act_present(record):
             return assessment
         if not _external_commitment_sealed_by_initiator(record):
@@ -509,6 +518,7 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             acts,
             outcome=outcome,
             parties=record["parties"],
+            external_commitment="external_commitment_reference" in record,
         )
         if record.get("evidence_level") != expected_level:
             return assessment
@@ -884,77 +894,47 @@ def _completion_witness_holds(record: dict) -> bool:
 
 
 def _external_commitment_rules_hold(record: dict) -> bool:
-    """Couple an external commitment reference to a counterparty that signed nothing.
+    """Who may hold the external witness, at what level, and who may sign in it.
 
-    A TransactionRecord is bilateral by construction (Section 9.3), so the
-    reference exists for a session that produced none: one whose counterparty
-    never signed an A2CN act (Section 9A.12). That counterparty may hold no
-    identity at all -- an ``observed_party`` -- or hold a DID and a mandate that
-    verify while signing no act. Both satisfy the property this rule exists to
-    protect, which is that NO COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION.
+    The reference is the completion witness of a session that produced no
+    TransactionRecord (Section 9A.12). The property it carries is that NO
+    COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION: the completion is the
+    producer's external-order reference, not an act the counterparty signed.
 
     Until "0.5" this asserted ``observed_party`` and ``unilateral``. That pair is
     an IDENTITY PROXY for the property and is narrower than it: written for the
-    no-DID case, it incidentally excluded a verified-identity counterparty whose
-    acts are unsigned -- a shape an ``observed_party`` cannot even express, since
-    that descriptor requires the declared-markers to be literally False. The
-    proxy is relaxed to the property here -- and BECAUSE it is relaxed, the
-    property has to be CHECKED here, which is what the counterparty-signature
-    clause below does.
+    no-DID case, it incidentally excluded a verified-identity counterparty, a
+    shape an ``observed_party`` cannot even express, since that descriptor
+    requires the declared-markers to be literally False. The proxy is relaxed to
+    the property here, and BECAUSE it is relaxed, the property has to be CHECKED
+    -- which is ``_external_commitment_acceptance_holds``'s job, not this
+    function's. This one decides who may sign at all.
 
-    Nothing else in the record excludes a counterparty signature. It is worth
-    being exact about that, because an earlier draft of this docstring claimed
-    otherwise and the code matched the claim rather than the property:
-
-    * ``_external_commitment_producer_act_present`` requires at least one act of
-      the INITIATOR'S. It is satisfied by a record in which both parties signed,
-      so it never excluded anything of the counterparty's.
-    * the exactly-one-witness rule (``_completion_witness_holds``) requires the
-      reference to be the only witness. A producer that suppresses a
-      ``transaction_record_hash`` it could have carried satisfies it too.
-
-    While the proxies stood, condition 3's ``unilateral`` and the
-    ``observed_party`` requirement did the excluding between them, so the gap was
-    invisible. Relaxing both at once opened it: ``_classify_evidence_level``
-    returns ``bilateral`` only when NOTHING is unsigned, so one unsigned observed
-    act -- which an external-channel flow carries by construction -- demotes a
-    fully signed session to ``mixed``, which is admitted. A verified counterparty
-    signature then rode in under an admitted classification, in a record
-    Section 9A.12 calls producer-attested.
-
-    So the clause is keyed on the act's ATTRIBUTION, which is where the spec puts
-    "unsigned" (Section 9A.3): an entry attributed ``unsigned_observation`` MUST
-    carry no signature, and one whose inner ``act`` still holds an A2CN signature
-    field is refused in ``_verify_evidence_act``, as an INVALID act. So
-    "``parties.responder``'s acts are unsigned" (condition 2) and "no act
-    attributed ``verified_signature`` is the responder's" are the same statement,
-    and the second is the one a verifier can check. A transport signature the
-    producer merely observed is not an A2CN signature and is unaffected:
-    Section 9A.12 puts it inside the observed act on purpose.
-
-    Keyed on the INITIATOR's DID, which is Section 9A.8 rule 1.
-    ``_every_verified_act_is_the_initiators`` carries the argument for why the
-    responder's DID is the wrong comparison target.
+    The property is about the completion, not every act. A counterparty that
+    signed a counteroffer negotiated; it completed nothing, and no
+    TransactionRecord exists for that session. So a verified act is admitted from
+    either SESSION PARTY, and ``_every_verified_act_is_a_session_partys`` carries
+    the argument for why a third party is not.
 
     ``evidence_level`` was a SECOND identity proxy on the same property, and it
-    is relaxed for the same reason. Both ``unilateral`` and ``mixed`` satisfy
-    "no counterparty signature witnesses the completion"; which one a record
-    carries depends on the producer, not on the honesty of the record:
+    is relaxed for the same reason. ``unilateral`` and ``mixed`` both describe a
+    record whose completion no counterparty signed; which one a record carries
+    depends on what the producer recorded, not on the honesty of the record:
 
-    * ``unilateral`` when the producer records the counterparty's act with no
-      ``sender_did`` at all;
-    * ``mixed`` when it carries the counterparty's verified DID on an act
-      attributed ``unsigned_observation``.
+    * ``unilateral`` when no act carries a verified counterparty perspective,
+      for instance an observed act with no ``sender_did``;
+    * ``mixed`` when the counterparty is represented -- its verified DID on an
+      act attributed ``unsigned_observation``, or its signed negotiation act.
 
     BOTH ARE HONEST RECORDS. Admitting only ``unilateral`` would require a
-    producer to omit a DID it has verified -- to record less than it knows in
-    order to reach a classification -- which is the very defect this rule is
-    being relaxed to remove, one level up.
+    producer to omit evidence it holds in order to reach a classification.
 
     ``bilateral`` stays excluded, which is why this checks membership rather
     than merely "not bilateral": that level asserts both parties' material acts
-    are attributable, precisely the claim a session completing through an
-    external reference cannot make.
+    are attributable, the completion included, which is precisely the claim a
+    session completing through an external reference cannot make. The
+    classifier never returns it for such a record (``_classify_evidence_level``),
+    so this refuses only a record that CLAIMS it.
 
     The DID-bearing responder is admitted from "0.5" and not before, because
     "0.5" is the first version whose schema admits it; "0.3" and "0.4" require an
@@ -978,42 +958,55 @@ def _external_commitment_rules_hold(record: dict) -> bool:
         return False
     if record.get("evidence_level") not in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL):
         return False
-    return _every_verified_act_is_the_initiators(record)
+    return _every_verified_act_is_a_session_partys(record)
 
 
-def _every_verified_act_is_the_initiators(record: dict) -> bool:
+def _external_session_dids(parties: dict) -> tuple[str, str | None] | None:
+    """The initiator's DID and the responder's, or None if the initiator has none.
+
+    The responder contributes a DID only when it is a full party. An
+    ``observed_party`` holds no A2CN identity, so it has none to contribute and
+    a verified act can never be its (Section 9A.8 rule 1).
+    """
+    initiator = parties.get("initiator")
+    if not isinstance(initiator, dict):
+        return None
+    initiator_did = initiator.get("did")
+    if not isinstance(initiator_did, str) or not initiator_did:
+        # Section 9A.2 requires a DID-bearing initiator, so this record is
+        # refused elsewhere too; refusing here keeps the rules from passing
+        # vacuously on a record with no initiator to compare against.
+        return None
+    responder = parties.get("responder")
+    responder_did = responder["did"] if _full_party_shape_valid(responder) else None
+    return initiator_did, responder_did
+
+
+def _every_verified_act_is_a_session_partys(record: dict) -> bool:
     """Section 9A.8 rule 1, for every external-channel record rather than some.
 
-    "No act may claim ``attribution: "verified_signature"`` unless its
-    ``sender_did`` equals ``parties.initiator.did`` ... an act that cannot be
-    placed in a known role is refused rather than admitted." Section 9A.8 states
-    that for an ``observed_party`` responder. The DID-bearing external-channel
-    shape did not exist when it was written and nothing restated it there, so the
-    SAME verified third-party act was refused for one responder tier and admitted
-    for the other -- which is the identity-proxy reasoning this witness exists to
-    be rid of, reappearing one level down.
+    Every act attributed ``verified_signature`` carries a ``sender_did`` equal
+    to ``parties.initiator.did`` or ``parties.responder.did`` -- "an act that
+    cannot be placed in a known role is refused rather than admitted".
+    Section 9A.8 states that for an ``observed_party`` responder, where only the
+    initiator holds a DID; it holds for the DID-bearing responder too, so the
+    SAME verified third-party act is refused whichever identity tier the
+    counterparty is at.
 
-    WHY THE INITIATOR AND NOT "NOT THE RESPONDER'S". Three reasons, each
-    independent, and the first is the one that matters:
+    WHY A THIRD PARTY IS REFUSED rather than merely not counted. Section 9A.5
+    declines to COUNT a non-party's act towards ``mixed``, but that is
+    classification, not admission. A producer naming one organisational DID as
+    ``parties.responder`` while the counterparty signs under an agent or delegate
+    DID could otherwise carry a verified counterparty signature -- an acceptance
+    included -- past every rule keyed on the responder.
 
-    * a verified act from a THIRD party would pass a responder comparison. Such
-      an act is nobody's role in the session: Section 9A.5 declines to COUNT it
-      towards ``mixed``, but that is classification, not admission, so nothing
-      would refuse it. A producer naming one organisational DID as
-      ``parties.responder`` while the counterparty signs under an agent or
-      delegate DID could then carry a verified counterparty signature past the
-      rule entirely.
-    * it would contradict Section 9A.8 rule 1 for the same act, which refuses a
-      verified third-party act outright wherever the responder is an
-      ``observed_party``. Admission would turn on the counterparty's identity
-      tier -- the identity-proxy reasoning this witness exists to be rid of.
-    * it would be string equality against one spelling. ``sender_did`` has no
-      imposed syntax (Section 9A.6), and ``did:web:acme-corp.com#key-2026-01`` is
-      a different string from ``did:web:acme-corp.com`` while
-      ``_verification_method_controlled_by`` accepts it and a resolver that
-      dereferences DID URLs resolves it. Whether the record is admitted would be
-      a property of the CALLER'S resolver. Comparing against the initiator needs
-      no normalization: whatever the spelling, it is not the initiator's.
+    THE COMPARISON IS EXACT, with no DID normalization. ``sender_did`` has no
+    imposed syntax (Section 9A.6), and ``did:web:acme-corp.com#key-2026-01`` is
+    a different string from ``did:web:acme-corp.com`` while
+    ``_verification_method_controlled_by`` accepts it and a resolver that
+    dereferences DID URLs resolves it. Treating the two as equal would make
+    admission a property of the CALLER'S resolver. So a DID URL naming either
+    party's own key is neither party's DID, and is refused.
 
     Stated positively, so the rule is a property of the whole act list rather
     than a search for one bad entry: an act list with nothing verified satisfies
@@ -1023,15 +1016,10 @@ def _every_verified_act_is_the_initiators(record: dict) -> bool:
     parties = record.get("parties")
     if not isinstance(parties, dict):
         return False
-    initiator = parties.get("initiator")
-    if not isinstance(initiator, dict):
+    session_dids = _external_session_dids(parties)
+    if session_dids is None:
         return False
-    initiator_did = initiator.get("did")
-    if not isinstance(initiator_did, str) or not initiator_did:
-        # Section 9A.2 requires a DID-bearing initiator, so this record is
-        # refused elsewhere too; refusing here keeps the rule from passing
-        # vacuously on a record with no initiator to compare against.
-        return False
+    initiator_did, responder_did = session_dids
     acts = record.get("acts")
     if not isinstance(acts, list):
         return False
@@ -1040,8 +1028,80 @@ def _every_verified_act_is_the_initiators(record: dict) -> bool:
         and (
             entry.get("attribution") != ATTRIBUTION_VERIFIED
             or entry.get("sender_did") == initiator_did
+            or (responder_did is not None and entry.get("sender_did") == responder_did)
         )
         for entry in acts
+    )
+
+
+def _external_commitment_acceptance_holds(record: dict) -> bool:
+    """No completion both parties signed hides behind an external reference.
+
+    Section 9A.12: in a record carrying ``external_commitment_reference``, a
+    verified acceptance is admitted only when its signer is the INITIATOR, by
+    exact DID, and the RESPONDER has no verified act in the record. Refused when
+    a verified acceptance is present and either
+
+    (i)  its ``sender_did`` is not ``parties.initiator.did``, or
+    (ii) any verified act's ``sender_did`` is ``parties.responder.did``.
+
+    The acceptance is A2CN's completion act, so this is the property "no
+    counterparty signature witnesses the completion" stated at the act level. A
+    completion both parties signed is a TransactionRecord, not an external
+    witness: a responder-signed acceptance is one, and so is an initiator-signed
+    acceptance beside the counterparty's signatures. What remains admitted is
+    the shape an external channel produces -- the initiator signs its own
+    acceptance of terms it observed, and the counterparty, which signed nothing,
+    confirms the order off-protocol.
+
+    Clause (ii) asks whether the responder signed ANYTHING, not whether it
+    signed the act accepted. That is stricter than strictly needed, and
+    deliberately: tracing which act an acceptance accepts would make admission
+    turn on references a producer controls. Fail-closed costs a session that
+    mixed a signed counteroffer with a signed acceptance nothing it cannot have
+    elsewhere: it completes on the TransactionRecord path, or records its
+    acceptance unsigned.
+
+    An UNSIGNED acceptance is not a signature and witnesses nothing, so it is
+    out of scope here. A verified act is an acceptance when its ``message_type``
+    is ``acceptance`` or its ``signature_type`` is the acceptance slot; for a
+    verified act the two coincide, because the slot names the act type it may
+    sign (``_SIGNATURE_TYPE_MESSAGE_TYPES``), and either is enough to refuse.
+
+    Clause (i) is implied by the session-party check together with clause (ii):
+    a verified acceptance signed by anyone but the initiator is the responder's,
+    which (ii) refuses, or a non-party's, which that check refuses. It is
+    stated anyway, so this rule says what it means on its own.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    session_dids = _external_session_dids(parties)
+    if session_dids is None:
+        return False
+    initiator_did, responder_did = session_dids
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    verified = [
+        entry
+        for entry in acts
+        if isinstance(entry, dict) and entry.get("attribution") == ATTRIBUTION_VERIFIED
+    ]
+    acceptances = [
+        entry
+        for entry in verified
+        if entry.get("message_type") == "acceptance"
+        or entry.get("signature_type") == SIGNATURE_ACCEPTANCE
+    ]
+    if not acceptances:
+        return True
+    if any(entry.get("sender_did") != initiator_did for entry in acceptances):
+        return False
+    return responder_did is None or all(
+        entry.get("sender_did") != responder_did for entry in verified
     )
 
 
@@ -1753,7 +1813,13 @@ def _verification_method_controlled_by(verification_method: str, did: str) -> bo
     )
 
 
-def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -> str:
+def _classify_evidence_level(
+    acts: list[dict], *, outcome: str, parties: dict, external_commitment: bool
+) -> str:
+    # ``external_commitment`` is whether the record carries
+    # external_commitment_reference. It is a required keyword so that no caller
+    # can reach ``bilateral`` by forgetting it.
+    #
     # Section 9A.5: a record whose responder is an observed_party is always
     # unilateral, asserted rather than derived from the acts below. Deriving it
     # would call a record whose acts are all the producer's own bilateral, when
@@ -1786,8 +1852,15 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
         for entry in acts
     )
 
+    # Section 9A.5: a record carrying external_commitment_reference is never
+    # bilateral. Its completion is the producer's external-order reference, not
+    # an act either party signed, so even when both parties' acts verify and
+    # nothing is unsigned the completion is a fact the counterparty did not
+    # attest to -- the same footing as a locally observed terminal fact, and
+    # classified the same way.
     if (
-        outcome == SessionState.COMPLETED
+        not external_commitment
+        and outcome == SessionState.COMPLETED
         and bool(acts)
         and unsigned_count == 0
         and party_dids
@@ -1799,7 +1872,7 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
     if (
         verified_party_count > 0
         and len(represented_dids) >= 2
-        and (unsigned_count > 0 or local_terminal_fact)
+        and (unsigned_count > 0 or local_terminal_fact or external_commitment)
     ):
         return EVIDENCE_MIXED
 

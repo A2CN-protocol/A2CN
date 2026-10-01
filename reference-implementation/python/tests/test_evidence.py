@@ -2147,26 +2147,24 @@ def test_the_verifier_never_dereferences_the_locator(monkeypatch):
 def test_the_generator_refuses_a_reference_for_a_bilateral_session():
     """A genuinely bilateral session cannot claim an external witness.
 
-    THE TITLE THIS ONCE CARRIED -- "a session whose counterparty signed cannot
-    hide behind an external witness" -- was WIDER THAN THE TEST, and the gap was
-    real. This session has NOTHING unsigned, so it classifies ``bilateral`` and
-    is refused on the level. Add one unsigned observed act -- which an
-    external-channel flow carries by construction -- and the very same fully
-    signed session classifies ``mixed``, which the level check admits. So what
-    this exercises is the ``bilateral`` exclusion, and nothing about
-    counterparty signatures in general.
+    Both parties signed, and the responder signed the ACCEPTANCE -- the
+    completion. A completion both parties signed is a TransactionRecord, so the
+    acceptance rule refuses the reference: a verified acceptance is admitted only
+    when the initiator signed it and the responder signed no act.
 
-    The general rule is checked separately, on the ``mixed`` shape this test
-    cannot reach, in tests/test_mandate_only_completion.py. Both clauses live in
-    ``_external_commitment_rules_hold`` and raise the same message, so this
-    assertion cannot tell them apart; the level is what it is here for.
+    This once exercised the ``bilateral`` level exclusion instead, because the
+    session has nothing unsigned. It cannot any more: the classifier never
+    returns ``bilateral`` for a record carrying the reference, so this session
+    classifies ``mixed`` and the level check never objects. The rules that keep
+    a counterparty-signed completion out are tested in
+    tests/test_mandate_only_completion.py.
     """
     manager, session, _ = _make_session()
     offer = _offer(session.session_id)
     manager.process_message(session, offer)
     manager.process_message(session, _acceptance(session.session_id, offer))
 
-    with pytest.raises(ValueError, match="unilateral or mixed evidence"):
+    with pytest.raises(ValueError, match="admits a signed acceptance only"):
         _generate(session, external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE)
 
 

@@ -2089,19 +2089,16 @@ test("a reference key that is present but undefined is not read as absent", () =
 test("the generator refuses a reference for a bilateral session", () => {
   // A genuinely bilateral session cannot claim an external witness.
   //
-  // THE CLAIM THIS COMMENT ONCE MADE — "a session whose counterparty signed
-  // cannot hide behind an external witness" — was WIDER THAN THE TEST, and the
-  // gap was real. This session has NOTHING unsigned, so it classifies bilateral
-  // and is refused on the level. Add one unsigned observed act — which an
-  // external-channel flow carries by construction — and the very same fully
-  // signed session classifies mixed, which the level check admits. So what this
-  // exercises is the bilateral exclusion, and nothing about counterparty
-  // signatures in general.
+  // Both parties signed, and the responder signed the ACCEPTANCE — the
+  // completion. A completion both parties signed is a TransactionRecord, so the
+  // acceptance rule refuses the reference: a verified acceptance is admitted only
+  // when the initiator signed it and the responder signed no act.
   //
-  // The general rule is checked separately, on the mixed shape this test cannot
-  // reach, further down this file. Both clauses live in
-  // externalCommitmentRulesHold and throw the same message, so this assertion
-  // cannot tell them apart; the level is what it is here for.
+  // This once exercised the bilateral level exclusion instead, because the
+  // session has nothing unsigned. It cannot any more: the classifier never
+  // returns bilateral for a record carrying the reference, so this session
+  // classifies mixed and the level check never objects. The rules that keep a
+  // counterparty-signed completion out are tested further down this file.
   const [manager, session] = makeSession();
   const offer = makeOffer(session.session_id);
   manager.processMessage(session, offer);
@@ -2111,7 +2108,7 @@ test("the generator refuses a reference for a bilateral session", () => {
     generateEvidenceWith(session, null, {
       externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
     }),
-  ).toThrow(/unilateral or mixed evidence/);
+  ).toThrow(/admits a signed acceptance only/);
 });
 
 test.each([
@@ -2799,18 +2796,24 @@ test("stamping a verified_signature on an unsigned counterparty act is refused",
 // Widening the responder condition removed the two IDENTITY PROXIES —
 // observed_party and unilateral — that had incidentally excluded a counterparty
 // signature, and nothing took over the property they stood for: NO COUNTERPARTY
-// SIGNATURE WITNESSES THE COMPLETION. Section 9A.12 states it three times over
-// — condition 2 admits a DID-bearing party only "whose acts are unsigned", the
-// producer MUST NOT attach the reference "to a record whose counterparty signed
-// an act that verifies", and a record "MUST NOT present" a verified identity as
-// a signed act.
+// SIGNATURE WITNESSES THE COMPLETION.
 //
-// mixed is what made the proxies' removal load-bearing rather than theoretical.
-// classifyEvidenceLevel returns bilateral only when NOTHING is unsigned, so a
+// That property is about the COMPLETION, not about every act. A counterparty that
+// signed a counteroffer negotiated; it completed nothing, and no TransactionRecord
+// exists for such a session (Section 9.3). What completes an A2CN session is an
+// acceptance, so Section 9A.12 keys the rule on it: a verified acceptance is
+// admitted only when the INITIATOR signed it and the responder signed no act at
+// all. A completion both parties signed is a TransactionRecord, not an external
+// witness.
+//
+// mixed is what made this load-bearing rather than theoretical.
+// classifyEvidenceLevel returned bilateral only when NOTHING was unsigned, so a
 // single unsigned observed act — which an external-channel flow carries by
-// construction — demotes a fully signed session to mixed, which condition 3
-// admits. The counterparty's signature then rides in under an admitted
-// classification.
+// construction — demoted a fully signed session to mixed, which condition 3
+// admits, and a counterparty's signed acceptance could ride in under an admitted
+// classification. The classifier now never returns bilateral for a record
+// carrying the reference, so the level cannot do the excluding at all: the
+// acceptance rule is what does.
 //
 // The Python mirror is tests/test_mandate_only_completion.py.
 // ---------------------------------------------------------------------------
@@ -2929,23 +2932,25 @@ function signedCounteroffer(sessionId: string): Dict {
   });
 }
 
-test("a completion whose counterparty signed a counteroffer is refused", () => {
-  // A signed COUNTEROFFER is the variant that closes the one reading a signed
-  // acceptance leaves open. No acceptance means no TransactionRecord exists at
-  // all (Section 9.3), so the record is honest that it has no bilateral witness
-  // — and a verified counterparty signature still sits inside a record
-  // Section 9A.12 calls producer-attested. The rule is about the signature, not
-  // about which witness happened to be available.
+test("a completion whose counterparty signed a counteroffer verifies as mixed", () => {
+  // A signed negotiation that completes off-protocol is an honest mixed record.
   //
-  // Its positive twin is mandateOnlyPair unpatched: the same session, the same
-  // three acts, the same reference, the same mixed level, and the counterparty's
-  // signature the only difference. A refusal on its own would not separate this
-  // rule from any other objection to the record.
+  // The initiator signed its offer, the responder signed a COUNTEROFFER, and the
+  // order was confirmed outside A2CN. Both parties have authenticated negotiation
+  // evidence; nobody signed the completion, whose only witness is the external
+  // reference. No acceptance means no TransactionRecord exists at all
+  // (Section 9.3), so the reference is not a weaker witness chosen over a
+  // stronger one — it is the only one there is.
+  //
+  // The record is mixed, never bilateral: the completion is the producer's
+  // account, not an act either party signed.
+  //
+  // Its twin is mandateOnlyPair unpatched: the same session, the same three acts,
+  // the same reference, the same mixed level, and the counterparty's signature
+  // the only difference. Both verify.
   const [honest, didDocuments, session] = mandateOnlyPair(UNSIGNED_COUNTEROFFER);
   expect(honest.evidence_level).toBe("mixed");
   expect(verifySessionEvidenceRecord(honest, didDocuments)).toBe(true);
-  // No TransactionRecord exists for the signed session either, so the reference
-  // is not a weaker witness chosen over a stronger one.
   expect(() => generateTransactionRecord(session)).toThrow();
 
   const signed = attachTheCounterpartySignature(
@@ -2965,28 +2970,49 @@ test("a completion whose counterparty signed a counteroffer is refused", () => {
   expect((signed.terminal as Dict).outcome).toBe(SessionState.COMPLETED);
   expect(signed.transaction_record_hash).toBeNull();
   expect(signed.external_commitment_reference).toStrictEqual(EXTERNAL_COMMITMENT_REFERENCE);
-  // Single-cause preconditions. The level is unchanged, so the
-  // classifier-consistency check is satisfied; no act is invalid, so the
-  // counterparty's signature really verifies. Whatever refuses this record
-  // refuses it for the signature and for nothing else.
+  expect((signed.acts as Dict[]).every((entry) => entry.message_type !== "acceptance")).toBe(
+    true,
+  );
   expect(signed.evidence_level).toBe("mixed");
   expect(assessSessionEvidenceRecord(signed, didDocuments)).toStrictEqual({
-    valid: false,
+    valid: true,
     evidence_level: "mixed",
     verified_acts: 2,
     unsigned_acts: 1,
     invalid_acts: 0,
   });
+});
 
-  expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
+test("the generator emits a signed negotiation completing externally as mixed", () => {
+  // The generator builds the same record from the counterparty's real signed act.
+  // The signed counteroffer goes in as an observed act, which the generator
+  // normalizes to verified_signature from the signature it carries, so this is
+  // the ordinary act of recording a negotiation the counterparty signed.
+  const [session, didDocuments] = mandateOnlySession();
+  const record = generateEvidenceWith(session, signedNegotiation(session), {
+    externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+  });
+
+  expect(verifiedActs(record)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["counteroffer", RESPONDER_DID],
+  ]);
+  expect(record.evidence_level).toBe("mixed");
+  expect(record.transaction_record_hash).toBeNull();
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
 });
 
 test("a completion whose counterparty signed the acceptance is refused", () => {
-  // The same rule for an acceptance, so no act type is privileged: keyed on the
-  // act's ATTRIBUTION rather than on its message_type, an acceptance, a
-  // counteroffer and a signed decline all trip it identically. This session does
-  // produce a TransactionRecord, which is the reading the counteroffer variant
-  // removes — both are refused, and for the same reason.
+  // A responder-signed acceptance is a completion the counterparty signed.
+  //
+  // The acceptance is A2CN's completion act. A verified acceptance is admitted in
+  // an external-channel record only when the INITIATOR signed it and the responder
+  // signed no act; this one fails both halves, since the responder signed it and
+  // so holds a verified act. The session-party check admits it — its signer is
+  // parties.responder.did exactly — so the acceptance rule is the only one that
+  // objects. This session does produce a TransactionRecord (Section 9.3): a
+  // completion both parties signed belongs there, not behind an external
+  // reference.
   const [honest, didDocuments, session] = mandateOnlyPair(UNSIGNED_ACCEPTANCE);
   expect(verifySessionEvidenceRecord(honest, didDocuments)).toBe(true);
 
@@ -3003,6 +3029,8 @@ test("a completion whose counterparty signed the acceptance is refused", () => {
       entry.attribution === "verified_signature" && entry.sender_did === RESPONDER_DID,
   );
   expect(counterparty.map((entry) => entry.message_type)).toStrictEqual(["acceptance"]);
+  // A session party, so the session-party check is not what refuses it.
+  expect(counterparty[0].sender_did).toBe(((signed.parties as Dict).responder as Dict).did);
   expect(honest.evidence_level).toBe("mixed");
   expect(signed.evidence_level).toBe("mixed");
   expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
@@ -3010,49 +3038,40 @@ test("a completion whose counterparty signed the acceptance is refused", () => {
   expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
 });
 
-test("the generator refuses a completion whose counterparty signed an act", () => {
+test("the generator refuses a completion whose counterparty signed the acceptance", () => {
   // The generator runs the same rule, so a producer cannot emit one either. The
-  // assertion matches "only the initiator", which is what the message says and
-  // what the rule is. A message phrased around the RESPONDER would be narrower
-  // than the rule it reports — a third party's verified signature is refused too,
-  // and so is the responder's under any spelling of its DID — so a producer
-  // reading it would not learn why its record was refused. The message is part of
-  // the contract, which is why a test asserts on it at all.
-  //
-  // The signed message goes in as an observed act, which the generator
-  // normalizes to verified_signature from the signature it carries — so what is
-  // refused is the ordinary act of recording an act the counterparty signed, not
-  // a hand-built record.
-  for (const [useAcceptance, shape] of [
-    [false, UNSIGNED_COUNTEROFFER],
-    [true, UNSIGNED_ACCEPTANCE],
-  ] as [boolean, typeof UNSIGNED_COUNTEROFFER][]) {
-    const [manager, session] = makeSession();
-    const offer = makeOffer(session.session_id);
-    manager.processMessage(session, offer);
-    markCompletedExternally(session);
-    const message = useAcceptance
-      ? makeAcceptance(session.session_id, offer)
-      : signedCounteroffer(session.session_id);
+  // assertion matches the message, which names the rule: a signed acceptance is
+  // admitted only from the initiator, and only while the responder signed
+  // nothing. The message is part of the contract, which is why a test asserts on
+  // it at all.
+  const [manager, session] = makeSession();
+  const offer = makeOffer(session.session_id);
+  manager.processMessage(session, offer);
+  markCompletedExternally(session);
 
-    expect(() =>
-      generateEvidenceWith(session, [message, orderConfirmation()], {
-        externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
-      }),
-    ).toThrow(/only the initiator/);
-    // The control: the same call with the signature stripped SUCCEEDS, so the
-    // refusal above is the signature's doing and not the observed act's.
-    expect(
-      generateEvidenceWith(
-        session,
-        [
-          unsignedCounterpartyAct(shape.messageType, shape.messageId, shape.envelope),
-          orderConfirmation(),
-        ],
-        { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
-      ),
-    ).toBeTruthy();
-  }
+  expect(() =>
+    generateEvidenceWith(
+      session,
+      [makeAcceptance(session.session_id, offer), orderConfirmation()],
+      { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+    ),
+  ).toThrow(/admits a signed acceptance only/);
+  // The control: the same call with the signature stripped SUCCEEDS, so the
+  // refusal above is the signature's doing and not the observed act's.
+  expect(
+    generateEvidenceWith(
+      session,
+      [
+        unsignedCounterpartyAct(
+          UNSIGNED_ACCEPTANCE.messageType,
+          UNSIGNED_ACCEPTANCE.messageId,
+          UNSIGNED_ACCEPTANCE.envelope,
+        ),
+        orderConfirmation(),
+      ],
+      { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+    ),
+  ).toBeTruthy();
 });
 
 test("a counterparty signature cannot hide behind an unsigned label", () => {
@@ -3126,20 +3145,15 @@ test("a counterparty signature cannot hide behind an unsigned label", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Initiator-only: every verified act in an external-channel record is the
-// initiator's
+// Session parties only: every verified act in an external-channel record is
+// signed by parties.initiator.did or parties.responder.did, compared exactly
 //
-// Section 9A.8 rule 1 already said this for an observed_party responder — "No act
-// may claim attribution: verified_signature unless its sender_did equals
-// parties.initiator.did ... an act that cannot be placed in a known role is
-// refused rather than admitted". The DID-bearing external-channel shape did not
-// exist when that was written and nothing restated it there, so the SAME verified
-// third-party act was refused or admitted according to the counterparty's identity
-// tier — the identity-proxy reasoning this witness exists to be rid of.
-//
-// A rule comparing sender_did to parties.responder.did cannot carry the property
-// for a second reason: it is string equality against one spelling, and a DID URL
-// for the same key is a different string.
+// Section 9A.8 rule 1 already refuses a verified act "that cannot be placed in a
+// known role" for an observed_party responder. The same holds for every
+// external-channel record: a verified act from a DID that is neither party is
+// refused, whatever the responder's identity tier. The comparison is exact string
+// equality with no DID normalization, so a DID URL naming a party's own key is
+// not that party's DID and is refused too.
 //
 // The Python mirror is tests/test_mandate_only_completion.py.
 // ---------------------------------------------------------------------------
@@ -3264,7 +3278,7 @@ test("the generator refuses a completion carrying a third-party signature", () =
     generateEvidenceWith(session, [...observed, thirdPartyOffer(session.session_id)], {
       externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
     }),
-  ).toThrow(/only the initiator/);
+  ).toThrow(/session party/);
   // The control: the same call without the third party's act SUCCEEDS, so the
   // refusal above is that act's doing and not the observed quote's.
   expect(
@@ -3310,25 +3324,40 @@ function dereferencingResolver(didDocuments: Record<string, Dict>): (did: string
   return (did: string) => didDocuments[did.split("#")[0].split("?")[0]];
 }
 
+/** The responder's real signed counteroffer, with sender_did spelled as given. */
+function responderCounterofferSpelledAs(sessionId: string, senderDid: string): Dict {
+  return makeOffer(sessionId, {
+    senderDid,
+    sequenceNumber: 3,
+    roundNumber: 2,
+    messageType: "counteroffer",
+    messageId: "counteroffer-spelled",
+    timestamp: "2026-03-24T10:03:00Z",
+  });
+}
+
 test("a responder signature spelled as a DID URL is refused", () => {
-  // The responder signs its own acceptance and the producer writes sender_did as
+  // The responder signs a counteroffer and the producer writes sender_did as
   // did:web:acme-corp.com#key-2026-01 rather than did:web:acme-corp.com. Same key,
   // same party, same signature; only the spelling differs.
   // verificationMethodControlledBy accepts it because the method equals the sender
-  // string, so the signature VERIFIES, while a rule comparing sender_did to
-  // parties.responder.did sees two different strings and stands aside.
+  // string, so the signature VERIFIES — and the string is neither
+  // parties.initiator.did nor parties.responder.did, so the session-party check
+  // refuses it. No DID is normalized.
+  //
+  // A COUNTEROFFER on purpose. A signed counteroffer by a session party is
+  // admitted, so the bare spelling below VERIFIES and the spelling is the only
+  // variable between the two arms. An acceptance would be refused under both
+  // spellings by the acceptance rule, which would leave this refusal with two
+  // causes; that case is the next test.
   //
   // UNDER A DEREFERENCING RESOLVER ON PURPOSE. Under an exact-match resolver the
   // DID URL does not resolve, the act is INVALID, and the record is refused for a
   // reason that says nothing about the rule. Arm one asserts invalid_acts is 0 to
   // rule that out, and arm two holds the resolver fixed while changing only the
   // spelling.
-  //
-  // The initiator-only rule closes this without normalizing any DID: whatever the
-  // spelling, the string is not parties.initiator.did.
   const [manager, session, didDocuments] = makeSession();
-  const offer = makeOffer(session.session_id);
-  manager.processMessage(session, offer);
+  manager.processMessage(session, makeOffer(session.session_id));
   markCompletedExternally(session);
   const resolver = dereferencingResolver(didDocuments);
   const honest = mandateOnlyWithReference(session);
@@ -3337,14 +3366,14 @@ test("a responder signature spelled as a DID URL is refused", () => {
   const urlSigned = withExtraAct(
     honest,
     signedEntry(
-      acceptanceSignedAs(session.session_id, offer, RESPONDER_VM),
-      "acceptance_signature",
+      responderCounterofferSpelledAs(session.session_id, RESPONDER_VM),
+      "protocol_act_signature",
     ),
   );
 
   const entry = (urlSigned.acts as Dict[])[(urlSigned.acts as Dict[]).length - 1];
   expect(entry.sender_did).toBe(RESPONDER_VM);
-  expect(entry.sender_did).not.toBe(RESPONDER_DID);
+  expect([INITIATOR_DID, RESPONDER_DID]).not.toContain(entry.sender_did);
   expect(urlSigned.evidence_level).toBe("mixed");
   expect(honest.evidence_level).toBe("mixed");
   const assessment = assessSessionEvidenceRecord(urlSigned, resolver);
@@ -3353,16 +3382,43 @@ test("a responder signature spelled as a DID URL is refused", () => {
 
   expect(verifySessionEvidenceRecord(urlSigned, resolver)).toBe(false);
 
-  // Arm two, resolver held fixed: the bare spelling is refused as well, so the
-  // verdict does not turn on how the DID is written.
+  // Arm two, resolver held fixed: the bare spelling is the responder's own DID,
+  // so the same counteroffer is a session party's negotiation act and VERIFIES.
   const bareSigned = withExtraAct(
     honest,
     signedEntry(
-      acceptanceSignedAs(session.session_id, offer, RESPONDER_DID),
-      "acceptance_signature",
+      responderCounterofferSpelledAs(session.session_id, RESPONDER_DID),
+      "protocol_act_signature",
     ),
   );
-  expect(verifySessionEvidenceRecord(bareSigned, resolver)).toBe(false);
+  expect(bareSigned.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(bareSigned, resolver)).toBe(true);
+});
+
+test("a responder acceptance is refused under either spelling", () => {
+  // A signed acceptance by the responder never rides in, however it is written.
+  // The bare spelling is parties.responder.did, which the session-party check
+  // admits, and the acceptance rule refuses it. The DID-URL spelling is refused by
+  // both. Either way the verdict does not turn on how the DID is written.
+  const [manager, session, didDocuments] = makeSession();
+  const offer = makeOffer(session.session_id);
+  manager.processMessage(session, offer);
+  markCompletedExternally(session);
+  const resolver = dereferencingResolver(didDocuments);
+  const honest = mandateOnlyWithReference(session);
+  expect(verifySessionEvidenceRecord(honest, resolver)).toBe(true);
+
+  for (const senderDid of [RESPONDER_VM, RESPONDER_DID]) {
+    const signed = withExtraAct(
+      honest,
+      signedEntry(acceptanceSignedAs(session.session_id, offer, senderDid), "acceptance_signature"),
+    );
+    expect((signed.acts as Dict[])[(signed.acts as Dict[]).length - 1].sender_did).toBe(
+      senderDid,
+    );
+    expect(assessSessionEvidenceRecord(signed, resolver).invalid_acts).toBe(0);
+    expect(verifySessionEvidenceRecord(signed, resolver)).toBe(false);
+  }
 });
 
 /** A SECOND act of the INITIATOR's own, sender_did spelled as given. */
@@ -3399,8 +3455,8 @@ test("the initiator signing under two spellings of its own did is refused", () =
   // satisfied by the bare-DID act — so this rule is the only thing that objects, and
   // the record is REFUSED.
   //
-  // DELIBERATE AND RULED. The rule compares sender_did to parties.initiator.did by
-  // exact string equality and performs no DID normalization. That is the same
+  // DELIBERATE AND RULED. The rule compares sender_did to the session parties' DIDs
+  // by exact string equality and performs no DID normalization. That is the same
   // property that makes it proof against the evasion the sibling test above pins:
   // once a verifier treats a DID URL as equal to its base DID, whether a record is
   // admitted depends on how the caller's resolver behaves rather than on the record.
@@ -3451,6 +3507,470 @@ test("the initiator signing under two spellings of its own did is refused", () =
 
   expect(verifySessionEvidenceRecord(twoSpellings, resolver)).toBe(false);
 });
+
+// ---------------------------------------------------------------------------
+// The acceptance rule: a completion both parties signed is a TransactionRecord
+//
+// The acceptance is A2CN's completion act. In a record carrying
+// external_commitment_reference, a verified acceptance is admitted only when its
+// signer is the INITIATOR, by exact DID, and the RESPONDER has no verified act in
+// the record. Refused when a verified acceptance is present and either
+//
+//   (i)  its signer is not parties.initiator.did, or
+//   (ii) parties.responder has any verified act.
+//
+// What it admits is the shape an external channel actually produces: the
+// initiator signs its own acceptance of terms it observed, and the counterparty
+// confirms the order outside A2CN. What it refuses is any record from which a
+// bilateral completion could be assembled — the counterparty signing the
+// acceptance, or the initiator signing an acceptance while the counterparty's
+// signatures sit beside it. An UNSIGNED acceptance is not a signature and
+// witnesses nothing, so it is admitted.
+//
+// Each refusal below has a twin that differs from it in ONE signature and
+// VERIFIES, so the refusal is that signature's doing and nothing else's. The
+// predicate is module-private in TypeScript, so the "rule switched off, the same
+// bytes verify" half is shown by mutation rather than in the suite.
+// ---------------------------------------------------------------------------
+
+/**
+ * The responder's real signed counteroffer, then between, then the confirmation.
+ *
+ * Observed acts for a mandateOnlySession, whose initiator has already signed its
+ * offer; the caller generates.
+ */
+function signedNegotiation(
+  session: Session,
+  between: Dict[] = [],
+  confirmation = true,
+): Dict[] {
+  const observed = [signedCounteroffer(session.session_id), ...between];
+  if (confirmation) {
+    observed.push(orderConfirmation());
+  }
+  return observed;
+}
+
+type Signer = "initiator" | "responder" | "third_party";
+
+/** A real acceptance of the act named, signed per Section 7.3.1 by signer. */
+function acceptanceBy(
+  sessionId: string,
+  options: {
+    acceptedId: string;
+    acceptedHash: string;
+    roundNumber: number;
+    sequenceNumber?: number;
+    timestamp?: string;
+    messageId?: string;
+    signer?: Signer;
+  },
+): Dict {
+  const {
+    acceptedId,
+    acceptedHash,
+    roundNumber,
+    sequenceNumber = 3,
+    timestamp = "2026-03-24T10:03:00Z",
+    messageId = "acceptance-2",
+    signer = "initiator",
+  } = options;
+  const [senderDid, verificationMethod, privateKey, agentId] = {
+    initiator: [INITIATOR_DID, INITIATOR_VM, INITIATOR_PRIVATE_KEY, "buyer-agent"],
+    responder: [RESPONDER_DID, RESPONDER_VM, RESPONDER_PRIVATE_KEY, "seller-agent"],
+    third_party: [THIRD_PARTY_DID, THIRD_PARTY_VM, THIRD_PARTY_PRIVATE_KEY, "processor-agent"],
+  }[signer] as [string, string, typeof INITIATOR_PRIVATE_KEY, string];
+  const acceptance: Dict = {
+    message_type: "acceptance",
+    message_id: messageId,
+    session_id: sessionId,
+    in_reply_to: acceptedId,
+    round_number: roundNumber,
+    sequence_number: sequenceNumber,
+    accepted_offer_id: acceptedId,
+    accepted_protocol_act_hash: acceptedHash,
+    sender_did: senderDid,
+    sender_agent_id: agentId,
+    sender_verification_method: verificationMethod,
+    timestamp,
+  };
+  acceptance.acceptance_signature = signJws(
+    signedActHash(acceptance, { versionWhenAbsent: PROTOCOL_ACT_VERSION }) as string,
+    privateKey,
+    verificationMethod,
+  );
+  return acceptance;
+}
+
+/** The same act as an unsigned observation: its envelope, and no signature. */
+function unsignedObservationOf(message: Dict): Dict {
+  const entry: Dict = {};
+  for (const field of COUNTERPARTY_ENVELOPE) {
+    entry[field] = message[field];
+  }
+  return {
+    ...entry,
+    sender_did: message.sender_did,
+    source_protocol: "supplier_portal",
+    act: {
+      message_type: message.message_type,
+      message_id: message.message_id,
+      timestamp: message.timestamp,
+    },
+  };
+}
+
+/**
+ * Replace the unsigned observation of message with message itself, signed.
+ *
+ * The twin of each refusal below is generated with the act unsigned; this swaps
+ * in the real signature at the same position, so ordering, envelope and level
+ * are untouched and the signature is the only difference.
+ */
+function signObservedAct(record: Dict, message: Dict, signatureType: string): Dict {
+  const patched = structuredClone(record);
+  const entry = (patched.acts as Dict[]).find(
+    (item) => item.message_id === message.message_id,
+  ) as Dict;
+  const act = { protocol_version: PROTOCOL_ACT_VERSION, ...structuredClone(message) };
+  entry.act = act;
+  entry.act_hash = hashObject(act);
+  entry.sender_verification_method = message.sender_verification_method;
+  entry.signature_type = signatureType;
+  entry.signature = message[signatureType];
+  entry.attribution = "verified_signature";
+  return reseal(patched);
+}
+
+function verifiedActs(record: Dict): [unknown, unknown][] {
+  return (record.acts as Dict[])
+    .filter((entry) => entry.attribution === "verified_signature")
+    .map((entry) => [entry.message_type, entry.sender_did]);
+}
+
+function counterofferAcceptance(sessionId: string, signer: Signer): Dict {
+  const counteroffer = signedCounteroffer(sessionId);
+  return acceptanceBy(sessionId, {
+    acceptedId: counteroffer.message_id as string,
+    acceptedHash: counteroffer.protocol_act_hash as string,
+    roundNumber: counteroffer.round_number as number,
+    signer,
+  });
+}
+
+test("the responder's signed acceptance after a signed negotiation is refused", () => {
+  // A counterparty-signed acceptance cannot ride in behind a signed negotiation.
+  //
+  // The responder signed a counteroffer, and then signed an acceptance. Both are
+  // session-party acts, so the session-party check admits them; the classifier
+  // gives mixed, which condition 3 admits; and the reference is the only witness,
+  // which the exactly-one-witness rule admits. The acceptance rule is the only
+  // thing that objects, and both of its clauses do.
+  //
+  // The twin is the same record with the acceptance UNSIGNED — an observation
+  // witnesses nothing — and it verifies.
+  const [session, didDocuments] = mandateOnlySession();
+  const acceptance = counterofferAcceptance(session.session_id, "responder");
+  // The responder accepting its own counteroffer is not a coherent negotiation,
+  // and does not need to be: the rule judges who signed an acceptance, not what
+  // it accepted, and any accepted act gives the same verdict.
+  const twin = generateEvidenceWith(
+    session,
+    signedNegotiation(session, [unsignedObservationOf(acceptance)]),
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  expect(twin.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(twin, didDocuments)).toBe(true);
+
+  const signed = signObservedAct(twin, acceptance, "acceptance_signature");
+
+  expect(verifiedActs(signed)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["counteroffer", RESPONDER_DID],
+    ["acceptance", RESPONDER_DID],
+  ]);
+  expect(signed.evidence_level).toBe("mixed");
+  expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
+  expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
+
+  expect(() =>
+    generateEvidenceWith(
+      session,
+      [signedCounteroffer(session.session_id), acceptance, orderConfirmation()],
+      { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+    ),
+  ).toThrow(/admits a signed acceptance only/);
+});
+
+test("the initiator's signed acceptance of a signed counteroffer is refused", () => {
+  // Clause (ii): the initiator accepting what the counterparty SIGNED.
+  //
+  // The signer is the initiator, so clause (i) holds. But the counterparty signed
+  // the counteroffer being accepted, so both parties have signed the agreement:
+  // that is a TransactionRecord, not an external witness, and clause (ii) refuses
+  // it because the responder holds a verified act.
+  //
+  // The twin differs in ONE signature, the counteroffer's: with the counteroffer
+  // unsigned the same initiator-signed acceptance VERIFIES, which is the shape an
+  // external channel produces. So the counterparty's signature is the cause.
+  const [session, didDocuments] = mandateOnlySession();
+  const acceptance = counterofferAcceptance(session.session_id, "initiator");
+  const counteroffer = signedCounteroffer(session.session_id);
+
+  const twin = generateEvidenceWith(
+    session,
+    [
+      unsignedCounterpartyAct(
+        UNSIGNED_COUNTEROFFER.messageType,
+        UNSIGNED_COUNTEROFFER.messageId,
+        UNSIGNED_COUNTEROFFER.envelope,
+      ),
+      acceptance,
+      orderConfirmation(),
+    ],
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  expect(verifiedActs(twin)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["acceptance", INITIATOR_DID],
+  ]);
+  expect(verifySessionEvidenceRecord(twin, didDocuments)).toBe(true);
+
+  const signed = signObservedAct(twin, counteroffer, "protocol_act_signature");
+
+  expect(verifiedActs(signed)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["counteroffer", RESPONDER_DID],
+    ["acceptance", INITIATOR_DID],
+  ]);
+  expect(twin.evidence_level).toBe("mixed");
+  expect(signed.evidence_level).toBe("mixed");
+  expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
+  expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
+
+  expect(() =>
+    generateEvidenceWith(session, [counteroffer, acceptance, orderConfirmation()], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/admits a signed acceptance only/);
+});
+
+test("the initiator's acceptance after any responder signature is refused", () => {
+  // Clause (ii) at its boundary: fail-closed, and deliberately stricter than
+  // needed.
+  //
+  // The responder signed an EARLIER counteroffer; the initiator then accepted a
+  // LATER offer of the responder's that is unsigned. Strictly, nobody signed both
+  // halves of the agreement accepted here, so no TransactionRecord could be
+  // assembled from it. The rule refuses it anyway: clause (ii) asks whether the
+  // responder holds ANY verified act, not whether it signed the act accepted.
+  // Tracing which act an acceptance accepts would make admission depend on
+  // reference-chasing a producer controls; refusing whenever both a signed
+  // acceptance and a counterparty signature are present does not. Such a session
+  // completes on the TransactionRecord path or records its acceptance unsigned.
+  //
+  // The twin differs in ONE signature, the earlier counteroffer's, and verifies.
+  const [session, didDocuments] = mandateOnlySession();
+  const laterOffer = unsignedCounterpartyAct("counteroffer", "counteroffer-2", {
+    sequenceNumber: 3,
+    roundNumber: 3,
+    timestamp: "2026-03-24T10:03:00Z",
+  });
+  const acceptance = acceptanceBy(session.session_id, {
+    acceptedId: "counteroffer-2",
+    acceptedHash: hashObject(laterOffer.act),
+    roundNumber: 3,
+    sequenceNumber: 4,
+    timestamp: "2026-03-24T10:04:00Z",
+  });
+  const counteroffer = signedCounteroffer(session.session_id);
+
+  const twin = generateEvidenceWith(
+    session,
+    [
+      unsignedCounterpartyAct(
+        UNSIGNED_COUNTEROFFER.messageType,
+        UNSIGNED_COUNTEROFFER.messageId,
+        UNSIGNED_COUNTEROFFER.envelope,
+      ),
+      laterOffer,
+      acceptance,
+      orderConfirmation(),
+    ],
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  expect(verifySessionEvidenceRecord(twin, didDocuments)).toBe(true);
+
+  const signed = signObservedAct(twin, counteroffer, "protocol_act_signature");
+
+  const later = (signed.acts as Dict[]).find((entry) => entry.message_id === "counteroffer-2")!;
+  expect(later.attribution).toBe("unsigned_observation");
+  expect(verifiedActs(signed)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["counteroffer", RESPONDER_DID],
+    ["acceptance", INITIATOR_DID],
+  ]);
+  expect(twin.evidence_level).toBe("mixed");
+  expect(signed.evidence_level).toBe("mixed");
+  expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
+  expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
+});
+
+test("a third-party signed acceptance is refused", () => {
+  // An acceptance signed by a DID that is neither party. Refused by the
+  // session-party check, and by clause (i) as well, since its signer is not the
+  // initiator. The twin is the same acceptance signed by the INITIATOR, with
+  // nothing of the responder's signed, and it verifies.
+  const [session, didDocuments] = thirdPartyResolvingSession();
+  const quote = observedQuote({ senderDid: RESPONDER_DID });
+  const accepted = {
+    acceptedId: quote.message_id as string,
+    acceptedHash: hashObject(quote.act),
+    roundNumber: quote.round_number as number,
+  };
+  const byInitiator = generateEvidenceWith(
+    session,
+    [quote, acceptanceBy(session.session_id, { ...accepted, signer: "initiator" })],
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  expect(verifySessionEvidenceRecord(byInitiator, didDocuments)).toBe(true);
+
+  const thirdPartyAcceptance = acceptanceBy(session.session_id, {
+    ...accepted,
+    signer: "third_party",
+  });
+  const signed = signObservedAct(
+    generateEvidenceWith(session, [quote, unsignedObservationOf(thirdPartyAcceptance)], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+    thirdPartyAcceptance,
+    "acceptance_signature",
+  );
+
+  const entry = (signed.acts as Dict[]).find((item) => item.message_type === "acceptance")!;
+  expect(entry.attribution).toBe("verified_signature");
+  expect(entry.sender_did).toBe(THIRD_PARTY_DID);
+  expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
+  expect(verifySessionEvidenceRecord(signed, didDocuments)).toBe(false);
+
+  expect(() =>
+    generateEvidenceWith(session, [quote, thirdPartyAcceptance], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/session party/);
+});
+
+test("an unsigned acceptance is admitted in an external-channel record", () => {
+  // An observation witnesses nothing, so the acceptance rule does not reach it.
+  // Two shapes: the responder's unsigned acceptance after a signed negotiation,
+  // and after an unsigned one. Both verify, and both are mixed.
+  const [session, didDocuments] = mandateOnlySession();
+  const acceptance = counterofferAcceptance(session.session_id, "responder");
+  const afterSigned = generateEvidenceWith(
+    session,
+    signedNegotiation(session, [unsignedObservationOf(acceptance)]),
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  const observedAcceptance = (afterSigned.acts as Dict[]).find(
+    (entry) => entry.message_type === "acceptance",
+  )!;
+  expect(observedAcceptance.attribution).toBe("unsigned_observation");
+  expect(observedAcceptance.sender_did).toBe(RESPONDER_DID);
+  expect(afterSigned.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(afterSigned, didDocuments)).toBe(true);
+
+  const [afterUnsigned, unsignedDidDocuments] = mandateOnlyPair(UNSIGNED_ACCEPTANCE);
+  expect(afterUnsigned.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(afterUnsigned, unsignedDidDocuments)).toBe(true);
+});
+
+for (const responder of ["observed_party", "did_bearing"] as const) {
+  for (const path of ["negotiated", "after_the_fact"] as const) {
+    test(`the initiator's acceptance of an observed offer verifies [${path}-${responder}]`, () => {
+      // The shape an external channel produces, admitted at both responder tiers.
+      //
+      // The initiator signs its own acceptance of the counterparty's offer, which
+      // it OBSERVED — the counterparty signed nothing — and the order is confirmed
+      // outside A2CN. negotiated carries the initiator's signed offer before it;
+      // after_the_fact carries the acceptance alone, as a producer does that
+      // records a commitment after the fact. The acceptance's signer is the
+      // initiator and the responder holds no verified act, so the acceptance rule
+      // admits it; nothing in it is the counterparty's signature, so the record is
+      // unilateral.
+      const [manager, session, didDocuments] =
+        responder === "observed_party" ? makeIdentityLightSession() : makeSession();
+      if (path === "negotiated") {
+        manager.processMessage(session, makeOffer(session.session_id));
+      }
+      markCompletedExternally(session);
+      const quote = observedQuote({ senderDid: null });
+      const acceptance = acceptanceBy(session.session_id, {
+        acceptedId: quote.message_id as string,
+        acceptedHash: hashObject(quote.act),
+        roundNumber: quote.round_number as number,
+      });
+      const observed = path === "negotiated" ? [quote, acceptance] : [acceptance];
+
+      const record = generateEvidenceWith(session, [...observed, orderConfirmation()], {
+        externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+        ...(responder === "observed_party" ? { observedResponder: OBSERVED_RESPONDER } : {}),
+      });
+
+      const expected: [unknown, unknown][] = [["acceptance", INITIATOR_DID]];
+      if (path === "negotiated") {
+        expected.unshift(["offer", INITIATOR_DID]);
+      }
+      expect(verifiedActs(record)).toStrictEqual(expected);
+      expect(record.evidence_level).toBe("unilateral");
+      expect(record.record_version).toBe("0.5");
+      expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+    });
+  }
+}
+
+test("an external-channel record never classifies bilateral", () => {
+  // Both parties signed and nothing is unsigned, and the record is still mixed.
+  //
+  // Without the reference this act list is what bilateral describes: both session
+  // parties have verified acts and no act is unsigned. With the reference, the
+  // completion is the producer's account rather than an act either party signed,
+  // so the classifier caps the level at mixed. A record that claims bilateral here
+  // is refused, whatever its seal.
+  const [session, didDocuments] = mandateOnlySession();
+  const record = generateEvidenceWith(session, signedNegotiation(session, [], false), {
+    externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+  });
+
+  expect(verifiedActs(record)).toStrictEqual([
+    ["offer", INITIATOR_DID],
+    ["counteroffer", RESPONDER_DID],
+  ]);
+  expect((record.acts as Dict[]).every((entry) => entry.attribution === "verified_signature")).toBe(
+    true,
+  );
+  expect(record.evidence_level).toBe("mixed");
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+
+  const claimed = structuredClone(record);
+  claimed.evidence_level = "bilateral";
+  reseal(claimed);
+  expect(verifySessionEvidenceRecord(claimed, didDocuments)).toBe(false);
+});
+
+for (const version of ["0.3", "0.4"]) {
+  test(`a signed negotiation record relabelled below 0.5 is refused [${version}]`, () => {
+    // A counterparty-signed negotiation behind a reference is a "0.5" shape too.
+    const [session, didDocuments] = mandateOnlySession();
+    const record = generateEvidenceWith(session, signedNegotiation(session), {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    });
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+
+    const relabelledRecord = relabelled(record, version);
+    expectSealedAndOtherwiseSound(relabelledRecord, didDocuments, "mixed");
+    expect(verifySessionEvidenceRecord(relabelledRecord, didDocuments)).toBe(false);
+  });
+}
 
 test("a transaction_record_hash still requires a DID-bearing responder", () => {
   // The direction this change does not touch. A TransactionRecord is bilateral
