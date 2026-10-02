@@ -54,7 +54,7 @@ upgrade.
 
 | File | Description |
 |------|-------------|
-| [`a2cn-spec-v0.2.0.md`](a2cn-spec-v0.2.0.md) | **Current spec** — 3,300+ lines, eight protocol components |
+| [`a2cn-spec-v0.2.0.md`](a2cn-spec-v0.2.0.md) | **Current spec** — 6,300+ lines, eight protocol components |
 | [`schemas/`](schemas/) | Normative JSON schemas for all message types |
 | [`schemas/terms/`](schemas/terms/) | Deal-type-specific terms extensions |
 | [`test-vectors/`](test-vectors/) | Deterministic cross-language cryptographic vectors |

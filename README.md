@@ -307,7 +307,7 @@ rather than platform-local implementation details.
 
 ## The spec
 
-Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 3,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns across procurement, revenue, CLM, CPQ, renewal, and eSignature systems, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
+Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 6,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns across procurement, revenue, CLM, CPQ, renewal, and eSignature systems, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
 **Spec status:** v0.2.0. Passed four independent critique cycles. Verified against the Python and TypeScript reference implementations (2054 and 1871 tests).
 
@@ -376,7 +376,7 @@ A2CN/
 
 | Milestone | Status |
 |-----------|--------|
-| Protocol spec v0.2.0 | ✓ Complete — 3,300+ lines, 8 components |
+| Protocol spec v0.2.0 | ✓ Complete — 6,300+ lines, 8 components |
 | Reference implementation (Python) | ✓ Complete — 2054 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
 | Platform adapters | 11 implemented: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign. Each is built against the platform's published API surface and tested against those schemas; see each adapter's **Validation status** section for what has and has not been exercised against a live instance. |
