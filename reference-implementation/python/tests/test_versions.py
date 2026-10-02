@@ -8,7 +8,6 @@ values. Either drifting fails here rather than in a release.
 import json
 import re
 import tomllib
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import a2cn
@@ -80,15 +79,56 @@ def test_the_package_root_reexports_the_matrix():
     assert a2cn.PROTOCOL_VERSIONS is PROTOCOL_VERSIONS
 
 
-def test_the_installed_package_version_is_the_pyproject_version():
-    try:
-        installed = version("a2cn")
-    except PackageNotFoundError:
-        # Run from a source tree that is not installed: the fallback says so
-        # rather than claiming a release number.
-        assert a2cn.__version__ == "0.0.0+source"
-        return
-    assert a2cn.__version__ == installed == _pyproject_version()
+def test_the_package_version_is_this_trees_or_the_source_fallback():
+    assert a2cn.__version__ in (_pyproject_version(), "0.0.0+source")
+
+
+class _Distribution:
+    def __init__(self, init_path, direct_url=None):
+        self.version = "9.9.9"
+        self._init_path = init_path
+        self._direct_url = direct_url
+
+    def locate_file(self, path):
+        return self._init_path
+
+    def read_text(self, name):
+        return self._direct_url if name == "direct_url.json" else None
+
+
+def test_a_distribution_owning_the_imported_files_is_reported(monkeypatch):
+    monkeypatch.setattr(a2cn, "distribution", lambda name: _Distribution(Path(a2cn.__file__)))
+    assert a2cn._installed_version() == "9.9.9"
+
+
+def test_an_editable_install_of_this_tree_is_reported(monkeypatch):
+    direct_url = json.dumps({"url": PYTHON_ROOT.as_uri(), "dir_info": {"editable": True}})
+    monkeypatch.setattr(
+        a2cn, "distribution", lambda name: _Distribution(Path("/elsewhere/a2cn/__init__.py"), direct_url)
+    )
+    assert a2cn._installed_version() == "9.9.9"
+
+
+def test_another_distribution_named_a2cn_is_not_reported(monkeypatch):
+    # Installed elsewhere, while Python imported this tree: its version says
+    # nothing about the code that is running.
+    other_root = json.dumps({"url": Path("/elsewhere").as_uri(), "dir_info": {"editable": True}})
+    for direct_url in (None, other_root):
+        monkeypatch.setattr(
+            a2cn, "distribution", lambda name, d=direct_url: _Distribution(Path("/elsewhere/a2cn/__init__.py"), d)
+        )
+        assert a2cn._installed_version() == "0.0.0+source"
+
+
+def test_requirements_txt_restates_the_pyproject_dependencies():
+    # requirements.txt lists the dependencies so it installs from any working
+    # directory; pyproject.toml stays their single source, and this holds the
+    # two lists equal.
+    project = tomllib.loads((PYTHON_ROOT / "pyproject.toml").read_text())["project"]
+    expected = project["dependencies"] + project["optional-dependencies"]["dev"]
+    lines = (PYTHON_ROOT / "requirements.txt").read_text().splitlines()
+    listed = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+    assert sorted(listed) == sorted(expected)
 
 
 def test_the_readme_table_states_the_matrix():
