@@ -9,6 +9,8 @@
 
 This is the reference implementation of the [A2CN protocol](../spec/a2cn-spec-v0.2.0.md) — the open protocol for agent-to-agent B2B commercial negotiation. It is the authoritative example of what spec-compliant A2CN behavior looks like in code.
 
+This directory holds both reference implementations side by side: [`python/`](python/) and [`typescript/`](typescript/), a full TypeScript port held to the Python one by shared test vectors. Both read the same `spec/` schemas and vectors. This page covers the Python implementation; see [`typescript/MIGRATION.md`](typescript/MIGRATION.md) for the TypeScript one.
+
 ---
 
 ## Quickstart

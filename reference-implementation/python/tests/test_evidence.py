@@ -2484,7 +2484,7 @@ def _apply_changes(record: dict, case: dict) -> dict:
     A path element may be a STRING (dict key) or an INTEGER (list index): the
     ``mixed`` external-channel case targets ``["acts", 1, "sender_did"]``, and
     ``holder[key]`` indexes lists and dicts alike. THREE harnesses walk these
-    paths -- this one, ``applyChanges`` in ``a2cn_ts/tests/test_evidence.test.ts``
+    paths -- this one, ``applyChanges`` in ``reference-implementation/typescript/tests/test_evidence.test.ts``
     and ``_with_changes`` in ``tests/test_record_schemas.py`` -- and the vectors
     are the CROSS-LANGUAGE contract, so all three must accept the same paths.
     Replace any of them with a dict-only walk and that case breaks in one

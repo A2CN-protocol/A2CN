@@ -20,7 +20,15 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The TypeScript reference implementation moved from `a2cn_ts/` to
+  `reference-implementation/typescript/`**, beside `reference-implementation/python/`.
+  The package is unchanged and nothing in it behaves differently; run it from the
+  new directory (`cd reference-implementation/typescript && npm install && npm test`).
+  Its tests resolve the shared `spec/` directory through one helper,
+  `tests/support/paths.ts`, which fails loudly if the package is moved again
+  without updating it.
 
 ---
 
