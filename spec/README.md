@@ -4,7 +4,7 @@
 
 [![Release](https://img.shields.io/badge/Release-0.3.0-green.svg)](../CHANGELOG.md)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-blue.svg)](a2cn-spec-v0.2.0.md)
-[![Wire protocol](https://img.shields.io/badge/Wire%20protocol-0.2-blue.svg)](a2cn-spec-v0.2.0.md#status-of-this-document)
+[![Wire protocol](https://img.shields.io/badge/Wire%20protocol-0.3-blue.svg)](a2cn-spec-v0.2.0.md#status-of-this-document)
 [![Status](https://img.shields.io/badge/Status-Draft%20%E2%80%94%20Feedback%20Welcome-yellow.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](../LICENSE)
 [![Schemas](https://img.shields.io/badge/JSON%20Schemas-Normative-brightgreen.svg)](schemas/)
@@ -40,9 +40,13 @@ carries no JSON Schema validator, so a schema-versus-verifier divergence can be
 caught on one side alone. The TypeScript suite mirrors the verifier behaviour
 instead.
 
-Release `0.3.0` is additive and fully wire-compatible with `0.2`: a `0.2` peer and a
-`0.3.0` peer interoperate, and every signature, hash, and test vector produced under
-`0.2` remains valid.
+Release `0.3.0` moves the wire protocol to `0.3` and is **not** wire-compatible
+with `0.2`: the acceptance's signed scope changed and declines are now signed, so a
+`0.2` peer cannot verify a `0.3` act, and a new session is established only at `0.3`.
+`0.2` stays recognized for verifying records produced under it, and every message
+schema published for `0.2` is unchanged. See the
+[CHANGELOG](../CHANGELOG.md#030--2026-10-02) for the breaking changes and how to
+upgrade.
 
 ---
 
@@ -50,7 +54,7 @@ Release `0.3.0` is additive and fully wire-compatible with `0.2`: a `0.2` peer a
 
 | File | Description |
 |------|-------------|
-| [`a2cn-spec-v0.2.0.md`](a2cn-spec-v0.2.0.md) | **Current spec** — 3,300+ lines, eight protocol components |
+| [`a2cn-spec-v0.2.0.md`](a2cn-spec-v0.2.0.md) | **Current spec** — 6,300+ lines, eight protocol components |
 | [`schemas/`](schemas/) | Normative JSON schemas for all message types |
 | [`schemas/terms/`](schemas/terms/) | Deal-type-specific terms extensions |
 | [`test-vectors/`](test-vectors/) | Deterministic cross-language cryptographic vectors |

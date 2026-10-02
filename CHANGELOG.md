@@ -20,6 +20,70 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+Nothing yet.
+
+---
+
+## [0.3.0] — 2026-10-02
+
+The first release since `0.2.0`. It adds the Session Evidence Record, moves the
+wire protocol to `"0.3"`, binds both signatures of a TransactionRecord, and
+pins how money is written. **Several changes are breaking**; they are listed
+first.
+
+### At a glance
+
+| | `0.2.0` | `0.3.0` |
+|---|---|---|
+| Wire protocol (`protocol_version`, `a2cn_version`) | `0.2` | `0.3`. A new session is established only at `0.3`; `0.2` is recognized only to verify records produced under it |
+| TransactionRecord `record_version` | `0.1` | emits and verifies `0.4` only; `0.1`–`0.3` are known shapes that are refused |
+| SessionEvidenceRecord | — | new (Section 9A); emits `0.5`, verifies `0.1`–`0.5` |
+| AuditLog `record_version` | `0.1` | `0.1` |
+| Specification document | `a2cn-spec-v0.2.0.md` | `a2cn-spec-v0.2.0.md`, now specifying wire `0.3` |
+
+The library reports these values itself: `a2cn.__version__` and
+`a2cn.PROTOCOL_VERSIONS` in Python, and `PROTOCOL_VERSIONS` in
+`a2cn_ts/src/a2cn/versions.ts` in TypeScript.
+
+### Breaking changes
+
+- **Wire `0.3`.** A `0.2` peer cannot verify a `0.3` act. A responder refuses a `0.2` SessionInit, and the client refuses a SessionAck at any other version. Code that rebuilds a recorded `0.2` session to verify its records must pass `legacy_replay=True` (Python) or `{ legacyReplay: true }` (TypeScript).
+- **The acceptance's signed scope changed.** It now signs the uniform act envelope, so an `acceptance_signature` made under `0.2` does not verify.
+- **Declines are signed.** A receiver refuses an unsigned rejection or withdrawal, and a Withdrawal must carry `round_number`.
+- **Line-item money keys are pinned** to `unit_price_minor` and `total_minor`. The bare spellings are rejected, and so is an offer in a currency whose decimal exponent the receiver cannot place.
+- **TransactionRecords produced before this release no longer verify** and must be regenerated from the session messages. A verifier accepts `record_version` `0.4` only.
+
+### Upgrading
+
+Upgrade both peers together, because a `0.2` and a `0.3` peer do not negotiate
+with each other. Regenerate any stored TransactionRecord. Stored
+SessionEvidenceRecords at `0.1`–`0.4` keep verifying unchanged.
+
+### Development history
+
+The entries below record the changes in the order they landed. The intermediate
+`record_version` values they mention (TransactionRecord `0.2` and `0.3`,
+SessionEvidenceRecord `0.2` to `0.4`) were never released on their own; the
+table above gives what this release emits and verifies. The Session Evidence
+Record itself first appeared in the repository on 2026-09-02, at the `v0.3.0`
+tag of that date; it is released here for the first time. Changes made between
+`0.2.0` and that tag (the TypeScript implementation, eight platform adapters,
+security hardening, the human approval pause, production session stores, UBL
+export and lowercase post-commitment message types) were not logged here entry
+by entry; the README's "What's new in 0.3.0" summarises them. From this release
+on, every change is logged here.
+
+**The package reports what it implements.** `a2cn.__version__` reads the
+version of the installed distribution that owns the imported source tree, and
+reports `0.0.0+source` for a tree no installed distribution owns, even when
+another distribution named `a2cn` is installed. `a2cn.PROTOCOL_VERSIONS` (Python) and
+`PROTOCOL_VERSIONS` in `a2cn_ts/src/a2cn/versions.ts` (TypeScript) list the wire
+and record versions the library emits and verifies, read from the constants that
+own them. The README gains a "Versions implemented" table, held to both by a
+drift test in each language. A test also holds `requirements.txt` equal to the
+`pyproject.toml` dependencies and `dev` extra, and `RELEASING.md` sets out the
+release checklist. No protocol behaviour changes.
+
 **A counterparty with a verified identity that never signs the completion can now
 complete a session through an external reference (additive;
 SessionEvidenceRecord `record_version` `0.5`).**
@@ -404,7 +468,7 @@ wire version is an open question; this change does not settle it.
 > **BREAKING — TransactionRecords produced before this release no longer verify
 > and must be regenerated.** A verifier now accepts `record_version` `"0.3"`
 > alone. `"0.1"` and `"0.2"` records — everything produced up to and including
-> release `0.3.0` — are refused as unbound, because nothing in them binds
+> the 2026-09-02 `v0.3.0` tag — are refused as unbound, because nothing in them binds
 > `agreed_terms` to a party's signature. Regenerate them from the session
 > messages. Their schema files stay published so such a record can still be
 > parsed and inspected; parsing is not accepting. This is wire-compatible: no
@@ -476,7 +540,7 @@ Section 9.3 now says plainly.
 
 The SessionEvidenceRecord moves to `record_version` `"0.2"`. Its schema is
 published as `session-evidence-record-0.2.schema.json`, with `$id` `/0.2`,
-beside the `"0.1"` schema exactly as release 0.3.0 published it; the Sections
+beside the `"0.1"` schema exactly as the 2026-09-02 `v0.3.0` tag carried it; the Sections
 9A.8 to 9A.11 additions are in the `"0.2"` schema only. Version `"0.2"` is the
 one that introduced Sections 9A.8 to 9A.11 and the Section 9A.9 rule
 that a `net` or `gross` `money_basis` agrees with the described act's
@@ -537,6 +601,19 @@ external-channel record must be sealed by `parties.initiator.did`.
 
 ### Added
 
+- **Section 9A — `SessionEvidenceRecord`.** A producer-sealed evidence package for
+  *any* terminal session outcome, not only accepted ones. This closes the gap where
+  a session that ended in `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, or `TIMED_OUT`
+  left no verifiable artifact behind. Evidence is classified as `bilateral`,
+  `mixed`, or `unilateral`; sealing an unsigned observed act protects bundle
+  integrity but does **not** attribute that act to the named counterparty.
+- `GET /sessions/{session_id}/evidence` — terminal-only, party-authorized, in both
+  reference implementations.
+- Normative `spec/schemas/session-evidence-record.schema.json`
+  (`$id` `.../session-evidence-record/0.1`).
+- A cross-language hash vector, `spec/test-vectors/session-evidence-record-parity.json`.
+- `evidence.py` and `evidence.ts` implementing generation and strict verification,
+  including mandatory rejection of an unrecognized `record_version`.
 - **Section 9.3 — the signed act's fields in `final_offer`.** `protocol_version`,
   `round_number`, `sequence_number`, `message_type`, `timestamp` and
   `expires_at`, each copied verbatim from the accepted offer except
@@ -675,16 +752,17 @@ external-channel record must be sealed by `parties.initiator.did`.
 - `spec/schemas/session-evidence-record-0.2.schema.json` — the
   SessionEvidenceRecord schema at `record_version` `"0.2"`, the only schema that
   describes Sections 9A.8 to 9A.11. It is published beside the `"0.1"` schema,
-  `session-evidence-record.schema.json`, which stays exactly as release 0.3.0
-  published it. A record artifact's unversioned schema file describes its
+  `session-evidence-record.schema.json`, which stays exactly as the 2026-09-02
+  `v0.3.0` tag carried it. A record artifact's unversioned schema file describes its
   `"0.1"` version, each later version is published beside it as
   `<name>-<version>.schema.json`, and a published schema file is never rewritten
   (Section 17).
 - `spec/test-vectors/session-evidence-record-parity.json` —
-  `release_0_3_0_record`, the SessionEvidenceRecord that release 0.3.0 produced
+  `release_0_3_0_record`, the SessionEvidenceRecord that the 2026-09-02 `v0.3.0` tag produced
   for the vector's session, which validates against the `"0.1"` schema and
   verifies under the current verifiers; and `release_0_3_0_schema_sha256`, which
-  pins the `"0.1"` schema file to the bytes release 0.3.0 published.
+  pins the `"0.1"` schema file to the bytes that tag carried. The names keep
+  `0_3_0` because they identify that snapshot.
 - **Section 9A.12 — external-channel completion.** A `COMPLETED`
   SessionEvidenceRecord whose responder is an `observed_party` completes through
   `external_commitment_reference` (a required `external_commitment_id`, and an
@@ -734,7 +812,7 @@ external-channel record must be sealed by `parties.initiator.did`.
   was never coherent: a generator that produced it hashed a TransactionRecord
   whose responder was empty, which fails its own verifier and its own schema. No
   released implementation produces one, because `observed_party` responders
-  arrived after release 0.3.0. Records that an unreleased implementation
+  arrived after the 2026-09-02 `v0.3.0` tag. Records that an unreleased implementation
   produced do change verdict.
 - **Sections 9A.5 and 9A.6 step 8 — the evidence level of an observed-responder
   record is asserted.** `_classify_evidence_level` and `classifyEvidenceLevel`
@@ -765,11 +843,11 @@ external-channel record must be sealed by `parties.initiator.did`.
   own accepted set, because `"0.3"` is a TransactionRecord version that a
   SessionEvidenceRecord verifier rejects.
 - `TRANSACTION_RECORD_VERSION` (Python `a2cn.record`, TypeScript `record.ts`),
-  exported in 0.3.0, is replaced by `TRANSACTION_RECORD_VERSION_WITHOUT_BASIS`
+  exported at the 2026-09-02 `v0.3.0` tag, is replaced by `TRANSACTION_RECORD_VERSION_WITHOUT_BASIS`
   (`"0.1"`) and `TRANSACTION_RECORD_VERSION_WITH_BASIS` (`"0.2"`), because a
   TransactionRecord's version now follows whether it carries `basis`.
 - `SESSION_EVIDENCE_RECORD_VERSION` (Python `a2cn.evidence`, TypeScript
-  `evidence.ts`), exported in 0.3.0, is replaced by
+  `evidence.ts`), exported at the 2026-09-02 `v0.3.0` tag, is replaced by
   `SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT` (`"0.2"`) and
   `SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT` (`"0.3"`), because
   a SessionEvidenceRecord's version now follows whether it carries
@@ -800,57 +878,6 @@ external-channel record must be sealed by `parties.initiator.did`.
   after signature verification and before the mandate check and any state
   change; a malformed `terms.basis` is reported first, then `currency`, then
   `basis`.
-
-## [0.3.0] — 2026-09-02
-
-**Terminal Session Evidence Record (additive; wire-compatible with 0.2; no
-`record_version` or signature changes).**
-
-### Added
-
-- **Section 9A — `SessionEvidenceRecord`.** A producer-sealed evidence package for
-  *any* terminal session outcome, not only accepted ones. This closes the gap where
-  a session that ended in `REJECTED_FINAL`, `WITHDRAWN`, `IMPASSE`, or `TIMED_OUT`
-  left no verifiable artifact behind. Evidence is classified as `bilateral`,
-  `mixed`, or `unilateral`; sealing an unsigned observed act protects bundle
-  integrity but does **not** attribute that act to the named counterparty.
-- `GET /sessions/{session_id}/evidence` — terminal-only, party-authorized, in both
-  reference implementations.
-- Normative `spec/schemas/session-evidence-record.schema.json`
-  (`$id` `.../session-evidence-record/0.1`).
-- A cross-language hash vector, `spec/test-vectors/session-evidence-record-parity.json`.
-- `evidence.py` and `evidence.ts` implementing generation and strict verification,
-  including mandatory rejection of an unrecognized `record_version`.
-
-### Changed
-
-- Nothing on the wire, and nothing inside any hashed or signed byte range.
-
-### Compatibility
-
-`0.3.0` is **fully wire-compatible with `0.2`**. A `0.2` peer and a `0.3.0` peer
-interoperate without changes. Specifically:
-
-- `protocol_version` and `a2cn_version` remain `"0.2"`. The wire version moves only
-  on a wire-incompatible change (spec, *Status of This Document*), and this release
-  changed no wire message. `protocol_version` is the first field of the signed
-  protocol act, so holding it fixed is what keeps every existing signature,
-  `protocol_act_hash`, `offer_chain_hash`, `record_hash`, and parity vector valid.
-- No `record_version` moved. `TransactionRecord` and `AuditLog` are byte-identical
-  to `0.2.0` — their generation code was untouched. `SessionEvidenceRecord` is new,
-  so `"0.1"` is its initial version.
-- No schema `$id` moved. A schema's `$id` versions the thing it describes, so
-  message schemas stay at `/0.2` and `session-evidence-record` is correctly at
-  `/0.1` (Section 9A.1).
-- The spec document remains `spec/a2cn-spec-v0.2.0.md`. It specifies wire `0.2`,
-  which has not moved, and keeping the filename keeps published links and external
-  bookmarks working.
-
-### Upgrading
-
-Update the dependency; there is nothing else to do. Producing or consuming
-`SessionEvidenceRecord` is opt-in — existing negotiation, record, and audit-log
-code paths are unaffected.
 
 ---
 
@@ -892,5 +919,6 @@ strict turn-taking.
 
 Initial draft.
 
+[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.0
 [0.2.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.2.0

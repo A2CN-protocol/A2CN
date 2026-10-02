@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](python/tests/)
+[![Tests](https://img.shields.io/badge/Tests-2054%20passing-brightgreen.svg)](python/tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -115,7 +115,7 @@ private_key, public_key = generate_keypair()
 
 # Hash a protocol act (JCS → SHA-256 → base64url)
 protocol_act = {
-    "protocol_version": "0.1",
+    "protocol_version": "0.3",
     "session_id": "...",
     "round_number": 1,
     "sequence_number": 1,
@@ -294,7 +294,7 @@ tests/test_session.py::test_session_timeout               PASSED
 tests/conformance/test_conformance.py::CONF-001           PASSED
 tests/conformance/test_conformance.py::CONF-002           PASSED
 ...
-474 passed
+2054 passed
 ```
 
 ### Conformance tests

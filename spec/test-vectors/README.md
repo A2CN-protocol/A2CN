@@ -15,15 +15,15 @@ sequence numbers, assert the same invalid-record hash, and assert rejection. Thi
 ensures timestamp validation cannot be skipped merely because sequence ordering
 determines every act position.
 
-It also records `release_0_3_0_record`, the SessionEvidenceRecord that release
-0.3.0 produced for its session with its producer key, at `record_version`
+It also records `release_0_3_0_record`, the SessionEvidenceRecord that the
+2026-09-02 `v0.3.0` tag produced for its session with its producer key, at `record_version`
 `"0.1"`. Its acts state no wire version, so they are rebuilt under the pinned
 `"0.2"` (Section 7.3.1). Both suites assert that it verifies under the current
 verifier and that this implementation's record for the session, with the wire
 version it now states on each of its acts removed, relabelled
 `"0.1"` and resealed, has the same `record_hash`; the Python suite also validates it against
 `session-evidence-record.schema.json`. `release_0_3_0_schema_sha256` is the
-sha256 of that schema file as release 0.3.0 published it, which both suites pin,
+sha256 of that schema file as that tag carried it, which both suites pin,
 because a published schema file is never rewritten (Section 17).
 
 `session-evidence-record-wire-version.json` covers the wire version a recorded
