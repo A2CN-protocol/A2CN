@@ -2,6 +2,13 @@
 
 We welcome contributions to the specification, reference implementation, and SDK.
 
+## Where to raise things
+
+- **Questions, ideas, and spec feedback** → GitHub Discussions.
+- **Bugs and concrete spec/implementation defects** → GitHub Issues.
+- **Security vulnerabilities** → see [SECURITY.md](SECURITY.md). Please do **not** open
+  a public issue or discussion for a vulnerability.
+
 ## Ways to contribute
 
 - Review and comment on the specification

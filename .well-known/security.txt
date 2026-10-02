@@ -1,0 +1,7 @@
+# A2CN security contact — https://a2cn.io/.well-known/security.txt
+Contact: https://github.com/A2CN-protocol/A2CN/security/advisories/new
+Contact: mailto:security@a2cn.io
+Policy: https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md
+Preferred-Languages: en
+Canonical: https://a2cn.io/.well-known/security.txt
+Expires: 2027-10-02T00:00:00.000Z
