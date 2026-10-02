@@ -11,7 +11,7 @@ with it.
 ``a2cn.session`` imports both names and re-exports them, so
 ``from a2cn.session import A2CNError`` keeps working for every existing caller.
 
-The TypeScript mirror is ``a2cn_ts/src/a2cn/errors.ts``.
+The TypeScript mirror is ``reference-implementation/typescript/src/a2cn/errors.ts``.
 """
 
 from __future__ import annotations

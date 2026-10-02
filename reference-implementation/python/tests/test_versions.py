@@ -139,7 +139,7 @@ def test_the_readme_table_states_the_matrix():
 
 def test_the_readme_table_states_the_package_and_spec_versions():
     rows = _readme_table()
-    package_json = json.loads((REPO_ROOT / "a2cn_ts" / "package.json").read_text())
+    package_json = json.loads((REPO_ROOT / "reference-implementation" / "typescript" / "package.json").read_text())
     assert rows.get("Python package `a2cn`") == [_pyproject_version()]
     assert rows.get("TypeScript package `a2cn`") == [package_json["version"]]
     (spec_version,) = rows["Specification document"]

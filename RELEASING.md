@@ -11,7 +11,7 @@ when their own shape or meaning changes, and are listed in the
 |------|-----------------|----------------|
 | Python package version | `reference-implementation/python/pyproject.toml` `version` | `a2cn.__version__`, from the metadata of the installed distribution that owns the imported tree |
 | Python dependencies | `pyproject.toml` `dependencies` and the `dev` extra | `requirements.txt` restates them so it installs from any directory; a test holds the two equal |
-| TypeScript package version | `a2cn_ts/package.json` `version` | package metadata |
+| TypeScript package version | `reference-implementation/typescript/package.json` `version` | package metadata |
 | Protocol versions | the constants in `messages`, `record` and `evidence` | `a2cn.PROTOCOL_VERSIONS` / `PROTOCOL_VERSIONS` in `versions.ts` |
 
 Never type a version into a second place. The two packages are versioned

@@ -36,7 +36,7 @@ EXPECTED_0_3 = TR_VECTOR["expected"]["record_version_0_3"]
 # A session whose round-1 offer omits expires_at, so its signed act, and the
 # record, carry "". A conformant producer can emit this, so the schema takes it.
 EMPTY_EXPIRES_AT = TR_VECTOR["empty_expires_at"]
-PARITY_VECTORS = json.loads((REPO_ROOT / "a2cn_ts" / "parity" / "vectors.json").read_text())
+PARITY_VECTORS = json.loads((REPO_ROOT / "reference-implementation" / "typescript" / "parity" / "vectors.json").read_text())
 SER_VECTOR = json.loads((VECTORS / "session-evidence-record-parity.json").read_text())
 
 TR_0_1 = "transaction-record.schema.json"
@@ -522,7 +522,7 @@ def _with_changes(record: dict, case: dict) -> dict:
     ``mixed`` external-channel case targets ``["acts", 1, "sender_did"]``, and
     ``holder[key]`` indexes lists and dicts alike. THREE harnesses walk these
     paths -- this one, ``_apply_changes`` in ``tests/test_evidence.py`` and
-    ``applyChanges`` in ``a2cn_ts/tests/test_evidence.test.ts`` -- and the vectors
+    ``applyChanges`` in ``reference-implementation/typescript/tests/test_evidence.test.ts`` -- and the vectors
     are the CROSS-LANGUAGE contract, so all three must accept the same paths.
     Replace any of them with a dict-only walk and that case breaks in one
     language only, which is the divergence the shared vectors exist to close.

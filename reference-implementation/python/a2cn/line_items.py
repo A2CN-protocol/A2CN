@@ -20,7 +20,7 @@ money type serialises, so that is the common case, not an exotic one. Both
 languages therefore accept any integral number and refuse anything with a
 fractional part.
 
-The TypeScript mirror is ``a2cn_ts/src/a2cn/line_items.ts`` and the two are
+The TypeScript mirror is ``reference-implementation/typescript/src/a2cn/line_items.ts`` and the two are
 held to the same cases by ``spec/test-vectors/offer-line-item-keys.json``.
 """
 

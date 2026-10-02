@@ -69,7 +69,7 @@ Release `0.3.0` moves the wire protocol to `0.3`, and **it is not wire-compatibl
 
 ### Also shipped since 0.2.0
 
-- **TypeScript reference implementation** (`a2cn_ts/`), a full port of the Python implementation, held to it by shared test vectors.
+- **TypeScript reference implementation** (`reference-implementation/typescript/`), a full port of the Python implementation, held to it by shared test vectors.
 - **Eight more platform adapters:** DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr and DocuSign, for eleven in all. See [Platform integration adapters](#platform-integration-adapters).
 - **Human approval pause.** `AWAITING_HUMAN_APPROVAL` holds an offer above the mandate's threshold until a signed approval receipt arrives.
 - **Security hardening:**
@@ -315,7 +315,7 @@ Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.
 
 ## Versions implemented
 
-The library's own version is its semver and moves independently of the protocol versions a release implements. In code: `a2cn.__version__` and `a2cn.PROTOCOL_VERSIONS` (Python), `PROTOCOL_VERSIONS` in `a2cn_ts/src/a2cn/versions.ts` (TypeScript). A test in each language fails if this table drifts from them.
+The library's own version is its semver and moves independently of the protocol versions a release implements. In code: `a2cn.__version__` and `a2cn.PROTOCOL_VERSIONS` (Python), `PROTOCOL_VERSIONS` in `reference-implementation/typescript/src/a2cn/versions.ts` (TypeScript). A test in each language fails if this table drifts from them.
 
 <!-- versions-table:start -->
 | Item | Version |
@@ -363,9 +363,9 @@ A2CN/
 │   │   ├── ubl_export.py            # UBL 2.1 invoice export
 │   │   ├── tests/                   # incl. conformance/
 │   │   └── examples/                # SaaS renewal, invitation flow, Keelvar, LLM and MCP agent demos
+│   ├── typescript/                  # TypeScript reference implementation (same layout under src/)
 │   └── skills/
 │       └── a2cn-negotiation.md      # Reference LLM negotiation skills file (Section 13.9)
-├── a2cn_ts/                         # TypeScript reference implementation (same layout under src/)
 ├── demos/two_process/               # Buyer and supplier as separate HTTP servers
 └── sdk/                             # SDK (planned)
 ```
@@ -391,7 +391,7 @@ A2CN/
 | Post-commitment lifecycle (`delivery_notice` / `delivery_acknowledged` / `dispute_notice` / `dispute_resolved`) | ✓ Complete — v0.2.0 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | ✓ Complete — `ubl_export.py` / `ubl_export.ts` |
-| TypeScript reference implementation | ✓ Complete — `a2cn_ts/`, 1871 tests passing |
+| TypeScript reference implementation | ✓ Complete — `reference-implementation/typescript/`, 1871 tests passing |
 | Session Evidence Record (Section 9A) | ✓ Complete — sealed evidence for every terminal outcome, including external-channel completion |
 | SDK (pip + npm) | 🔄 In progress — the Python package is prepared for PyPI from release 0.3.0 |
 
