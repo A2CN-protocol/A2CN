@@ -66,7 +66,12 @@ The entries below record the changes in the order they landed. The intermediate
 SessionEvidenceRecord `0.2` to `0.4`) were never released on their own; the
 table above gives what this release emits and verifies. The Session Evidence
 Record itself first appeared in the repository on 2026-09-02, at the `v0.3.0`
-tag of that date; it is released here for the first time.
+tag of that date; it is released here for the first time. Changes made between
+`0.2.0` and that tag (the TypeScript implementation, eight platform adapters,
+security hardening, the human approval pause, production session stores, UBL
+export and lowercase post-commitment message types) were not logged here entry
+by entry; the README's "What's new in 0.3.0" summarises them. From this release
+on, every change is logged here.
 
 **The package reports what it implements.** `a2cn.__version__` reads the
 version of the installed distribution that owns the imported source tree, and

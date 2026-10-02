@@ -59,13 +59,33 @@ Two Python processes. Different organizations. Neither controls the authoritativ
 
 Release `0.3.0` moves the wire protocol to `0.3`, and **it is not wire-compatible with `0.2`**: upgrade both peers together. The [CHANGELOG](CHANGELOG.md) lists every breaking change and how to upgrade.
 
+### Protocol and records
+
 - **Session Evidence Record (Section 9A).** A producer-sealed record for *every* terminal outcome, not only accepted deals, classified `bilateral`, `mixed` or `unilateral`. It can record a deal completed over an external channel, including one with a counterparty whose identity verifies but which never signs the completion.
 - **One signed envelope for every act.** Offer, counteroffer, acceptance, rejection and withdrawal all sign the same header. The acceptance now attests who accepted, and declines are signed in band.
 - **TransactionRecords bind both signatures.** `agreed_terms` is bound to the signed final offer, and both sides of a record can be rebuilt and verified from the record alone (`record_version` `0.4`).
 - **Money is pinned.** There is a session money basis (`net` or `gross`), line-item amounts use the `_minor` keys, a currency whose decimal places are unknown is refused, and amounts round half away from zero.
 - **The library reports what it implements.** See [Versions implemented](#versions-implemented).
 
-## Earlier: v0.2.0
+### Also shipped since 0.2.0
+
+- **TypeScript reference implementation** (`a2cn_ts/`), a full port of the Python implementation, held to it by shared test vectors.
+- **Eight more platform adapters:** DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr and DocuSign, for eleven in all. See [Platform integration adapters](#platform-integration-adapters).
+- **Human approval pause.** `AWAITING_HUMAN_APPROVAL` holds an offer above the mandate's threshold until a signed approval receipt arrives.
+- **Security hardening:**
+  - protocol-act and transaction-record signatures are verified;
+  - mandate commitment caps are enforced;
+  - SessionInit JWTs are bound to their issuer;
+  - DID signing keys are restricted to their stated purposes;
+  - Ed25519 signing is supported alongside ES256;
+  - webhooks are JWS-signed;
+  - inbound invitations may be authenticated by signature.
+- **Production session stores** for Redis and PostgreSQL behind the `SessionStore` interface, and **UBL 2.1 invoice export** from transaction records.
+- **Post-commitment message types are lowercase** (`delivery_notice`, `delivery_acknowledged`, `dispute_notice`, `dispute_resolved`), matching the core messages; the old uppercase values are refused.
+- **Concordia fulfillment attestations**, and a documented extension path for multi-party negotiation groups.
+- **A two-process HTTP demo** (buyer and supplier as separate servers) and an **EU AI Act Article 14** human-oversight mapping in the spec.
+
+## Protocol highlights
 
 ### Session Invitation — solving the cold-start problem
 
@@ -139,6 +159,7 @@ negotiation trail while keeping human oversight explicit and auditable.
 | **Transaction record** | Immutable, content-addressed, dual-signed by both parties |
 | **Audit log** | Structured EU AI Act compliance output for every terminal session state |
 | **Post-commitment lifecycle** | `delivery_notice`, `delivery_acknowledged`, `dispute_notice`, and `dispute_resolved` — normative at Level 3 in v0.2.0 |
+| **Session Evidence Record** | A producer-sealed record of any terminal outcome, classifying how much of it each party signed |
 
 ### What A2CN is not
 
@@ -319,45 +340,34 @@ A TransactionRecord verifier accepts only `0.4`: the earlier shapes are describe
 ```
 A2CN/
 ├── spec/
-│   ├── a2cn-spec-v0.2.0.md         # Protocol specification (current)
-│   └── schemas/                     # Normative JSON schemas
-│       └── terms/
-│           ├── goods_procurement.schema.json
-│           └── saas_renewal.schema.json
-└── reference-implementation/
-    └── python/
-        ├── crypto.py                # JCS, SHA-256, ES256/Ed25519 signing
-        ├── did.py                   # did:web resolution
-        ├── messages.py              # Wire-format dataclasses
-        ├── session.py               # State machine + turn enforcement
-        ├── record.py                # Deterministic transaction records
-        ├── invitation.py            # Component 8: Session Invitation
-        ├── server.py                # FastAPI responder (all endpoints)
-        ├── client.py                # Initiator with JCS+JWS offer signing
-        ├── adapters/
-        │   ├── fairmarkit_adapter.py    # Fairmarkit → A2CN translation
-        │   ├── keelvar_adapter.py       # Keelvar → A2CN translation
-        │   ├── revenue_cloud_adapter.py # Revenue Cloud → A2CN translation
-        │   ├── dealhub_adapter.py       # DealHub → A2CN translation
-        │   ├── nue_adapter.py           # Nue.io → A2CN translation
-        │   ├── ariba_adapter.py         # SAP Ariba → A2CN translation
-        │   ├── jaggaer_adapter.py       # JAGGAER ASO → A2CN translation
-        │   ├── conga_adapter.py         # Conga CPQ/CLM → A2CN translation
-        │   ├── ironclad_adapter.py      # Ironclad workflow → A2CN translation
-        │   ├── vendr_adapter.py         # Vendr benchmark → A2CN translation
-        │   └── docusign_adapter.py      # A2CN record → DocuSign envelope
-        ├── tests/
-        │   ├── test_invitations.py
-        │   ├── test_deal_type_terms.py
-        │   ├── test_adapters.py
-        │   └── conformance/
-        └── examples/
-            ├── saas_renewal.py          # Bilateral SaaS renewal demo
-            ├── invitation_flow.py       # Session Invitation / Fairmarkit demo
-            └── keelvar_demo.py          # Keelvar sourcing event end-to-end demo
-├── skills/
-│   └── a2cn-negotiation.md             # Reference LLM negotiation skills file (Section 13.9)
-└── sdk/                                 # SDK (planned)
+│   ├── a2cn-spec-v0.2.0.md          # Protocol specification (current; specifies wire 0.3)
+│   ├── schemas/                     # Normative JSON schemas, one file per published version
+│   ├── test-vectors/                # Cross-language vectors both implementations verify
+│   └── conformance-fixtures/
+├── reference-implementation/
+│   ├── python/
+│   │   ├── a2cn/
+│   │   │   ├── crypto.py            # JCS, SHA-256, ES256/Ed25519 signing
+│   │   │   ├── did.py               # did:web resolution
+│   │   │   ├── messages.py          # Wire-format dataclasses and the signed act envelope
+│   │   │   ├── session.py           # State machine + turn enforcement
+│   │   │   ├── record.py            # Deterministic transaction records
+│   │   │   ├── evidence.py          # Session Evidence Records (Section 9A)
+│   │   │   ├── invitation.py        # Component 8: Session Invitation
+│   │   │   ├── server.py            # FastAPI responder (all endpoints)
+│   │   │   ├── client.py            # Initiator client
+│   │   │   ├── session_store.py     # SessionStore interface + in-memory, Redis, PostgreSQL
+│   │   │   └── versions.py          # PROTOCOL_VERSIONS
+│   │   ├── adapters/                # 11 platform adapters, each with an integration guide
+│   │   ├── mcp_server.py            # A2CN MCP server
+│   │   ├── ubl_export.py            # UBL 2.1 invoice export
+│   │   ├── tests/                   # incl. conformance/
+│   │   └── examples/                # SaaS renewal, invitation flow, Keelvar, LLM and MCP agent demos
+│   └── skills/
+│       └── a2cn-negotiation.md      # Reference LLM negotiation skills file (Section 13.9)
+├── a2cn_ts/                         # TypeScript reference implementation (same layout under src/)
+├── demos/two_process/               # Buyer and supplier as separate HTTP servers
+└── sdk/                             # SDK (planned)
 ```
 
 ---
