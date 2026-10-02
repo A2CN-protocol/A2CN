@@ -20,6 +20,15 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+**The package reports what it implements.** `a2cn.__version__` reads the
+installed package version, and `a2cn.PROTOCOL_VERSIONS` (Python) and
+`PROTOCOL_VERSIONS` in `a2cn_ts/src/a2cn/versions.ts` (TypeScript) list the wire
+and record versions the library emits and verifies, read from the constants that
+own them. The README gains a "Versions implemented" table, held to both by a
+drift test in each language; `RELEASING.md` sets out the release checklist; and
+`requirements.txt` now installs the package with its `dev` extra rather than
+restating its dependencies. No protocol behaviour changes.
+
 **A counterparty with a verified identity that never signs the completion can now
 complete a session through an external reference (additive;
 SessionEvidenceRecord `record_version` `0.5`).**

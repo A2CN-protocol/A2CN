@@ -25,7 +25,7 @@ the stack mapping, and the parity evidence.
 | `session_store.py` (top-level compat shim) | 15 | Not needed | TS imports are explicit; no legacy import path exists |
 | `examples/` — llm_agent, invitation_flow, saas_renewal, keelvar_demo, mcp_agent_demo | ~3,000 | **Ported** | `examples/*.ts` |
 | `demos/two_process/` — buyer/supplier HTTP demo | ~510 | **Ported** | `demos/two_process/` |
-| `tests/` incl. `tests/conformance/` — 474 tests | ~6,900 | **Ported 1:1** | `tests/**/*.test.ts` |
+| `tests/` incl. `tests/conformance/` — 474 tests at the time of the port | ~6,900 | **Ported 1:1** | `tests/**/*.test.ts` |
 | `spec/` — spec text, JSON schemas, conformance fixtures | — | **Shared, not ported** — language-neutral; TS tests read them from `../spec/` | — |
 | `scripts/build_blog.py`, `index.html`, `docs.html`, `blog/` | — | **Excluded** — static-site tooling/content, not part of the protocol application | — |
 
@@ -44,6 +44,8 @@ the stack mapping, and the parity evidence.
 | pytest + pytest-asyncio + respx | **vitest** | httpx ASGI transport → `app.inject()`; respx → injectable fake `fetchFn` |
 
 ## 3. Test parity
+
+At the time of the port (both suites have grown since; see the top-level README for current counts):
 
 - Python: `uv run --extra dev pytest -q` → **474 passed**.
 - TypeScript: `npm test` → **499 passed** = **474 tests mirroring the Python
@@ -119,7 +121,7 @@ behavior parity with the reference.
 cd a2cn_ts
 npm install
 
-npm test                 # 499 tests (474 mirrored + 25 parity vectors)
+npm test                 # the full suite, including the parity vectors
 npm run typecheck        # tsc --noEmit
 
 bash demos/two_process/run_demo.sh       # TS ↔ TS demo, asserts hash match

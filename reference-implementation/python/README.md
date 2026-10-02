@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-2050%20passing-brightgreen.svg)](tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -12,6 +12,15 @@ This is the reference implementation of the [A2CN protocol](../../spec/a2cn-spec
 ---
 
 ## Quickstart
+
+Once the first release is published to PyPI:
+
+```bash
+pip install a2cn
+python -c "import a2cn; print(a2cn.__version__, a2cn.PROTOCOL_VERSIONS)"
+```
+
+From source:
 
 ```bash
 git clone https://github.com/A2CN-protocol/A2CN.git
@@ -310,7 +319,8 @@ Fork it, modify it, or build your own from scratch.
 ## Running the tests
 
 ```bash
-pytest tests/ -v   # 474 passed
+pip install -e ".[dev]"
+pytest tests/ -v   # all tests pass
 ```
 
 | Test file | What it covers |

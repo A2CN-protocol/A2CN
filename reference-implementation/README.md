@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-474%20passing-brightgreen.svg)](python/tests/)
+[![Tests](https://img.shields.io/badge/Tests-2050%20passing-brightgreen.svg)](python/tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -294,7 +294,7 @@ tests/test_session.py::test_session_timeout               PASSED
 tests/conformance/test_conformance.py::CONF-001           PASSED
 tests/conformance/test_conformance.py::CONF-002           PASSED
 ...
-474 passed
+2050 passed
 ```
 
 ### Conformance tests
