@@ -96,6 +96,7 @@ function replay(vector: Dict, sessionInit: Dict = vector.session_init as Dict): 
     sessionInit,
     sessionAck,
     sessionAck.session_created_at as string,
+    { legacyReplay: true }, // a recorded session, possibly negotiated at "0.2"
   );
   session.session_timeout_seconds = 86400 * 365 * 100; // the timestamps are in the past
   for (const message of structuredClone(vector.messages as Dict[])) {
@@ -437,6 +438,7 @@ test("every evidence record version a verifier recognizes has a schema that name
 const SER_0_1 = "session-evidence-record.schema.json";
 const SER_0_2 = "session-evidence-record-0.2.schema.json";
 const SER_0_4 = "session-evidence-record-0.4.schema.json";
+const SER_0_5 = "session-evidence-record-0.5.schema.json";
 const SER_VECTOR = readJson("spec", "test-vectors", "session-evidence-record-parity.json");
 const EXTENSIONS_VECTOR = readJson("spec", "test-vectors", "session-evidence-record-extensions.json");
 const EXTENSIONS_KEY = privateKeyFromJwk(EXTENSIONS_VECTOR.producer_private_jwk as Dict);
@@ -633,11 +635,11 @@ test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
   (name) => {
     // Sections 9A.8 to 9A.11 arrived in "0.2", so the released "0.1" schema, closed
     // where each of them would go, cannot describe them. Every producer now emits
-    // "0.4" (Section 9A.2), which describes them all. Verification does not depend
+    // "0.5" (Section 9A.2), which describes them all. Verification does not depend
     // on the version, so the record still verifies when it is relabelled "0.1".
     const record = extensionEvidenceRecord(name);
     const released = schema(SER_0_1);
-    const current = schema(SER_0_4);
+    const current = schema(SER_0_5);
     const didDocuments = EXTENSIONS_VECTOR.did_documents as Record<string, Dict>;
     const features = extensionFeatures(record);
 
@@ -645,7 +647,7 @@ test.each(Object.keys(EXTENSIONS_VECTOR.vectors as Dict).sort())(
     expect(((released.properties as Dict).terminal as Dict).additionalProperties).toBe(false);
     expect(((released.$defs as Dict).evidenceAct as Dict).additionalProperties).toBe(false);
     expect(((released.$defs as Dict).party as Dict).additionalProperties).toBe(false);
-    expect(record.record_version).toBe("0.4");
+    expect(record.record_version).toBe("0.5");
     expect(features.length).toBeGreaterThan(0);
     for (const feature of features) {
       expect(describes(current, feature), feature).toBe(true);
@@ -712,17 +714,22 @@ test("the evidence record schemas name the versions the generator emits", () => 
   for (const [file, version] of [
     [SER_0_2, SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT],
     [SER_0_3, SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT],
-    [SER_0_4, SESSION_EVIDENCE_RECORD_VERSION_CURRENT],
+    // "0.4" has no named constant: it names no shape of its own any more, being
+    // neither the emitted version nor one a rule is keyed on. It is still
+    // published and still accepted, so its schema is still checked.
+    [SER_0_4, "0.4"],
+    [SER_0_5, SESSION_EVIDENCE_RECORD_VERSION_CURRENT],
   ]) {
     expect(((schema(file).properties as Dict).record_version as Dict).const).toBe(version);
   }
   // A verifier recognizes exactly the versions it has a schema for, and that set
-  // is additive: "0.4" was added and none removed, so a record sealed under an
+  // is additive: "0.5" was added and none removed, so a record sealed under an
   // earlier version stays valid.
   expect([...RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS]).toEqual([
     "0.1",
     SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT,
     SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT,
+    "0.4",
     SESSION_EVIDENCE_RECORD_VERSION_CURRENT,
   ]);
 });
@@ -851,9 +858,9 @@ test("the 0.3 schema's external_commitment_reference agrees with the vector", ()
 
 test("an external-channel record uses a member only the later schemas describe", () => {
   const record = externalChannelEvidenceRecord();
-  const current = schema(SER_0_4);
+  const current = schema(SER_0_5);
 
-  expect(record.record_version).toBe("0.4");
+  expect(record.record_version).toBe("0.5");
   expect(Object.keys(record).filter((key) => !(key in (current.properties as Dict)))).toEqual([]);
   expect((current.required as string[]).filter((key) => !(key in record))).toEqual([]);
   for (const file of [SER_0_1, SER_0_2]) {
@@ -874,7 +881,7 @@ test("an external-channel record uses a member only the later schemas describe",
 
 test("no record without the reference has every member the 0.3 schema requires", () => {
   // "0.3" requires the reference by definition, so no record without one fits it
-  // under any label. The records themselves are "0.4", the version every producer
+  // under any label. The records themselves are "0.5", the version every producer
   // now emits, where that reference is OPTIONAL.
   const required = schema(SER_0_3).required as string[];
   const records = [
@@ -885,7 +892,7 @@ test("no record without the reference has every member the 0.3 schema requires",
   ];
 
   for (const record of records) {
-    expect(record.record_version).toBe("0.4");
+    expect(record.record_version).toBe("0.5");
     expect(required.filter((key) => !(key in record))).toEqual(["external_commitment_reference"]);
   }
 });
@@ -897,6 +904,24 @@ test("the 0.2 evidence record schema is unchanged", () => {
     .digest("hex");
 
   expect(digest).toBe(EXTERNAL_CHANNEL_VECTOR.session_evidence_record_0_2_schema_sha256);
+});
+
+// Section 17: a published schema file is never rewritten. Before this, only
+// "0.1" and "0.2" were pinned — 2 of 5 published files, in BOTH languages, not
+// one. "0.4" is pinned because this change publishes "0.5" beside it and
+// must not touch it; "0.5" is pinned from publication rather than from
+// whenever someone next remembers. A digest pin needs no JSON Schema
+// validator, so the standing "schema validation is Python-only" asymmetry
+// never excused this gap.
+test.each([
+  ["0.4", SER_0_4, "session_evidence_record_0_4_schema_sha256"],
+  ["0.5", SER_0_5, "session_evidence_record_0_5_schema_sha256"],
+])("the later evidence record schemas are pinned: %s", (_name, file, pin) => {
+  const digest = createHash("sha256")
+    .update(readFileSync(join(REPO_ROOT, "spec", "schemas", file)))
+    .digest("hex");
+
+  expect(digest).toBe(EXTERNAL_CHANNEL_VECTOR[pin]);
 });
 
 test("a stored 0.3 record still verifies and fits its own schema", () => {
@@ -931,7 +956,51 @@ test("the stored 0.3 record is today's record apart from its version", () => {
   const historical = EXTERNAL_CHANNEL_VECTOR.historical_0_3_record as Dict;
   const current = (EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict;
 
-  expect(current.record_version).toBe("0.4");
+  expect(current.record_version).toBe("0.5");
+  expectApartFromVersionAndStatedWireVersions(historical, current);
+});
+
+test("a stored 0.4 record still verifies", () => {
+  // PROBE A's pin, and the ONLY artifact that catches the floor regression.
+  //
+  // The version-keyed witness rule returns early for versions at or above the
+  // floor. Written as an equality against the CURRENT version rather than as a
+  // floor — which is how it stood until this change — it dropped every stored
+  // "0.4" external-channel record into the historical "0.3" biconditional and
+  // refused it the moment CURRENT became "0.5".
+  //
+  // NOTHING ELSE CATCHES THAT. historical_0_3_record covers "0.3", which the
+  // biconditional governs either way; a regenerated record follows CURRENT and
+  // so takes the early return whatever the rule says. Only a record stored at
+  // the PREVIOUS version distinguishes a floor from an equality.
+  //
+  // Loaded, never generated: re-sealing it under today's version would destroy
+  // the only thing it proves.
+  const record = EXTERNAL_CHANNEL_VECTOR.historical_0_4_record as Dict;
+
+  expect(record.record_version).toBe("0.4");
+  expect(
+    verifySessionEvidenceRecord(record, EXTERNAL_CHANNEL_VECTOR.did_documents as Record<string, Dict>),
+  ).toBe(true);
+});
+
+test("the stored 0.4 record is today's record apart from its version", () => {
+  // The guard on the pair above, mirroring the "0.3" one: without it, the test
+  // above could drift into verifying an unrelated artifact while still
+  // appearing to prove the recognizer.
+  const historical = EXTERNAL_CHANNEL_VECTOR.historical_0_4_record as Dict;
+  const current = (EXTERNAL_CHANNEL_VECTOR.expected as Dict).record as Dict;
+
+  expect(historical.record_version).toBe("0.4");
+  expect(current.record_version).toBe("0.5");
+  expectApartFromVersionAndStatedWireVersions(historical, current);
+});
+
+/**
+ * The two differ in the version, the hash over it, and the seal over that, and
+ * in the wire version today's record states on each of its acts.
+ */
+function expectApartFromVersionAndStatedWireVersions(historical: Dict, current: Dict): void {
   const differing = [...new Set([...Object.keys(historical), ...Object.keys(current)])]
     .filter((name) => JSON.stringify(historical[name]) !== JSON.stringify(current[name]))
     .sort();
@@ -962,4 +1031,4 @@ test("the stored 0.3 record is today's record apart from its version", () => {
   // Every act, the session's own and the observed one, now states it.
   expect(stated).toBe(nowActs.length);
   expect(stated).toBe(2);
-});
+}

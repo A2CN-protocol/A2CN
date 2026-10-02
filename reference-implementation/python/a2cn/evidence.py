@@ -34,15 +34,22 @@ SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 # stays "0.2", so a verifier that predates "0.3" still reads it.
 SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3"
 # The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-# Verification is the same for all of them, except that a record carries
-# external_commitment_reference exactly when it is "0.3".
-# Every record a producer emits is "0.4" (Section 9A.2). The two constants
-# above name versions that only historical records carry; they stay so those
-# records can still be read, because the SER recognizer is additive — a
-# version is added and none removed, and an older sealed record stays valid.
-SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4"
+# Verification is the same for all of them except where a rule is keyed on the
+# version, and each such rule is one of the floors below: BELOW "0.4" a record
+# carries external_commitment_reference exactly when it is "0.3"; a decline
+# signature type requires "0.4" or later; and a DID-bearing responder on a record
+# carrying that reference requires "0.5" or later. The biconditional is
+# historical and governs only versions under "0.4"; stated as the general rule it
+# contradicts the paragraph directly below it.
+# Every record a producer emits is "0.5" (Section 9A.2). The constants above
+# name versions that only historical records carry; they stay so those records
+# can still be read, because the SER recognizer is additive — a version is
+# added and none removed, and an older sealed record stays valid.
+SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.5"
 
-RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4")
+# ORDERED, and the order is load-bearing: _version_at_or_after reads its floors
+# off this tuple, so a new version MUST be appended in published order.
+RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS = ("0.1", "0.2", "0.3", "0.4", "0.5")
 SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record"
 
 EVIDENCE_BILATERAL = "bilateral"
@@ -57,12 +64,31 @@ SIGNATURE_ACCEPTANCE = "acceptance_signature"
 SIGNATURE_REJECTION = "rejection_signature"
 SIGNATURE_WITHDRAWAL = "withdrawal_signature"
 
-# The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+# The act vocabulary that "0.4" and later admit. Rejection and Withdrawal became
 # signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
 # no earlier version's schema lists these values and no earlier record can
 # legitimately carry one.
 _DECLINE_SIGNATURE_TYPES = frozenset({SIGNATURE_REJECTION, SIGNATURE_WITHDRAWAL})
-_VERSIONS_ADMITTING_DECLINE_VOCABULARY = frozenset({"0.4"})
+# FLOORS, not literal sets. Every rule keyed on these means "this version or
+# later". The first two were once written as sets naming the versions that existed
+# when they were written. That is correct until the next version ships and then
+# states the opposite of its own docstring: as frozenset({"0.4"}) this refused a
+# "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
+# witness rule below dropped every stored "0.4" external-channel record into the
+# "0.3" biconditional and refused it. Neither docstring ever claimed a single
+# version — each already said "or later" — so the literals contradicted the
+# prose beside them rather than implementing it.
+_VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4"
+_VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4"
+# The first version whose schema admits a DID-bearing responder on a record
+# carrying external_commitment_reference; "0.3" and "0.4" require an
+# observed_party there. Also a floor, read through _version_at_or_after.
+_VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER = "0.5"
+
+# The act types a responder may sign in a record carrying
+# external_commitment_reference (Section 9A.12): negotiation, never a completion
+# or a refusal.
+_NEGOTIATION_MESSAGE_TYPES = ("offer", "counteroffer")
 
 OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS"
 
@@ -184,12 +210,14 @@ def generate_session_evidence_record(
     ``terminal_outcome`` may assert ``HALTED_BY_CONTROLS`` for a session the
     producer's own controls stopped.
 
-    ``external_commitment_reference`` completes a session whose responder is
-    observed: it names the external order or commitment the deal produced, in
-    place of a TransactionRecord, which is bilateral (Section 9A.12). Such a
-    record is ``"0.4"``, like every record this generator emits; the reference is
-    OPTIONAL at that version (Section 9A.2). It is required for that session and
-    refused for any other; ``None`` means it is not supplied.
+    ``external_commitment_reference`` completes a session whose counterparty
+    signed no A2CN act: it names the external order or commitment the deal
+    produced, in place of a TransactionRecord, which is bilateral (Section
+    9A.12). That counterparty may be an observed responder holding no identity,
+    or a DID-bearing party whose identity verifies while its acts stay unsigned.
+    Such a record is ``"0.5"``, like every record this generator emits; the
+    reference is OPTIONAL at that version (Section 9A.2). It is refused for any
+    outcome but ``COMPLETED``; ``None`` means it is not supplied.
     """
     if session.state not in _TERMINAL_STATES:
         raise ValueError("Session evidence is only available for terminal sessions")
@@ -220,18 +248,17 @@ def generate_session_evidence_record(
     )
 
     # A COMPLETED session carries exactly one completion witness (Section 9A.2).
-    # A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
-    # completes with one, and an observed responder completes through the
-    # external commitment the deal produced (Section 9A.12).
+    # A TransactionRecord is bilateral (Section 9.3), so a session whose
+    # counterparty signed an acceptance completes with one, and a session whose
+    # counterparty signed nothing completes through the external commitment the
+    # deal produced (Section 9A.12). That second case is NOT the same as "the
+    # responder is observed": a mandate-only counterparty is DID-bearing and
+    # still signs no act, so the witness is keyed on the reference the caller
+    # supplies rather than on the responder's identity shape.
     reference = None
     if external_commitment_reference is not None:
         if outcome != SessionState.COMPLETED:
             raise ValueError("external_commitment_reference is only for a COMPLETED session")
-        if observed_responder is None:
-            raise ValueError(
-                "external_commitment_reference requires an observed responder; a "
-                "DID-bearing responder completes with its TransactionRecord"
-            )
         reference = _validated_external_commitment_reference(external_commitment_reference)
     elif outcome == SessionState.COMPLETED and observed_responder is not None:
         raise ValueError(
@@ -262,7 +289,7 @@ def generate_session_evidence_record(
 
     terminal_timestamp = _terminal_timestamp(session)
     transaction_record_hash = None
-    if outcome == SessionState.COMPLETED and observed_responder is None:
+    if outcome == SessionState.COMPLETED and reference is None:
         transaction_record_hash = generate_transaction_record(session)["record_hash"]
 
     act_chain_hash = hash_bytes(canonicalize([entry["act_hash"] for entry in acts]))
@@ -270,6 +297,7 @@ def generate_session_evidence_record(
         acts,
         outcome=outcome,
         parties=parties,
+        external_commitment=reference is not None,
     )
 
     record = {
@@ -323,10 +351,23 @@ def generate_session_evidence_record(
             "A COMPLETED record carries exactly one completion witness, and no "
             "other outcome carries one"
         )
+    if not _responder_signed_only_negotiation(record):
+        raise ValueError(
+            "An external commitment reference admits a responder signature only on "
+            "an offer or counteroffer: a responder-signed acceptance, rejection or "
+            "withdrawal is not negotiation"
+        )
     if not _external_commitment_rules_hold(record):
         raise ValueError(
-            "An external commitment reference requires an observed responder and "
-            "unilateral evidence"
+            "An external commitment reference requires that every signed act is a "
+            "session party's, and unilateral or mixed evidence"
+        )
+    if not _no_acceptance_of_responder_signed_act(record):
+        raise ValueError(
+            "An external commitment reference refuses an acceptance that accepts an "
+            "offer or counteroffer the responder signed, or whose accepted act is not "
+            "in the record once the responder signed an act: the record must not "
+            "attest an in-band acceptance of a responder-signed act"
         )
     # _external_commitment_matches_version_0_3 was checked here, and is not any
     # more. It cannot fire on anything this function builds: record_version is
@@ -338,13 +379,26 @@ def generate_session_evidence_record(
     # than merely unreachable.
     #
     # The predicate itself is NOT dead -- the verifier still calls it, where it
-    # governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
-    # live again the moment emission stops being universally "0.4". So if a
-    # later change makes the emitted version conditional, this site needs a
-    # guard AND A NEW MESSAGE, because the old one asserted a rule that is no
-    # longer true of anything we emit -- restoring it verbatim would be worse
-    # than the deletion it undoes. An unreachable guard is merely dead; a guard
-    # whose failure message states a false rule misleads whoever revives it.
+    # governs stored records below the floor. And this call site becomes live
+    # again the moment emission stops being UNIVERSAL -- that is, the moment
+    # record_version comes to depend on what the record contains. The condition
+    # is universality, NOT any particular version number.
+    #
+    # That distinction is load-bearing and this file has now paid for it twice.
+    # An earlier wording said "the moment emission stops being universally
+    # 0.4", which the move to "0.5" satisfies LITERALLY while leaving this site
+    # exactly as dead as it was: emission stayed universal and the assignment
+    # above stayed unconditional. A condition written as a version number goes
+    # stale the moment the version moves; a condition written as the property
+    # it means does not. The same literal-for-semantic substitution is what
+    # made the two version rules below contradict their own docstrings.
+    #
+    # So if a later change makes the emitted version conditional, this site
+    # needs a guard AND A NEW MESSAGE, because the old one asserted a rule that
+    # is no longer true of anything we emit -- restoring it verbatim would be
+    # worse than the deletion it undoes. An unreachable guard is merely dead; a
+    # guard whose failure message states a false rule misleads whoever revives
+    # it.
     if not _external_commitment_producer_act_present(record):
         raise ValueError(
             "An external commitment reference requires at least one act signed by "
@@ -461,6 +515,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             return assessment
         if not _external_commitment_rules_hold(record):
             return assessment
+        if not _no_acceptance_of_responder_signed_act(record):
+            return assessment
         if not _external_commitment_producer_act_present(record):
             return assessment
         if not _external_commitment_sealed_by_initiator(record):
@@ -474,6 +530,7 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             acts,
             outcome=outcome,
             parties=record["parties"],
+            external_commitment="external_commitment_reference" in record,
         )
         if record.get("evidence_level") != expected_level:
             return assessment
@@ -849,41 +906,357 @@ def _completion_witness_holds(record: dict) -> bool:
 
 
 def _external_commitment_rules_hold(record: dict) -> bool:
-    """Couple an external commitment reference to an observed responder and unilateral evidence.
+    """Who may hold the external witness, at what level, and who may sign in it.
 
-    A TransactionRecord is bilateral by construction (Section 9.3), so the
-    reference exists for a counterparty with no A2CN identity, and the record
-    represents one DID-bearing party beside an observed reference (Section
-    9A.12). Asserted here rather than left to follow from the observed-responder
-    coupling, for the same reason that coupling is asserted explicitly.
+    The reference is the completion witness of a session that produced no
+    TransactionRecord (Section 9A.12). The property it carries is that NO
+    COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION: the completion is the
+    producer's external-order reference, not an act the counterparty signed.
+
+    Until "0.5" this asserted ``observed_party`` and ``unilateral``. That pair is
+    an IDENTITY PROXY for the property and is narrower than it: written for the
+    no-DID case, it incidentally excluded a verified-identity counterparty, a
+    shape an ``observed_party`` cannot even express, since that descriptor
+    requires the declared-markers to be literally False. The proxy is relaxed to
+    the property here, and BECAUSE it is relaxed, the property has to be CHECKED.
+    This function decides who may sign, and what the responder may sign;
+    ``_no_acceptance_of_responder_signed_act`` decides what an acceptance may
+    name.
+
+    The property is about the completion, not every act. A counterparty that
+    signed a counteroffer negotiated; it completed nothing, and no
+    TransactionRecord exists for that session. So a verified act is admitted from
+    either SESSION PARTY -- ``_every_verified_act_is_a_session_partys`` carries
+    the argument for why a third party is not -- and the responder's only as
+    negotiation, ``_responder_signed_only_negotiation``.
+
+    ``evidence_level`` was a SECOND identity proxy on the same property, and it
+    is relaxed for the same reason. ``unilateral`` and ``mixed`` both describe a
+    record whose completion no counterparty signed; which one a record carries
+    depends on what the producer recorded, not on the honesty of the record:
+
+    * ``unilateral`` when no act carries a verified counterparty perspective,
+      for instance an observed act with no ``sender_did``;
+    * ``mixed`` when the counterparty is represented -- its verified DID on an
+      act attributed ``unsigned_observation``, or its signed negotiation act.
+
+    BOTH ARE HONEST RECORDS. Admitting only ``unilateral`` would require a
+    producer to omit evidence it holds in order to reach a classification.
+
+    ``bilateral`` stays excluded, which is why this checks membership rather
+    than merely "not bilateral": that level asserts both parties' material acts
+    are attributable, the completion included, which is precisely the claim a
+    session completing through an external reference cannot make. The
+    classifier never returns it for such a record (``_classify_evidence_level``),
+    so this refuses only a record that CLAIMS it.
+
+    The DID-bearing responder is admitted from "0.5" and not before, because
+    "0.5" is the first version whose schema admits it; "0.3" and "0.4" require an
+    ``observed_party`` there. Without the floor, a "0.5" record relabelled to
+    either and resealed would verify while its own version's schema refused it.
+    The ``observed_party`` responder needs no floor of its own here: the
+    reference itself is refused below "0.3" by the version-keyed witness rule.
     """
     if "external_commitment_reference" not in record:
         return True
     parties = record.get("parties")
     if not isinstance(parties, dict):
         return False
-    return (
-        _observed_party_shape_valid(parties.get("responder"))
-        and record.get("evidence_level") == EVIDENCE_UNILATERAL
+    responder = parties.get("responder")
+    if _full_party_shape_valid(responder):
+        if not _version_at_or_after(
+            record.get("record_version"), _VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER
+        ):
+            return False
+    elif not _observed_party_shape_valid(responder):
+        return False
+    if record.get("evidence_level") not in (EVIDENCE_MIXED, EVIDENCE_UNILATERAL):
+        return False
+    if not _every_verified_act_is_a_session_partys(record):
+        return False
+    return _responder_signed_only_negotiation(record)
+
+
+def _external_session_dids(parties: dict) -> tuple[str, str | None] | None:
+    """The initiator's DID and the responder's, or None if the initiator has none.
+
+    The responder contributes a DID only when it is a full party. An
+    ``observed_party`` holds no A2CN identity, so it has none to contribute and
+    a verified act can never be its (Section 9A.8 rule 1).
+    """
+    initiator = parties.get("initiator")
+    if not isinstance(initiator, dict):
+        return None
+    initiator_did = initiator.get("did")
+    if not isinstance(initiator_did, str) or not initiator_did:
+        # Section 9A.2 requires a DID-bearing initiator, so this record is
+        # refused elsewhere too; refusing here keeps the rules from passing
+        # vacuously on a record with no initiator to compare against.
+        return None
+    responder = parties.get("responder")
+    responder_did = responder["did"] if _full_party_shape_valid(responder) else None
+    return initiator_did, responder_did
+
+
+def _every_verified_act_is_a_session_partys(record: dict) -> bool:
+    """Section 9A.8 rule 1, for every external-channel record rather than some.
+
+    Every act attributed ``verified_signature`` carries a ``sender_did`` equal
+    to ``parties.initiator.did`` or ``parties.responder.did`` -- "an act that
+    cannot be placed in a known role is refused rather than admitted".
+    Section 9A.8 states that for an ``observed_party`` responder, where only the
+    initiator holds a DID; it holds for the DID-bearing responder too, so the
+    SAME verified third-party act is refused whichever identity tier the
+    counterparty is at.
+
+    WHY A THIRD PARTY IS REFUSED rather than merely not counted. Section 9A.5
+    declines to COUNT a non-party's act towards ``mixed``, but that is
+    classification, not admission. A producer naming one organisational DID as
+    ``parties.responder`` while the counterparty signs under an agent or delegate
+    DID could otherwise carry a verified counterparty signature -- an acceptance
+    included -- past every rule keyed on the responder.
+
+    THE COMPARISON IS EXACT, with no DID normalization. ``sender_did`` has no
+    imposed syntax (Section 9A.6), and ``did:web:acme-corp.com#key-2026-01`` is
+    a different string from ``did:web:acme-corp.com`` while
+    ``_verification_method_controlled_by`` accepts it and a resolver that
+    dereferences DID URLs resolves it. Treating the two as equal would make
+    admission a property of the CALLER'S resolver. So a DID URL naming either
+    party's own key is neither party's DID, and is refused.
+
+    Stated positively, so the rule is a property of the whole act list rather
+    than a search for one bad entry: an act list with nothing verified satisfies
+    it vacuously, and ``_external_commitment_producer_act_present`` is what
+    refuses that record.
+    """
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    session_dids = _external_session_dids(parties)
+    if session_dids is None:
+        return False
+    initiator_did, responder_did = session_dids
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    return all(
+        isinstance(entry, dict)
+        and (
+            entry.get("attribution") != ATTRIBUTION_VERIFIED
+            or entry.get("sender_did") == initiator_did
+            or (responder_did is not None and entry.get("sender_did") == responder_did)
+        )
+        for entry in acts
     )
+
+
+def _responder_signed_only_negotiation(record: dict) -> bool:
+    """In an external-channel record the responder signs negotiation, and nothing else.
+
+    Section 9A.12: an act attributed ``verified_signature`` whose ``sender_did``
+    is ``parties.responder.did`` (exact) has ``message_type`` ``offer`` or
+    ``counteroffer``. A responder-signed acceptance is a completion the
+    counterparty signed, which is a TransactionRecord rather than an external
+    witness; a responder-signed rejection or withdrawal is the counterparty's
+    signed refusal, which cannot sit in a record stating that the session
+    completed. Either way a counterparty signature would bear on the completion
+    the reference alone is supposed to witness.
+
+    A third party's verified act never reaches this rule's question: the
+    session-party check refuses it first. An ``observed_party`` responder holds
+    no DID, so it signs nothing and the rule holds vacuously.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    session_dids = _external_session_dids(parties)
+    if session_dids is None:
+        return False
+    _initiator_did, responder_did = session_dids
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    if responder_did is None:
+        return True
+    return all(
+        not isinstance(entry, dict)
+        or entry.get("attribution") != ATTRIBUTION_VERIFIED
+        or entry.get("sender_did") != responder_did
+        or entry.get("message_type") in _NEGOTIATION_MESSAGE_TYPES
+        for entry in acts
+    )
+
+
+def _negotiation_act_hashes(act: dict) -> list[str]:
+    """The hashes an acceptance may name an offer or counteroffer by.
+
+    An offer's ``protocol_act_hash`` IS the hash of its signed act (Section
+    7.3.1), so an act is named by the hash it states and by the hash of its
+    rebuild; for a verified offer the two are equal, because the verifier has
+    already refused one whose stated hash differs from its rebuild. An unsigned
+    observation may state neither, and is then named by its rebuild alone.
+    """
+    hashes = []
+    stated = act.get("protocol_act_hash")
+    if isinstance(stated, str) and stated:
+        hashes.append(stated)
+    try:
+        rebuilt = rebuild_signed_act(act)
+        if rebuilt is not None:
+            hashes.append(hash_object(rebuilt))
+    except Exception:  # an act that cannot be rebuilt is named by nothing else
+        pass
+    return hashes
+
+
+def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
+    """No act in an external-channel record accepts an act the responder signed.
+
+    Section 9A.12: an external-channel record MUST NOT attest an in-band
+    acceptance of an act the responder signed. Out-of-band reconstruction is not
+    what this prevents: a keyholder can always sign its own acceptance of a
+    responder-signed counteroffer elsewhere, which admitting a counterparty's
+    signed negotiation act concedes. The record attests what was recorded
+    in-band, and this rule bounds that. An act
+    ACCEPTS when its ``message_type`` is ``acceptance`` or its inner act carries
+    ``accepted_protocol_act_hash`` or ``accepted_offer_id`` -- whatever its
+    type and whether or not it is signed, because nothing constrains an unsigned
+    act's ``message_type`` and a target field is what makes an act an
+    acceptance of something. For each such act:
+
+    * if its ``accepted_protocol_act_hash`` names, or its ``accepted_offer_id``
+      is the ``message_id`` of, an ``offer`` or ``counteroffer`` the responder
+      signed, the record is refused -- either field is enough, so a crossed pair
+      cannot hide one behind the other;
+    * once the responder has any verified act, each target field it carries
+      must resolve EXACTLY to an offer or counteroffer in the record, the hash
+      written as a canonical 43-character base64url digest; an ``acceptance``
+      carrying no hash, a target in another spelling or encoding, or one naming
+      nothing in the record is refused (fail-closed): nothing shows it does not
+      accept a signed act the producer left out.
+
+    Keyed on the ACCEPTED act, not on the acceptance's own signature. An
+    acceptance recorded unsigned still names what it accepted, and is still an
+    acceptance the record attests in-band, so a rule that asked whether the
+    acceptance was signed would admit exactly the record it exists to refuse.
+
+    The hash is resolved the way the TransactionRecord binds it: the
+    acceptance's ``accepted_protocol_act_hash`` against an offer's
+    ``protocol_act_hash`` (``record.py``; the session does the same), which is
+    the hash of the offer's signed act (``_negotiation_act_hashes``). Membership
+    in the responder-signed sets is checked FIRST, so an unsigned duplicate or
+    forgery claiming a signed act's ``message_id`` or hash can never launder an
+    acceptance of the signed one by giving its target somewhere else to
+    resolve.
+
+    What stays admitted: an acceptance -- the initiator's, typically signed --
+    of an offer the counterparty did not sign, beside any negotiation either
+    party signed. The record then attests no in-band acceptance of a
+    responder-signed act.
+    """
+    if "external_commitment_reference" not in record:
+        return True
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    session_dids = _external_session_dids(parties)
+    if session_dids is None:
+        return False
+    _initiator_did, responder_did = session_dids
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    if responder_did is None:
+        return True
+    entries = [entry for entry in acts if isinstance(entry, dict)]
+    responder_signed = any(
+        entry.get("attribution") == ATTRIBUTION_VERIFIED
+        and entry.get("sender_did") == responder_did
+        for entry in entries
+    )
+    if not responder_signed:
+        return True
+    signed_hashes, signed_ids, recorded_hashes, recorded_ids = [], [], [], []
+    for entry in entries:
+        act = entry.get("act")
+        if entry.get("message_type") not in _NEGOTIATION_MESSAGE_TYPES or not isinstance(act, dict):
+            continue
+        hashes = _negotiation_act_hashes(act)
+        message_id = act.get("message_id")
+        ids = [message_id] if isinstance(message_id, str) and message_id else []
+        recorded_hashes.extend(hashes)
+        recorded_ids.extend(ids)
+        if (
+            entry.get("attribution") == ATTRIBUTION_VERIFIED
+            and entry.get("sender_did") == responder_did
+        ):
+            signed_hashes.extend(hashes)
+            signed_ids.extend(ids)
+    for entry in entries:
+        act = entry.get("act")
+        if not isinstance(act, dict):
+            if entry.get("message_type") == "acceptance":
+                return False
+            continue
+        has_hash = "accepted_protocol_act_hash" in act
+        has_id = "accepted_offer_id" in act
+        if entry.get("message_type") != "acceptance" and not has_hash and not has_id:
+            continue
+        target_hash = act.get("accepted_protocol_act_hash")
+        target_id = act.get("accepted_offer_id")
+        if target_hash in signed_hashes or target_id in signed_ids:
+            return False
+        if not has_hash:
+            return False
+        if not (
+            isinstance(target_hash, str)
+            and _HASH_PATTERN.fullmatch(target_hash)
+            and target_hash in recorded_hashes
+        ):
+            return False
+        if has_id and not (isinstance(target_id, str) and target_id in recorded_ids):
+            return False
+    return True
+
+
+def _version_at_or_after(version: Any, floor: str) -> bool:
+    """Whether a recognized ``record_version`` is ``floor`` or later.
+
+    Ordered by position in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS, which is
+    published order. A value this verifier does not recognize is never "later":
+    it is refused elsewhere, and treating an unknown label as later would let it
+    inherit the newest rules merely by being unfamiliar.
+    """
+    versions = RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS
+    if version not in versions:
+        return False
+    return versions.index(version) >= versions.index(floor)
 
 
 def _external_commitment_matches_version_0_3(record: dict) -> bool:
     """A "0.3" record carries external_commitment_reference exactly when it is "0.3".
 
     A historical rule, kept so "0.3" records still read as they always did.
-    "0.4" carries no version-keyed witness rule at all: the reference is
-    OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule — which
-    holds at every record_version and is enforced independently of any version
-    — carries the weight instead. Keeping the biconditional for "0.4" would
-    refuse every external-channel record, since it would demand the version be
-    "0.3" to carry a reference.
+    From the floor on ("0.4" and later) there is no version-keyed witness rule
+    at all: the reference is OPTIONAL there, and Section 9A.6 step 9's
+    exactly-one-witness rule — which holds at every record_version and is
+    enforced independently of any version — carries the weight instead. Keeping
+    the biconditional above the floor would refuse every external-channel
+    record, since it would demand the version be "0.3" to carry a reference.
+
+    Read as a FLOOR, not as equality against the current version. Written as
+    ``version == CURRENT``, this refused every stored "0.4" external-channel
+    record the moment CURRENT became "0.5": such a record fell through to the
+    biconditional, which demands "0.3", and was rejected. That break was
+    invisible to both suites, because the only stored-record pin was at "0.3".
 
     The reference is present by key, so one whose value is null counts as
     carried.
     """
     version = record.get("record_version")
-    if version == SESSION_EVIDENCE_RECORD_VERSION_CURRENT:
+    if _version_at_or_after(version, _VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE):
         return True
     carried = "external_commitment_reference" in record
     return carried == (version == SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT)
@@ -893,8 +1266,9 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     """An act carrying a decline signature makes the record "0.4" or later.
 
     ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
-    version, never the reverse. An ordinary "0.4" record carries no decline at
-    all, so this must not be read as "0.4" implying the vocabulary.
+    version, never the reverse. An ordinary record at or above the floor carries
+    no decline at all, so this must not be read as the version implying the
+    vocabulary.
 
     Keyed on ``signature_type`` rather than on the presence of a signature field
     inside ``acts[].act``. That object is open, so a field there violates no
@@ -905,8 +1279,13 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     the enum is the only place an earlier version's schema names the vocabulary.
 
     NOTE the polarity, which is the opposite of the rule above: that one goes
-    quiet at "0.4" and governs only historical records; this one fires only
-    below "0.4" and governs only new vocabulary.
+    quiet at the floor and governs only historical records; this one fires only
+    below the floor and governs only new vocabulary. Both floors are "0.4" and
+    both are read through ``_version_at_or_after``, rather than written as the
+    set of versions that happened to exist when this was written -- as the
+    literal ``frozenset({"0.4"})`` this refused a "0.5" record for carrying a
+    decline that "0.5" admits, while the first line of this docstring already
+    said "or later". The prose was right and the code was wrong.
     """
     acts = record.get("acts")
     if not isinstance(acts, list):
@@ -917,7 +1296,9 @@ def _decline_vocabulary_requires_0_4(record: dict) -> bool:
     )
     if not carries_decline:
         return True
-    return record.get("record_version") in _VERSIONS_ADMITTING_DECLINE_VOCABULARY
+    return _version_at_or_after(
+        record.get("record_version"), _VERSION_ADMITTING_DECLINE_VOCABULARY
+    )
 
 
 def _bilateral_witness_matches_responder(record: dict) -> bool:
@@ -1548,7 +1929,13 @@ def _verification_method_controlled_by(verification_method: str, did: str) -> bo
     )
 
 
-def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -> str:
+def _classify_evidence_level(
+    acts: list[dict], *, outcome: str, parties: dict, external_commitment: bool
+) -> str:
+    # ``external_commitment`` is whether the record carries
+    # external_commitment_reference. It is a required keyword so that no caller
+    # can reach ``bilateral`` by forgetting it.
+    #
     # Section 9A.5: a record whose responder is an observed_party is always
     # unilateral, asserted rather than derived from the acts below. Deriving it
     # would call a record whose acts are all the producer's own bilateral, when
@@ -1581,8 +1968,15 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
         for entry in acts
     )
 
+    # Section 9A.5: a record carrying external_commitment_reference is never
+    # bilateral. Its completion is the producer's external-order reference, not
+    # an act either party signed, so even when both parties' acts verify and
+    # nothing is unsigned the completion is a fact the counterparty did not
+    # attest to -- the same footing as a locally observed terminal fact, and
+    # classified the same way.
     if (
-        outcome == SessionState.COMPLETED
+        not external_commitment
+        and outcome == SessionState.COMPLETED
         and bool(acts)
         and unsigned_count == 0
         and party_dids
@@ -1594,7 +1988,7 @@ def _classify_evidence_level(acts: list[dict], *, outcome: str, parties: dict) -
     if (
         verified_party_count > 0
         and len(represented_dids) >= 2
-        and (unsigned_count > 0 or local_terminal_fact)
+        and (unsigned_count > 0 or local_terminal_fact or external_commitment)
     ):
         return EVIDENCE_MIXED
 

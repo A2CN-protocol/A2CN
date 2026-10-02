@@ -81,6 +81,7 @@ def _transaction_record_session(vector: dict):
         vector["session_init"],
         session_ack,
         session_ack["session_created_at"],
+        legacy_replay=True,  # a recorded session, possibly negotiated at "0.2"
     )
     session.session_timeout_seconds = 86400 * 365 * 100  # the timestamps are in the past
     for message in copy.deepcopy(vector["messages"]):
@@ -286,7 +287,7 @@ def test_each_artifacts_version_set_is_its_own():
     # Not redundant with the parametrized rejected cases: those assert that every
     # entry in the list fails, which passes vacuously if the list is emptied.
     # This membership assertion is what keeps the list non-empty.
-    assert {"name": "next-minor", "record_version": "0.5"} in SER_VERSIONS["rejected"]
+    assert {"name": "next-minor", "record_version": "0.6"} in SER_VERSIONS["rejected"]
     # The versions the TransactionRecord refuses as unbound are still accepted by
     # the evidence record, which is the point of keeping the two sets apart.
     unbound = {case["record_version"] for case in TR_VERSIONS["unbound"]}

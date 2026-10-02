@@ -1,7 +1,10 @@
 {
-  "description": "Cross-language vector for the wire version a session is negotiated at (Section 12.1.7). A SessionInit proposes a protocol_version and the SessionAck that answers it must state the same one; the session runs at that version, and every live act is signed and verified under it. Each case sets protocol_version on a SessionInit and a SessionAck as it says, removing the member when the case omits it, and both suites pass the pair to the session manager's create_session, which must accept it and run at runs_at, or refuse it with error_code and error_message. Nothing is filled in from the other message or from an implementation's own version. The cases whose SessionInit states the current version are also run through the initiator's client, which receives the SessionAck and must reach the same verdict before it signs anything.",
+  "description": "Cross-language vector for the wire version a session is negotiated at (Section 12.1.7). A SessionInit proposes a protocol_version and the SessionAck that answers it must state the same one; the session runs at that version, and every live act is signed and verified under it. Each case sets protocol_version on a SessionInit and a SessionAck as it says, removing the member when the case omits it, and both suites pass the pair to the session manager's create_session, with legacy_replay when the case sets it, which must accept it and run at runs_at, or refuse it with error_code and error_message. Nothing is filled in from the other message or from an implementation's own version. The cases without legacy_replay whose SessionInit states the current version are also run through the initiator's client, which receives the SessionAck and must reach the same verdict before it signs anything. A new session establishes only at a version in establishment_wire_versions (Section 11.2.1): a pair that agrees on a version recognised only for verifying records is refused. A case with legacy_replay true passes the session manager's explicit legacy-replay option, which rebuilds a recorded session for verifying its records; it accepts any pair that agrees on a recognised version, and nothing else. The client never uses that option.",
   "supported_wire_versions": [
     "0.2",
+    "0.3"
+  ],
+  "establishment_wire_versions": [
     "0.3"
   ],
   "cases": [
@@ -16,8 +19,9 @@
       "name": "both-legacy",
       "init_protocol_version": "0.2",
       "ack_protocol_version": "0.2",
-      "accepted": true,
-      "runs_at": "0.2"
+      "accepted": false,
+      "error_code": "PROTOCOL_VERSION_MISMATCH",
+      "error_message": "protocol_version 0.2 is recognised only for verifying records; a new session establishes at 0.3"
     },
     {
       "name": "ack-downgrades",
@@ -88,6 +92,58 @@
       "accepted": false,
       "error_code": "PROTOCOL_VERSION_MISMATCH",
       "error_message": "SessionInit protocol_version must be a non-empty string"
+    },
+    {
+      "name": "both-legacy-replay",
+      "init_protocol_version": "0.2",
+      "ack_protocol_version": "0.2",
+      "legacy_replay": true,
+      "accepted": true,
+      "runs_at": "0.2"
+    },
+    {
+      "name": "both-current-replay",
+      "init_protocol_version": "0.3",
+      "ack_protocol_version": "0.3",
+      "legacy_replay": true,
+      "accepted": true,
+      "runs_at": "0.3"
+    },
+    {
+      "name": "ack-upgrades-replay",
+      "init_protocol_version": "0.2",
+      "ack_protocol_version": "0.3",
+      "legacy_replay": true,
+      "accepted": false,
+      "error_code": "PROTOCOL_VERSION_MISMATCH",
+      "error_message": "SessionAck protocol_version does not match the SessionInit's"
+    },
+    {
+      "name": "ack-downgrades-replay",
+      "init_protocol_version": "0.3",
+      "ack_protocol_version": "0.2",
+      "legacy_replay": true,
+      "accepted": false,
+      "error_code": "PROTOCOL_VERSION_MISMATCH",
+      "error_message": "SessionAck protocol_version does not match the SessionInit's"
+    },
+    {
+      "name": "both-unrecognised-replay",
+      "init_protocol_version": "9.9",
+      "ack_protocol_version": "9.9",
+      "legacy_replay": true,
+      "accepted": false,
+      "error_code": "PROTOCOL_VERSION_MISMATCH",
+      "error_message": "SessionInit protocol_version is not a supported wire version"
+    },
+    {
+      "name": "ack-unrecognised-replay",
+      "init_protocol_version": "0.2",
+      "ack_protocol_version": "9.9",
+      "legacy_replay": true,
+      "accepted": false,
+      "error_code": "PROTOCOL_VERSION_MISMATCH",
+      "error_message": "SessionAck protocol_version is not a supported wire version"
     }
   ]
 }

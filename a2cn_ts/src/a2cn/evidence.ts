@@ -39,19 +39,26 @@ export const SESSION_EVIDENCE_RECORD_VERSION_WITHOUT_EXTERNAL_COMMITMENT = "0.2"
 // carries external_commitment_reference (Section 9A.12). Every other record
 // stays "0.2", so a verifier that predates "0.3" still reads it.
 export const SESSION_EVIDENCE_RECORD_VERSION_WITH_EXTERNAL_COMMITMENT = "0.3";
-// Every record a producer emits is "0.4" (Section 9A.2). The two constants
-// above name versions that only historical records carry; they stay so those
-// records can still be read, because the SER recognizer is additive — a
-// version is added and none removed, and an older sealed record stays valid.
-export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.4";
+// Every record a producer emits is "0.5" (Section 9A.2). The constants above
+// name versions that only historical records carry; they stay so those records
+// can still be read, because the SER recognizer is additive — a version is
+// added and none removed, and an older sealed record stays valid.
+export const SESSION_EVIDENCE_RECORD_VERSION_CURRENT = "0.5";
 // The versions a verifier accepts (Section 9A.2). Every other value is rejected.
-// Verification is the same for all of them, except that a "0.3" record carries
-// external_commitment_reference exactly when it is "0.3".
+// Verification is the same for all of them except where a rule is keyed on the
+// version, and each such rule is one of the floors below: BELOW "0.4" a record
+// carries external_commitment_reference exactly when it is "0.3"; a decline
+// signature type requires "0.4" or later; and a DID-bearing responder on a
+// record carrying that reference requires "0.5" or later.
+//
+// ORDERED, and the order is load-bearing: versionAtOrAfter reads its floors off
+// this list, so a new version MUST be appended in published order.
 export const RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS: readonly string[] = [
   "0.1",
   "0.2",
   "0.3",
   "0.4",
+  "0.5",
 ];
 export const SESSION_EVIDENCE_RECORD_TYPE = "a2cn_session_evidence_record";
 
@@ -74,7 +81,7 @@ export const EvidenceSignatureType = {
   WITHDRAWAL: "withdrawal_signature",
 } as const;
 
-// The act vocabulary that only "0.4" admits. Rejection and Withdrawal became
+// The act vocabulary that "0.4" and later admit. Rejection and Withdrawal became
 // signable in band with the uniform signed-act envelope (Sections 7.5, 7.6), so
 // no earlier version's schema lists these values and no earlier record can
 // legitimately carry one.
@@ -82,7 +89,26 @@ const DECLINE_SIGNATURE_TYPES = new Set<string>([
   EvidenceSignatureType.REJECTION,
   EvidenceSignatureType.WITHDRAWAL,
 ]);
-const VERSIONS_ADMITTING_DECLINE_VOCABULARY = new Set<string>(["0.4"]);
+// FLOORS, not literal sets. Every rule keyed on these means "this version or
+// later". The first two were once written as sets naming the versions that existed
+// when they were written. That is correct until the next version ships and then
+// states the opposite of its own docstring: as new Set(["0.4"]) this refused a
+// "0.5" record for carrying a decline that "0.5" admits, and the version-keyed
+// witness rule below dropped every stored "0.4" external-channel record into the
+// "0.3" biconditional and refused it. Neither docstring ever claimed a single
+// version — each already said "or later" — so the literals contradicted the
+// prose beside them rather than implementing it.
+const VERSION_ADMITTING_DECLINE_VOCABULARY = "0.4";
+const VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE = "0.4";
+// The first version whose schema admits a DID-bearing responder on a record
+// carrying external_commitment_reference; "0.3" and "0.4" require an
+// observed_party there. Also a floor, read through versionAtOrAfter.
+const VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER = "0.5";
+
+// The act types a responder may sign in a record carrying
+// external_commitment_reference (Section 9A.12): negotiation, never a completion
+// or a refusal.
+const NEGOTIATION_MESSAGE_TYPES: readonly string[] = ["offer", "counteroffer"];
 
 export const OUTCOME_HALTED_BY_CONTROLS = "HALTED_BY_CONTROLS";
 
@@ -201,12 +227,14 @@ export interface GenerateSessionEvidenceOptions {
   terminalMoneyBasis?: Dict | null;
   extensions?: Dict | null;
   /**
-   * Completes a session whose responder is observed: the external order or
-   * commitment the deal produced, in place of a TransactionRecord, which is
-   * bilateral (Section 9A.12). Such a record is "0.4", like every record this
-   * generator emits; the reference is OPTIONAL at that version (Section 9A.2).
-   * Required for that session and refused for any other; null or undefined
-   * means it is not supplied.
+   * Completes a session whose counterparty signed no A2CN act: the external
+   * order or commitment the deal produced, in place of a TransactionRecord,
+   * which is bilateral (Section 9A.12). That counterparty may be an observed
+   * responder holding no identity, or a DID-bearing party whose identity
+   * verifies while its acts stay unsigned. Such a record is "0.5", like every
+   * record this generator emits; the reference is OPTIONAL at that version
+   * (Section 9A.2). It is refused for any outcome but COMPLETED; null or
+   * undefined means it is not supplied.
    */
   externalCommitmentReference?: Dict | null;
 }
@@ -260,20 +288,18 @@ export function generateSessionEvidenceRecord(
   });
 
   // A COMPLETED session carries exactly one completion witness (Section 9A.2).
-  // A TransactionRecord is bilateral (Section 9.3), so a DID-bearing responder
-  // completes with one, and an observed responder completes through the
-  // external commitment the deal produced (Section 9A.12).
+  // A TransactionRecord is bilateral (Section 9.3), so a session whose
+  // counterparty signed an acceptance completes with one, and a session whose
+  // counterparty signed nothing completes through the external commitment the
+  // deal produced (Section 9A.12). That second case is NOT the same as "the
+  // responder is observed": a mandate-only counterparty is DID-bearing and
+  // still signs no act, so the witness is keyed on the reference the caller
+  // supplies rather than on the responder's identity shape.
   const externalCommitmentReference = options.externalCommitmentReference ?? null;
   let reference: Dict | null = null;
   if (externalCommitmentReference !== null) {
     if (outcome !== SessionState.COMPLETED) {
       throw new Error("externalCommitmentReference is only for a COMPLETED session");
-    }
-    if (observedResponder === null) {
-      throw new Error(
-        "externalCommitmentReference requires an observed responder; a " +
-          "DID-bearing responder completes with its TransactionRecord",
-      );
     }
     reference = validatedExternalCommitmentReference(externalCommitmentReference);
   } else if (outcome === SessionState.COMPLETED && observedResponder !== null) {
@@ -302,14 +328,14 @@ export function generateSessionEvidenceRecord(
 
   const terminalTimestamp = terminalTimestampFor(session);
   let transactionRecordHash: string | null = null;
-  if (outcome === SessionState.COMPLETED && observedResponder === null) {
+  if (outcome === SessionState.COMPLETED && reference === null) {
     transactionRecordHash = generateTransactionRecord(session).record_hash as string;
   }
 
   const actChainHash = hashBytes(
     canonicalize(orderedActs.map((entry) => entry.act_hash as string)),
   );
-  const evidenceLevel = classifyEvidenceLevel(orderedActs, outcome, parties);
+  const evidenceLevel = classifyEvidenceLevel(orderedActs, outcome, parties, reference !== null);
   const producerDid = producer.did as string;
 
   const record: Dict = {
@@ -365,9 +391,25 @@ export function generateSessionEvidenceRecord(
       "A COMPLETED record carries exactly one completion witness, and no other outcome carries one",
     );
   }
+  if (!responderSignedOnlyNegotiation(record)) {
+    throw new Error(
+      "An external commitment reference admits a responder signature only on " +
+        "an offer or counteroffer: a responder-signed acceptance, rejection or " +
+        "withdrawal is not negotiation",
+    );
+  }
   if (!externalCommitmentRulesHold(record)) {
     throw new Error(
-      "An external commitment reference requires an observed responder and unilateral evidence",
+      "An external commitment reference requires that every signed act is a " +
+        "session party's, and unilateral or mixed evidence",
+    );
+  }
+  if (!noAcceptanceOfResponderSignedAct(record)) {
+    throw new Error(
+      "An external commitment reference refuses an acceptance that accepts an " +
+        "offer or counteroffer the responder signed, or whose accepted act is not " +
+        "in the record once the responder signed an act: the record must not " +
+        "attest an in-band acceptance of a responder-signed act",
     );
   }
   // externalCommitmentMatchesVersion03 was checked here, and is not any more. It
@@ -380,13 +422,25 @@ export function generateSessionEvidenceRecord(
   // merely unreachable.
   //
   // The predicate itself is NOT dead — the verifier still calls it, where it
-  // governs stored "0.1"/"0.2"/"0.3" records. And this call site would become
-  // live again the moment emission stops being universally "0.4". So if a later
-  // change makes the emitted version conditional, this site needs a guard AND A
-  // NEW MESSAGE, because the old one asserted a rule that is no longer true of
-  // anything we emit — restoring it verbatim would be worse than the deletion it
-  // undoes. An unreachable guard is merely dead; a guard whose failure message
-  // states a false rule misleads whoever revives it.
+  // governs stored records below the floor. And this call site becomes live
+  // again the moment emission stops being UNIVERSAL — that is, the moment
+  // record_version comes to depend on what the record contains. The condition is
+  // universality, NOT any particular version number.
+  //
+  // That distinction is load-bearing and this file has now paid for it twice. An
+  // earlier wording said "the moment emission stops being universally 0.4",
+  // which the move to "0.5" satisfies LITERALLY while leaving this site exactly
+  // as dead as it was: emission stayed universal and the assignment above stayed
+  // unconditional. A condition written as a version number goes stale the moment
+  // the version moves; a condition written as the property it means does not.
+  // The same literal-for-semantic substitution is what made the two version
+  // rules below contradict their own docstrings.
+  //
+  // So if a later change makes the emitted version conditional, this site needs
+  // a guard AND A NEW MESSAGE, because the old one asserted a rule that is no
+  // longer true of anything we emit — restoring it verbatim would be worse than
+  // the deletion it undoes. An unreachable guard is merely dead; a guard whose
+  // failure message states a false rule misleads whoever revives it.
   if (!externalCommitmentProducerActPresent(record)) {
     throw new Error(
       "An external commitment reference requires at least one act signed by the " +
@@ -522,6 +576,9 @@ export function assessSessionEvidenceRecord(
     if (!externalCommitmentRulesHold(record)) {
       return assessment;
     }
+    if (!noAcceptanceOfResponderSignedAct(record)) {
+      return assessment;
+    }
     if (!externalCommitmentProducerActPresent(record)) {
       return assessment;
     }
@@ -535,7 +592,12 @@ export function assessSessionEvidenceRecord(
       return assessment;
     }
 
-    const expectedLevel = classifyEvidenceLevel(acts, outcome, record.parties as Dict);
+    const expectedLevel = classifyEvidenceLevel(
+      acts,
+      outcome,
+      record.parties as Dict,
+      hasOwn(record, "external_commitment_reference"),
+    );
     if (record.evidence_level !== expectedLevel) {
       return assessment;
     }
@@ -973,14 +1035,55 @@ function completionWitnessHolds(record: Dict): boolean {
 }
 
 /**
- * Couple an external commitment reference to an observed responder and
- * unilateral evidence.
+ * Who may hold the external witness, at what level, and who may sign in it.
  *
- * A TransactionRecord is bilateral by construction (Section 9.3), so the
- * reference exists for a counterparty with no A2CN identity, and the record
- * represents one DID-bearing party beside an observed reference (Section 9A.12).
- * Asserted here rather than left to follow from the observed-responder coupling,
- * for the same reason that coupling is asserted explicitly.
+ * The reference is the completion witness of a session that produced no
+ * TransactionRecord (Section 9A.12). The property it carries is that NO
+ * COUNTERPARTY SIGNATURE WITNESSES THE COMPLETION: the completion is the
+ * producer's external-order reference, not an act the counterparty signed.
+ *
+ * Until "0.5" this asserted observed_party and unilateral. That pair is an
+ * IDENTITY PROXY for the property and is narrower than it: written for the
+ * no-DID case, it incidentally excluded a verified-identity counterparty, a shape
+ * an observed_party cannot even express, since that descriptor requires the
+ * declared-markers to be literally false. The proxy is relaxed to the property
+ * here, and BECAUSE it is relaxed, the property has to be CHECKED. This function
+ * decides who may sign, and what the responder may sign;
+ * noAcceptanceOfResponderSignedAct decides what an acceptance may name.
+ *
+ * The property is about the completion, not every act. A counterparty that
+ * signed a counteroffer negotiated; it completed nothing, and no
+ * TransactionRecord exists for that session. So a verified act is admitted from
+ * either SESSION PARTY — everyVerifiedActIsASessionPartys carries the argument
+ * for why a third party is not — and the responder's only as negotiation,
+ * responderSignedOnlyNegotiation.
+ *
+ * evidence_level was a SECOND identity proxy on the same property, and it is
+ * relaxed for the same reason. unilateral and mixed both describe a record whose
+ * completion no counterparty signed; which one a record carries depends on what
+ * the producer recorded, not on the honesty of the record:
+ *
+ *   - unilateral when no act carries a verified counterparty perspective, for
+ *     instance an observed act with no sender_did;
+ *   - mixed when the counterparty is represented — its verified DID on an act
+ *     attributed unsigned_observation, or its signed negotiation act.
+ *
+ * BOTH ARE HONEST RECORDS. Admitting only unilateral would require a producer to
+ * omit evidence it holds in order to reach a classification.
+ *
+ * bilateral stays excluded, which is why this checks membership rather than
+ * merely "not bilateral": that level asserts both parties' material acts are
+ * attributable, the completion included, which is precisely the claim a session
+ * completing through an external reference cannot make. The classifier never
+ * returns it for such a record (classifyEvidenceLevel), so this refuses only a
+ * record that CLAIMS it.
+ *
+ * The DID-bearing responder is admitted from "0.5" and not before, because
+ * "0.5" is the first version whose schema admits it; "0.3" and "0.4" require an
+ * observed_party there. Without the floor, a "0.5" record relabelled to either
+ * and resealed would verify while its own version's schema refused it. The
+ * observed_party responder needs no floor of its own here: the reference itself
+ * is refused below "0.3" by the version-keyed witness rule.
  */
 function externalCommitmentRulesHold(record: Dict): boolean {
   if (!hasOwn(record, "external_commitment_reference")) {
@@ -990,24 +1093,345 @@ function externalCommitmentRulesHold(record: Dict): boolean {
   if (typeof parties !== "object" || parties === null) {
     return false;
   }
-  return (
-    observedPartyShapeValid(parties.responder) &&
-    record.evidence_level === EvidenceLevel.UNILATERAL
+  const responder = parties.responder;
+  if (fullPartyShapeValid(responder)) {
+    if (!versionAtOrAfter(record.record_version, VERSION_ADMITTING_VERIFIED_EXTERNAL_RESPONDER)) {
+      return false;
+    }
+  } else if (!observedPartyShapeValid(responder)) {
+    return false;
+  }
+  if (
+    record.evidence_level !== EvidenceLevel.MIXED &&
+    record.evidence_level !== EvidenceLevel.UNILATERAL
+  ) {
+    return false;
+  }
+  if (!everyVerifiedActIsASessionPartys(record)) {
+    return false;
+  }
+  return responderSignedOnlyNegotiation(record);
+}
+
+/**
+ * The initiator's DID and the responder's, or null if the initiator has none.
+ *
+ * The responder contributes a DID only when it is a full party. An observed_party
+ * holds no A2CN identity, so it has none to contribute and a verified act can
+ * never be its (Section 9A.8 rule 1). Read through own properties only, so an
+ * inherited "did" can never stand in for a party's.
+ */
+function externalSessionDids(parties: Dict): [string, string | null] | null {
+  const initiator = hasOwn(parties, "initiator") ? parties.initiator : undefined;
+  if (typeof initiator !== "object" || initiator === null || Array.isArray(initiator)) {
+    return null;
+  }
+  const initiatorDid = hasOwn(initiator as Dict, "did") ? (initiator as Dict).did : undefined;
+  if (typeof initiatorDid !== "string" || !initiatorDid) {
+    // Section 9A.2 requires a DID-bearing initiator, so this record is refused
+    // elsewhere too; refusing here keeps the rules from passing vacuously on a
+    // record with no initiator to compare against.
+    return null;
+  }
+  const responder = hasOwn(parties, "responder") ? parties.responder : undefined;
+  const responderDid = fullPartyShapeValid(responder) ? ((responder as Dict).did as string) : null;
+  return [initiatorDid, responderDid];
+}
+
+/** Whether a value is an act entry: an object, and not an array or null. */
+function isActEntry(entry: unknown): entry is Dict {
+  // !Array.isArray matches Python's isinstance(entry, dict), which an array does
+  // not satisfy. Without it a bare [] would read attribution as undefined and
+  // count as "not verified", so the two languages would disagree on such a
+  // record. Unobservable from outside today — the act-ordering check upstream
+  // refuses a record with a non-object act first, in both languages — so it is
+  // kept for parity rather than for a reachable defect.
+  return typeof entry === "object" && entry !== null && !Array.isArray(entry);
+}
+
+/**
+ * Section 9A.8 rule 1, for every external-channel record rather than some.
+ *
+ * Every act attributed verified_signature carries a sender_did equal to
+ * parties.initiator.did or parties.responder.did — "an act that cannot be placed
+ * in a known role is refused rather than admitted". Section 9A.8 states that for
+ * an observed_party responder, where only the initiator holds a DID; it holds for
+ * the DID-bearing responder too, so the SAME verified third-party act is refused
+ * whichever identity tier the counterparty is at.
+ *
+ * WHY A THIRD PARTY IS REFUSED rather than merely not counted. Section 9A.5
+ * declines to COUNT a non-party's act towards mixed, but that is classification,
+ * not admission. A producer naming one organisational DID as parties.responder
+ * while the counterparty signs under an agent or delegate DID could otherwise
+ * carry a verified counterparty signature — an acceptance included — past every
+ * rule keyed on the responder.
+ *
+ * THE COMPARISON IS EXACT, with no DID normalization. sender_did has no imposed
+ * syntax (Section 9A.6), and did:web:acme-corp.com#key-2026-01 is a different
+ * string from did:web:acme-corp.com while verificationMethodControlledBy accepts
+ * it and a resolver that dereferences DID URLs resolves it. Treating the two as
+ * equal would make admission a property of the CALLER'S resolver. So a DID URL
+ * naming either party's own key is neither party's DID, and is refused.
+ *
+ * Stated positively, so the rule is a property of the whole act list rather than
+ * a search for one bad entry: an act list with nothing verified satisfies it
+ * vacuously, and externalCommitmentProducerActPresent is what refuses that
+ * record.
+ */
+function everyVerifiedActIsASessionPartys(record: Dict): boolean {
+  const parties = record.parties;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  const sessionDids = externalSessionDids(parties as Dict);
+  if (sessionDids === null) {
+    return false;
+  }
+  const [initiatorDid, responderDid] = sessionDids;
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  return acts.every(
+    (entry) =>
+      isActEntry(entry) &&
+      (entry.attribution !== EvidenceAttribution.VERIFIED ||
+        entry.sender_did === initiatorDid ||
+        (responderDid !== null && entry.sender_did === responderDid)),
   );
+}
+
+/**
+ * In an external-channel record the responder signs negotiation, and nothing else.
+ *
+ * Section 9A.12: an act attributed verified_signature whose sender_did is
+ * parties.responder.did (exact) has message_type offer or counteroffer. A
+ * responder-signed acceptance is a completion the counterparty signed, which is a
+ * TransactionRecord rather than an external witness; a responder-signed rejection
+ * or withdrawal is the counterparty's signed refusal, which cannot sit in a record
+ * stating that the session completed. Either way a counterparty signature would
+ * bear on the completion the reference alone is supposed to witness.
+ *
+ * A third party's verified act never reaches this rule's question: the
+ * session-party check refuses it first. An observed_party responder holds no DID,
+ * so it signs nothing and the rule holds vacuously.
+ */
+function responderSignedOnlyNegotiation(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  const sessionDids = externalSessionDids(parties as Dict);
+  if (sessionDids === null) {
+    return false;
+  }
+  const responderDid = sessionDids[1];
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  if (responderDid === null) {
+    return true;
+  }
+  return acts.every(
+    (entry) =>
+      !isActEntry(entry) ||
+      entry.attribution !== EvidenceAttribution.VERIFIED ||
+      entry.sender_did !== responderDid ||
+      NEGOTIATION_MESSAGE_TYPES.includes(entry.message_type as string),
+  );
+}
+
+/**
+ * The hashes an acceptance may name an offer or counteroffer by.
+ *
+ * An offer's protocol_act_hash IS the hash of its signed act (Section 7.3.1), so
+ * an act is named by the hash it states and by the hash of its rebuild; for a
+ * verified offer the two are equal, because the verifier has already refused one
+ * whose stated hash differs from its rebuild. An unsigned observation may state
+ * neither, and is then named by its rebuild alone.
+ */
+function negotiationActHashes(act: Dict): string[] {
+  const hashes: string[] = [];
+  const stated = hasOwn(act, "protocol_act_hash") ? act.protocol_act_hash : undefined;
+  if (typeof stated === "string" && stated) {
+    hashes.push(stated);
+  }
+  try {
+    const rebuilt = rebuildSignedAct(act);
+    if (rebuilt !== null) {
+      hashes.push(hashObject(rebuilt));
+    }
+  } catch {
+    // an act that cannot be rebuilt is named by nothing else
+  }
+  return hashes;
+}
+
+/**
+ * No act in an external-channel record accepts an act the responder signed.
+ *
+ * Section 9A.12: an external-channel record MUST NOT attest an in-band acceptance
+ * of an act the responder signed. Out-of-band reconstruction is not what this
+ * prevents: a keyholder can always sign its own acceptance of a responder-signed
+ * counteroffer elsewhere, which admitting a counterparty's signed negotiation act
+ * concedes. The record attests what was recorded in-band, and this rule bounds
+ * that. An act ACCEPTS when its
+ * message_type is acceptance or its inner act carries accepted_protocol_act_hash
+ * or accepted_offer_id — whatever its type and whether or not it is signed,
+ * because nothing constrains an unsigned act's message_type and a target field is
+ * what makes an act an acceptance of something. For each such act:
+ *
+ *   - if its accepted_protocol_act_hash names, or its accepted_offer_id is the
+ *     message_id of, an offer or counteroffer the responder signed, the record is
+ *     refused — either field is enough, so a crossed pair cannot hide one behind
+ *     the other;
+ *   - once the responder has any verified act, each target field it carries must
+ *     resolve EXACTLY to an offer or counteroffer in the record, the hash written
+ *     as a canonical 43-character base64url digest; an acceptance carrying no
+ *     hash, a target in another spelling or encoding, or one naming nothing in
+ *     the record is refused (fail-closed): nothing shows it does not accept a
+ *     signed act the producer left out.
+ *
+ * Keyed on the ACCEPTED act, not on the acceptance's own signature. An acceptance
+ * recorded unsigned still names what it accepted, and is still an acceptance the
+ * record attests in-band, so a rule that asked whether the acceptance was signed
+ * would admit exactly the record it exists to refuse.
+ *
+ * The hash is resolved the way the TransactionRecord binds it: the acceptance's
+ * accepted_protocol_act_hash against an offer's protocol_act_hash (record.ts; the
+ * session does the same), which is the hash of the offer's signed act
+ * (negotiationActHashes). Membership in the responder-signed sets is checked
+ * FIRST, so an unsigned duplicate or forgery claiming a signed act's message_id or
+ * hash can never launder an acceptance of the signed one by giving its target
+ * somewhere else to resolve. Every field is read as an own property only.
+ *
+ * What stays admitted: an acceptance — the initiator's, typically signed — of an
+ * offer the counterparty did not sign, beside any negotiation either party
+ * signed. The record then attests no in-band acceptance of a responder-signed act.
+ */
+function noAcceptanceOfResponderSignedAct(record: Dict): boolean {
+  if (!hasOwn(record, "external_commitment_reference")) {
+    return true;
+  }
+  const parties = record.parties;
+  if (typeof parties !== "object" || parties === null) {
+    return false;
+  }
+  const sessionDids = externalSessionDids(parties as Dict);
+  if (sessionDids === null) {
+    return false;
+  }
+  const responderDid = sessionDids[1];
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  if (responderDid === null) {
+    return true;
+  }
+  const entries = acts.filter(isActEntry);
+  const responderSigned = entries.some(
+    (entry) =>
+      entry.attribution === EvidenceAttribution.VERIFIED && entry.sender_did === responderDid,
+  );
+  if (!responderSigned) {
+    return true;
+  }
+  const signedHashes: string[] = [];
+  const signedIds: string[] = [];
+  const recordedHashes: string[] = [];
+  const recordedIds: string[] = [];
+  for (const entry of entries) {
+    const act = entry.act;
+    if (
+      !NEGOTIATION_MESSAGE_TYPES.includes(entry.message_type as string) ||
+      !isActEntry(act)
+    ) {
+      continue;
+    }
+    const hashes = negotiationActHashes(act);
+    const messageId = hasOwn(act, "message_id") ? act.message_id : undefined;
+    const ids = typeof messageId === "string" && messageId ? [messageId] : [];
+    recordedHashes.push(...hashes);
+    recordedIds.push(...ids);
+    if (entry.attribution === EvidenceAttribution.VERIFIED && entry.sender_did === responderDid) {
+      signedHashes.push(...hashes);
+      signedIds.push(...ids);
+    }
+  }
+  for (const entry of entries) {
+    const act = entry.act;
+    if (!isActEntry(act)) {
+      if (entry.message_type === "acceptance") {
+        return false;
+      }
+      continue;
+    }
+    const hasHash = hasOwn(act, "accepted_protocol_act_hash");
+    const hasId = hasOwn(act, "accepted_offer_id");
+    if (entry.message_type !== "acceptance" && !hasHash && !hasId) {
+      continue;
+    }
+    const targetHash = hasHash ? act.accepted_protocol_act_hash : undefined;
+    const targetId = hasId ? act.accepted_offer_id : undefined;
+    if (
+      (typeof targetHash === "string" && signedHashes.includes(targetHash)) ||
+      (typeof targetId === "string" && signedIds.includes(targetId))
+    ) {
+      return false;
+    }
+    if (!hasHash) {
+      return false;
+    }
+    if (
+      !(
+        typeof targetHash === "string" &&
+        HASH_PATTERN.test(targetHash) &&
+        recordedHashes.includes(targetHash)
+      )
+    ) {
+      return false;
+    }
+    if (hasId && !(typeof targetId === "string" && recordedIds.includes(targetId))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a recognized record_version is `floor` or later.
+ *
+ * Ordered by position in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS, which is
+ * published order. A value this verifier does not recognize is never "later":
+ * it is refused elsewhere, and treating an unknown label as later would let it
+ * inherit the newest rules merely by being unfamiliar.
+ */
+function versionAtOrAfter(version: unknown, floor: string): boolean {
+  const index = RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.indexOf(version as string);
+  if (index < 0) {
+    return false;
+  }
+  return index >= RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.indexOf(floor);
 }
 
 /**
  * A record carries external_commitment_reference exactly when it is "0.3"
  * (Section 9A.2).
  *
- * This is the one verification rule that depends on the version. The reference
- * is present by key, so one whose value is null counts as carried.
+ * A historical rule, kept so "0.3" records still read as they always did. From
+ * "0.4" on there is no version-keyed witness rule at all. The reference is
+ * present by key, so one whose value is null counts as carried.
  */
 function externalCommitmentMatchesVersion03(record: Dict): boolean {
   const version = record.record_version;
-  if (version === SESSION_EVIDENCE_RECORD_VERSION_CURRENT) {
-    // "0.4" carries no version-keyed witness rule at all: the reference is
-    // OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule —
+  if (versionAtOrAfter(version, VERSION_WITHOUT_VERSION_KEYED_WITNESS_RULE)) {
+    // "0.4" and later carry no version-keyed witness rule at all: the reference
+    // is OPTIONAL there, and Section 9A.6 step 9's exactly-one-witness rule —
     // which holds at every record_version and is enforced independently of any
     // version — carries the weight instead. Keeping the biconditional would
     // refuse every external-channel record, by demanding the version be "0.3"
@@ -1022,8 +1446,9 @@ function externalCommitmentMatchesVersion03(record: Dict): boolean {
  * An act carrying a decline signature makes the record "0.4" or later.
  *
  * ONE-DIRECTIONAL, and the direction matters: the vocabulary implies the
- * version, never the reverse. An ordinary "0.4" record carries no decline at
- * all, so this must not be read as "0.4" implying the vocabulary.
+ * version, never the reverse. An ordinary record at or above the floor carries
+ * no decline at all, so this must not be read as the version implying the
+ * vocabulary.
  *
  * Keyed on signature_type rather than on a signature field inside acts[].act.
  * That object is open, so a field there violates no published schema, and a
@@ -1034,8 +1459,13 @@ function externalCommitmentMatchesVersion03(record: Dict): boolean {
  * schema names the vocabulary.
  *
  * NOTE the polarity, which is the opposite of the rule above: that one goes
- * quiet at "0.4" and governs only historical records; this one fires only below
- * "0.4" and governs only new vocabulary.
+ * quiet at the floor and governs only historical records; this one fires only
+ * below the floor and governs only new vocabulary. Both floors are "0.4" and
+ * both are read through versionAtOrAfter, rather than written as the set of
+ * versions that happened to exist when this was written — as the literal
+ * new Set(["0.4"]) this refused a "0.5" record for carrying a decline that
+ * "0.5" admits, while the first line of this comment already said "or later".
+ * The prose was right and the code was wrong.
  */
 function declineVocabularyRequires04(record: Dict): boolean {
   const acts = record.acts;
@@ -1057,7 +1487,7 @@ function declineVocabularyRequires04(record: Dict): boolean {
   if (!carriesDecline) {
     return true;
   }
-  return VERSIONS_ADMITTING_DECLINE_VOCABULARY.has(record.record_version as string);
+  return versionAtOrAfter(record.record_version, VERSION_ADMITTING_DECLINE_VOCABULARY);
 }
 
 /**
@@ -1854,7 +2284,16 @@ function verificationMethodControlledBy(verificationMethod: string, did: string)
   );
 }
 
-function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): string {
+function classifyEvidenceLevel(
+  acts: Dict[],
+  outcome: string,
+  parties: Dict,
+  externalCommitment: boolean,
+): string {
+  // externalCommitment is whether the record carries external_commitment_reference.
+  // It is a required parameter so that no caller can reach bilateral by forgetting
+  // it.
+  //
   // Section 9A.5: a record whose responder is an observed_party is always
   // unilateral, asserted rather than derived from the acts below. Deriving it
   // would call a record whose acts are all the producer's own bilateral, when
@@ -1895,7 +2334,13 @@ function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): st
       partyDids.has(entry.sender_did as string),
   ).length;
 
+  // Section 9A.5: a record carrying external_commitment_reference is never
+  // bilateral. Its completion is the producer's external-order reference, not an
+  // act either party signed, so even when both parties' acts verify and nothing is
+  // unsigned the completion is a fact the counterparty did not attest to — the
+  // same footing as a locally observed terminal fact, and classified the same way.
   if (
+    !externalCommitment &&
     outcome === SessionState.COMPLETED &&
     acts.length > 0 &&
     unsignedCount === 0 &&
@@ -1909,7 +2354,7 @@ function classifyEvidenceLevel(acts: Dict[], outcome: string, parties: Dict): st
   if (
     verifiedPartyCount > 0 &&
     representedDids.size >= 2 &&
-    (unsignedCount > 0 || localTerminalFact)
+    (unsignedCount > 0 || localTerminalFact || externalCommitment)
   ) {
     return EvidenceLevel.MIXED;
   }

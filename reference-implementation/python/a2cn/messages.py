@@ -49,10 +49,15 @@ PROTOCOL_ACT_VERSION = "0.3"
 # emit version would leave every earlier record unverifiable after each bump.
 LEGACY_VERSIONLESS_WIRE_VERSION = "0.2"
 
-# The wire versions this implementation recognises. A session runs at one of
-# them; "0.2" remains so that a session negotiated at it can still be replayed
-# and its acts rebuilt.
+# The wire versions this implementation recognises, for verifying what a session
+# produced: its recorded acts, or the session replayed to rebuild them. "0.2" is
+# here for that alone; it is never established (Section 11.2.1).
 SUPPORTED_WIRE_VERSIONS = (LEGACY_VERSIONLESS_WIRE_VERSION, PROTOCOL_ACT_VERSION)
+
+# The wire versions a new session may be established at: the current one only
+# (Section 11.2.1). A superseded version stays recognised above, so records made
+# under it still verify, but a session is never negotiated down to it.
+ESTABLISHMENT_WIRE_VERSIONS = (PROTOCOL_ACT_VERSION,)
 
 # The header every signed act carries, whatever its type, in the order Section
 # 7.3.1 lists them. JCS sorts keys before hashing, so the order is for readers.

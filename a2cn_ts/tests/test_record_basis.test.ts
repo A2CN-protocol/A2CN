@@ -88,6 +88,7 @@ function replay(
     sessionInit,
     sessionAck,
     sessionAck.session_created_at as string,
+    { legacyReplay: true }, // a recorded session, possibly negotiated at "0.2"
   );
   session.session_timeout_seconds = 86400 * 365 * 100; // the timestamps are in the past
   for (const message of structuredClone(messages)) {

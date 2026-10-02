@@ -11,7 +11,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 |------|---------|
 | Release | `0.3.0` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
-| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.4` for every record, with `0.1`, `0.2` and `0.3` still accepted |
+| `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.5` for every record, with `0.1`, `0.2`, `0.3` and `0.4` still accepted |
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project is pre-1.0: the minor version moves for substantive additions.
@@ -19,6 +19,152 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+**A counterparty with a verified identity that never signs the completion can now
+complete a session through an external reference (additive;
+SessionEvidenceRecord `record_version` `0.5`).**
+
+A counterparty can hold a resolvable DID and a mandate that verifies byte for
+byte and still never sign an acceptance — it may sign no act at all, or sign its
+offers and counteroffers and then confirm the order outside A2CN. Such a
+responder is a DID-bearing full party, never an `observed_party` — that
+descriptor requires its `did_declared`, `a2cn_endpoint_declared` and
+`mandate_declared` markers to be literally `false` — and because it never signed
+the completion the session produces no bilateral TransactionRecord either. Before this release such a session had no
+honest `COMPLETED` shape at all: the external-channel completion witness was
+gated on an `observed_party` responder at `evidence_level: unilateral`, so a
+real order placed against such a counterparty could not be recorded as
+completed.
+
+That gate was an identity proxy, and narrower than the property it protects.
+The property is that **no counterparty signature witnesses the completion** —
+the completion is attested by the producer's external-order reference, not by
+any act of the counterparty's — and a counterparty whose identity verifies but
+which never signed the completion satisfies it exactly as fully as one with no
+identity at all. The gate is relaxed to the property in a record at
+`record_version` `0.5` or later: `parties.responder` may now be an
+`observed_party` **or** a DID-bearing party. A record labelled `0.3` or `0.4`
+keeps the earlier gate, so a verifier refuses one that carries the reference
+against a DID-bearing responder, as those versions' schemas do.
+
+**`evidence_level` was a second identity proxy on the same property, and it is
+relaxed too:** such a record may be `unilateral` **or** `mixed`. Which one it
+carries follows from what the producer recorded — no verified counterparty
+perspective gives `unilateral`; the counterparty's verified DID on an act
+attributed `unsigned_observation`, or its signed negotiation act, gives `mixed`. **Both are honest records, and neither is more truthful than the
+other.** Admitting `unilateral` alone would oblige a producer to omit a DID it
+has verified, recording less than it knows in order to reach an admitted
+classification — the same defect, one level up, that widening the responder
+condition removes.
+
+**The property is now checked directly, because the proxies that used to carry it
+are gone — and it is checked on the completion, not on every act.** The
+property is about who witnessed the *completion*. A counterparty that signed a
+counteroffer negotiated; it completed nothing, and no TransactionRecord exists
+for that session. A TransactionRecord is a responder-signed offer plus an
+acceptance that names it, so a verifier and a generator both refuse an
+external-channel record in which the responder signed anything other than an
+offer or counteroffer — a responder-signed acceptance, rejection or withdrawal —
+or in which any act that accepts — **signed or unsigned, under whatever
+`message_type`** — names an offer or counteroffer the responder signed, by its
+`accepted_protocol_act_hash` or its `accepted_offer_id`. Once the responder has
+signed anything, an acceptance whose target does not resolve exactly to an act
+in the record is refused too (fail-closed). **An external-channel record must not
+attest an in-band acceptance of a responder-signed act.** The check is keyed on
+the accepted act rather than on the acceptance's own signature: an acceptance
+recorded unsigned still names what it accepted, and is still an acceptance the
+record attests in-band. What stays admitted is the shape an external channel produces: the
+initiator signs its own acceptance of an offer the counterparty did not sign,
+and the counterparty confirms the order off-protocol. A counterparty's signed
+offer or counteroffer beside an external reference is admitted, and the record
+is `mixed` — including beside an initiator-signed acceptance of a different,
+unsigned offer, which attests no in-band acceptance of a responder-signed act.
+The record attests what was recorded in-band. It does not, and cannot, prevent a
+party holding its own signing key from accepting a responder-signed counteroffer
+out of band and building a TransactionRecord elsewhere; that is inherent to
+admitting a counterparty's signed negotiation act.
+
+Nothing else in the record excludes a counterparty-signed completion: the
+producer-signed-act rule asks for an act of the *initiator's* and is satisfied
+when both parties signed, and the exactly-one-witness rule is satisfied by a
+producer that suppresses a `transaction_record_hash` it could have carried. And
+`bilateral` cannot do it either: **an external-channel record is never classified
+`bilateral`**, because its completion is the producer's reference rather than an
+act either party signed. For classification that completion counts as a locally
+observed terminal fact, so both parties' verified acts give `mixed`.
+
+**Every verified act is a session party's.** A verifier and a generator both
+refuse an external-channel record in which an act attributed
+`verified_signature` carries a `sender_did` other than `parties.initiator.did` or
+`parties.responder.did`. That is Section 9A.8 rule 1 — "an act that cannot be
+placed in a known role is refused rather than admitted" — holding for the
+external-channel witness at every `record_version` and for both responder shapes.
+A third party is refused rather than merely left uncounted: otherwise a producer
+naming one organisational DID as `parties.responder` while the counterparty signs
+under an agent's DID could carry a verified counterparty acceptance past every
+rule keyed on the responder. The comparison is exact string equality with no DID
+normalization: `sender_did` carries no imposed syntax, so a DID URL naming a
+party's own key is a different string from its `did`, and treating the two as
+equal would make admission depend on the verifier's resolver.
+
+**What a verified counterparty identity does not prove.** A responder DID that
+verifies, and a responder mandate verified live during the session, do not
+authenticate the responder's unsigned acts or the `external_commitment_reference`.
+The producer seal proves only that the producer recorded those bytes, and
+verifying the record does not prove the seller's mandate: the record carries no
+mandate material to re-verify.
+
+**What did not move.** A `COMPLETED` record still carries exactly one completion
+witness, never both and never neither. A `transaction_record_hash` still
+requires a DID-bearing responder. An external-channel record still requires at
+least one act the producer signed — without it the seal alone would carry the
+`COMPLETED` claim. A record claiming `bilateral` is still refused for an external
+witness, because that level asserts both parties' material acts are
+attributable, the completion included, which is the one claim such a record
+cannot make. The counterparty's unsigned acts stay `unsigned_observation`: a
+verified identity is not a signed act, and nothing here lets one be recorded as
+the other.
+
+**Versions.** Every SessionEvidenceRecord a producer emits is now `0.5`, and
+`spec/schemas/session-evidence-record-0.5.schema.json` is published beside the
+earlier schema files, which are unchanged byte for byte. A verifier recognizes
+`0.1` through `0.5` and refuses no record on account of its version alone. The
+TransactionRecord is untouched and stays `0.4`.
+
+**Two version-keyed rules are now floors rather than fixed sets, and a third is
+added as one.** The two existing rules meant
+"this version or later" and both were written as the set of versions that
+existed when they were written, while their own documentation already said "or
+later" — so each stated the opposite of itself the moment a new version shipped.
+As written, a `0.5` record carrying a signed Rejection or Withdrawal would have
+been refused for its version, and every stored `0.4` external-channel record
+would have fallen into the historical `0.3` rule and been refused as well. Both
+now read an ordered floor, so neither needs editing when the next version lands.
+The third is the `0.5` floor on a DID-bearing external-channel responder
+described above, read through the same ordered floor.
+
+**A new session is established only at wire version `"0.3"`; `"0.2"` is
+recognized only for verifying records (Sections 11.2.1 and 12.1.7).** Before
+this, `"0.2"` was named as a version this implementation recognizes without
+saying for what, and `SessionManager.create_session` would still establish a
+session from a SessionInit and SessionAck that agreed on it. A session
+established at `"0.2"` would run without the guarantees `"0.3"` added, such as
+required decline signatures, so this was a downgrade path. Now the client
+proposes only `"0.3"` and refuses a SessionAck at any other version, the
+responder refuses a `"0.2"` SessionInit as before, and `create_session` refuses
+a pair agreeing on `"0.2"` with `PROTOCOL_VERSION_MISMATCH`. A
+SessionInvitation's and a discovery document's `a2cn_version` must be `"0.3"`.
+
+**This changes the library's behaviour for one kind of caller.** Code that
+rebuilds a recorded `"0.2"` session through `create_session`, to verify the
+records it produced, must now say so: `legacy_replay=True` in Python,
+`{ legacyReplay: true }` in TypeScript. That option accepts a pair that agrees
+on any recognized version, and still refuses a pair that disagrees or names an
+unrecognized one. It is for replay only, never for a live session. The test
+vectors that record `"0.2"` sessions are unchanged; the code that replays them
+passes the option. `ESTABLISHMENT_WIRE_VERSIONS` names the versions a session
+may be established at; `SUPPORTED_WIRE_VERSIONS` keeps its value and now means
+the versions recognized for verification.
 
 **One uniform signed-act envelope across all five act types, and a
 TransactionRecord that rebinds both signatures (wire-visible, record-breaking).**
@@ -121,10 +267,11 @@ declines were unsignable before this release.
 
 **`external_commitment_reference` is OPTIONAL at `"0.4"`.** The two-way rule
 tying it to `"0.3"` is now historical, about records below `"0.4"` alone. At
-`"0.4"` no verification rule depends on the version: the completion witness is
-governed by Section 9A.6 step 9, which has always held at every `record_version`
-and which the `"0.4"` schema states structurally for the first time, including
-that a non-null `transaction_record_hash` requires a DID-bearing responder.
+`"0.4"` no rule about the completion witness depends on the version: the
+witness is governed by Section 9A.6 step 9, which has always held at every
+`record_version` and which the `"0.4"` schema states structurally for the first
+time, including that a non-null `transaction_record_hash` requires a DID-bearing
+responder.
 
 **A compatibility property is given up deliberately.** Before `"0.4"`, a record
 without an external commitment reference stayed `"0.2"`, so a verifier that knew
@@ -337,10 +484,10 @@ that a `net` or `gross` `money_basis` agrees with the described act's
 so a verifier that predates them rejects records that use them, and the basis
 rule adds a rejection. Producers emit `"0.2"` for every record that does not
 use Section 9A.12 (below). Verifiers accept `"0.1"` and `"0.2"` and apply the
-same rules to both; apart from Section 9A.12's version rule, verification does
-not depend on the version. They therefore also accept a `"0.1"` record that
-uses Sections 9A.8 to 9A.11; no released implementation produces one, and it
-does not validate against the `"0.1"` schema.
+same rules to both; apart from the version-keyed rules Section 9A.2 lists,
+verification does not depend on the version. They therefore also accept a
+`"0.1"` record that uses Sections 9A.8 to 9A.11; no released implementation
+produces one, and it does not validate against the `"0.1"` schema.
 
 **Session money basis, `session_params.basis`, restated in `terms.basis` and
 recorded in the TransactionRecord at `record_version` `"0.2"` (wire-compatible

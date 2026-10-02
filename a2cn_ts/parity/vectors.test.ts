@@ -151,6 +151,9 @@ describe("session replay parity", () => {
       sessionVector.session_init as Dict,
       sessionVector.session_ack as Dict,
       "2026-03-24T10:00:00Z",
+      // The vector's session was recorded at "0.2", which is replayed, never
+      // established (Section 11.2.1).
+      { legacyReplay: true },
     );
     session.session_timeout_seconds = 86400 * 365 * 100;
     for (const message of sessionVector.messages as Dict[]) {
