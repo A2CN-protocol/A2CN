@@ -1,7 +1,7 @@
 {
   "id": "expired_mandate_on_offer_reference",
-  "status": "active",
-  "summary": "An offer references a mandate hash whose mandate is validly signed but expired.",
+  "status": "known_gap",
+  "summary": "An offer references a mandate hash whose mandate is validly signed but expired. Documented gap: the reference servers check mandate validity only at session initiation (spec §5.3), not per act, so an offer referencing a mandate that expired mid-session is not rejected today.",
   "given": {
     "session_state": "NEGOTIATING",
     "mandate": {
@@ -21,6 +21,6 @@
   "expect": {
     "accepted": false,
     "error_code": "MANDATE_INVALID",
-    "reason": "Referenced mandate is expired at the offer timestamp."
+    "reason": "Intended behavior once mandate expiry is re-checked on every act; not enforced by the current reference servers, which validate the mandate only at session initiation."
   }
 }

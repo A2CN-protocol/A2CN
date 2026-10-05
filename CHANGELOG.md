@@ -29,6 +29,16 @@ This project is pre-1.0: the minor version moves for substantive additions.
   Its tests resolve the shared `spec/` directory through one helper,
   `tests/support/paths.ts`, which fails loudly if the package is moved again
   without updating it.
+- **Three conformance fixtures are relabelled `known_gap`**:
+  `expired_mandate_on_offer_reference`, `counterparty_outside_allowed_list` and
+  `payment_terms_drift_mid_negotiation`. Each was marked `active` but asserts a
+  check neither reference implementation performs:
+  - mandate expiry is checked only at session initiation, not on each act;
+  - declared mandates define no counterparty allow-list;
+  - no payment-term bound is a mandate field.
+
+  Their expected outcomes are kept as the intended behaviour. No implementation
+  changes.
 
 ---
 

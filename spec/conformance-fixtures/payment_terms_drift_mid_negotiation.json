@@ -1,7 +1,7 @@
 {
   "id": "payment_terms_drift_mid_negotiation",
-  "status": "active",
-  "summary": "A mid-negotiation counteroffer drifts outside mandate payment-term bounds.",
+  "status": "known_gap",
+  "summary": "A mid-negotiation counteroffer drifts outside mandate payment-term bounds. Documented gap: `max_net_days` is not a spec mandate field and neither reference server enforces payment-term bounds, so this is not rejected today.",
   "given": {
     "session_state": "NEGOTIATING",
     "mandate": {
@@ -24,6 +24,6 @@
   "expect": {
     "accepted": false,
     "error_code": "MANDATE_INVALID",
-    "reason": "Payment terms drift outside mandate bounds before acceptance."
+    "reason": "Intended behavior once payment-term bounds are defined in the mandate schema and enforced; not enforced by the current reference servers."
   }
 }
