@@ -527,3 +527,35 @@ def test_no_hashed_artifact_moved_when_the_vector_was_re_keyed():
             assert signed_act_hash(message) == message["protocol_act_hash"], (
                 f"{name}: {message['message_id']} no longer recomputes"
             )
+
+
+def test_acceptance_signature_binds_sender_did():
+    """The acceptance's signed scope covers sender_did (self-attested accepter).
+
+    Before the uniform envelope, Section 7.4 signed only
+    {session_id, round_number, sequence_number, accepted_offer_id,
+    accepted_protocol_act_hash}; the accepter's identity sat outside the signed
+    scope and rested on a verifier cross-check. The common header (Section 7.3.1)
+    brings sender_did into the acceptance's signed object, so a verifier that
+    rebinds by rebuild rejects any change to who accepted.
+    """
+    # Regression tripwire: the pre-envelope Section 7.4 scope did not cover sender_did,
+    # and the rebuilt signed scope now does.
+    assert "sender_did" not in ACCEPTANCE_FIELDS_TODAY
+    rebuilt = rebuild_signed_act(ACCEPTANCE_MESSAGE)
+    assert rebuilt is not None
+    assert "sender_did" in rebuilt
+
+    # The signature is over this hash, so changing sender_did changes the hash:
+    # a signature made over the original no longer verifies by rebuild.
+    tampered = copy.deepcopy(ACCEPTANCE_MESSAGE)
+    tampered["sender_did"] = "did:web:attacker.example"
+    # It still rebuilds, so the hash differs because sender_did is covered, not
+    # because the tampered act failed to rebuild at all.
+    assert signed_act_hash(tampered) is not None
+    assert signed_act_hash(tampered) != signed_act_hash(ACCEPTANCE_MESSAGE)
+
+    # sender_did is a covered field: an acceptance without it cannot be rebuilt at all.
+    missing = copy.deepcopy(ACCEPTANCE_MESSAGE)
+    del missing["sender_did"]
+    assert rebuild_signed_act(missing) is None

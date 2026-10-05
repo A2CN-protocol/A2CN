@@ -515,3 +515,34 @@ test("no hashed artifact moved when the vector was re-keyed", () => {
     }
   }
 });
+
+test("acceptance signature binds sender_did", () => {
+  // The acceptance's signed scope covers sender_did, so the accepter is
+  // self-attested. Before the uniform envelope, Section 7.4 signed only
+  // session_id, round_number, sequence_number, accepted_offer_id and
+  // accepted_protocol_act_hash; the accepter's identity sat outside the signed
+  // scope and rested on a verifier cross-check. The common header (Section
+  // 7.3.1) brings sender_did into the acceptance's signed object, so a verifier
+  // that rebinds by rebuild rejects any change to who accepted.
+
+  // Regression tripwire: the pre-envelope Section 7.4 scope did not cover
+  // sender_did, and the rebuilt signed scope now does.
+  expect(ACCEPTANCE_FIELDS_TODAY).not.toContain("sender_did");
+  const rebuilt = rebuildSignedAct(ACCEPTANCE_MESSAGE);
+  expect(rebuilt).not.toBeNull();
+  expect(rebuilt).toHaveProperty("sender_did");
+
+  // The signature is over this hash, so changing sender_did changes the hash:
+  // a signature made over the original no longer verifies by rebuild.
+  const tampered = structuredClone(ACCEPTANCE_MESSAGE);
+  tampered.sender_did = "did:web:attacker.example";
+  // It still rebuilds, so the hash differs because sender_did is covered, not
+  // because the tampered act failed to rebuild at all.
+  expect(signedActHash(tampered)).not.toBeNull();
+  expect(signedActHash(tampered)).not.toBe(signedActHash(ACCEPTANCE_MESSAGE));
+
+  // sender_did is a covered field: an acceptance without it cannot be rebuilt at all.
+  const missing = structuredClone(ACCEPTANCE_MESSAGE);
+  delete missing.sender_did;
+  expect(rebuildSignedAct(missing)).toBeNull();
+});
