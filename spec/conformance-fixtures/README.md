@@ -16,7 +16,7 @@ Status values:
 
 | Fixture | Status | Expected outcome |
 |---------|--------|------------------|
-| `expired_mandate_on_offer_reference` | `known_gap` | Documented gap: mandate validity is checked only at session initiation, not per act |
+| `session_mandate_expired_at_act_time` | `known_gap` | Documented gap: the sender's session mandate is validated only at session initiation, not re-checked per act or at commit |
 | `hitl_threshold_crossing` | `active` | Enter `AWAITING_HUMAN_APPROVAL` |
 | `counterparty_outside_allowed_list` | `known_gap` | Documented gap: declared mandates define no counterparty allow-list; not enforced |
 | `payment_terms_drift_mid_negotiation` | `known_gap` | Documented gap: no payment-term bound is a mandate field; not enforced |
