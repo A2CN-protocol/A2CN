@@ -30,7 +30,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
   with `MANDATE_INVALID` (403), and the discovery document states
   `conformance_level: 1` with `mandate_methods: ["declared"]`. Declared mandates
   are unaffected. A counterparty that needs Tier 2 mandates cannot use the
-  reference servers until that verification is implemented.
+  reference servers until that verification is implemented. The example
+  discovery documents in both implementations, and the Section 16.4 example,
+  which listed only declared mandates, now advertise level 1 to match.
 - **The TypeScript reference implementation moved from `a2cn_ts/` to
   `reference-implementation/typescript/`**, beside `reference-implementation/python/`.
   The package is unchanged and nothing in it behaves differently; run it from the
