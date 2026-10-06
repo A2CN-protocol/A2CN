@@ -384,7 +384,7 @@ A2CN/
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
 | AWAITING_HUMAN_APPROVAL state | ✓ Complete — high-value offers pause until signed approval receipt |
-| Security review | ✓ Passed — 0 critical, 0 high findings |
+| Security policy | See [SECURITY.md](SECURITY.md) |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Neutral third-party record custody | 📋 Planned |
