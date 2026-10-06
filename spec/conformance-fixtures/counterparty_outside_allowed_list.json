@@ -1,7 +1,7 @@
 {
   "id": "counterparty_outside_allowed_list",
-  "status": "active",
-  "summary": "Session initiation is rejected when the counterparty DID is outside the mandate allow-list.",
+  "status": "known_gap",
+  "summary": "Session initiation is rejected when the counterparty DID is outside the mandate allow-list. Documented gap: `allowed_counterparties` is not a field of the declared (Tier 1) mandate in spec §5.3, and neither reference server enforces a counterparty allow-list, so this is not rejected today.",
   "given": {
     "initiator_did": "did:web:unknown-buyer.example",
     "responder_mandate": {
@@ -14,6 +14,6 @@
   "expect": {
     "accepted": false,
     "error_code": "MANDATE_INVALID",
-    "reason": "Counterparty DID is not listed in allowed_counterparties."
+    "reason": "Intended behavior once a counterparty allow-list is defined in the mandate schema and enforced; not enforced by the current reference servers."
   }
 }

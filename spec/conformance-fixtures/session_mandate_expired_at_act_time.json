@@ -1,0 +1,25 @@
+{
+  "id": "session_mandate_expired_at_act_time",
+  "status": "known_gap",
+  "summary": "A party sends an act while its own session mandate has expired (valid_until in the past). Documented gap: the reference servers validate the mandate only at session initiation (spec §5.3), not on later acts or at commit, so an act sent under an expired session mandate is not rejected today.",
+  "given": {
+    "session_state": "NEGOTIATING",
+    "sender_session_mandate": {
+      "mandate_type": "declared",
+      "valid_until": "2020-01-01T00:00:00Z"
+    },
+    "act": {
+      "message_type": "offer",
+      "timestamp": "2026-03-24T10:00:00Z",
+      "terms": {
+        "total_value": 9500000,
+        "currency": "USD"
+      }
+    }
+  },
+  "expect": {
+    "accepted": false,
+    "error_code": "MANDATE_INVALID",
+    "reason": "Intended behavior once mandate validity is re-checked on every act and at commit; not enforced by the current reference servers, which validate the mandate only at session initiation."
+  }
+}

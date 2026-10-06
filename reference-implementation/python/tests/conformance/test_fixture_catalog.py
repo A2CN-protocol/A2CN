@@ -7,7 +7,7 @@ from pathlib import Path
 FIXTURE_DIR = Path(__file__).parents[4] / "spec" / "conformance-fixtures"
 
 EXPECTED_FIXTURES = {
-    "expired_mandate_on_offer_reference",
+    "session_mandate_expired_at_act_time",
     "hitl_threshold_crossing",
     "counterparty_outside_allowed_list",
     "payment_terms_drift_mid_negotiation",

@@ -11,7 +11,7 @@ const FIXTURE_DIR = join(
 );
 
 const EXPECTED_FIXTURES = new Set([
-  "expired_mandate_on_offer_reference",
+  "session_mandate_expired_at_act_time",
   "hitl_threshold_crossing",
   "counterparty_outside_allowed_list",
   "payment_terms_drift_mid_negotiation",
