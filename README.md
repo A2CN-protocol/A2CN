@@ -384,7 +384,6 @@ A2CN/
 | End-to-end bilateral demo | ✓ Working — matching record hashes |
 | Invitation flow demo | ✓ Working — Fairmarkit BID_CREATED pattern |
 | AWAITING_HUMAN_APPROVAL state | ✓ Complete — high-value offers pause until signed approval receipt |
-| Security policy | See [SECURITY.md](SECURITY.md) |
 | Deal type registry | ✓ Published — `a2cn.dev/registry/deal-types` |
 | A2A extension proposal | 🔄 In progress — joint proposal with Concordia Protocol |
 | Neutral third-party record custody | 📋 Planned |
@@ -406,6 +405,13 @@ A2CN/
 **Protocol and distributed systems engineers** interested in open standards work. The cryptographic design, session state machine, and deterministic record generation all have interesting problems. Open issues tagged [`help wanted`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22help+wanted%22) and [`good first issue`](https://github.com/A2CN-protocol/A2CN/issues?q=label%3A%22good+first+issue%22).
 
 **Protocol co-founders with enterprise GTM or BD background** — if you want to help build the standard and the business around it alongside the technical work, reach out at contact@a2cn.io.
+
+---
+
+## Security
+
+- **Report a vulnerability:** use GitHub [private vulnerability reporting](https://github.com/A2CN-protocol/A2CN/security/advisories/new) — please don't open a public issue or discussion for a vulnerability. Full policy: [SECURITY.md](SECURITY.md).
+- **Threat model** — what A2CN does and does not defend against: [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md).
 
 ---
 

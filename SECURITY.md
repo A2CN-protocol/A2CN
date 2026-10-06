@@ -2,13 +2,20 @@
 
 ## Supported Versions
 
-A2CN is pre-1.0 and evolving. Security fixes are applied to the latest released
-version and the `main` branch only; earlier tags are not maintained.
+A2CN is pre-1.0 and the protocol specification is a **draft** — not a "stable" or certified
+standard. Security fixes are applied to the current release line of the reference packages and to
+`main`; older releases are not maintained.
 
-| Version | Supported |
+| Component | Supported |
 |---|---|
-| `main` / latest release | :white_check_mark: |
-| Older tags (< latest) | :x: |
+| `a2cn` packages (Python + TypeScript), current `0.3.x` line + `main` | :white_check_mark: |
+| Releases before the current `0.3.x` line | :x: |
+
+The per-artifact protocol versions a release implements — the wire act protocol, TransactionRecord,
+SessionEvidenceRecord, and the specification document — are listed in the version matrix in the
+[README](README.md#versions-implemented) and are single-sourced from `a2cn.PROTOCOL_VERSIONS`. (The specification
+document is `0.2.0`, draft; the wire protocol is `0.3` as of release `0.3.0` and is not compatible
+with `0.2`.)
 
 ## Reporting a Vulnerability
 
@@ -20,8 +27,7 @@ Report privately through either channel:
 1. **GitHub private vulnerability reporting (preferred).** Open the repository's
    **Security** tab and choose **Report a vulnerability**. This keeps the report
    private to the maintainers and lets us collaborate on a fix and advisory.
-2. **Email.** Send details to **security@a2cn.io**. If you would like to encrypt
-   your report, say so in a first (non-sensitive) message and we will share a key.
+2. **Email.** Send details to **security@a2cn.io**.
 
 Please include, where you can:
 
@@ -46,6 +52,8 @@ and release a fix (we aim for **90 days, or until a fix ships, whichever is soon
 before disclosing publicly. We are happy to agree timing with you.
 
 ## Scope
+
+See the [threat model](spec/THREAT_MODEL.md) for what A2CN is and is not designed to defend against.
 
 **In scope:** the A2CN specification, the reference implementation, and the SDKs in
 this repository.
