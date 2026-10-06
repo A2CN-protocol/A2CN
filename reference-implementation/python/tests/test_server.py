@@ -45,7 +45,10 @@ async def test_discovery_document(test_client):
     doc = r.json()
     assert doc["a2cn_version"] == "0.3"
     assert "saas_renewal" in doc["deal_types"]
-    assert doc["conformance_level"] == 2
+    # Level 1 (declared mandates only): this implementation does not verify
+    # did_vc mandates, so it neither lists them nor claims Level 2.
+    assert doc["conformance_level"] == 1
+    assert doc["mandate_methods"] == ["declared"]
     assert doc["agent_did"] == RESPONDER_DID
 
 
@@ -196,6 +199,61 @@ async def test_session_init_expired_mandate(test_client):
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "MANDATE_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_session_init_did_vc_mandate_is_refused_unverified(test_client):
+    # A did_vc mandate is refused, never accepted unchecked: this implementation
+    # does not verify Tier 2 credentials. The credential is otherwise well formed
+    # and unexpired, so the refusal comes from the mandate type alone.
+    body = make_session_init()
+    body["initiator_mandate"] = {
+        "mandate_type": "did_vc",
+        "credential": {
+            "type": ["VerifiableCredential", "A2CNMandate"],
+            "issuer": "did:web:principal.example",
+            "expirationDate": "2099-01-01T00:00:00Z",
+            "credentialSubject": {
+                "id": body["initiator_mandate"].get("agent_did", "did:web:agent.example"),
+                "authorized_deal_types": ["saas_renewal"],
+            },
+            "proof": {"type": "JsonWebSignature2020", "jws": "not-a-real-signature"},
+        },
+    }
+    r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
+    assert r.status_code == 403
+    error = r.json()["error"]
+    assert error["code"] == "MANDATE_INVALID"
+    assert "not verified by this implementation" in error["message"]
+    assert "session_id" not in r.json()
+
+
+@pytest.mark.asyncio
+async def test_responder_did_vc_mandate_is_refused_at_configuration(test_client, responder_config):
+    # The server copies its own configured mandate into every SessionAck, so a
+    # did_vc responder mandate would present a capability a level 1 server does
+    # not have. Configuring one fails, and leaves the existing configuration in
+    # place.
+    import a2cn.server as server
+
+    before = server._responder_config
+    with pytest.raises(ValueError, match="declared mandate"):
+        server.configure_responder({**responder_config, "mandate": {
+            "mandate_type": "did_vc",
+            "credential": {
+                "type": ["VerifiableCredential", "A2CNMandate"],
+                "issuer": "did:web:principal.example",
+                "expirationDate": "2099-01-01T00:00:00Z",
+                "credentialSubject": {"authorized_deal_types": ["saas_renewal"]},
+                "proof": {"type": "JsonWebSignature2020", "jws": "not-a-real-signature"},
+            },
+        }})
+    assert server._responder_config is before
+
+    body = make_session_init()
+    r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
+    assert r.status_code == 201
+    assert r.json()["responder_mandate"]["mandate_type"] == "declared"
 
 
 @pytest.mark.asyncio

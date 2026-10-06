@@ -1,6 +1,6 @@
 {
   "a2cn_version": "0.3",
-  "conformance_level": 2,
+  "conformance_level": 1,
   "organization": {
     "name": "Acme Corp",
     "did": "did:web:acme-corp.com",

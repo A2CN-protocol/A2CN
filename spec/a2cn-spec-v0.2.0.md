@@ -4995,7 +4995,7 @@ Fairmarkit `BID_CREATED` webhook path above.
 {
   "a2cn_version": "0.3",
   "agent_did": "did:web:supplier.example",
-  "conformance_level": 2,
+  "conformance_level": 1,
   "deal_types": ["goods_procurement"],
   "mandate_methods": ["declared"],
   "endpoint": "https://supplier.example/a2cn",
