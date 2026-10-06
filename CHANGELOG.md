@@ -28,8 +28,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   while advertising `conformance_level: 2`, which Section 16.2 defines to include
   that verification. A session initiation carrying a `did_vc` mandate now fails
   with `MANDATE_INVALID` (403), and the discovery document states
-  `conformance_level: 1` with `mandate_methods: ["declared"]`. Declared mandates
-  are unaffected. A counterparty that needs Tier 2 mandates cannot use the
+  `conformance_level: 1` with `mandate_methods: ["declared"]`. The server's own
+  responder mandate, which it copies into every SessionAck, must also be
+  declared: `configure_responder` (Python) and `configureResponder`
+  (TypeScript) now refuse a responder mandate of any other type. Declared
+  mandates are unaffected. A counterparty that needs Tier 2 mandates cannot use the
   reference servers until that verification is implemented. The example
   discovery documents in both implementations, and the Section 16.4 example,
   which listed only declared mandates, now advertise level 1 to match.

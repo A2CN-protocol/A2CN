@@ -86,8 +86,22 @@ _responder_config: dict = {}
 
 
 def configure_responder(config: dict, session_store: "SessionStore | None" = None) -> None:
-    """Set responder identity info (DID, agent info, mandate, private key, etc.)."""
+    """Set responder identity info (DID, agent info, mandate, private key, etc.).
+
+    The responder's own mandate must be a declared mandate. This server
+    advertises conformance level 1 (declared mandates only) and copies the
+    configured mandate into every SessionAck, so a did_vc mandate here would
+    present a capability the server does not have. It is refused before any
+    configuration is applied.
+    """
     global _responder_config, _session_store
+    mandate = config.get("mandate")
+    if mandate and mandate.get("mandate_type") != "declared":
+        raise ValueError(
+            "The responder mandate must be a declared mandate: this server "
+            "advertises conformance level 1 (declared mandates only), got "
+            f"mandate_type {mandate.get('mandate_type')!r}."
+        )
     _responder_config = config
     agent_info = config.get("agent_info", {})
     private_key = config.get("private_key")

@@ -24,6 +24,7 @@ import {
   makeDidDocument,
   makeSessionInit,
   makeTestClient,
+  makeResponderConfig,
   freshServer,
   signDecline,
   type TestClient,
@@ -235,6 +236,39 @@ test("session init did_vc mandate is refused unverified", async () => {
   expect(error.code).toBe("MANDATE_INVALID");
   expect(error.message as string).toContain("not verified by this implementation");
   expect(r.json()).not.toHaveProperty("session_id");
+});
+
+test("responder did_vc mandate is refused at configuration", async () => {
+  // The server copies its own configured mandate into every SessionAck, so a
+  // did_vc responder mandate would present a capability a level 1 server does
+  // not have. Configuring one fails, and leaves the existing configuration in
+  // place.
+  const { ctx, client, responderKeypair } = freshServer();
+  const before = ctx.responderConfig;
+  expect(() =>
+    ctx.configureResponder({
+      ...makeResponderConfig(responderKeypair),
+      mandate: {
+        mandate_type: "did_vc",
+        credential: {
+          type: ["VerifiableCredential", "A2CNMandate"],
+          issuer: "did:web:principal.example",
+          expirationDate: "2099-01-01T00:00:00Z",
+          credentialSubject: { authorized_deal_types: ["saas_renewal"] },
+          proof: { type: "JsonWebSignature2020", jws: "not-a-real-signature" },
+        },
+      },
+    }),
+  ).toThrow(/declared mandate/);
+  expect(ctx.responderConfig).toBe(before);
+
+  const body = makeSessionInit();
+  const r = await client.post("/sessions", {
+    json: body,
+    headers: initHeaders(body.message_id as string),
+  });
+  expect(r.statusCode).toBe(201);
+  expect((r.json().responder_mandate as Dict).mandate_type).toBe("declared");
 });
 
 test("session init wrong protocol version", async () => {

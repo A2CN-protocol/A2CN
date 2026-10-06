@@ -121,6 +121,19 @@ export function createServerContext(): ServerContext {
 
     /** Set responder identity info (DID, agent info, mandate, private key, etc.). */
     configureResponder(config: ResponderConfig, sessionStore: SessionStore | null = null): void {
+      // The responder's own mandate must be a declared mandate. This server
+      // advertises conformance level 1 (declared mandates only) and copies the
+      // configured mandate into every SessionAck, so a did_vc mandate here would
+      // present a capability the server does not have. It is refused before any
+      // configuration is applied.
+      const mandate = config.mandate as Dict | undefined;
+      if (mandate && Object.keys(mandate).length > 0 && mandate.mandate_type !== "declared") {
+        throw new Error(
+          "The responder mandate must be a declared mandate: this server " +
+            "advertises conformance level 1 (declared mandates only), got " +
+            `mandate_type ${JSON.stringify(mandate.mandate_type)}.`,
+        );
+      }
       ctx.responderConfig = config;
       const agentInfo = (config.agent_info as Dict) ?? {};
       const privateKey = config.private_key;
