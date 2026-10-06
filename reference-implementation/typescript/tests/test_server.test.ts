@@ -44,7 +44,10 @@ test("discovery document", async () => {
   const doc = r.json();
   expect(doc.a2cn_version).toBe("0.3");
   expect(doc.deal_types).toContain("saas_renewal");
-  expect(doc.conformance_level).toBe(2);
+  // Level 1 (declared mandates only): this implementation does not verify
+  // did_vc mandates, so it neither lists them nor claims Level 2.
+  expect(doc.conformance_level).toBe(1);
+  expect(doc.mandate_methods).toEqual(["declared"]);
   expect(doc.agent_did).toBe(RESPONDER_DID);
 });
 
@@ -202,6 +205,36 @@ test("session init expired mandate", async () => {
   });
   expect(r.statusCode).toBe(403);
   expect((r.json().error as Dict).code).toBe("MANDATE_INVALID");
+});
+
+test("session init did_vc mandate is refused unverified", async () => {
+  // A did_vc mandate is refused, never accepted unchecked: this implementation
+  // does not verify Tier 2 credentials. The credential is otherwise well formed
+  // and unexpired, so the refusal comes from the mandate type alone.
+  const { client } = freshServer();
+  const body = makeSessionInit();
+  body.initiator_mandate = {
+    mandate_type: "did_vc",
+    credential: {
+      type: ["VerifiableCredential", "A2CNMandate"],
+      issuer: "did:web:principal.example",
+      expirationDate: "2099-01-01T00:00:00Z",
+      credentialSubject: {
+        id: ((body.initiator_mandate as Dict).agent_did as string) ?? "did:web:agent.example",
+        authorized_deal_types: ["saas_renewal"],
+      },
+      proof: { type: "JsonWebSignature2020", jws: "not-a-real-signature" },
+    },
+  };
+  const r = await client.post("/sessions", {
+    json: body,
+    headers: initHeaders(body.message_id as string),
+  });
+  expect(r.statusCode).toBe(403);
+  const error = r.json().error as Dict;
+  expect(error.code).toBe("MANDATE_INVALID");
+  expect(error.message as string).toContain("not verified by this implementation");
+  expect(r.json()).not.toHaveProperty("session_id");
 });
 
 test("session init wrong protocol version", async () => {

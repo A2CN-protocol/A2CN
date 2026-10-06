@@ -498,11 +498,25 @@ function installRoutes(ctx: ServerContext): void {
     }
   }
 
-  /** Basic Tier 1 mandate validation. Returns error string or null. */
+  /**
+   * Tier 1 (declared) mandate validation. Returns error string or null.
+   *
+   * A Tier 2 (did_vc) mandate is not verified by this implementation, so it is
+   * refused rather than accepted unchecked; the discovery document advertises
+   * conformance level 1 (declared mandates only) to match.
+   */
   function validateMandate(mandate: Dict, sessionParams: Dict): string | null {
     const mandateType = mandate.mandate_type;
     if (mandateType !== "declared" && mandateType !== "did_vc") {
       return `Unknown mandate_type: ${JSON.stringify(mandateType)}`;
+    }
+
+    if (mandateType === "did_vc") {
+      return (
+        "did_vc (Tier 2) mandates are not verified by this implementation. " +
+        "This server advertises conformance level 1 (declared mandates only); " +
+        "present a declared mandate."
+      );
     }
 
     if (mandateType === "declared") {
@@ -588,7 +602,7 @@ function installRoutes(ctx: ServerContext): void {
     return sendA2cn(reply, {
       a2cn_version: PROTOCOL_ACT_VERSION,
       agent_did: (agentInfo.did as string) ?? "",
-      conformance_level: 2,
+      conformance_level: 1,
       deal_types: (cfg.deal_types as string[]) ?? ["saas_renewal"],
       mandate_methods: ["declared"],
       endpoint: (agentInfo.endpoint as string) ?? "",

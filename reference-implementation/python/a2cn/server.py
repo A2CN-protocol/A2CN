@@ -358,7 +358,7 @@ async def get_discovery() -> Response:
     return a2cn_response({
         "a2cn_version": PROTOCOL_ACT_VERSION,
         "agent_did": agent_info.get("did", ""),
-        "conformance_level": 2,
+        "conformance_level": 1,
         "deal_types": cfg.get("deal_types", ["saas_renewal"]),
         "mandate_methods": ["declared"],
         "endpoint": agent_info.get("endpoint", ""),
@@ -1252,10 +1252,22 @@ def _require(body: dict, fields: list[str]) -> None:
 
 
 def _validate_mandate(mandate: dict, session_params: dict) -> str | None:
-    """Basic Tier 1 mandate validation. Returns error string or None."""
+    """Tier 1 (declared) mandate validation. Returns error string or None.
+
+    A Tier 2 (did_vc) mandate is not verified by this implementation, so it is
+    refused rather than accepted unchecked; the discovery document advertises
+    conformance level 1 (declared mandates only) to match.
+    """
     mandate_type = mandate.get("mandate_type")
     if mandate_type not in ("declared", "did_vc"):
         return f"Unknown mandate_type: {mandate_type!r}"
+
+    if mandate_type == "did_vc":
+        return (
+            "did_vc (Tier 2) mandates are not verified by this implementation. "
+            "This server advertises conformance level 1 (declared mandates only); "
+            "present a declared mandate."
+        )
 
     if mandate_type == "declared":
         valid_until = mandate.get("valid_until", "")
