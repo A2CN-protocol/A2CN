@@ -1005,7 +1005,7 @@ export class SessionManager {
     const didDocument = Object.prototype.hasOwnProperty.call(this._did_documents, approverDid)
       ? this._did_documents[approverDid]
       : undefined;
-    if (didDocument === undefined) {
+    if (didDocument === null || typeof didDocument !== "object" || Array.isArray(didDocument)) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_KEY_UNRESOLVED",
         `No DID document is available for approver ${JSON.stringify(approverDid)}`,
@@ -1039,7 +1039,8 @@ export class SessionManager {
       }
       try {
         const vm = getVerificationMethod(didDocument, methodId);
-        if ((vm.controller ?? approverDid) !== approverDid) {
+        // A stated controller, even null, must be the approver's DID.
+        if (Object.prototype.hasOwnProperty.call(vm, "controller") && vm.controller !== approverDid) {
           foreign = true;
           continue;
         }
@@ -1077,16 +1078,23 @@ export class SessionManager {
       });
     }
 
-    const receiptId = (receipt.id ?? receipt.approval_receipt_id) as string | undefined;
-    const scope = (receipt.scope as Dict) ?? {};
-    const decision = scope.decision ?? receipt.decision;
+    const receiptId = (isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id) as
+      | string
+      | undefined;
+    const scope = receipt.scope;
+    if (scope === null || typeof scope !== "object" || Array.isArray(scope)) {
+      throw new A2CNError("APPROVAL_RECEIPT_INVALID", "ApprovalReceipt scope must be an object", 400, {
+        sessionId: session.session_id,
+      });
+    }
+    const decision = ownValue(scope as Dict, "decision");
     if (decision !== "approve") {
       throw new A2CNError("APPROVAL_RECEIPT_INVALID", "ApprovalReceipt decision must be 'approve'", 400, {
         sessionId: session.session_id,
       });
     }
 
-    const offerHash = scope.offer_hash ?? receipt.offer_hash;
+    const offerHash = ownValue(scope as Dict, "offer_hash");
     if (offerHash !== session.approval_pending_offer_hash) {
       throw new A2CNError(
         "OFFER_HASH_MISMATCH",
@@ -1596,7 +1604,7 @@ function receiptReferencesSession(receipt: Dict, sessionId: string): boolean {
       continue;
     }
     const r = ref as Dict;
-    if (r.type === "negotiation_session" && acceptedIds.has(r.id as string)) {
+    if (r.type === "negotiation_session" && typeof r.id === "string" && acceptedIds.has(r.id)) {
       return true;
     }
   }
@@ -1639,6 +1647,7 @@ function receiptReferencesMandate(receipt: Dict, mandate: Dict): boolean {
       typeof ref === "object" &&
       !Array.isArray(ref) &&
       (ref as Dict).type === "mandate" &&
+      typeof (ref as Dict).id === "string" &&
       accepted.has((ref as Dict).id as string),
   );
 }
@@ -1655,6 +1664,11 @@ function parseReceiptExpiryMs(expiresAt: unknown): number | null {
   }
   const ms = Date.parse(expiresAt);
   return Number.isNaN(ms) ? null : ms;
+}
+
+/** An own property's value, as Python's dict.get reads it; undefined when absent. */
+function ownValue(obj: Dict, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
 }
 
 /** Truthiness as Python's `or` sees it: empty strings, arrays and objects are false. */

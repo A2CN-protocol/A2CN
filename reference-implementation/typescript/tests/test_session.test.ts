@@ -1008,6 +1008,37 @@ test("approval receipt naming a non string approver is refused", () => {
   expect(refused(mgr, sess, receipt)).toBe("UNAUTHORIZED_APPROVER");
 });
 
+for (const [label, mutate] of [
+  ["scope is a list", (r: Dict) => { r.scope = ["x"]; }],
+  ["scope is null", (r: Dict) => { r.scope = null; }],
+  ["session reference id is a list", (r: Dict) => { ((r.references as Dict[])[0] as Dict).id = ["a"]; }],
+  ["mandate reference id is an object", (r: Dict) => { ((r.references as Dict[])[1] as Dict).id = { a: 1 }; }],
+  ["decision only at the top level", (r: Dict) => { (r.scope as Dict).decision = null; r.decision = "approve"; }],
+  ["offer hash only at the top level", (r: Dict) => { delete (r.scope as Dict).offer_hash; r.offer_hash = "x"; }],
+] as const) {
+  test(`malformed signed receipt is refused cleanly: ${label}`, () => {
+    // Validly signed by the approver, but malformed: a clean refusal, never a crash.
+    const [mgr, sess] = pausedSession();
+    const receipt = approvalReceipt(sess, { signWith: null });
+    mutate(receipt);
+    receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+    expect(["APPROVAL_RECEIPT_INVALID", "OFFER_HASH_MISMATCH"]).toContain(refused(mgr, sess, receipt));
+  });
+}
+
+for (const [label, editDocument, code] of [
+  ["document is not an object", () => ["not", "an", "object"], "APPROVAL_RECEIPT_KEY_UNRESOLVED"],
+  ["relationship lists are not lists", (d: Dict) => ({ ...d, assertionMethod: 5, authentication: 5 }), "APPROVAL_RECEIPT_KEY_UNRESOLVED"],
+  ["method controller is null", (d: Dict) => ({ ...d, verificationMethod: [{ ...(d.verificationMethod as Dict[])[0], controller: null }] }), "APPROVAL_RECEIPT_SIGNER_MISMATCH"],
+] as const) {
+  test(`malformed approver did document is refused cleanly: ${label}`, () => {
+    const [mgr, sess] = pausedSession();
+    const document = makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY));
+    mgr.registerDidDocument(APPROVER_DID, editDocument(document) as Dict);
+    expect(refused(mgr, sess, approvalReceipt(sess))).toBe(code);
+  });
+}
+
 test("approval receipt without a mandate reference is refused", () => {
   const [mgr, sess] = pausedSession();
   expect(refused(mgr, sess, approvalReceipt(sess, { mandateRef: null }))).toBe("APPROVAL_RECEIPT_INVALID");

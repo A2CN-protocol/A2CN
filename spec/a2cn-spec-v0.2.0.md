@@ -4115,7 +4115,7 @@ SessionReject messages also use this format via the `error_code` and
 | `SESSION_WRONG_STATE` | 409 | Yes | Message invalid for current session state |
 | `ROUND_LIMIT_EXCEEDED` | 422 | Yes | Message would exceed max_rounds |
 | `OFFER_EXPIRED` | 422 | Yes | Acceptance of expired offer attempted |
-| `OFFER_HASH_MISMATCH` | 400 | Yes | Acceptance hash doesn't match offer hash, or an ApprovalReceipt's `scope.offer_hash` is not the paused act's hash (Section 14.1) |
+| `OFFER_HASH_MISMATCH` | 400 | Yes | Acceptance hash doesn't match offer hash, or an ApprovalReceipt's `scope.offer_hash` is not the paused offer's hash (Section 14.1) |
 | `NOT_IN_AWAITING_HUMAN_APPROVAL` | 409 | Yes | An ApprovalReceipt was posted for a session not awaiting human approval |
 | `APPROVAL_RECEIPT_INVALID` | 400 | Yes | An ApprovalReceipt's decision is not `approve`, or it lacks the session or mandate reference, or its `expires_at` is missing or malformed (Section 14.1) |
 | `APPROVAL_RECEIPT_EXPIRED` | 422 | Yes | The ApprovalReceipt has expired (Section 14.1) |
@@ -4625,7 +4625,8 @@ signed as below. To leave `AWAITING_HUMAN_APPROVAL`, the receipt MUST:
 
 1. State an approval decision for the paused act
 2. Reference the A2CN session id
-3. Reference the paused act's `protocol_act_hash`
+3. Reference the paused offer's `protocol_act_hash`: the offer or counteroffer
+   held, or, when an Acceptance is held, the offer it accepts
 4. Reference the mandate that required approval
 5. Be signed by the approver it names, with a key that approver's DID controls,
    and name an approver the mandate authorizes
@@ -4640,10 +4641,11 @@ but not read.
 
 | Field | Requirement |
 |-------|-------------|
+| `scope` | A JSON object. `decision` and `offer_hash` are read from it only |
 | `scope.decision` | `"approve"` |
-| `scope.offer_hash` | The paused act's `protocol_act_hash` (Section 7.3.2), exactly as A2CN spells it |
-| `references[]` with `type` `"negotiation_session"` | `id` is the session id, optionally prefixed `a2cn:session:` |
-| `references[]` with `type` `"mandate"` | `id` identifies the mandate that required approval as the compliance export does (Section 10.5): its `mandate_id` when it has one, otherwise its `mandate_hash`, the base64url SHA-256 of the mandate's RFC 8785 form; either optionally prefixed `a2cn:mandate:` |
+| `scope.offer_hash` | The paused offer's `protocol_act_hash` (Section 7.3.2), the session's `approval_pending_offer_hash`, exactly as A2CN spells it |
+| `references[]` with `type` `"negotiation_session"` | `id` is a string: the session id, optionally prefixed `a2cn:session:` |
+| `references[]` with `type` `"mandate"` | `id` is a string that identifies the mandate that required approval as the compliance export does (Section 10.5): its `mandate_id` when it has one, otherwise its `mandate_hash`, the base64url SHA-256 of the mandate's RFC 8785 form; either optionally prefixed `a2cn:mandate:` |
 | `approver_did` | The approver, as a DID or a DID URL naming one verification method. `operator_did`, then `signed_by`, are read when it is absent. It MUST be a string |
 | `expires_at` | REQUIRED. An RFC 3339 date-time with an explicit offset (`Z` or `±hh:mm`) |
 | `signature` | The signature member defined below |
@@ -4667,6 +4669,7 @@ the receipt is kept. The signature member is:
 - For `Ed25519`, `value` is the raw 64-byte signature.
 - For `ES256`, `value` is the DER-encoded ECDSA signature over SHA-256 with a low
   `s` (at most half the P-256 group order).
+- A member named `__proto__` is an ordinary member and is covered like any other.
 - `value` is base64url, padded or unpadded, and MUST be the canonical encoding of
   the signature bytes.
 
@@ -4684,9 +4687,9 @@ DID document already resolved for the session is not re-resolved (Section 5.5).
 | The only keys found are controlled by another DID | `APPROVAL_RECEIPT_SIGNER_MISMATCH` |
 | The signature does not verify against the approver's key | `APPROVAL_RECEIPT_SIGNATURE_INVALID` |
 | The approver is not authorized by the mandate | `UNAUTHORIZED_APPROVER` |
-| Missing session or mandate reference, or missing or malformed expiry | `APPROVAL_RECEIPT_INVALID` |
+| Decision not `approve`, `scope` not an object, missing session or mandate reference, or missing or malformed expiry | `APPROVAL_RECEIPT_INVALID` |
 | Expired at release | `APPROVAL_RECEIPT_EXPIRED` |
-| `scope.offer_hash` is not the paused act's hash | `OFFER_HASH_MISMATCH` |
+| `scope.offer_hash` is not the paused offer's hash | `OFFER_HASH_MISMATCH` |
 
 **Relation to Concordia.** The signing rule is Concordia's: the top-level
 signature removal of Concordia SPEC `0.7.0-draft` §9.2 (rule 1), with the
@@ -4696,7 +4699,7 @@ Concordia's reference implementation verifies under this rule, and the reverse.
 Concordia's v0.5 receipt schema allows only Ed25519, so an `ES256` receipt
 verifies in A2CN but not in Concordia's receipt verifier. Two field spellings differ from Concordia's receipt:
 A2CN reads `approver_did` where Concordia uses `approver.identity`, and A2CN's
-`scope.offer_hash` is the paused act's `protocol_act_hash`, while Concordia's is
+`scope.offer_hash` is the paused offer's `protocol_act_hash`, while Concordia's is
 `sha256:` followed by the hex SHA-256 of the whole offer, which is a different
 digest. A receipt is accepted only in A2CN's spellings. This section follows the
 Concordia version named here; a later Concordia change takes effect in A2CN only

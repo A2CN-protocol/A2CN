@@ -374,13 +374,9 @@ const B64URL_ALPHABET = /^[A-Za-z0-9_-]*$/;
  * `signature` member nested inside the receipt is kept.
  */
 export function approvalReceiptSigningBytes(receipt: Record<string, unknown>): Buffer {
-  const signable: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(receipt)) {
-    if (k !== "signature") {
-      signable[k] = v;
-    }
-  }
-  return canonicalize(signable);
+  // Object.fromEntries defines each member as an own property, so a member named
+  // "__proto__" stays in the signed bytes instead of setting the prototype.
+  return canonicalize(Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature")));
 }
 
 /**

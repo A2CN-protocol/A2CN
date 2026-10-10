@@ -21,7 +21,7 @@ const VECTOR = JSON.parse(
 test("the vector covers both languages and both algorithms", () => {
   const signed = new Set(
     VECTOR.cases
-      .filter((c) => c.verifies)
+      .filter((c) => c.verifies && !(c.name as string).endsWith("_member"))
       .map((c) => `${c.signed_in}/${((c.receipt as Dict).signature as Dict).alg}`),
   );
   expect([...signed].sort()).toEqual(["python/ES256", "python/Ed25519", "typescript/ES256", "typescript/Ed25519"]);

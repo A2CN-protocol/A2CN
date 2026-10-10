@@ -384,6 +384,51 @@
         }
       },
       "verifies": false
+    },
+    {
+      "name": "python_signed_with_a___proto___member",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "qBWHT8Seb6HMahc1-U8AdWdGSu5q7EQQEo76D7XDGx0"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:proto-member",
+        "__proto__": {
+          "note": "an ordinary member"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "ExfZa9PptKpNprkG_azmTKMM6_PsWE7-kha7imQiCyD0nVvPBaT5TVNtHUSV8zH-0WDzPZRzTQs098zqfHcOBw=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "__proto___member_altered_after_signing",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "qBWHT8Seb6HMahc1-U8AdWdGSu5q7EQQEo76D7XDGx0"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:proto-member",
+        "__proto__": {
+          "note": "altered"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "ExfZa9PptKpNprkG_azmTKMM6_PsWE7-kha7imQiCyD0nVvPBaT5TVNtHUSV8zH-0WDzPZRzTQs098zqfHcOBw=="
+        }
+      },
+      "verifies": false
     }
   ]
 }

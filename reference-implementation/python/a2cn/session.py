@@ -978,7 +978,7 @@ class SessionManager:
 
         approver_did, _, fragment = approver.partition("#")
         did_document = self._did_documents.get(approver_did)
-        if did_document is None:
+        if not isinstance(did_document, dict):
             raise A2CNError(
                 "APPROVAL_RECEIPT_KEY_UNRESOLVED",
                 f"No DID document is available for approver {approver_did!r}",
@@ -991,7 +991,8 @@ class SessionManager:
         else:
             candidates = []
             for relationship in ("assertionMethod", "authentication"):
-                for method in did_document.get(relationship, []):
+                methods = did_document.get(relationship, [])
+                for method in methods if isinstance(methods, list) else []:
                     method_id = method.get("id") if isinstance(method, dict) else method
                     if isinstance(method_id, str) and method_id not in candidates:
                         candidates.append(method_id)
@@ -1004,11 +1005,12 @@ class SessionManager:
                 continue
             try:
                 vm = get_verification_method(did_document, method_id)
-                if vm.get("controller", approver_did) != approver_did:
+                # A stated controller, even null, must be the approver's DID.
+                if "controller" in vm and vm["controller"] != approver_did:
                     foreign = True
                     continue
                 keys.append(get_public_key(vm))
-            except (KeyError, ValueError):
+            except Exception:
                 continue
 
         if not keys:
@@ -1042,8 +1044,15 @@ class SessionManager:
             )
 
         receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
-        scope = receipt.get("scope", {})
-        decision = scope.get("decision", receipt.get("decision"))
+        scope = receipt.get("scope")
+        if not isinstance(scope, dict):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt scope must be an object",
+                400,
+                session_id=session.session_id,
+            )
+        decision = scope.get("decision")
         if decision != "approve":
             raise A2CNError(
                 "APPROVAL_RECEIPT_INVALID",
@@ -1052,7 +1061,7 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
-        offer_hash = scope.get("offer_hash", receipt.get("offer_hash"))
+        offer_hash = scope.get("offer_hash")
         if offer_hash != session.approval_pending_offer_hash:
             raise A2CNError(
                 "OFFER_HASH_MISMATCH",
@@ -1554,7 +1563,8 @@ def _receipt_references_session(receipt: dict, session_id: str) -> bool:
     for ref in references:
         if not isinstance(ref, dict):
             continue
-        if ref.get("type") == "negotiation_session" and ref.get("id") in accepted_ids:
+        ref_id = ref.get("id")
+        if ref.get("type") == "negotiation_session" and isinstance(ref_id, str) and ref_id in accepted_ids:
             return True
     return False
 
@@ -1576,7 +1586,10 @@ def _receipt_references_mandate(receipt: dict, mandate: dict) -> bool:
         identifiers.add(mandate_id)
     accepted = identifiers | {f"a2cn:mandate:{i}" for i in identifiers}
     return any(
-        isinstance(ref, dict) and ref.get("type") == "mandate" and ref.get("id") in accepted
+        isinstance(ref, dict)
+        and ref.get("type") == "mandate"
+        and isinstance(ref.get("id"), str)
+        and ref["id"] in accepted
         for ref in references
     )
 

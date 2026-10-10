@@ -986,6 +986,35 @@ def test_approval_receipt_naming_a_non_string_approver_is_refused():
     assert _refused(mgr, sess, receipt) == "UNAUTHORIZED_APPROVER"
 
 
+@pytest.mark.parametrize("label, mutate", [
+    ("scope is a list", lambda r: r.__setitem__("scope", ["x"])),
+    ("scope is null", lambda r: r.__setitem__("scope", None)),
+    ("session reference id is a list", lambda r: r["references"][0].__setitem__("id", ["a"])),
+    ("mandate reference id is an object", lambda r: r["references"][1].__setitem__("id", {"a": 1})),
+    ("decision only at the top level", lambda r: (r["scope"].__setitem__("decision", None), r.__setitem__("decision", "approve"))),
+    ("offer hash only at the top level", lambda r: (r["scope"].pop("offer_hash"), r.__setitem__("offer_hash", "x"))),
+])
+def test_malformed_signed_receipt_is_refused_cleanly(label, mutate):
+    # Validly signed by the approver, but malformed: a clean refusal, never a crash.
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None)
+    mutate(receipt)
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) in ("APPROVAL_RECEIPT_INVALID", "OFFER_HASH_MISMATCH")
+
+
+@pytest.mark.parametrize("label, edit_document, code", [
+    ("document is not an object", lambda d: ["not", "an", "object"], "APPROVAL_RECEIPT_KEY_UNRESOLVED"),
+    ("relationship lists are not lists", lambda d: {**d, "assertionMethod": 5, "authentication": 5}, "APPROVAL_RECEIPT_KEY_UNRESOLVED"),
+    ("method controller is null", lambda d: {**d, "verificationMethod": [{**d["verificationMethod"][0], "controller": None}]}, "APPROVAL_RECEIPT_SIGNER_MISMATCH"),
+])
+def test_malformed_approver_did_document_is_refused_cleanly(label, edit_document, code):
+    mgr, sess = _paused_session()
+    document = make_did_document(APPROVER_DID, "key-1", public_key_to_jwk(APPROVER_PUBLIC_KEY))
+    mgr.register_did_document(APPROVER_DID, edit_document(document))
+    assert _refused(mgr, sess, _approval_receipt(sess)) == code
+
+
 def test_approval_receipt_without_a_mandate_reference_is_refused():
     mgr, sess = _paused_session()
     assert _refused(mgr, sess, _approval_receipt(sess, mandate_ref=None)) == "APPROVAL_RECEIPT_INVALID"

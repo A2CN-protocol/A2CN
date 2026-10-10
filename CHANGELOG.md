@@ -31,8 +31,10 @@ This project is pre-1.0: the minor version moves for substantive additions.
   - reference the mandate that required approval;
   - carry an `expires_at` that has not passed.
 
-  Each refusal has its own error code, and the session stays paused. An approver
-  field in a mandate must be a list of DIDs. Section 14.1 states the signing
+  Each refusal has its own error code, and the session stays paused. A
+  malformed receipt or approver DID document is refused cleanly rather than
+  raising an error. `scope` must be an object, and `decision` and `offer_hash`
+  are read from it only. An approver field in a mandate must be a list of DIDs. Section 14.1 states the signing
   rule, the fields read and the Concordia version followed, and its example is a
   signed receipt that both implementations verify. A shared test vector checks
   that receipts signed in either language verify in both. Approval systems that
