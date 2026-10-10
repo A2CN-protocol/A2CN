@@ -9,7 +9,7 @@
  *   - Idempotency (Section 6.1)
  */
 
-import { hashObject, verifyJws } from "./crypto.js";
+import { hashObject, verifyApprovalReceiptSignature, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
 import {
@@ -454,6 +454,11 @@ export class SessionManager {
   /** Register a resolved DID document for protocol-act signature checks. */
   registerDidDocument(did: string, didDocument: Dict): void {
     this._did_documents[did] = didDocument;
+  }
+
+  /** Whether a DID document is registered for `did`. */
+  hasDidDocument(did: string): boolean {
+    return Object.prototype.hasOwnProperty.call(this._did_documents, did);
   }
 
   // ------------------------------------------------------------------
@@ -967,6 +972,104 @@ export class SessionManager {
   }
 
   /** Validate an ApprovalReceipt and release an approval pause. */
+  /**
+   * Require the receipt to be signed by a key the named approver controls.
+   *
+   * The key is resolved from the approver's registered DID document, under
+   * `assertionMethod` or `authentication`, with the same rules as act
+   * verification. When the approver is named by a DID URL, only that method is
+   * used; otherwise any such method controlled by the approver's DID may have
+   * signed. Every failure refuses; resolution failure is never a pass.
+   */
+  private verifyApprovalReceiptSigner(session: Session, receipt: Dict, approver: string): void {
+    const signature = receipt.signature;
+    const wellFormed =
+      signature !== null &&
+      typeof signature === "object" &&
+      !Array.isArray(signature) &&
+      typeof (signature as Dict).alg === "string" &&
+      typeof (signature as Dict).value === "string" &&
+      (signature as Dict).value !== "";
+    if (!wellFormed) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_UNSIGNED",
+        "ApprovalReceipt has no well-formed signature member",
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+
+    const hashAt = approver.indexOf("#");
+    const approverDid = hashAt === -1 ? approver : approver.slice(0, hashAt);
+    const fragment = hashAt === -1 ? "" : approver.slice(hashAt + 1);
+    const didDocument = Object.prototype.hasOwnProperty.call(this._did_documents, approverDid)
+      ? this._did_documents[approverDid]
+      : undefined;
+    if (didDocument === undefined) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_KEY_UNRESOLVED",
+        `No DID document is available for approver ${JSON.stringify(approverDid)}`,
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+
+    const candidates: string[] = [];
+    if (fragment) {
+      candidates.push(approver);
+    } else {
+      for (const relationship of ["assertionMethod", "authentication"]) {
+        const methods = (didDocument[relationship] as unknown[]) ?? [];
+        for (const method of Array.isArray(methods) ? methods : []) {
+          const methodId =
+            method !== null && typeof method === "object" ? (method as Dict).id : method;
+          if (typeof methodId === "string" && !candidates.includes(methodId)) {
+            candidates.push(methodId);
+          }
+        }
+      }
+    }
+
+    const keys = [];
+    let foreign = false;
+    for (const methodId of candidates) {
+      if (!(methodId === approverDid || methodId.startsWith(`${approverDid}#`))) {
+        foreign = true;
+        continue;
+      }
+      try {
+        const vm = getVerificationMethod(didDocument, methodId);
+        if ((vm.controller ?? approverDid) !== approverDid) {
+          foreign = true;
+          continue;
+        }
+        keys.push(getPublicKey(vm));
+      } catch {
+        continue;
+      }
+    }
+
+    if (keys.length === 0) {
+      throw new A2CNError(
+        foreign ? "APPROVAL_RECEIPT_SIGNER_MISMATCH" : "APPROVAL_RECEIPT_KEY_UNRESOLVED",
+        foreign
+          ? "No verification key controlled by the approver DID"
+          : `No usable verification key for approver ${JSON.stringify(approver)}`,
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+
+    if (!keys.some((key) => verifyApprovalReceiptSignature(receipt, key))) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_SIGNATURE_INVALID",
+        "ApprovalReceipt signature does not verify against the approver's key",
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+  }
+
   applyApprovalReceipt(session: Session, receipt: Dict): Dict {
     if (session.state !== SessionState.AWAITING_HUMAN_APPROVAL) {
       throw new A2CNError("NOT_IN_AWAITING_HUMAN_APPROVAL", "Session is not awaiting human approval", 409, {
@@ -1002,28 +1105,35 @@ export class SessionManager {
       );
     }
 
-    const expiresAt = receipt.expires_at as string | undefined;
-    if (expiresAt) {
-      const expiryMs = parseIsoMs(expiresAt);
-      if (Number.isNaN(expiryMs)) {
-        throw new A2CNError(
-          "APPROVAL_RECEIPT_INVALID",
-          "ApprovalReceipt expires_at is not a valid ISO timestamp",
-          400,
-          { sessionId: session.session_id },
-        );
-      }
-      if (Date.now() > expiryMs) {
-        throw new A2CNError("APPROVAL_RECEIPT_EXPIRED", "ApprovalReceipt has expired", 422, {
-          sessionId: session.session_id,
-        });
-      }
+    const mandate = session.approval_pending_mandate ?? {};
+    if (!receiptReferencesMandate(receipt, mandate)) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_INVALID",
+        "ApprovalReceipt must reference the mandate that required approval",
+        400,
+        { sessionId: session.session_id },
+      );
     }
 
-    const approverDid = (receipt.approver_did ?? receipt.operator_did ?? receipt.signed_by) as
-      | string
-      | undefined;
-    if (!isAuthorizedApprover(session.approval_pending_mandate ?? {}, approverDid)) {
+    // The receipt must be unexpired when the paused act is released, so an
+    // expiry is required rather than optional.
+    const expiryMs = parseReceiptExpiryMs(receipt.expires_at);
+    if (expiryMs === null) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_INVALID",
+        "ApprovalReceipt expires_at is required and must be an ISO timestamp with a timezone",
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+    if (Date.now() > expiryMs) {
+      throw new A2CNError("APPROVAL_RECEIPT_EXPIRED", "ApprovalReceipt has expired", 422, {
+        sessionId: session.session_id,
+      });
+    }
+
+    const approverDid = receiptApprover(receipt);
+    if (!isAuthorizedApprover(mandate, approverDid)) {
       throw new A2CNError(
         "UNAUTHORIZED_APPROVER",
         "ApprovalReceipt signer is not authorized by the mandate",
@@ -1031,6 +1141,8 @@ export class SessionManager {
         { sessionId: session.session_id },
       );
     }
+
+    this.verifyApprovalReceiptSigner(session, receipt, approverDid as string);
 
     session.approval_receipt_id = receiptId ?? null;
     session.approval_receipts.push(receipt);
@@ -1491,15 +1603,92 @@ function receiptReferencesSession(receipt: Dict, sessionId: string): boolean {
   return false;
 }
 
-function isAuthorizedApprover(mandate: Dict, approverDid: string | null | undefined): boolean {
-  if (!approverDid) {
+/**
+ * The approver a receipt names: `approver_did`, else `operator_did`, else
+ * `signed_by`, skipping empty values exactly as the Python implementation does.
+ */
+export function receiptApprover(receipt: Dict): unknown {
+  for (const field of ["approver_did", "operator_did", "signed_by"]) {
+    const value = receipt[field];
+    if (isPythonTruthy(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether the receipt names the mandate that required approval. A mandate is
+ * identified as in the compliance export (Section 10.5): by its `mandate_id`
+ * when it has one, otherwise by its `mandate_hash`, the base64url SHA-256 of its
+ * JCS form. Either may carry the `a2cn:mandate:` prefix.
+ */
+function receiptReferencesMandate(receipt: Dict, mandate: Dict): boolean {
+  const references = receipt.references;
+  if (!Array.isArray(references) || Object.keys(mandate).length === 0) {
     return false;
   }
-  const configured = (mandate.approval_operator_dids ??
-    mandate.trusted_approver_dids ??
-    mandate.human_approver_dids ??
-    []) as string[];
-  if (Array.isArray(configured) && configured.includes(approverDid)) {
+  const identifiers = [hashObject(mandate)];
+  if (typeof mandate.mandate_id === "string" && mandate.mandate_id !== "") {
+    identifiers.push(mandate.mandate_id);
+  }
+  const accepted = new Set([...identifiers, ...identifiers.map((i) => `a2cn:mandate:${i}`)]);
+  return references.some(
+    (ref) =>
+      ref !== null &&
+      typeof ref === "object" &&
+      !Array.isArray(ref) &&
+      (ref as Dict).type === "mandate" &&
+      accepted.has((ref as Dict).id as string),
+  );
+}
+
+// A receipt expiry is a full RFC 3339 date-time with an explicit offset, so a
+// zone-less or date-only value cannot be read differently by two verifiers.
+const RECEIPT_EXPIRY_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Parse a receipt's expires_at to epoch ms; null when absent, malformed or zone-less. */
+function parseReceiptExpiryMs(expiresAt: unknown): number | null {
+  if (typeof expiresAt !== "string" || !RECEIPT_EXPIRY_PATTERN.test(expiresAt)) {
+    return null;
+  }
+  const ms = Date.parse(expiresAt);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Truthiness as Python's `or` sees it: empty strings, arrays and objects are false. */
+function isPythonTruthy(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return Boolean(value);
+}
+
+/**
+ * The approver list the mandate configures, picked as the Python implementation
+ * picks it: the first truthy field. Only a list counts; any other value means no
+ * approvers, since a string would make membership a substring test.
+ */
+function configuredApprovers(mandate: Dict): unknown[] {
+  for (const field of ["approval_operator_dids", "trusted_approver_dids", "human_approver_dids"]) {
+    const value = mandate[field];
+    if (isPythonTruthy(value)) {
+      return Array.isArray(value) ? value : [];
+    }
+  }
+  return [];
+}
+
+function isAuthorizedApprover(mandate: Dict, approverDid: unknown): boolean {
+  if (typeof approverDid !== "string" || approverDid === "") {
+    return false;
+  }
+  const configured = configuredApprovers(mandate);
+  if (configured.includes(approverDid)) {
     return true;
   }
   return approverDid === mandate.principal_did;

@@ -344,6 +344,100 @@ def verify_invitation_signature(invitation_dict: dict, public_key: SigningPublic
 
 
 # ---------------------------------------------------------------------------
+# ApprovalReceipt signatures (Section 14.1)
+# ---------------------------------------------------------------------------
+
+# The P-256 group order, for the low-S rule on ES256 receipt signatures.
+_P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+
+
+def approval_receipt_signing_bytes(receipt: dict) -> bytes:
+    """The bytes an ApprovalReceipt signature covers (Section 14.1).
+
+    The RFC 8785 (JCS) form of the receipt with its top-level ``signature``
+    member removed. A ``signature`` member nested inside the receipt is kept.
+    """
+    return canonicalize({k: v for k, v in receipt.items() if k != "signature"})
+
+
+def _strict_b64url_decode(value: str) -> bytes | None:
+    """Decode base64url only if ``value`` is its canonical encoding.
+
+    Padded or unpadded is accepted, but the decoded bytes must re-encode to
+    exactly ``value``: no stray characters, no ``+`` or ``/``, no extra padding.
+    """
+    if not value or any(c not in _B64URL_ALPHABET for c in value.rstrip("=")):
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(value.rstrip("=") + "=" * (-len(value.rstrip("=")) % 4))
+    except Exception:
+        return None
+    padded = base64.urlsafe_b64encode(raw).decode("ascii")
+    return raw if value in (padded, padded.rstrip("=")) else None
+
+
+_B64URL_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+
+
+def sign_approval_receipt(receipt: dict, private_key: SigningPrivateKey) -> dict:
+    """Return the ``signature`` member for an ApprovalReceipt (Section 14.1).
+
+    ``{"alg": "Ed25519" | "ES256", "value": <base64url>}``, the algorithm
+    following the key type. An Ed25519 value is the raw 64-byte signature; an
+    ES256 value is the DER-encoded ECDSA signature with a low ``s``. The caller
+    sets ``receipt["signature"]`` to the result.
+    """
+    payload = approval_receipt_signing_bytes(receipt)
+    if isinstance(private_key, Ed25519PrivateKey):
+        return {"alg": "Ed25519", "value": base64.urlsafe_b64encode(private_key.sign(payload)).decode("ascii")}
+    if isinstance(private_key, EllipticCurvePrivateKey) and isinstance(private_key.curve, ec.SECP256R1):
+        r, s = utils.decode_dss_signature(private_key.sign(payload, ec.ECDSA(hashes.SHA256())))
+        if s > _P256_ORDER // 2:
+            s = _P256_ORDER - s
+        der = utils.encode_dss_signature(r, s)
+        return {"alg": "ES256", "value": base64.urlsafe_b64encode(der).decode("ascii")}
+    raise ValueError("ApprovalReceipt signing supports Ed25519 and P-256 (ES256) keys only")
+
+
+def verify_approval_receipt_signature(receipt: dict, public_key: SigningPublicKey) -> bool:
+    """Verify an ApprovalReceipt's signature against one public key (Section 14.1).
+
+    The declared ``alg`` must match the key type: ``Ed25519`` for an Ed25519
+    key, ``ES256`` for a P-256 key. An ES256 value must be strict DER with a low
+    ``s``. Returns False for any missing, malformed or non-verifying signature;
+    it never raises.
+    """
+    signature = receipt.get("signature")
+    if not isinstance(signature, dict):
+        return False
+    alg = signature.get("alg")
+    value = signature.get("value")
+    if not isinstance(alg, str) or not isinstance(value, str) or not value:
+        return False
+    raw = _strict_b64url_decode(value)
+    if raw is None:
+        return False
+    try:
+        payload = approval_receipt_signing_bytes(receipt)
+        if alg == "Ed25519" and isinstance(public_key, Ed25519PublicKey):
+            public_key.verify(raw, payload)
+            return True
+        if (
+            alg == "ES256"
+            and isinstance(public_key, EllipticCurvePublicKey)
+            and isinstance(public_key.curve, ec.SECP256R1)
+        ):
+            r, s = utils.decode_dss_signature(raw)
+            if utils.encode_dss_signature(r, s) != raw or not 0 < s <= _P256_ORDER // 2:
+                return False
+            public_key.verify(raw, payload, ec.ECDSA(hashes.SHA256()))
+            return True
+        return False
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

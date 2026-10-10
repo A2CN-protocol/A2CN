@@ -28,7 +28,15 @@ import Fastify, {
 } from "fastify";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 
-import { Session, SessionManager, SessionState, A2CNError, now, parseIsoMs } from "./session.js";
+import {
+  Session,
+  SessionManager,
+  SessionState,
+  A2CNError,
+  now,
+  parseIsoMs,
+  receiptApprover,
+} from "./session.js";
 import { generateTransactionRecord, generateAuditLog } from "./record.js";
 import { generateSessionEvidenceRecord } from "./evidence.js";
 import { InvitationStore } from "./invitation.js";
@@ -793,6 +801,34 @@ function installRoutes(ctx: ServerContext): void {
   // POST /sessions/{session_id}/approval-receipt
   // -------------------------------------------------------------------
 
+  /**
+   * Make the receipt approver's DID document available for verification. A
+   * document already registered is used as is and never re-resolved within the
+   * server's lifetime (Section 5.5). Otherwise a did:web approver is resolved
+   * over HTTP. Any failure leaves it unregistered, and the receipt is then
+   * refused because its key cannot be resolved.
+   */
+  async function resolveApproverDidDocument(receipt: Dict): Promise<void> {
+    const approver = receiptApprover(receipt);
+    if (typeof approver !== "string") {
+      return;
+    }
+    const approverDid = approver.split("#")[0];
+    if (
+      Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid) ||
+      manager.hasDidDocument(approverDid) ||
+      !approverDid.startsWith("did:web:")
+    ) {
+      return;
+    }
+    try {
+      const didDoc = await resolveDidWeb(approverDid, ctx.fetchFn);
+      manager.registerDidDocument(approverDid, didDoc);
+    } catch {
+      return;
+    }
+  }
+
   app.post("/sessions/:session_id/approval-receipt", async (request, reply) => {
     await verifyJwtAuth(ctx, request);
     const { session_id: sessionId } = request.params as { session_id: string };
@@ -809,6 +845,7 @@ function installRoutes(ctx: ServerContext): void {
       );
     }
 
+    await resolveApproverDidDocument(body);
     let response: Dict;
     try {
       response = manager.applyApprovalReceipt(session, body);

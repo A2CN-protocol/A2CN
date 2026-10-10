@@ -1,10 +1,17 @@
 /** Tests for a2cn/session — state machine, turn-taking, idempotency. */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, type KeyObject } from "node:crypto";
 import { expect, test } from "vitest";
 
 import { Session, SessionManager, SessionState, A2CNError } from "../src/a2cn/session.js";
-import { generateKeypair, hashObject, publicKeyToJwk, signJws } from "../src/a2cn/crypto.js";
+import {
+  generateEd25519Keypair,
+  generateKeypair,
+  hashObject,
+  publicKeyToJwk,
+  signApprovalReceipt,
+  signJws,
+} from "../src/a2cn/crypto.js";
 import { generateAuditLog } from "../src/a2cn/record.js";
 import { PROTOCOL_ACT_VERSION, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { makeDidDocument, signDecline } from "./conftest.js";
@@ -705,16 +712,85 @@ test("process message returns state dict", () => {
 // Human approval pause
 // ---------------------------------------------------------------------------
 
+// ApprovalReceipts are signed by an operator-side approver, not by the agent
+// under oversight (Section 14.1). The approver has its own key, and the mandate
+// that sets the threshold names it in approval_operator_dids.
+const APPROVER_DID = "did:web:approver.example";
+const { privateKey: APPROVER_PRIVATE_KEY, publicKey: APPROVER_PUBLIC_KEY } = generateEd25519Keypair();
+const ES256_APPROVER_DID = "did:web:es256-approver.example";
+const { privateKey: ES256_APPROVER_PRIVATE_KEY, publicKey: ES256_APPROVER_PUBLIC_KEY } = generateKeypair();
+const OTHER_DID = "did:web:other.example";
+const { privateKey: OTHER_PRIVATE_KEY, publicKey: OTHER_PUBLIC_KEY } = generateEd25519Keypair();
+
+function approvalMandate(
+  principalDid = INITIATOR_DID,
+  approvers: string[] = [APPROVER_DID, ES256_APPROVER_DID],
+  extra: Dict = {},
+): Dict {
+  return {
+    mandate_type: "declared",
+    principal_did: principalDid,
+    requires_human_approval_above: 9_000_000,
+    approval_operator_dids: [...approvers],
+    ...extra,
+  };
+}
+
+function registerApprovers(mgr: SessionManager): void {
+  mgr.registerDidDocument(
+    APPROVER_DID,
+    makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY)),
+  );
+  mgr.registerDidDocument(
+    ES256_APPROVER_DID,
+    makeDidDocument(ES256_APPROVER_DID, "key-1", publicKeyToJwk(ES256_APPROVER_PUBLIC_KEY)),
+  );
+  mgr.registerDidDocument(OTHER_DID, makeDidDocument(OTHER_DID, "key-1", publicKeyToJwk(OTHER_PUBLIC_KEY)));
+}
+
+/** A session whose initiator offer is paused for human approval. */
+function pausedSession(approvers?: string[], extra: Dict = {}): [SessionManager, Session] {
+  const [mgr, sess] = newSession();
+  registerApprovers(mgr);
+  sess.initiator_mandate = approvalMandate(INITIATOR_DID, approvers, extra);
+  mgr.processMessage(sess, makeOffer(sess.session_id, 1, 1, INITIATOR_DID));
+  expect(sess.state).toBe(SessionState.AWAITING_HUMAN_APPROVAL);
+  return [mgr, sess];
+}
+
 function approvalReceipt(
   sess: Session,
-  options: { offerHash?: string | null; approverDid?: string; expiresAt?: string } = {},
+  {
+    offerHash,
+    approverDid = APPROVER_DID,
+    expiresAt = "2030-01-01T00:00:00Z" as string | null,
+    signWith = APPROVER_PRIVATE_KEY as KeyObject | null,
+    mandateRef = "hash" as string | null,
+  }: {
+    offerHash?: string;
+    approverDid?: string;
+    expiresAt?: string | null;
+    signWith?: KeyObject | null;
+    mandateRef?: string | null;
+  } = {},
 ): Dict {
-  const {
-    offerHash = null,
-    approverDid = INITIATOR_DID,
-    expiresAt = "2030-01-01T00:00:00Z",
-  } = options;
-  return {
+  const references: Dict[] = [
+    {
+      type: "negotiation_session",
+      id: `a2cn:session:${sess.session_id}`,
+      relationship: "approves",
+    },
+  ];
+  if (mandateRef === "hash") {
+    references.push({
+      type: "mandate",
+      id: `a2cn:mandate:${hashObject(sess.approval_pending_mandate)}`,
+      relationship: "fulfills",
+    });
+  } else if (mandateRef !== null) {
+    references.push({ type: "mandate", id: mandateRef, relationship: "fulfills" });
+  }
+  const receipt: Dict = {
     artifact_type: "ApprovalReceipt",
     id: "urn:concordia:receipt:test",
     scope: {
@@ -723,25 +799,29 @@ function approvalReceipt(
       amount: "95000.00 USD",
       threshold_crossed: "90000.00 USD",
     },
-    references: [
-      {
-        type: "negotiation_session",
-        id: `a2cn:session:${sess.session_id}`,
-        relationship: "approves",
-      },
-    ],
+    references,
     approver_did: approverDid,
-    expires_at: expiresAt,
   };
+  if (expiresAt !== null) {
+    receipt.expires_at = expiresAt;
+  }
+  if (signWith !== null) {
+    receipt.signature = signApprovalReceipt(receipt, signWith);
+  }
+  return receipt;
+}
+
+/** Apply a receipt that must be refused; the pause must survive it. */
+function refused(mgr: SessionManager, sess: Session, receipt: Dict): string {
+  const exc = expectA2CNError(() => mgr.applyApprovalReceipt(sess, receipt));
+  expect(sess.state).toBe(SessionState.AWAITING_HUMAN_APPROVAL);
+  expect(sess.approval_receipts).toEqual([]);
+  return exc.code;
 }
 
 test("threshold crossing offer enters awaiting human approval", () => {
   const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
+  sess.initiator_mandate = approvalMandate();
 
   const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
   const result = mgr.processMessage(sess, offer);
@@ -753,14 +833,7 @@ test("threshold crossing offer enters awaiting human approval", () => {
 });
 
 test("approval receipt releases pause and restores counterparty turn", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
+  const [mgr, sess] = pausedSession();
 
   const result = mgr.applyApprovalReceipt(sess, approvalReceipt(sess));
 
@@ -771,6 +844,32 @@ test("approval receipt releases pause and restores counterparty turn", () => {
   expect((sess.approval_receipts[sess.approval_receipts.length - 1] as Dict).id).toBe(
     "urn:concordia:receipt:test",
   );
+});
+
+test("es256 signed approval receipt releases pause", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, {
+    approverDid: ES256_APPROVER_DID,
+    signWith: ES256_APPROVER_PRIVATE_KEY,
+  });
+  expect((receipt.signature as Dict).alg).toBe("ES256");
+
+  expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
+});
+
+test("approval receipt naming the approver by did url releases pause", () => {
+  const [mgr, sess] = pausedSession([`${APPROVER_DID}#key-1`]);
+  const receipt = approvalReceipt(sess, { approverDid: `${APPROVER_DID}#key-1` });
+
+  expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
+});
+
+test("approval receipt may reference the mandate by its id", () => {
+  const [mgr, sess] = pausedSession(undefined, { mandate_id: "m-2026-04-19-0007" });
+
+  const receipt = approvalReceipt(sess, { mandateRef: "a2cn:mandate:m-2026-04-19-0007" });
+
+  expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
 });
 
 test("audit metadata defaults to autonomous without approval receipts", () => {
@@ -797,14 +896,7 @@ test("audit metadata defaults to autonomous without approval receipts", () => {
 });
 
 test("audit metadata reflects human approval receipt", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
+  const [mgr, sess] = pausedSession();
   mgr.applyApprovalReceipt(sess, approvalReceipt(sess));
 
   const metadata = generateAuditLog(sess).audit_metadata as Dict;
@@ -814,109 +906,191 @@ test("audit metadata reflects human approval receipt", () => {
   expect(metadata.autonomous_decision).toBe(false);
 });
 
-test("approval receipt wrong offer hash rejected", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
+// --- Refusals. Each leaves the session paused with no receipt recorded. ---
 
-  const err = expectA2CNError(() =>
-    mgr.applyApprovalReceipt(sess, approvalReceipt(sess, { offerHash: "sha256:wrong" })),
-  );
-
-  expect(err.code).toBe("OFFER_HASH_MISMATCH");
+test("unsigned approval receipt is refused", () => {
+  const [mgr, sess] = pausedSession();
+  expect(refused(mgr, sess, approvalReceipt(sess, { signWith: null }))).toBe("APPROVAL_RECEIPT_UNSIGNED");
 });
 
-test("approval receipt wrong session reference rejected", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
+test("approval receipt with malformed signature member is refused", () => {
+  const [mgr, sess] = pausedSession();
+  for (const bad of ["not-an-object", { alg: "Ed25519" }, { alg: "Ed25519", value: "" }, { value: "abc" }]) {
+    const receipt = approvalReceipt(sess);
+    receipt.signature = bad;
+    expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_UNSIGNED");
+  }
+});
+
+test("approval receipt with corrupted signature is refused", () => {
+  const [mgr, sess] = pausedSession();
   const receipt = approvalReceipt(sess);
-  ((receipt.references as Dict[])[0] as Dict).id = "a2cn:session:different-session";
+  const value = (receipt.signature as Dict).value as string;
+  (receipt.signature as Dict).value = (value[0] !== "A" ? "A" : "B") + value.slice(1);
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+});
 
-  const err = expectA2CNError(() => mgr.applyApprovalReceipt(sess, receipt));
+test("approval receipt altered after signing is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess);
+  (receipt.scope as Dict).amount = "1.00 USD";
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+});
 
-  expect(err.code).toBe("APPROVAL_RECEIPT_INVALID");
+test("approval receipt signed by a key outside the approver did document is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const { privateKey: strayPrivateKey } = generateEd25519Keypair();
+  const receipt = approvalReceipt(sess, { signWith: strayPrivateKey });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+});
+
+test("approval receipt signed by another did is refused", () => {
+  // Signed with a key another DID controls, naming an authorised approver.
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: OTHER_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+});
+
+test("approval receipt key listed by the approver but controlled by another did is refused", () => {
+  // The approver's document lists another DID's method; that key does not count.
+  const [mgr, sess] = pausedSession();
+  const foreign = makeDidDocument(OTHER_DID, "key-1", publicKeyToJwk(OTHER_PUBLIC_KEY));
+  const approverDoc = makeDidDocument(APPROVER_DID, "unused", publicKeyToJwk(APPROVER_PUBLIC_KEY));
+  approverDoc.verificationMethod = foreign.verificationMethod;
+  approverDoc.assertionMethod = [`${OTHER_DID}#key-1`];
+  approverDoc.authentication = [`${OTHER_DID}#key-1`];
+  mgr.registerDidDocument(APPROVER_DID, approverDoc);
+  const receipt = approvalReceipt(sess, { signWith: OTHER_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNER_MISMATCH");
+});
+
+test("approval receipt whose method names another controller is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const approverDoc = makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(OTHER_PUBLIC_KEY));
+  ((approverDoc.verificationMethod as Dict[])[0] as Dict).controller = OTHER_DID;
+  mgr.registerDidDocument(APPROVER_DID, approverDoc);
+  const receipt = approvalReceipt(sess, { signWith: OTHER_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNER_MISMATCH");
+});
+
+test("approval receipt from an approver with no resolvable did document is refused", () => {
+  const [mgr, sess] = pausedSession(["did:example:unregistered"]);
+  const receipt = approvalReceipt(sess, { approverDid: "did:example:unregistered" });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+});
+
+test("approval receipt whose declared algorithm does not match the key is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess);
+  (receipt.signature as Dict).alg = "ES256";
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+});
+
+test("validly signed approval receipt from an unauthorised approver is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { approverDid: OTHER_DID, signWith: OTHER_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("UNAUTHORIZED_APPROVER");
+});
+
+test("approver list given as a string authorises no one", () => {
+  // Membership in a string would be a substring test: "did:web:approver.example"
+  // is inside "did:web:approver.example.attacker". Only a list counts.
+  const [mgr, sess] = pausedSession([]);
+  (sess.approval_pending_mandate as Dict).approval_operator_dids = `${APPROVER_DID}.attacker`;
+  const receipt = approvalReceipt(sess);
+  expect(refused(mgr, sess, receipt)).toBe("UNAUTHORIZED_APPROVER");
+});
+
+test("approval receipt naming a non string approver is refused", () => {
+  const [mgr, sess] = pausedSession();
+  ((sess.approval_pending_mandate as Dict).approval_operator_dids as unknown[]).push(["did:web:listed.example"]);
+  const receipt = approvalReceipt(sess, { approverDid: ["did:web:listed.example"] as unknown as string });
+  expect(refused(mgr, sess, receipt)).toBe("UNAUTHORIZED_APPROVER");
+});
+
+test("approval receipt without a mandate reference is refused", () => {
+  const [mgr, sess] = pausedSession();
+  expect(refused(mgr, sess, approvalReceipt(sess, { mandateRef: null }))).toBe("APPROVAL_RECEIPT_INVALID");
+});
+
+test("approval receipt naming a different mandate is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { mandateRef: "a2cn:mandate:some-other-mandate" });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
 });
 
 test("expired approval receipt rejected", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
-
-  const err = expectA2CNError(() =>
-    mgr.applyApprovalReceipt(sess, approvalReceipt(sess, { expiresAt: "2020-01-01T00:00:00Z" })),
-  );
-
-  expect(err.code).toBe("APPROVAL_RECEIPT_EXPIRED");
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { expiresAt: "2020-01-01T00:00:00Z" });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_EXPIRED");
 });
 
-test("unauthorized approval receipt rejected", () => {
-  const [mgr, sess] = newSession();
-  sess.initiator_mandate = {
-    mandate_type: "declared",
-    principal_did: INITIATOR_DID,
-    requires_human_approval_above: 9_000_000,
-  };
-  const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
-  mgr.processMessage(sess, offer);
+test("approval receipt without expiry is refused", () => {
+  const [mgr, sess] = pausedSession();
+  expect(refused(mgr, sess, approvalReceipt(sess, { expiresAt: null }))).toBe("APPROVAL_RECEIPT_INVALID");
+});
 
-  const err = expectA2CNError(() =>
-    mgr.applyApprovalReceipt(
-      sess,
-      approvalReceipt(sess, { approverDid: "did:web:unauthorized.example" }),
-    ),
-  );
+test("approval receipt with an expiry lacking a timezone is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { expiresAt: "2030-01-01T00:00:00" });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
+});
 
-  expect(err.code).toBe("UNAUTHORIZED_APPROVER");
+test("approval receipt wrong offer hash rejected", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { offerHash: "sha256:wrong" });
+  expect(refused(mgr, sess, receipt)).toBe("OFFER_HASH_MISMATCH");
+});
+
+test("approval receipt wrong session reference rejected", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: null });
+  ((receipt.references as Dict[])[0] as Dict).id = "a2cn:session:different-session";
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
 });
 
 test("approval receipt requires approval state", () => {
   const [mgr, sess] = newSession();
+  registerApprovers(mgr);
+  sess.approval_pending_mandate = approvalMandate();
 
-  const err = expectA2CNError(() => mgr.applyApprovalReceipt(sess, approvalReceipt(sess)));
+  const exc = expectA2CNError(() => mgr.applyApprovalReceipt(sess, approvalReceipt(sess)));
 
-  expect(err.code).toBe("NOT_IN_AWAITING_HUMAN_APPROVAL");
+  expect(exc.code).toBe("NOT_IN_AWAITING_HUMAN_APPROVAL");
 });
 
-test("threshold crossing acceptance enters awaiting human approval then completes", () => {
+function pausedAcceptance(): [SessionManager, Session, Dict, Dict] {
   const [mgr, sess] = newSession();
-  sess.responder_mandate = {
-    mandate_type: "declared",
-    principal_did: RESPONDER_DID,
-    requires_human_approval_above: 9_000_000,
-  };
+  registerApprovers(mgr);
+  sess.responder_mandate = approvalMandate(RESPONDER_DID);
   const offer = makeOffer(sess.session_id, 1, 1, INITIATOR_DID);
   mgr.processMessage(sess, offer);
-
   const acceptance = makeAcceptance(sess, offer, "acc-requires-approval");
-
   const result = mgr.processMessage(sess, acceptance);
   expect(result.state).toBe(SessionState.AWAITING_HUMAN_APPROVAL);
-  expect(result.current_turn).toBe("responder");
-  expect(result.approval_pending_offer_id).toBe(offer.message_id);
-  expect(result.approval_pending_offer_hash).toBe(offer.protocol_act_hash);
+  return [mgr, sess, offer, acceptance];
+}
+
+test("threshold crossing acceptance enters awaiting human approval then completes", () => {
+  const [mgr, sess, offer, acceptance] = pausedAcceptance();
+  expect(sess.current_turn).toBe("responder");
+  expect(sess.approval_pending_offer_id).toBe(offer.message_id);
+  expect(sess.approval_pending_offer_hash).toBe(offer.protocol_act_hash);
   expect(sess._final_acceptance).toBeNull();
 
-  const receipt = approvalReceipt(sess, { approverDid: RESPONDER_DID });
-  const approved = mgr.applyApprovalReceipt(sess, receipt);
+  const approved = mgr.applyApprovalReceipt(sess, approvalReceipt(sess));
 
   expect(approved.state).toBe(SessionState.COMPLETED);
   expect(approved.current_turn).toBe("none");
   expect(approved.approval_receipt_id).toBe("urn:concordia:receipt:test");
   expect(sess._final_acceptance).toEqual(acceptance);
+});
+
+test("unsigned approval receipt does not complete a paused acceptance", () => {
+  const [mgr, sess] = pausedAcceptance();
+
+  expect(refused(mgr, sess, approvalReceipt(sess, { signWith: null }))).toBe("APPROVAL_RECEIPT_UNSIGNED");
+  expect(sess._final_acceptance).toBeNull();
+  expect(sess.state).not.toBe(SessionState.COMPLETED);
 });

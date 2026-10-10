@@ -20,6 +20,24 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Security
+
+- **ApprovalReceipts are verified in full before a human-approval pause is
+  released (Section 14.1).** Both reference implementations now require a
+  receipt to:
+  - carry a signature by the approver it names, over the RFC 8785 form of the
+    receipt with its top-level `signature` member removed, with Ed25519 or ES256,
+    from a key that approver's DID controls;
+  - reference the mandate that required approval;
+  - carry an `expires_at` that has not passed.
+
+  Each refusal has its own error code, and the session stays paused. An approver
+  field in a mandate must be a list of DIDs. Section 14.1 states the signing
+  rule, the fields read and the Concordia version followed, and its example is a
+  signed receipt that both implementations verify. A shared test vector checks
+  that receipts signed in either language verify in both. Approval systems that
+  issue receipts must sign them as Section 14.1 describes.
+
 ### Changed
 
 - **The TypeScript reference implementation moved from `a2cn_ts/` to

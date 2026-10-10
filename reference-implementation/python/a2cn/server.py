@@ -511,6 +511,32 @@ async def send_message(session_id: str, request: Request,
 # POST /sessions/{session_id}/approval-receipt
 # ---------------------------------------------------------------------------
 
+async def _resolve_approver_did_document(receipt: dict) -> None:
+    """Make the receipt approver's DID document available for verification.
+
+    A document already registered is used as is and never re-resolved within the
+    server's lifetime (Section 5.5). Otherwise a did:web approver is resolved
+    over HTTP. Any failure leaves it unregistered, and the receipt is
+    then refused because its key cannot be resolved.
+    """
+    approver = receipt.get("approver_did") or receipt.get("operator_did") or receipt.get("signed_by")
+    if not isinstance(approver, str):
+        return
+    approver_did = approver.partition("#")[0]
+    if (
+        approver_did in _did_doc_override
+        or manager.has_did_document(approver_did)
+        or not approver_did.startswith("did:web:")
+    ):
+        return
+    try:
+        async with httpx.AsyncClient() as http:
+            did_doc = await resolve_did_web(approver_did, http)
+        manager.register_did_document(approver_did, did_doc)
+    except Exception:
+        return
+
+
 @app.post("/sessions/{session_id}/approval-receipt")
 async def post_approval_receipt(session_id: str, request: Request,
                                 _jwt: dict = Depends(verify_jwt_auth)) -> Response:
@@ -522,6 +548,7 @@ async def post_approval_receipt(session_id: str, request: Request,
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
+    await _resolve_approver_did_document(body)
     try:
         response = manager.apply_approval_receipt(session, body)
     except A2CNError as exc:

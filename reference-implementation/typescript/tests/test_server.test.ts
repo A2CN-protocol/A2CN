@@ -10,6 +10,7 @@ import {
   hashBytes,
   hashObject,
   publicKeyToJwk,
+  signApprovalReceipt,
   signInvitation,
   signJws,
   verifyJws,
@@ -448,10 +449,25 @@ test("get messages cursor tolerates sequence less page item", async () => {
   expect(r.json().next_cursor).toBeNull();
 });
 
-test("approval receipt endpoint releases human approval pause", async () => {
-  const { client, initiatorKeypair } = freshServer();
+const APPROVER_DID = "did:web:approver.example";
+const { privateKey: APPROVER_PRIVATE_KEY, publicKey: APPROVER_PUBLIC_KEY } = generateEd25519Keypair();
+
+/** A session whose initiator offer is paused for an operator's approval. */
+async function pausedOverHttp(): Promise<{
+  client: TestClient;
+  sessionId: string;
+  offer: Dict;
+  mandate: Dict;
+  initiatorKeypair: { privateKey: KeyObject };
+}> {
+  const { ctx, client, initiatorKeypair } = freshServer();
+  ctx.registerDidDocument(
+    APPROVER_DID,
+    makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY)),
+  );
   const body = makeSessionInit();
   (body.initiator_mandate as Dict).requires_human_approval_above = 9_000_000;
+  (body.initiator_mandate as Dict).approval_operator_dids = [APPROVER_DID];
   const r = await client.post("/sessions", {
     json: body,
     headers: initHeaders(body.message_id as string),
@@ -465,8 +481,11 @@ test("approval receipt endpoint releases human approval pause", async () => {
   });
   expect(offerR.statusCode).toBe(200);
   expect(offerR.json().state).toBe("AWAITING_HUMAN_APPROVAL");
+  return { client, sessionId, offer, mandate: body.initiator_mandate as Dict, initiatorKeypair };
+}
 
-  const receipt = {
+function httpReceipt(sessionId: string, offer: Dict, mandate: Dict, approverDid: string): Dict {
+  return {
     artifact_type: "ApprovalReceipt",
     id: "urn:concordia:receipt:test",
     scope: {
@@ -481,10 +500,22 @@ test("approval receipt endpoint releases human approval pause", async () => {
         id: `a2cn:session:${sessionId}`,
         relationship: "approves",
       },
+      {
+        type: "mandate",
+        id: `a2cn:mandate:${hashObject(mandate)}`,
+        relationship: "fulfills",
+      },
     ],
-    approver_did: INITIATOR_DID,
+    approver_did: approverDid,
     expires_at: "2030-01-01T00:00:00Z",
   };
+}
+
+test("approval receipt endpoint releases human approval pause", async () => {
+  const { client, sessionId, offer, mandate } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+
   const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
     json: receipt,
     headers: initHeaders("approval-receipt-test"),
@@ -494,6 +525,39 @@ test("approval receipt endpoint releases human approval pause", async () => {
   expect(receiptR.json().state).toBe("NEGOTIATING");
   expect(receiptR.json().current_turn).toBe("responder");
   expect(receiptR.json().approval_receipt_id).toBe("urn:concordia:receipt:test");
+});
+
+test("a session party cannot release its own pause with an unsigned receipt", async () => {
+  // The paused agent posts an unsigned receipt naming an authorised approver.
+  // It is refused and the session stays paused.
+  const { client, sessionId, offer, mandate } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+
+  const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: receipt,
+    headers: initHeaders("approval-receipt-unsigned"),
+  });
+
+  expect(receiptR.statusCode).toBe(400);
+  expect((receiptR.json().error as Dict).code).toBe("APPROVAL_RECEIPT_UNSIGNED");
+  const state = (await client.get(`/sessions/${sessionId}`)).json();
+  expect(state.state).toBe("AWAITING_HUMAN_APPROVAL");
+});
+
+test("a receipt signed with the paused agents own key is refused", async () => {
+  const { client, sessionId, offer, mandate, initiatorKeypair } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+  receipt.signature = signApprovalReceipt(receipt, initiatorKeypair.privateKey);
+
+  const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: receipt,
+    headers: initHeaders("approval-receipt-self-signed"),
+  });
+
+  expect(receiptR.statusCode).toBe(400);
+  expect((receiptR.json().error as Dict).code).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+  const state = (await client.get(`/sessions/${sessionId}`)).json();
+  expect(state.state).toBe("AWAITING_HUMAN_APPROVAL");
 });
 
 // ---------------------------------------------------------------------------

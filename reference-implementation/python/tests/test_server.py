@@ -13,6 +13,7 @@ from a2cn.crypto import (
     hash_bytes,
     hash_object,
     public_key_to_jwk,
+    sign_approval_receipt,
     sign_invitation,
     sign_jws,
     verify_jws,
@@ -425,10 +426,20 @@ async def test_get_messages_cursor_tolerates_sequence_less_page_item(test_client
     assert r.json()["next_cursor"] is None
 
 
-@pytest.mark.asyncio
-async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client, initiator_keypair):
+APPROVER_DID = "did:web:approver.example"
+APPROVER_PRIVATE_KEY, APPROVER_PUBLIC_KEY = generate_ed25519_keypair()
+
+
+async def _paused_over_http(test_client, initiator_keypair):
+    """A session whose initiator offer is paused for an operator's approval."""
+    import a2cn.server as server_module
+
+    server_module.register_did_document(
+        APPROVER_DID, make_did_document(APPROVER_DID, "key-1", public_key_to_jwk(APPROVER_PUBLIC_KEY))
+    )
     body = make_session_init()
     body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000
+    body["initiator_mandate"]["approval_operator_dids"] = [APPROVER_DID]
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
     session_id = r.json()["session_id"]
 
@@ -440,8 +451,11 @@ async def test_approval_receipt_endpoint_releases_human_approval_pause(test_clie
     )
     assert offer_r.status_code == 200
     assert offer_r.json()["state"] == "AWAITING_HUMAN_APPROVAL"
+    return session_id, offer, body["initiator_mandate"]
 
-    receipt = {
+
+def _receipt(session_id: str, offer: dict, mandate: dict, approver_did: str) -> dict:
+    return {
         "artifact_type": "ApprovalReceipt",
         "id": "urn:concordia:receipt:test",
         "scope": {
@@ -455,11 +469,24 @@ async def test_approval_receipt_endpoint_releases_human_approval_pause(test_clie
                 "type": "negotiation_session",
                 "id": f"a2cn:session:{session_id}",
                 "relationship": "approves",
-            }
+            },
+            {
+                "type": "mandate",
+                "id": f"a2cn:mandate:{hash_object(mandate)}",
+                "relationship": "fulfills",
+            },
         ],
-        "approver_did": INITIATOR_DID,
+        "approver_did": approver_did,
         "expires_at": "2030-01-01T00:00:00Z",
     }
+
+
+@pytest.mark.asyncio
+async def test_approval_receipt_endpoint_releases_human_approval_pause(test_client, initiator_keypair):
+    session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair)
+    receipt = _receipt(session_id, offer, mandate, APPROVER_DID)
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+
     receipt_r = await test_client.post(
         f"/sessions/{session_id}/approval-receipt",
         json=receipt,
@@ -470,6 +497,45 @@ async def test_approval_receipt_endpoint_releases_human_approval_pause(test_clie
     assert receipt_r.json()["state"] == "NEGOTIATING"
     assert receipt_r.json()["current_turn"] == "responder"
     assert receipt_r.json()["approval_receipt_id"] == "urn:concordia:receipt:test"
+
+
+@pytest.mark.asyncio
+async def test_a_session_party_cannot_release_its_own_pause_with_an_unsigned_receipt(
+    test_client, initiator_keypair
+):
+    # The paused agent posts an unsigned receipt naming an authorised approver.
+    # It is refused and the session stays paused.
+    session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair)
+    receipt = _receipt(session_id, offer, mandate, APPROVER_DID)
+
+    receipt_r = await test_client.post(
+        f"/sessions/{session_id}/approval-receipt",
+        json=receipt,
+        headers=init_headers("approval-receipt-unsigned"),
+    )
+
+    assert receipt_r.status_code == 400
+    assert receipt_r.json()["error"]["code"] == "APPROVAL_RECEIPT_UNSIGNED"
+    state = (await test_client.get(f"/sessions/{session_id}")).json()
+    assert state["state"] == "AWAITING_HUMAN_APPROVAL"
+
+
+@pytest.mark.asyncio
+async def test_a_receipt_signed_with_the_paused_agents_own_key_is_refused(test_client, initiator_keypair):
+    session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair)
+    receipt = _receipt(session_id, offer, mandate, APPROVER_DID)
+    receipt["signature"] = sign_approval_receipt(receipt, initiator_keypair[0])
+
+    receipt_r = await test_client.post(
+        f"/sessions/{session_id}/approval-receipt",
+        json=receipt,
+        headers=init_headers("approval-receipt-self-signed"),
+    )
+
+    assert receipt_r.status_code == 400
+    assert receipt_r.json()["error"]["code"] == "APPROVAL_RECEIPT_SIGNATURE_INVALID"
+    state = (await test_client.get(f"/sessions/{session_id}")).json()
+    assert state["state"] == "AWAITING_HUMAN_APPROVAL"
 
 
 # ---------------------------------------------------------------------------

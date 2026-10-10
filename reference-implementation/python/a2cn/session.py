@@ -11,11 +11,12 @@ Enforces:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from a2cn.crypto import hash_object, verify_jws
+from a2cn.crypto import hash_object, verify_approval_receipt_signature, verify_jws
 from a2cn.did import get_public_key, get_verification_method
 from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
 from a2cn.line_items import (
@@ -417,6 +418,10 @@ class SessionManager:
         # Pre-session idempotency: message_id → response dict
         self._init_responses: dict[str, dict] = {}
         self._did_documents: dict[str, dict] = {}
+
+    def has_did_document(self, did: str) -> bool:
+        """Whether a DID document is registered for ``did``."""
+        return did in self._did_documents
 
     def register_did_document(self, did: str, did_document: dict) -> None:
         """Register a resolved DID document for protocol-act signature checks."""
@@ -946,6 +951,86 @@ class SessionManager:
 
         return session.to_state_dict()
 
+    def _verify_approval_receipt_signature(
+        self, session: Session, receipt: dict, approver: str
+    ) -> None:
+        """Require the receipt to be signed by a key the named approver controls.
+
+        The key is resolved from the approver's registered DID document, under
+        ``assertionMethod`` or ``authentication``, with the same rules as act
+        verification. When the approver is named by a DID URL, only that method
+        is used; otherwise any such method controlled by the approver's DID may
+        have signed. Every failure refuses; resolution failure is never a pass.
+        """
+        signature = receipt.get("signature")
+        if not (
+            isinstance(signature, dict)
+            and isinstance(signature.get("alg"), str)
+            and isinstance(signature.get("value"), str)
+            and signature.get("value")
+        ):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_UNSIGNED",
+                "ApprovalReceipt has no well-formed signature member",
+                400,
+                session_id=session.session_id,
+            )
+
+        approver_did, _, fragment = approver.partition("#")
+        did_document = self._did_documents.get(approver_did)
+        if did_document is None:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_KEY_UNRESOLVED",
+                f"No DID document is available for approver {approver_did!r}",
+                400,
+                session_id=session.session_id,
+            )
+
+        if fragment:
+            candidates = [approver]
+        else:
+            candidates = []
+            for relationship in ("assertionMethod", "authentication"):
+                for method in did_document.get(relationship, []):
+                    method_id = method.get("id") if isinstance(method, dict) else method
+                    if isinstance(method_id, str) and method_id not in candidates:
+                        candidates.append(method_id)
+
+        keys = []
+        foreign = False
+        for method_id in candidates:
+            if not (method_id == approver_did or method_id.startswith(f"{approver_did}#")):
+                foreign = True
+                continue
+            try:
+                vm = get_verification_method(did_document, method_id)
+                if vm.get("controller", approver_did) != approver_did:
+                    foreign = True
+                    continue
+                keys.append(get_public_key(vm))
+            except (KeyError, ValueError):
+                continue
+
+        if not keys:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_SIGNER_MISMATCH" if foreign else "APPROVAL_RECEIPT_KEY_UNRESOLVED",
+                (
+                    "No verification key controlled by the approver DID"
+                    if foreign
+                    else f"No usable verification key for approver {approver!r}"
+                ),
+                400,
+                session_id=session.session_id,
+            )
+
+        if not any(verify_approval_receipt_signature(receipt, key) for key in keys):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_SIGNATURE_INVALID",
+                "ApprovalReceipt signature does not verify against the approver's key",
+                400,
+                session_id=session.session_id,
+            )
+
     def apply_approval_receipt(self, session: Session, receipt: dict) -> dict:
         """Validate an ApprovalReceipt and release an approval pause."""
         if session.state != SessionState.AWAITING_HUMAN_APPROVAL:
@@ -984,37 +1069,48 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
+        mandate = session.approval_pending_mandate or {}
+        if not _receipt_references_mandate(receipt, mandate):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt must reference the mandate that required approval",
+                400,
+                session_id=session.session_id,
+            )
+
+        # The receipt must be unexpired when the paused act is released, so an
+        # expiry is required rather than optional.
         expires_at = receipt.get("expires_at")
-        if expires_at:
-            try:
-                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) > expiry:
-                    raise A2CNError(
-                        "APPROVAL_RECEIPT_EXPIRED",
-                        "ApprovalReceipt has expired",
-                        422,
-                        session_id=session.session_id,
-                    )
-            except ValueError:
-                raise A2CNError(
-                    "APPROVAL_RECEIPT_INVALID",
-                    "ApprovalReceipt expires_at is not a valid ISO timestamp",
-                    400,
-                    session_id=session.session_id,
-                )
+        expiry = _parse_receipt_expiry(expires_at)
+        if expiry is None:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt expires_at is required and must be an ISO timestamp with a timezone",
+                400,
+                session_id=session.session_id,
+            )
+        if datetime.now(timezone.utc) > expiry:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_EXPIRED",
+                "ApprovalReceipt has expired",
+                422,
+                session_id=session.session_id,
+            )
 
         approver_did = (
             receipt.get("approver_did")
             or receipt.get("operator_did")
             or receipt.get("signed_by")
         )
-        if not _is_authorized_approver(session.approval_pending_mandate or {}, approver_did):
+        if not _is_authorized_approver(mandate, approver_did):
             raise A2CNError(
                 "UNAUTHORIZED_APPROVER",
                 "ApprovalReceipt signer is not authorized by the mandate",
                 403,
                 session_id=session.session_id,
             )
+
+        self._verify_approval_receipt_signature(session, receipt, approver_did)
 
         session.approval_receipt_id = receipt_id
         session.approval_receipts.append(receipt)
@@ -1463,8 +1559,48 @@ def _receipt_references_session(receipt: dict, session_id: str) -> bool:
     return False
 
 
+def _receipt_references_mandate(receipt: dict, mandate: dict) -> bool:
+    """Whether the receipt names the mandate that required approval.
+
+    A mandate is identified as in the compliance export (Section 10.5): by its
+    ``mandate_id`` when it has one, otherwise by its ``mandate_hash``, the
+    base64url SHA-256 of its JCS form. Either may carry the ``a2cn:mandate:``
+    prefix.
+    """
+    references = receipt.get("references", [])
+    if not isinstance(references, list) or not mandate:
+        return False
+    identifiers = {hash_object(mandate)}
+    mandate_id = mandate.get("mandate_id")
+    if isinstance(mandate_id, str) and mandate_id:
+        identifiers.add(mandate_id)
+    accepted = identifiers | {f"a2cn:mandate:{i}" for i in identifiers}
+    return any(
+        isinstance(ref, dict) and ref.get("type") == "mandate" and ref.get("id") in accepted
+        for ref in references
+    )
+
+
+# A receipt expiry is a full RFC 3339 date-time with an explicit offset, so a
+# zone-less or date-only value cannot be read differently by two verifiers.
+_RECEIPT_EXPIRY_PATTERN = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
+def _parse_receipt_expiry(expires_at) -> datetime | None:
+    """Parse a receipt's expires_at; None when absent, malformed or zone-less."""
+    if not isinstance(expires_at, str) or not _RECEIPT_EXPIRY_PATTERN.fullmatch(expires_at):
+        return None
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return expiry if expiry.tzinfo is not None else None
+
+
 def _is_authorized_approver(mandate: dict, approver_did: str | None) -> bool:
-    if not approver_did:
+    if not isinstance(approver_did, str) or not approver_did:
         return False
     configured = (
         mandate.get("approval_operator_dids")
@@ -1472,6 +1608,9 @@ def _is_authorized_approver(mandate: dict, approver_did: str | None) -> bool:
         or mandate.get("human_approver_dids")
         or []
     )
+    # A list of DIDs only: a string here would make membership a substring test.
+    if not isinstance(configured, list):
+        configured = []
     if approver_did in configured:
         return True
     return approver_did == mandate.get("principal_did")
