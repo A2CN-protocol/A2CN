@@ -25,9 +25,9 @@ standard, and it has **not** undergone an external security audit.
   change to the record breaks the hash and the signatures over it (§9.5, §9A.6).
 - **Replay and stale messages.** Pre-session anti-replay and per-session sequence numbering, plus
   per-offer expiry, bound what a captured message can do (§6.2, §13.1).
-- **Mandate-cap / approval-control bypass (within implemented checks).** The commitment ceiling
-  is enforced, and an act that crosses the human-approval threshold is paused until a valid
-  approval receipt is available, before the act binds (§8.2–§8.4, §13.5).
+- **Mandate-cap bypass (within implemented checks).** The commitment ceiling is enforced before an
+  act binds (§13.5), and an act that crosses the mandate's human-approval threshold is held in
+  `AWAITING_HUMAN_APPROVAL` rather than sent (§8.2–§8.4).
 - **Session-state and message-order violations.** The session state machine refuses acts that are
   out of order or of the wrong type for the current state (§8, §13).
 - **False attribution of unsigned observations as signed counterparty acts.** A
@@ -52,9 +52,9 @@ The reference implementations do not yet perform every check the specification d
 
 - A mandate's validity, such as its `valid_until`, is checked only when a session is
   established. It is not re-checked on later acts or at commit.
-- Only declared mandates (§5.3) are verified. Verification of DID verifiable-credential mandates
-  (§5.4, §5.5) is not implemented, so such a mandate should not be relied on with the reference
-  implementations.
+- Only declared mandates (§5.3) are supported. DID verifiable-credential mandates (§5.4, §5.5)
+  are not verified, so the reference servers refuse them with `MANDATE_INVALID` and advertise
+  conformance level 1 (declared mandates only).
 
 The conformance fixtures in `spec/conformance-fixtures/` mark scenarios like these `known_gap`.
 
