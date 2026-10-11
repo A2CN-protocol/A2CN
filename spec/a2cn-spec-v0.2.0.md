@@ -4654,7 +4654,7 @@ but not read.
 | `references[]` with `type` `"mandate"` | `id` is a string that identifies the mandate that required approval as the compliance export does (Section 10.5). It SHOULD be the mandate's `mandate_hash`, the base64url SHA-256 of the mandate's RFC 8785 form, spelled as `scope.offer_hash` is. The mandate's `mandate_id`, when it has one, is also accepted, and either may be prefixed `a2cn:mandate:` |
 | `references[]` with `type` `"paused_party"` | REQUIRED. `id` is the DID of the party whose act the receipt approves, exactly as the session records it, and MUST be the paused party. A receipt with no such entry, or with any such entry naming someone else, is refused |
 | `approver_did` | The approver, as a DID or a DID URL naming one verification method. `operator_did` is read only when `approver_did` is absent, and `signed_by` only when both are absent. The first of these members that is present names the approver and MUST be a non-empty string; if it is not, the receipt names no approver, and a later member is not read |
-| `expires_at` | REQUIRED. One fixed form of RFC 3339 date-time: `YYYY-MM-DDThh:mm:ss`, an optional fraction of one to six digits, then `Z` or `±hh:mm`, with uppercase `T` and `Z`, seconds `00` to `59`, an offset hour `00` to `23`, and a real calendar date from year `0001`. Any other form is refused |
+| `expires_at` | REQUIRED, and compared with the current time in whole milliseconds. One fixed form of RFC 3339 date-time: `YYYY-MM-DDThh:mm:ss`, an optional fraction of one to six digits, then `Z` or `±hh:mm`, with uppercase `T` and `Z`, seconds `00` to `59`, an offset hour `00` to `23`, and a real calendar date from year `0001`. Any other form is refused |
 | `signature` | The signature member defined below |
 | `id` | Recorded as the session's `approval_receipt_id`. It is read when it is a non-empty string; otherwise `approval_receipt_id` is read on the same terms, and a receipt with neither records no id |
 
@@ -4708,7 +4708,8 @@ the receipt is kept. The signature member is:
   an unpaired surrogate in any string or member name cannot be signed and does
   not verify.
 - The receipt MUST NOT be nested more than 64 levels deep, the receipt object
-  itself being level 1; a deeper receipt cannot be signed and does not verify.
+  itself being level 1 and its `signature` member counted like any other; a
+  deeper receipt cannot be signed and does not verify.
 - `value` is base64url, padded or unpadded, and MUST be the canonical encoding of
   the signature bytes.
 
@@ -4721,7 +4722,10 @@ that method is used; otherwise the receipt may be signed by any such method.
 The approver's DID document is resolved for each receipt when that receipt is
 verified, and only after every check above that needs no key has passed. It is
 not kept for later receipts, so a key the approver adds or removes takes effect
-on the next receipt. Resolution follows no HTTP redirect. A document the
+on the next receipt. Resolution follows no HTTP redirect, MUST finish within
+five seconds in total (the response body included), and refuses a document
+larger than 64 KiB. The document MUST be UTF-8 JSON, optionally preceded by a
+UTF-8 byte-order mark, without `NaN` or `Infinity` literals. A document the
 operator has configured for an approver is used as configured. A document that cannot be resolved means the key is
 unresolved, and the receipt is refused.
 

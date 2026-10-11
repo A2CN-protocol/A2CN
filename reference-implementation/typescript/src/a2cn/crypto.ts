@@ -418,7 +418,8 @@ export function approvalReceiptSigningBytes(receipt: Record<string, unknown>): B
   // Object.fromEntries defines each member as an own property, so a member named
   // "__proto__" stays in the signed bytes instead of setting the prototype.
   const signable = Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature"));
-  if (nestingDepth(signable) > APPROVAL_RECEIPT_MAX_DEPTH) {
+  // The limit covers the whole receipt, its signature member included.
+  if (nestingDepth(receipt) > APPROVAL_RECEIPT_MAX_DEPTH) {
     throw new Error("ApprovalReceipt is nested too deeply");
   }
   // RFC 8785 input is I-JSON, which has no unpaired surrogates; refuse them

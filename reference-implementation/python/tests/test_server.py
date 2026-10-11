@@ -824,3 +824,54 @@ async def test_a_did_web_redirect_is_not_followed(test_client, initiator_keypair
         r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
     assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_KEY_UNRESOLVED"
     assert moved.call_count == 0
+
+
+# --- did:web resolution limits: total deadline, size, encoding. ---
+
+def test_did_web_resolution_gives_up_after_five_seconds_in_total():
+    import a2cn.did as did_module
+    assert did_module.DID_RESOLUTION_TIMEOUT_SECONDS == 5.0
+
+
+@pytest.mark.asyncio
+async def test_a_slow_did_web_host_is_cut_off_at_the_deadline(test_client, initiator_keypair, monkeypatch):
+    import asyncio
+    import a2cn.did as did_module
+    monkeypatch.setattr(did_module, "DID_RESOLUTION_TIMEOUT_SECONDS", 0.2)
+    key, public = generate_ed25519_keypair()
+    document = make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public))
+
+    async def slow(request):
+        await asyncio.sleep(1.0)
+        return httpx.Response(200, json=document)
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(DYNAMIC_APPROVER_URL).mock(side_effect=slow)
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_KEY_UNRESOLVED"
+
+
+def _document_bytes_variants(public):
+    document = make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public))
+    text = json.dumps(document)
+    return {
+        "utf8_bom": (b"\xef\xbb\xbf" + text.encode("utf-8"), 200),
+        "utf16": (text.encode("utf-16"), 400),
+        "nan_literal": (text[:-1].encode("utf-8") + b', "x": NaN}', 400),
+        "too_large": (text[:-1].encode("utf-8") + b', "pad": "' + b"a" * 70000 + b'"}', 400),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", ["utf8_bom", "utf16", "nan_literal", "too_large"])
+async def test_did_documents_are_strict_utf8_json_within_the_size_limit(test_client, initiator_keypair, variant):
+    key, public = generate_ed25519_keypair()
+    body, expected = _document_bytes_variants(public)[variant]
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(DYNAMIC_APPROVER_URL).mock(return_value=httpx.Response(200, content=body))
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
+    assert r.status_code == expected
+    if expected == 400:
+        assert r.json()["error"]["code"] == "APPROVAL_RECEIPT_KEY_UNRESOLVED"

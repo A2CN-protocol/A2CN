@@ -7,28 +7,65 @@ did:web:example.com           → https://example.com/.well-known/did.json
 did:web:example.com:path:to   → https://example.com/path/to/did.json
 """
 
+import asyncio
+import json
+
 import httpx
 
 from a2cn.crypto import SigningPublicKey, public_key_from_jwk
 
+# Resolution limits, identical in both reference implementations: the whole
+# fetch, body included, must finish within the timeout; no redirect is
+# followed; and a document larger than the cap is refused before it is read in
+# full.
+DID_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DID_DOCUMENT_MAX_BYTES = 65536
 
-async def resolve_did_web(did: str, client: httpx.AsyncClient | None = None) -> dict:
+
+async def resolve_did_web(
+    did: str, client: httpx.AsyncClient | None = None, timeout: float | None = None
+) -> dict:
     """
     Resolve a did:web DID to its DID document.
 
+    The document must be UTF-8 JSON (an optional UTF-8 byte-order mark is
+    allowed), without NaN or Infinity literals, no larger than
+    ``DID_DOCUMENT_MAX_BYTES``, and fetched within ``timeout`` seconds in total
+    (``DID_RESOLUTION_TIMEOUT_SECONDS`` by default) with no redirect followed.
+
     Raises:
-        ValueError: if the DID is not a did:web DID or cannot be parsed
+        ValueError: if the DID is not a did:web DID, or the document is too
+            large or not valid UTF-8 JSON
         httpx.HTTPError: if the DID document cannot be fetched
+        TimeoutError: if the fetch does not finish in time
     """
     url = _did_web_to_url(did)
-    if client is not None:
-        response = await client.get(url)
+    deadline = DID_RESOLUTION_TIMEOUT_SECONDS if timeout is None else timeout
+    async with asyncio.timeout(deadline):
+        if client is not None:
+            return await _fetch_did_document(client, url)
+        async with httpx.AsyncClient() as c:
+            return await _fetch_did_document(c, url)
+
+
+async def _fetch_did_document(client: httpx.AsyncClient, url: str):
+    async with client.stream("GET", url, follow_redirects=False) as response:
         response.raise_for_status()
-        return response.json()
-    async with httpx.AsyncClient() as c:
-        response = await c.get(url)
-        response.raise_for_status()
-        return response.json()
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            body.extend(chunk)
+            if len(body) > DID_DOCUMENT_MAX_BYTES:
+                raise ValueError("DID document is larger than the resolution limit")
+    return parse_did_document(bytes(body))
+
+
+def parse_did_document(body: bytes):
+    """Parse a fetched DID document: strict UTF-8 JSON, no NaN or Infinity."""
+
+    def refuse(literal: str):
+        raise ValueError(f"DID document contains the non-JSON literal {literal}")
+
+    return json.loads(body.decode("utf-8-sig"), parse_constant=refuse)
 
 
 def _did_web_to_url(did: str) -> str:

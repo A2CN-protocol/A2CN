@@ -17,6 +17,7 @@ import {
   b64urlDecode,
 } from "../src/a2cn/crypto.js";
 import { createServerContext } from "../src/a2cn/server.js";
+import { DID_RESOLUTION_TIMEOUT_MS, resolveDidWeb } from "../src/a2cn/did.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import {
   INITIATOR_DID,
@@ -880,3 +881,49 @@ test("did web resolution follows no redirects and has a timeout", async () => {
   expect(seen[0]?.redirect).toBe("error");
   expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
 });
+
+// --- did:web resolution limits: total deadline, size, encoding. ---
+
+test("did web resolution gives up after five seconds in total", () => {
+  expect(DID_RESOLUTION_TIMEOUT_MS).toBe(5000);
+});
+
+test("a slow did web host is cut off at the deadline", async () => {
+  // A fetch that answers only when its signal aborts; the deadline must abort it.
+  const hanging = ((_url: string, init?: { signal?: AbortSignal }) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    })) as unknown as typeof fetch;
+  const started = Date.now();
+  await expect(resolveDidWeb(DYNAMIC_APPROVER_DID, hanging, 200)).rejects.toThrow();
+  expect(Date.now() - started).toBeLessThan(2000);
+});
+
+function documentBytesVariants(publicKey: KeyObject): Record<string, [Uint8Array, number]> {
+  const text = JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)));
+  const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+  return {
+    utf8_bom: [Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]), 200],
+    utf16: [utf16, 400],
+    nan_literal: [Buffer.from(text.slice(0, -1) + ', "x": NaN}', "utf8"), 400],
+    too_large: [Buffer.from(text.slice(0, -1) + ', "pad": "' + "a".repeat(70000) + '"}', "utf8"), 400],
+  };
+}
+
+for (const variant of ["utf8_bom", "utf16", "nan_literal", "too_large"]) {
+  test(`did documents are strict utf8 json within the size limit: ${variant}`, async () => {
+    const fixture = freshServer();
+    const { privateKey: key, publicKey } = generateEd25519Keypair();
+    const [body, expected] = documentBytesVariants(publicKey)[variant];
+    fixture.ctx.fetchFn = (async (url: string | URL | Request) =>
+      String(url) === DYNAMIC_APPROVER_URL
+        ? new Response(body, { status: 200 })
+        : new Response("not found", { status: 404 })) as typeof fetch;
+    const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+    const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+    expect(r.statusCode).toBe(expected);
+    if (expected === 400) {
+      expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+    }
+  });
+}

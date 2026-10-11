@@ -1561,3 +1561,76 @@ def test_a_non_string_receipt_id_is_not_recorded(odd_id):
     receipt["id"] = odd_id
     receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
     assert mgr.apply_approval_receipt(sess, receipt)["approval_receipt_id"] is None
+
+
+# --- paused_party is matched exactly, as one string, on a typed entry with an id. ---
+
+@pytest.mark.parametrize("named", [
+    f"{INITIATOR_DID}#key-1",          # a DID URL of the paused party
+    INITIATOR_DID.upper(),              # another case
+    f" {INITIATOR_DID} ",               # surrounding whitespace
+])
+def test_paused_party_must_be_named_exactly(named):
+    mgr, sess = _paused_session()
+    assert _refused(mgr, sess, _approval_receipt(sess, paused_party=named)) == "APPROVAL_RECEIPT_INVALID"
+
+
+@pytest.mark.parametrize("entry_type", ["xpaused_party", "paused_party_extra", "Paused_Party"])
+def test_only_an_entry_of_type_paused_party_counts(entry_type):
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None, paused_party=None)
+    receipt["references"].append({"type": entry_type, "id": INITIATOR_DID, "relationship": "approves"})
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_INVALID"
+
+
+def test_a_paused_party_entry_without_an_id_is_refused_even_beside_a_correct_one():
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None)
+    receipt["references"].append({"type": "paused_party", "relationship": "approves"})
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_INVALID"
+
+
+# --- Depth counts arrays and the signature member; id selection order. ---
+
+def _nested_arrays(depth):
+    value = []
+    inner = value
+    for _ in range(depth - 1):
+        inner.append([])
+        inner = inner[0]
+    return value
+
+
+def test_depth_counts_arrays_too():
+    from a2cn.crypto import verify_approval_receipt_signature
+    at_limit = {"id": "arrays", "payload": _nested_arrays(63)}
+    at_limit["signature"] = sign_approval_receipt(at_limit, APPROVER_PRIVATE_KEY)
+    assert verify_approval_receipt_signature(at_limit, APPROVER_PUBLIC_KEY) is True
+    with pytest.raises(ValueError):
+        sign_approval_receipt({"id": "arrays", "payload": _nested_arrays(64)}, APPROVER_PRIVATE_KEY)
+
+
+def test_depth_counts_the_signature_member():
+    from a2cn.crypto import verify_approval_receipt_signature
+    receipt = {"id": "deep-signature"}
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    receipt["signature"]["x"] = _nested(200)
+    assert verify_approval_receipt_signature(receipt, APPROVER_PUBLIC_KEY) is False
+
+
+def test_an_empty_id_falls_back_to_approval_receipt_id():
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None, receipt_id="")
+    receipt["approval_receipt_id"] = "urn:concordia:receipt:fallback"
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert mgr.apply_approval_receipt(sess, receipt)["approval_receipt_id"] == "urn:concordia:receipt:fallback"
+
+
+def test_id_is_read_before_approval_receipt_id():
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None, receipt_id="urn:concordia:receipt:primary")
+    receipt["approval_receipt_id"] = "urn:concordia:receipt:secondary"
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert mgr.apply_approval_receipt(sess, receipt)["approval_receipt_id"] == "urn:concordia:receipt:primary"

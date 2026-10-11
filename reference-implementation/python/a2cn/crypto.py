@@ -361,10 +361,11 @@ def approval_receipt_signing_bytes(receipt: dict) -> bytes:
 
     The RFC 8785 (JCS) form of the receipt with its top-level ``signature``
     member removed. A ``signature`` member nested inside the receipt is kept.
-    A receipt nested deeper than ``APPROVAL_RECEIPT_MAX_DEPTH`` is refused.
+    A receipt nested deeper than ``APPROVAL_RECEIPT_MAX_DEPTH``, counting its
+    ``signature`` member too, is refused.
     """
     signable = {k: v for k, v in receipt.items() if k != "signature"}
-    if _nesting_depth(signable) > APPROVAL_RECEIPT_MAX_DEPTH:
+    if _nesting_depth(receipt) > APPROVAL_RECEIPT_MAX_DEPTH:
         raise ValueError("ApprovalReceipt is nested too deeply")
     return canonicalize(signable)
 

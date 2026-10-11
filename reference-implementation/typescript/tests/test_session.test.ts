@@ -1626,3 +1626,72 @@ for (const [label, oddId] of [
     expect(mgr.applyApprovalReceipt(sess, receipt).approval_receipt_id).toBeNull();
   });
 }
+
+// --- paused_party is matched exactly, as one string, on a typed entry with an id. ---
+
+for (const named of [`${INITIATOR_DID}#key-1`, INITIATOR_DID.toUpperCase(), ` ${INITIATOR_DID} `]) {
+  test(`paused party must be named exactly: ${JSON.stringify(named)}`, () => {
+    const [mgr, sess] = pausedSession();
+    expect(refused(mgr, sess, approvalReceipt(sess, { pausedParty: named }))).toBe("APPROVAL_RECEIPT_INVALID");
+  });
+}
+
+for (const entryType of ["xpaused_party", "paused_party_extra", "Paused_Party"]) {
+  test(`only an entry of type paused_party counts: ${entryType}`, () => {
+    const [mgr, sess] = pausedSession();
+    const receipt = approvalReceipt(sess, { signWith: null, pausedParty: null });
+    (receipt.references as Dict[]).push({ type: entryType, id: INITIATOR_DID, relationship: "approves" });
+    receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+    expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
+  });
+}
+
+test("a paused party entry without an id is refused even beside a correct one", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: null });
+  (receipt.references as Dict[]).push({ type: "paused_party", relationship: "approves" });
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
+});
+
+// --- Depth counts arrays and the signature member; id selection order. ---
+
+function nestedArrays(depth: number): unknown[] {
+  const value: unknown[] = [];
+  let inner = value;
+  for (let i = 1; i < depth; i++) {
+    const next: unknown[] = [];
+    inner.push(next);
+    inner = next;
+  }
+  return value;
+}
+
+test("depth counts arrays too", () => {
+  const atLimit: Dict = { id: "arrays", payload: nestedArrays(63) };
+  atLimit.signature = signApprovalReceipt(atLimit, APPROVER_PRIVATE_KEY);
+  expect(verifyApprovalReceiptSignature(atLimit, APPROVER_PUBLIC_KEY)).toBe(true);
+  expect(() => signApprovalReceipt({ id: "arrays", payload: nestedArrays(64) }, APPROVER_PRIVATE_KEY)).toThrow();
+});
+
+test("depth counts the signature member", () => {
+  const receipt: Dict = { id: "deep-signature" };
+  receipt.signature = { ...signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY), x: nested(200) };
+  expect(verifyApprovalReceiptSignature(receipt, APPROVER_PUBLIC_KEY)).toBe(false);
+});
+
+test("an empty id falls back to approval_receipt_id", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: null, receiptId: "" });
+  receipt.approval_receipt_id = "urn:concordia:receipt:fallback";
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(mgr.applyApprovalReceipt(sess, receipt).approval_receipt_id).toBe("urn:concordia:receipt:fallback");
+});
+
+test("id is read before approval_receipt_id", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: null, receiptId: "urn:concordia:receipt:primary" });
+  receipt.approval_receipt_id = "urn:concordia:receipt:secondary";
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(mgr.applyApprovalReceipt(sess, receipt).approval_receipt_id).toBe("urn:concordia:receipt:primary");
+});
