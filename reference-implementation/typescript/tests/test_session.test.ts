@@ -784,7 +784,7 @@ function approvalReceipt(
   if (mandateRef === "hash") {
     references.push({
       type: "mandate",
-      id: `a2cn:mandate:${hashObject(sess.approval_pending_mandate)}`,
+      id: hashObject(sess.approval_pending_mandate),
       relationship: "fulfills",
     });
   } else if (mandateRef !== null) {
@@ -861,6 +861,14 @@ test("approval receipt naming the approver by did url releases pause", () => {
   const [mgr, sess] = pausedSession([`${APPROVER_DID}#key-1`]);
   const receipt = approvalReceipt(sess, { approverDid: `${APPROVER_DID}#key-1` });
 
+  expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
+});
+
+test("approval receipt may reference the mandate hash with the a2cn prefix", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, {
+    mandateRef: `a2cn:mandate:${hashObject(sess.approval_pending_mandate)}`,
+  });
   expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
 });
 
@@ -1038,6 +1046,55 @@ for (const [label, editDocument, code] of [
     expect(refused(mgr, sess, approvalReceipt(sess))).toBe(code);
   });
 }
+
+// --- An approver is never the paused party; separation is by DID, not by key. ---
+
+test("paused agent cannot approve its own act even with a valid signature", () => {
+  const [mgr, sess] = pausedSession([INITIATOR_DID]);
+  const receipt = approvalReceipt(sess, { approverDid: INITIATOR_DID, signWith: INITIATOR_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SELF_APPROVAL");
+});
+
+test("paused agent named by did url cannot approve its own act", () => {
+  const [mgr, sess] = pausedSession([`${INITIATOR_DID}#key-1`]);
+  const receipt = approvalReceipt(sess, {
+    approverDid: `${INITIATOR_DID}#key-1`,
+    signWith: INITIATOR_PRIVATE_KEY,
+  });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SELF_APPROVAL");
+});
+
+test("principal that is the agent itself cannot release the pause", () => {
+  // principal_did is the agent's own DID and the only authorised approver: the
+  // pause cannot be released, by the agent or by anyone else.
+  const [mgr, sess] = pausedSession([]);
+  expect((sess.approval_pending_mandate as Dict).principal_did).toBe(INITIATOR_DID);
+  const byAgent = approvalReceipt(sess, { approverDid: INITIATOR_DID, signWith: INITIATOR_PRIVATE_KEY });
+  expect(refused(mgr, sess, byAgent)).toBe("APPROVAL_RECEIPT_SELF_APPROVAL");
+  const byOperator = approvalReceipt(sess);
+  expect(refused(mgr, sess, byOperator)).toBe("UNAUTHORIZED_APPROVER");
+});
+
+test("principal with its own did releases the pause", () => {
+  const [mgr, sess] = pausedSession([]);
+  (sess.approval_pending_mandate as Dict).principal_did = APPROVER_DID;
+  const receipt = approvalReceipt(sess);
+  expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
+});
+
+test("accepting party cannot approve its own paused acceptance", () => {
+  const [mgr, sess] = pausedAcceptance();
+  ((sess.approval_pending_mandate as Dict).approval_operator_dids as string[]).push(RESPONDER_DID);
+  const receipt = approvalReceipt(sess, { approverDid: RESPONDER_DID, signWith: RESPONDER_PRIVATE_KEY });
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_SELF_APPROVAL");
+  expect(sess._final_acceptance).toBeNull();
+});
+
+test("pause stays when the paused party cannot be determined", () => {
+  const [mgr, sess] = pausedSession();
+  sess.approval_pending_sender_role = null;
+  expect(refused(mgr, sess, approvalReceipt(sess))).toBe("APPROVAL_RECEIPT_SELF_APPROVAL");
+});
 
 test("approval receipt without a mandate reference is refused", () => {
   const [mgr, sess] = pausedSession();

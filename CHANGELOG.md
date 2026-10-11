@@ -34,7 +34,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   Each refusal has its own error code, and the session stays paused. A
   malformed receipt or approver DID document is refused cleanly rather than
   raising an error. `scope` must be an object, and `decision` and `offer_hash`
-  are read from it only. An approver field in a mandate must be a list of DIDs. Section 14.1 states the signing
+  are read from it only. An approver field in a mandate must be a list of DIDs.
+  An approver is never the paused party: a receipt whose approver is the DID
+  that sent the paused act is refused even when validly signed, so a mandate
+  whose only approver is the agent itself cannot release its pause. The
+  examples, demos and MCP servers now give the principal its own DID. Section 14.1 states the signing
   rule, the fields read and the Concordia version followed, and its example is a
   signed receipt that both implementations verify. A shared test vector checks
   that receipts signed in either language verify in both. Approval systems that

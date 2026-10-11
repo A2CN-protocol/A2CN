@@ -472,7 +472,7 @@ def _receipt(session_id: str, offer: dict, mandate: dict, approver_did: str) -> 
             },
             {
                 "type": "mandate",
-                "id": f"a2cn:mandate:{hash_object(mandate)}",
+                "id": hash_object(mandate),
                 "relationship": "fulfills",
             },
         ],

@@ -1119,6 +1119,19 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
+        # An approver is never the paused party (separation is by DID, not by
+        # key): a receipt the paused party signs, even validly, does not
+        # release its own pause. When the paused party cannot be determined,
+        # the pause stays.
+        paused_party = _paused_party_did(session)
+        if paused_party is None or approver_did.partition("#")[0] == paused_party:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_SELF_APPROVAL",
+                "ApprovalReceipt approver is the party whose act is paused",
+                403,
+                session_id=session.session_id,
+            )
+
         self._verify_approval_receipt_signature(session, receipt, approver_did)
 
         session.approval_receipt_id = receipt_id
@@ -1567,6 +1580,16 @@ def _receipt_references_session(receipt: dict, session_id: str) -> bool:
         if ref.get("type") == "negotiation_session" and isinstance(ref_id, str) and ref_id in accepted_ids:
             return True
     return False
+
+
+def _paused_party_did(session: Session) -> str | None:
+    """The DID that sent the act held for human approval, or None if unknown."""
+    info = {
+        "initiator": session.initiator_info,
+        "responder": session.responder_info,
+    }.get(session.approval_pending_sender_role or "")
+    did = info.get("did") if isinstance(info, dict) else None
+    return did if isinstance(did, str) and did else None
 
 
 def _receipt_references_mandate(receipt: dict, mandate: dict) -> bool:

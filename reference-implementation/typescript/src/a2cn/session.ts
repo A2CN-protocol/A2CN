@@ -1150,6 +1150,19 @@ export class SessionManager {
       );
     }
 
+    // An approver is never the paused party (separation is by DID, not by
+    // key): a receipt the paused party signs, even validly, does not release
+    // its own pause. When the paused party cannot be determined, the pause stays.
+    const pausedParty = pausedPartyDid(session);
+    if (pausedParty === null || (approverDid as string).split("#")[0] === pausedParty) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_SELF_APPROVAL",
+        "ApprovalReceipt approver is the party whose act is paused",
+        403,
+        { sessionId: session.session_id },
+      );
+    }
+
     this.verifyApprovalReceiptSigner(session, receipt, approverDid as string);
 
     session.approval_receipt_id = receiptId ?? null;
@@ -1623,6 +1636,15 @@ export function receiptApprover(receipt: Dict): unknown {
     }
   }
   return undefined;
+}
+
+/** The DID that sent the act held for human approval, or null if unknown. */
+function pausedPartyDid(session: Session): string | null {
+  const role = session.approval_pending_sender_role;
+  const info =
+    role === "initiator" ? session.initiator_info : role === "responder" ? session.responder_info : null;
+  const did = info !== null && typeof info === "object" ? (info as Dict).did : undefined;
+  return typeof did === "string" && did !== "" ? did : null;
 }
 
 /**

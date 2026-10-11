@@ -502,7 +502,7 @@ function httpReceipt(sessionId: string, offer: Dict, mandate: Dict, approverDid:
       },
       {
         type: "mandate",
-        id: `a2cn:mandate:${hashObject(mandate)}`,
+        id: hashObject(mandate),
         relationship: "fulfills",
       },
     ],

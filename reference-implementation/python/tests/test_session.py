@@ -782,7 +782,7 @@ def _approval_receipt(sess: Session, *, offer_hash=None, approver_did=APPROVER_D
     if mandate_ref == "hash":
         receipt["references"].append({
             "type": "mandate",
-            "id": f"a2cn:mandate:{hash_object(sess.approval_pending_mandate)}",
+            "id": hash_object(sess.approval_pending_mandate),
             "relationship": "fulfills",
         })
     elif mandate_ref is not None:
@@ -840,6 +840,12 @@ def test_approval_receipt_naming_the_approver_by_did_url_releases_pause():
     mgr, sess = _paused_session(approvers=(f"{APPROVER_DID}#key-1",))
     receipt = _approval_receipt(sess, approver_did=f"{APPROVER_DID}#key-1")
 
+    assert mgr.apply_approval_receipt(sess, receipt)["state"] == SessionState.NEGOTIATING
+
+
+def test_approval_receipt_may_reference_the_mandate_hash_with_the_a2cn_prefix():
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, mandate_ref=f"a2cn:mandate:{hash_object(sess.approval_pending_mandate)}")
     assert mgr.apply_approval_receipt(sess, receipt)["state"] == SessionState.NEGOTIATING
 
 
@@ -1013,6 +1019,52 @@ def test_malformed_approver_did_document_is_refused_cleanly(label, edit_document
     document = make_did_document(APPROVER_DID, "key-1", public_key_to_jwk(APPROVER_PUBLIC_KEY))
     mgr.register_did_document(APPROVER_DID, edit_document(document))
     assert _refused(mgr, sess, _approval_receipt(sess)) == code
+
+
+# --- An approver is never the paused party; separation is by DID, not by key. ---
+
+def test_paused_agent_cannot_approve_its_own_act_even_with_a_valid_signature():
+    mgr, sess = _paused_session(approvers=(INITIATOR_DID,))
+    receipt = _approval_receipt(sess, approver_did=INITIATOR_DID, sign_with=INITIATOR_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_SELF_APPROVAL"
+
+
+def test_paused_agent_named_by_did_url_cannot_approve_its_own_act():
+    mgr, sess = _paused_session(approvers=(f"{INITIATOR_DID}#key-1",))
+    receipt = _approval_receipt(sess, approver_did=f"{INITIATOR_DID}#key-1", sign_with=INITIATOR_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_SELF_APPROVAL"
+
+
+def test_principal_that_is_the_agent_itself_cannot_release_the_pause():
+    # principal_did is the agent's own DID and the only authorised approver: the
+    # pause cannot be released, by the agent or by anyone else.
+    mgr, sess = _paused_session(approvers=())
+    assert sess.approval_pending_mandate["principal_did"] == INITIATOR_DID
+    by_agent = _approval_receipt(sess, approver_did=INITIATOR_DID, sign_with=INITIATOR_PRIVATE_KEY)
+    assert _refused(mgr, sess, by_agent) == "APPROVAL_RECEIPT_SELF_APPROVAL"
+    by_operator = _approval_receipt(sess)
+    assert _refused(mgr, sess, by_operator) == "UNAUTHORIZED_APPROVER"
+
+
+def test_principal_with_its_own_did_releases_the_pause():
+    mgr, sess = _paused_session(approvers=())
+    sess.approval_pending_mandate["principal_did"] = APPROVER_DID
+    receipt = _approval_receipt(sess)
+    assert mgr.apply_approval_receipt(sess, receipt)["state"] == SessionState.NEGOTIATING
+
+
+def test_accepting_party_cannot_approve_its_own_paused_acceptance():
+    mgr, sess, _offer, _acceptance = _paused_acceptance()
+    sess.approval_pending_mandate["approval_operator_dids"].append(RESPONDER_DID)
+    receipt = _approval_receipt(sess, approver_did=RESPONDER_DID, sign_with=RESPONDER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_SELF_APPROVAL"
+    assert sess._final_acceptance is None
+
+
+def test_pause_stays_when_the_paused_party_cannot_be_determined():
+    mgr, sess = _paused_session()
+    sess.approval_pending_sender_role = None
+    assert _refused(mgr, sess, _approval_receipt(sess)) == "APPROVAL_RECEIPT_SELF_APPROVAL"
 
 
 def test_approval_receipt_without_a_mandate_reference_is_refused():

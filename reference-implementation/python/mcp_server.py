@@ -179,7 +179,9 @@ def _make_mandate(deal_type: str) -> dict:
         "mandate_type": "declared",
         "agent_id": _agent_id,
         "principal_organization": _agent_org,
-        "principal_did": _agent_did,
+        # The principal is a separate DID from the agent: an agent never
+        # approves its own act (Section 14.1).
+        "principal_did": f"{_agent_did}:principal",
         "authorized_deal_types": [deal_type],
         "max_commitment_value": int(os.environ.get("A2CN_MAX_COMMITMENT", "100000000")),
         "max_commitment_currency": "USD",
