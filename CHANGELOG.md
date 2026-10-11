@@ -38,7 +38,14 @@ This project is pre-1.0: the minor version moves for substantive additions.
   An approver is never the paused party: a receipt whose approver is the DID
   that sent the paused act is refused even when validly signed, so a mandate
   whose only approver is the agent itself cannot release its pause. The
-  examples, demos and MCP servers now give the principal its own DID. Section 14.1 states the signing
+  examples, demos and MCP servers now give the principal its own DID.
+  A receipt releases at most one pause in a session, so an approval for one act
+  cannot be reused for another. The approver's DID document is resolved for each
+  receipt, after the checks that need no key, and is not kept, so a key the
+  approver adds or removes takes effect on the next receipt. `expires_at` has one
+  exact form in both implementations, a present approver member must be a
+  non-empty string, a non-object request body is refused with a 400, and an
+  invalid receipt leaves the session paused (Section 8 now says so too). Section 14.1 states the signing
   rule, the fields read and the Concordia version followed, and its example is a
   signed receipt that both implementations verify. A shared test vector checks
   that receipts signed in either language verify in both. Approval systems that

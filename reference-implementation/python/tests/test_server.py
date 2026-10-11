@@ -1,5 +1,6 @@
 """Tests for a2cn.server — FastAPI endpoints."""
 
+import json
 import uuid
 import httpx
 import pytest
@@ -430,7 +431,7 @@ APPROVER_DID = "did:web:approver.example"
 APPROVER_PRIVATE_KEY, APPROVER_PUBLIC_KEY = generate_ed25519_keypair()
 
 
-async def _paused_over_http(test_client, initiator_keypair):
+async def _paused_over_http(test_client, initiator_keypair, approvers=(APPROVER_DID,)):
     """A session whose initiator offer is paused for an operator's approval."""
     import a2cn.server as server_module
 
@@ -439,7 +440,7 @@ async def _paused_over_http(test_client, initiator_keypair):
     )
     body = make_session_init()
     body["initiator_mandate"]["requires_human_approval_above"] = 9_000_000
-    body["initiator_mandate"]["approval_operator_dids"] = [APPROVER_DID]
+    body["initiator_mandate"]["approval_operator_dids"] = list(approvers)
     r = await test_client.post("/sessions", json=body, headers=init_headers(body["message_id"]))
     session_id = r.json()["session_id"]
 
@@ -454,10 +455,11 @@ async def _paused_over_http(test_client, initiator_keypair):
     return session_id, offer, body["initiator_mandate"]
 
 
-def _receipt(session_id: str, offer: dict, mandate: dict, approver_did: str) -> dict:
+def _receipt(session_id: str, offer: dict, mandate: dict, approver_did: str,
+             receipt_id: str = "urn:concordia:receipt:test") -> dict:
     return {
         "artifact_type": "ApprovalReceipt",
-        "id": "urn:concordia:receipt:test",
+        "id": receipt_id,
         "scope": {
             "decision": "approve",
             "offer_hash": offer["protocol_act_hash"],
@@ -707,3 +709,100 @@ async def test_audit_available_after_withdrawal(test_client, initiator_keypair):
     assert r.status_code == 200
     data = r.json()
     assert data["session_outcome"] == "WITHDRAWN"
+
+
+# --- The approver's DID document is resolved per receipt, after the cheap checks. ---
+
+DYNAMIC_APPROVER_DID = "did:web:dyn-approver.example"
+DYNAMIC_APPROVER_URL = "https://dyn-approver.example/.well-known/did.json"
+
+
+def _post_receipt(test_client, session_id, receipt, key):
+    receipt = dict(receipt)
+    receipt["signature"] = sign_approval_receipt(receipt, key)
+    return test_client.post(
+        f"/sessions/{session_id}/approval-receipt", json=receipt, headers=init_headers(f"receipt-{uuid.uuid4()}")
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unregistered_did_web_approver_is_resolved_for_the_receipt(test_client, initiator_keypair):
+    key, public = generate_ed25519_keypair()
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(DYNAMIC_APPROVER_URL).mock(
+            return_value=httpx.Response(200, json=make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public)))
+        )
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
+    assert r.status_code == 200 and r.json()["state"] == "NEGOTIATING"
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_rotated_approver_key_takes_effect_on_the_next_receipt(test_client, initiator_keypair):
+    old_key, old_public = generate_ed25519_keypair()
+    new_key, new_public = generate_ed25519_keypair()
+    document = {"current": make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(old_public))}
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(DYNAMIC_APPROVER_URL).mock(side_effect=lambda request: httpx.Response(200, json=document["current"]))
+        first, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        assert (await _post_receipt(test_client, first, _receipt(first, offer, mandate, DYNAMIC_APPROVER_DID), old_key)).status_code == 200
+
+        # The approver rotates: its document now lists only the new key.
+        document["current"] = make_did_document(DYNAMIC_APPROVER_DID, "key-2", public_key_to_jwk(new_public))
+        second, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        old = await _post_receipt(test_client, second, _receipt(second, offer, mandate, DYNAMIC_APPROVER_DID, "urn:r:old"), old_key)
+        new = await _post_receipt(test_client, second, _receipt(second, offer, mandate, DYNAMIC_APPROVER_DID, "urn:r:new"), new_key)
+    assert old.status_code == 400 and old.json()["error"]["code"] == "APPROVAL_RECEIPT_SIGNATURE_INVALID"
+    assert new.status_code == 200 and new.json()["state"] == "NEGOTIATING"
+
+
+@pytest.mark.asyncio
+async def test_a_did_url_approver_is_resolved_from_its_base_did(test_client, initiator_keypair):
+    key, public = generate_ed25519_keypair()
+    approver = f"{DYNAMIC_APPROVER_DID}#key-1"
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(DYNAMIC_APPROVER_URL).mock(
+            return_value=httpx.Response(200, json=make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public)))
+        )
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (approver,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, approver), key)
+    assert r.status_code == 200
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_an_approver_outside_did_web_is_never_fetched(test_client, initiator_keypair):
+    key, _ = generate_ed25519_keypair()
+    approver = "did:example:approver"
+    with respx.mock(assert_all_called=False) as mock:
+        catch_all = mock.route().mock(return_value=httpx.Response(500))
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (approver,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, approver), key)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_KEY_UNRESOLVED"
+    assert catch_all.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_a_receipt_failing_a_check_that_needs_no_key_causes_no_fetch(test_client, initiator_keypair):
+    key, public = generate_ed25519_keypair()
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(DYNAMIC_APPROVER_URL).mock(
+            return_value=httpx.Response(200, json=make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public)))
+        )
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair)  # approver not authorised
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "UNAUTHORIZED_APPROVER"
+    assert route.call_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [None, [], "receipt", 5, True])
+async def test_a_non_object_receipt_body_is_refused_cleanly(test_client, initiator_keypair, body):
+    session_id, _offer, _mandate = await _paused_over_http(test_client, initiator_keypair)
+    r = await test_client.post(
+        f"/sessions/{session_id}/approval-receipt",
+        content=json.dumps(body),
+        headers={**init_headers("receipt-non-object"), "Content-Type": "application/a2cn+json"},
+    )
+    assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_INVALID"

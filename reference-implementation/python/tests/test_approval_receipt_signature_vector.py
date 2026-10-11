@@ -21,7 +21,7 @@ def test_the_vector_covers_both_languages_and_both_algorithms():
     signed = {
         (c["signed_in"], c["receipt"]["signature"]["alg"])
         for c in VECTOR["cases"]
-        if c["verifies"] and not c["name"].endswith("_member")
+        if c["verifies"] and "_member" not in c["name"]
     }
     assert signed == {(lang, alg) for lang in ("python", "typescript") for alg in ("Ed25519", "ES256")}
     assert any(not c["verifies"] for c in VECTOR["cases"])

@@ -35,7 +35,6 @@ import {
   A2CNError,
   now,
   parseIsoMs,
-  receiptApprover,
 } from "./session.js";
 import { generateTransactionRecord, generateAuditLog } from "./record.js";
 import { generateSessionEvidenceRecord } from "./evidence.js";
@@ -802,30 +801,25 @@ function installRoutes(ctx: ServerContext): void {
   // -------------------------------------------------------------------
 
   /**
-   * Make the receipt approver's DID document available for verification. A
-   * document already registered is used as is and never re-resolved within the
-   * server's lifetime (Section 5.5). Otherwise a did:web approver is resolved
-   * over HTTP. Any failure leaves it unregistered, and the receipt is then
+   * The approver's DID document, resolved for this receipt alone. A document
+   * the operator pre-registered is used as configured. Otherwise a did:web
+   * approver is fetched now, for this receipt only, and is not stored, so a key
+   * the approver adds or removes takes effect on the next receipt. Any failure,
+   * or a method other than did:web, returns null, and the receipt is then
    * refused because its key cannot be resolved.
    */
-  async function resolveApproverDidDocument(receipt: Dict): Promise<void> {
-    const approver = receiptApprover(receipt);
-    if (typeof approver !== "string") {
-      return;
-    }
+  async function resolveApproverDidDocument(approver: string): Promise<Dict | null> {
     const approverDid = approver.split("#")[0];
-    if (
-      Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid) ||
-      manager.hasDidDocument(approverDid) ||
-      !approverDid.startsWith("did:web:")
-    ) {
-      return;
+    if (Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid)) {
+      return ctx.didDocOverride[approverDid];
+    }
+    if (!approverDid.startsWith("did:web:")) {
+      return null;
     }
     try {
-      const didDoc = await resolveDidWeb(approverDid, ctx.fetchFn);
-      manager.registerDidDocument(approverDid, didDoc);
+      return (await resolveDidWeb(approverDid, ctx.fetchFn)) as Dict;
     } catch {
-      return;
+      return null;
     }
   }
 
@@ -833,9 +827,16 @@ function installRoutes(ctx: ServerContext): void {
     await verifyJwtAuth(ctx, request);
     const { session_id: sessionId } = request.params as { session_id: string };
     const session = getSessionOr404(sessionId);
-    const body = parseBody(request);
+    const body = parseBody(request) as unknown;
 
-    if (body.session_id !== undefined && body.session_id !== null && body.session_id !== sessionId) {
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return sendError(reply, "APPROVAL_RECEIPT_INVALID", "ApprovalReceipt must be a JSON object", 400, {
+        sessionId,
+      });
+    }
+    const receipt = body as Dict;
+
+    if (receipt.session_id !== undefined && receipt.session_id !== null && receipt.session_id !== sessionId) {
       return sendError(
         reply,
         "SESSION_ID_MISMATCH",
@@ -845,10 +846,13 @@ function installRoutes(ctx: ServerContext): void {
       );
     }
 
-    await resolveApproverDidDocument(body);
     let response: Dict;
     try {
-      response = manager.applyApprovalReceipt(session, body);
+      // Every check that needs no key runs first, so a receipt that fails one
+      // never causes the approver's DID document to be fetched.
+      const approver = manager.checkApprovalReceipt(session, receipt);
+      const didDocument = await resolveApproverDidDocument(approver);
+      response = manager.applyApprovalReceipt(session, receipt, didDocument);
     } catch (exc) {
       if (exc instanceof A2CNError) {
         return sendError(reply, exc.code, exc.message, exc.httpStatus, {

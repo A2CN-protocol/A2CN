@@ -453,21 +453,24 @@ const APPROVER_DID = "did:web:approver.example";
 const { privateKey: APPROVER_PRIVATE_KEY, publicKey: APPROVER_PUBLIC_KEY } = generateEd25519Keypair();
 
 /** A session whose initiator offer is paused for an operator's approval. */
-async function pausedOverHttp(): Promise<{
+async function pausedOverHttp(
+  fixture: ReturnType<typeof freshServer> = freshServer(),
+  approvers: string[] = [APPROVER_DID],
+): Promise<{
   client: TestClient;
   sessionId: string;
   offer: Dict;
   mandate: Dict;
   initiatorKeypair: { privateKey: KeyObject };
 }> {
-  const { ctx, client, initiatorKeypair } = freshServer();
+  const { ctx, client, initiatorKeypair } = fixture;
   ctx.registerDidDocument(
     APPROVER_DID,
     makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY)),
   );
   const body = makeSessionInit();
   (body.initiator_mandate as Dict).requires_human_approval_above = 9_000_000;
-  (body.initiator_mandate as Dict).approval_operator_dids = [APPROVER_DID];
+  (body.initiator_mandate as Dict).approval_operator_dids = [...approvers];
   const r = await client.post("/sessions", {
     json: body,
     headers: initHeaders(body.message_id as string),
@@ -484,10 +487,16 @@ async function pausedOverHttp(): Promise<{
   return { client, sessionId, offer, mandate: body.initiator_mandate as Dict, initiatorKeypair };
 }
 
-function httpReceipt(sessionId: string, offer: Dict, mandate: Dict, approverDid: string): Dict {
+function httpReceipt(
+  sessionId: string,
+  offer: Dict,
+  mandate: Dict,
+  approverDid: string,
+  receiptId = "urn:concordia:receipt:test",
+): Dict {
   return {
     artifact_type: "ApprovalReceipt",
-    id: "urn:concordia:receipt:test",
+    id: receiptId,
     scope: {
       decision: "approve",
       offer_hash: offer.protocol_act_hash,
@@ -724,3 +733,126 @@ test("audit available after withdrawal", async () => {
   const data = r.json();
   expect(data.session_outcome).toBe("WITHDRAWN");
 });
+
+// --- The approver's DID document is resolved per receipt, after the cheap checks. ---
+
+const DYNAMIC_APPROVER_DID = "did:web:dyn-approver.example";
+const DYNAMIC_APPROVER_URL = "https://dyn-approver.example/.well-known/did.json";
+
+/** Serve DID documents from `documents` by URL, counting every fetch. */
+function serveDidDocuments(
+  ctx: ReturnType<typeof freshServer>["ctx"],
+  documents: Record<string, Dict>,
+): { calls: string[] } {
+  const calls: string[] = [];
+  ctx.fetchFn = (async (url: string | URL | Request) => {
+    const target = String(url);
+    calls.push(target);
+    const document = documents[target];
+    return document === undefined
+      ? new Response("not found", { status: 404 })
+      : new Response(JSON.stringify(document), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  return { calls };
+}
+
+async function postReceipt(client: TestClient, sessionId: string, receipt: Dict, key: KeyObject) {
+  const signed = { ...receipt, signature: signApprovalReceipt(receipt, key) };
+  return client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: signed,
+    headers: initHeaders(`receipt-${randomUUID()}`),
+  });
+}
+
+test("an unregistered did web approver is resolved for the receipt", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(200);
+  expect(r.json().state).toBe("NEGOTIATING");
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(1);
+});
+
+test("a rotated approver key takes effect on the next receipt", async () => {
+  const fixture = freshServer();
+  const { privateKey: oldKey, publicKey: oldPublic } = generateEd25519Keypair();
+  const { privateKey: newKey, publicKey: newPublic } = generateEd25519Keypair();
+  const documents: Record<string, Dict> = {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(oldPublic)),
+  };
+  serveDidDocuments(fixture.ctx, documents);
+  const first = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const ok = await postReceipt(first.client, first.sessionId, httpReceipt(first.sessionId, first.offer, first.mandate, DYNAMIC_APPROVER_DID), oldKey);
+  expect(ok.statusCode).toBe(200);
+
+  // The approver rotates: its document now lists only the new key.
+  documents[DYNAMIC_APPROVER_URL] = makeDidDocument(DYNAMIC_APPROVER_DID, "key-2", publicKeyToJwk(newPublic));
+  const second = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const old = await postReceipt(second.client, second.sessionId, httpReceipt(second.sessionId, second.offer, second.mandate, DYNAMIC_APPROVER_DID, "urn:r:old"), oldKey);
+  const fresh = await postReceipt(second.client, second.sessionId, httpReceipt(second.sessionId, second.offer, second.mandate, DYNAMIC_APPROVER_DID, "urn:r:new"), newKey);
+  expect(old.statusCode).toBe(400);
+  expect((old.json().error as Dict).code).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+  expect(fresh.statusCode).toBe(200);
+  expect(fresh.json().state).toBe("NEGOTIATING");
+});
+
+test("a did url approver is resolved from its base did", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const approver = `${DYNAMIC_APPROVER_DID}#key-1`;
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [approver]);
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, approver), key);
+  expect(r.statusCode).toBe(200);
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(1);
+});
+
+test("an approver outside did web is never fetched", async () => {
+  const fixture = freshServer();
+  const { privateKey: key } = generateEd25519Keypair();
+  const approver = "did:example:approver";
+  const { calls } = serveDidDocuments(fixture.ctx, {});
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [approver]);
+  const before = calls.length;
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, approver), key);
+  expect(r.statusCode).toBe(400);
+  expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+  expect(calls.length).toBe(before);
+});
+
+test("a receipt failing a check that needs no key causes no fetch", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture); // approver not authorised
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(403);
+  expect((r.json().error as Dict).code).toBe("UNAUTHORIZED_APPROVER");
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(0);
+});
+
+for (const [label, body] of [
+  ["null", null],
+  ["array", []],
+  ["string", "receipt"],
+  ["number", 5],
+  ["boolean", true],
+] as const) {
+  test(`a non object receipt body is refused cleanly: ${label}`, async () => {
+    const { client, sessionId } = await pausedOverHttp();
+    const r = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+      json: body,
+      headers: initHeaders("receipt-non-object"),
+    });
+    expect(r.statusCode).toBe(400);
+    expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_INVALID");
+  });
+}

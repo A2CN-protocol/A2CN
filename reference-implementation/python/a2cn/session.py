@@ -410,6 +410,11 @@ def _wire_version(session: Session) -> str:
     return negotiated_protocol_version(session._session_init, session._session_ack)
 
 
+# Default for apply_approval_receipt: use the DID document registered with the
+# manager, rather than one the caller resolved for this receipt.
+_FROM_REGISTRY = object()
+
+
 class SessionManager:
     """In-memory store + state machine for all sessions."""
 
@@ -952,11 +957,11 @@ class SessionManager:
         return session.to_state_dict()
 
     def _verify_approval_receipt_signature(
-        self, session: Session, receipt: dict, approver: str
+        self, session: Session, receipt: dict, approver: str, approver_did_document: Any
     ) -> None:
         """Require the receipt to be signed by a key the named approver controls.
 
-        The key is resolved from the approver's registered DID document, under
+        The key comes from the approver's DID document, under
         ``assertionMethod`` or ``authentication``, with the same rules as act
         verification. When the approver is named by a DID URL, only that method
         is used; otherwise any such method controlled by the approver's DID may
@@ -977,7 +982,10 @@ class SessionManager:
             )
 
         approver_did, _, fragment = approver.partition("#")
-        did_document = self._did_documents.get(approver_did)
+        if approver_did_document is _FROM_REGISTRY:
+            did_document = self._did_documents.get(approver_did)
+        else:
+            did_document = approver_did_document
         if not isinstance(did_document, dict):
             raise A2CNError(
                 "APPROVAL_RECEIPT_KEY_UNRESOLVED",
@@ -1033,8 +1041,13 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
-    def apply_approval_receipt(self, session: Session, receipt: dict) -> dict:
-        """Validate an ApprovalReceipt and release an approval pause."""
+    def check_approval_receipt(self, session: Session, receipt: dict) -> str:
+        """Run every Section 14.1 release check except the signature.
+
+        Returns the approver the receipt names. The server runs this before it
+        resolves the approver's DID document, so a receipt that fails a check
+        that needs no key never causes a fetch.
+        """
         if session.state != SessionState.AWAITING_HUMAN_APPROVAL:
             raise A2CNError(
                 "NOT_IN_AWAITING_HUMAN_APPROVAL",
@@ -1043,7 +1056,14 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
-        receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
+        if not isinstance(receipt, dict):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt must be a JSON object",
+                400,
+                session_id=session.session_id,
+            )
+
         scope = receipt.get("scope")
         if not isinstance(scope, dict):
             raise A2CNError(
@@ -1061,8 +1081,9 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
+        pending_hash = session.approval_pending_offer_hash
         offer_hash = scope.get("offer_hash")
-        if offer_hash != session.approval_pending_offer_hash:
+        if not isinstance(pending_hash, str) or not pending_hash or offer_hash != pending_hash:
             raise A2CNError(
                 "OFFER_HASH_MISMATCH",
                 "ApprovalReceipt offer_hash does not match the paused offer",
@@ -1089,12 +1110,11 @@ class SessionManager:
 
         # The receipt must be unexpired when the paused act is released, so an
         # expiry is required rather than optional.
-        expires_at = receipt.get("expires_at")
-        expiry = _parse_receipt_expiry(expires_at)
+        expiry = _parse_receipt_expiry(receipt.get("expires_at"))
         if expiry is None:
             raise A2CNError(
                 "APPROVAL_RECEIPT_INVALID",
-                "ApprovalReceipt expires_at is required and must be an ISO timestamp with a timezone",
+                "ApprovalReceipt expires_at is required, in the Section 14.1 date-time form",
                 400,
                 session_id=session.session_id,
             )
@@ -1106,11 +1126,14 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
-        approver_did = (
-            receipt.get("approver_did")
-            or receipt.get("operator_did")
-            or receipt.get("signed_by")
-        )
+        approver_did = receipt_approver(receipt)
+        if approver_did is None:
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt approver must be a non-empty string",
+                400,
+                session_id=session.session_id,
+            )
         if not _is_authorized_approver(mandate, approver_did):
             raise A2CNError(
                 "UNAUTHORIZED_APPROVER",
@@ -1132,8 +1155,32 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
-        self._verify_approval_receipt_signature(session, receipt, approver_did)
+        # A receipt releases at most one pause in a session, so an approval
+        # given for one act cannot be reused for another.
+        if _receipt_already_used(session, receipt):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_REPLAYED",
+                "ApprovalReceipt has already released a pause in this session",
+                409,
+                session_id=session.session_id,
+            )
 
+        return approver_did
+
+    def apply_approval_receipt(
+        self, session: Session, receipt: dict, approver_did_document: Any = _FROM_REGISTRY
+    ) -> dict:
+        """Validate an ApprovalReceipt and release an approval pause.
+
+        ``approver_did_document`` is the approver's DID document as the caller
+        resolved it for this receipt; ``None`` means it could not be resolved.
+        When the argument is omitted, the document registered with this
+        manager is used.
+        """
+        approver_did = self.check_approval_receipt(session, receipt)
+        self._verify_approval_receipt_signature(session, receipt, approver_did, approver_did_document)
+
+        receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
         session.approval_receipt_id = receipt_id
         session.approval_receipts.append(receipt)
         if session._pending_acceptance is not None:
@@ -1582,6 +1629,43 @@ def _receipt_references_session(receipt: dict, session_id: str) -> bool:
     return False
 
 
+def receipt_approver(receipt: dict) -> str | None:
+    """The approver a receipt names, or None when it names none validly.
+
+    ``approver_did`` is read; ``operator_did``, then ``signed_by``, only when
+    every earlier member is absent. A present member that is not a non-empty
+    string names no approver; it never falls through to a later member.
+    """
+    if not isinstance(receipt, dict):
+        return None
+    for member in ("approver_did", "operator_did", "signed_by"):
+        if member in receipt:
+            value = receipt[member]
+            return value if isinstance(value, str) and value else None
+    return None
+
+
+def _receipt_already_used(session: Session, receipt: dict) -> bool:
+    """Whether this receipt, by its id or its signed content, already released a pause."""
+    receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
+    content = _receipt_content_hash(receipt)
+    for used in session.approval_receipts:
+        used_id = used.get("id") or used.get("approval_receipt_id")
+        if isinstance(receipt_id, str) and receipt_id and used_id == receipt_id:
+            return True
+        if content is not None and _receipt_content_hash(used) == content:
+            return True
+    return False
+
+
+def _receipt_content_hash(receipt: dict) -> str | None:
+    """The hash of the receipt's signed content, or None if it cannot be canonicalized."""
+    try:
+        return hash_object({k: v for k, v in receipt.items() if k != "signature"})
+    except Exception:
+        return None
+
+
 def _paused_party_did(session: Session) -> str | None:
     """The DID that sent the act held for human approval, or None if unknown."""
     info = {
@@ -1617,10 +1701,14 @@ def _receipt_references_mandate(receipt: dict, mandate: dict) -> bool:
     )
 
 
-# A receipt expiry is a full RFC 3339 date-time with an explicit offset, so a
-# zone-less or date-only value cannot be read differently by two verifiers.
+# A receipt expiry is one fixed form of RFC 3339 date-time (Section 14.1):
+# uppercase T and Z, seconds 00-59, at most six fractional digits, an explicit
+# offset, and a real calendar date from year 0001. Both implementations accept
+# exactly this form, so no value can be read differently by two verifiers.
 _RECEIPT_EXPIRY_PATTERN = re.compile(
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
+    r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    r"T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?"
+    r"(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)"
 )
 
 

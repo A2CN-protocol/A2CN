@@ -445,6 +445,10 @@ function wireVersion(session: Session): string {
   return negotiatedProtocolVersion(session._session_init, session._session_ack);
 }
 
+// Default for applyApprovalReceipt: use the DID document registered with the
+// manager, rather than one the caller resolved for this receipt.
+const FROM_REGISTRY: unique symbol = Symbol("FROM_REGISTRY");
+
 export class SessionManager {
   _sessions: Record<string, Session> = {};
   // Pre-session idempotency: message_id → response dict
@@ -981,7 +985,12 @@ export class SessionManager {
    * used; otherwise any such method controlled by the approver's DID may have
    * signed. Every failure refuses; resolution failure is never a pass.
    */
-  private verifyApprovalReceiptSigner(session: Session, receipt: Dict, approver: string): void {
+  private verifyApprovalReceiptSigner(
+    session: Session,
+    receipt: Dict,
+    approver: string,
+    approverDidDocument: unknown,
+  ): void {
     const signature = receipt.signature;
     const wellFormed =
       signature !== null &&
@@ -1002,9 +1011,14 @@ export class SessionManager {
     const hashAt = approver.indexOf("#");
     const approverDid = hashAt === -1 ? approver : approver.slice(0, hashAt);
     const fragment = hashAt === -1 ? "" : approver.slice(hashAt + 1);
-    const didDocument = Object.prototype.hasOwnProperty.call(this._did_documents, approverDid)
-      ? this._did_documents[approverDid]
-      : undefined;
+    let didDocument: unknown;
+    if (approverDidDocument === FROM_REGISTRY) {
+      didDocument = Object.prototype.hasOwnProperty.call(this._did_documents, approverDid)
+        ? this._did_documents[approverDid]
+        : undefined;
+    } else {
+      didDocument = approverDidDocument;
+    }
     if (didDocument === null || typeof didDocument !== "object" || Array.isArray(didDocument)) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_KEY_UNRESOLVED",
@@ -1013,13 +1027,14 @@ export class SessionManager {
         { sessionId: session.session_id },
       );
     }
+    const document = didDocument as Dict;
 
     const candidates: string[] = [];
     if (fragment) {
       candidates.push(approver);
     } else {
       for (const relationship of ["assertionMethod", "authentication"]) {
-        const methods = (didDocument[relationship] as unknown[]) ?? [];
+        const methods = (document[relationship] as unknown[]) ?? [];
         for (const method of Array.isArray(methods) ? methods : []) {
           const methodId =
             method !== null && typeof method === "object" ? (method as Dict).id : method;
@@ -1038,7 +1053,7 @@ export class SessionManager {
         continue;
       }
       try {
-        const vm = getVerificationMethod(didDocument, methodId);
+        const vm = getVerificationMethod(document, methodId);
         // A stated controller, even null, must be the approver's DID.
         if (Object.prototype.hasOwnProperty.call(vm, "controller") && vm.controller !== approverDid) {
           foreign = true;
@@ -1071,16 +1086,25 @@ export class SessionManager {
     }
   }
 
-  applyApprovalReceipt(session: Session, receipt: Dict): Dict {
+  /**
+   * Run every Section 14.1 release check except the signature, and return the
+   * approver the receipt names. The server runs this before it resolves the
+   * approver's DID document, so a receipt that fails a check that needs no key
+   * never causes a fetch.
+   */
+  checkApprovalReceipt(session: Session, receipt: Dict): string {
     if (session.state !== SessionState.AWAITING_HUMAN_APPROVAL) {
       throw new A2CNError("NOT_IN_AWAITING_HUMAN_APPROVAL", "Session is not awaiting human approval", 409, {
         sessionId: session.session_id,
       });
     }
 
-    const receiptId = (isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id) as
-      | string
-      | undefined;
+    if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) {
+      throw new A2CNError("APPROVAL_RECEIPT_INVALID", "ApprovalReceipt must be a JSON object", 400, {
+        sessionId: session.session_id,
+      });
+    }
+
     const scope = receipt.scope;
     if (scope === null || typeof scope !== "object" || Array.isArray(scope)) {
       throw new A2CNError("APPROVAL_RECEIPT_INVALID", "ApprovalReceipt scope must be an object", 400, {
@@ -1094,8 +1118,9 @@ export class SessionManager {
       });
     }
 
+    const pendingHash = session.approval_pending_offer_hash;
     const offerHash = ownValue(scope as Dict, "offer_hash");
-    if (offerHash !== session.approval_pending_offer_hash) {
+    if (typeof pendingHash !== "string" || pendingHash === "" || offerHash !== pendingHash) {
       throw new A2CNError(
         "OFFER_HASH_MISMATCH",
         "ApprovalReceipt offer_hash does not match the paused offer",
@@ -1125,11 +1150,11 @@ export class SessionManager {
 
     // The receipt must be unexpired when the paused act is released, so an
     // expiry is required rather than optional.
-    const expiryMs = parseReceiptExpiryMs(receipt.expires_at);
+    const expiryMs = parseReceiptExpiryMs(ownValue(receipt, "expires_at"));
     if (expiryMs === null) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_INVALID",
-        "ApprovalReceipt expires_at is required and must be an ISO timestamp with a timezone",
+        "ApprovalReceipt expires_at is required, in the Section 14.1 date-time form",
         400,
         { sessionId: session.session_id },
       );
@@ -1141,6 +1166,11 @@ export class SessionManager {
     }
 
     const approverDid = receiptApprover(receipt);
+    if (approverDid === null) {
+      throw new A2CNError("APPROVAL_RECEIPT_INVALID", "ApprovalReceipt approver must be a non-empty string", 400, {
+        sessionId: session.session_id,
+      });
+    }
     if (!isAuthorizedApprover(mandate, approverDid)) {
       throw new A2CNError(
         "UNAUTHORIZED_APPROVER",
@@ -1154,7 +1184,7 @@ export class SessionManager {
     // key): a receipt the paused party signs, even validly, does not release
     // its own pause. When the paused party cannot be determined, the pause stays.
     const pausedParty = pausedPartyDid(session);
-    if (pausedParty === null || (approverDid as string).split("#")[0] === pausedParty) {
+    if (pausedParty === null || approverDid.split("#")[0] === pausedParty) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_SELF_APPROVAL",
         "ApprovalReceipt approver is the party whose act is paused",
@@ -1163,8 +1193,34 @@ export class SessionManager {
       );
     }
 
-    this.verifyApprovalReceiptSigner(session, receipt, approverDid as string);
+    // A receipt releases at most one pause in a session, so an approval given
+    // for one act cannot be reused for another.
+    if (receiptAlreadyUsed(session, receipt)) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_REPLAYED",
+        "ApprovalReceipt has already released a pause in this session",
+        409,
+        { sessionId: session.session_id },
+      );
+    }
 
+    return approverDid;
+  }
+
+  /**
+   * Validate an ApprovalReceipt and release an approval pause.
+   *
+   * `approverDidDocument` is the approver's DID document as the caller resolved
+   * it for this receipt; `null` means it could not be resolved. When the
+   * argument is omitted, the document registered with this manager is used.
+   */
+  applyApprovalReceipt(session: Session, receipt: Dict, approverDidDocument: unknown = FROM_REGISTRY): Dict {
+    const approverDid = this.checkApprovalReceipt(session, receipt);
+    this.verifyApprovalReceiptSigner(session, receipt, approverDid, approverDidDocument);
+
+    const receiptId = (isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id) as
+      | string
+      | undefined;
     session.approval_receipt_id = receiptId ?? null;
     session.approval_receipts.push(receipt);
     if (session._pending_acceptance !== null) {
@@ -1625,17 +1681,47 @@ function receiptReferencesSession(receipt: Dict, sessionId: string): boolean {
 }
 
 /**
- * The approver a receipt names: `approver_did`, else `operator_did`, else
- * `signed_by`, skipping empty values exactly as the Python implementation does.
+ * The approver a receipt names, or null when it names none validly.
+ * `approver_did` is read; `operator_did`, then `signed_by`, only when every
+ * earlier member is absent. A present member that is not a non-empty string
+ * names no approver; it never falls through to a later member.
  */
-export function receiptApprover(receipt: Dict): unknown {
-  for (const field of ["approver_did", "operator_did", "signed_by"]) {
-    const value = receipt[field];
-    if (isPythonTruthy(value)) {
-      return value;
+export function receiptApprover(receipt: unknown): string | null {
+  if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return null;
+  }
+  for (const member of ["approver_did", "operator_did", "signed_by"]) {
+    if (Object.prototype.hasOwnProperty.call(receipt, member)) {
+      const value = (receipt as Dict)[member];
+      return typeof value === "string" && value !== "" ? value : null;
     }
   }
-  return undefined;
+  return null;
+}
+
+/** Whether this receipt, by its id or its signed content, already released a pause. */
+function receiptAlreadyUsed(session: Session, receipt: Dict): boolean {
+  const receiptId = isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id;
+  const content = receiptContentHash(receipt);
+  for (const used of session.approval_receipts as Dict[]) {
+    const usedId = isPythonTruthy(used.id) ? used.id : used.approval_receipt_id;
+    if (typeof receiptId === "string" && receiptId !== "" && usedId === receiptId) {
+      return true;
+    }
+    if (content !== null && receiptContentHash(used) === content) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The hash of the receipt's signed content, or null if it cannot be canonicalized. */
+function receiptContentHash(receipt: Dict): string | null {
+  try {
+    return hashObject(Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature")));
+  } catch {
+    return null;
+  }
 }
 
 /** The DID that sent the act held for human approval, or null if unknown. */
@@ -1674,18 +1760,32 @@ function receiptReferencesMandate(receipt: Dict, mandate: Dict): boolean {
   );
 }
 
-// A receipt expiry is a full RFC 3339 date-time with an explicit offset, so a
-// zone-less or date-only value cannot be read differently by two verifiers.
+// A receipt expiry is one fixed form of RFC 3339 date-time (Section 14.1):
+// uppercase T and Z, seconds 00-59, at most six fractional digits, an explicit
+// offset, and a real calendar date from year 0001. Both implementations accept
+// exactly this form, so no value can be read differently by two verifiers.
 const RECEIPT_EXPIRY_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,6}))?(?:Z|([+-])([01]\d|2[0-3]):([0-5]\d))$/;
 
-/** Parse a receipt's expires_at to epoch ms; null when absent, malformed or zone-less. */
+/** Parse a receipt's expires_at to epoch ms; null unless it is in the Section 14.1 form. */
 function parseReceiptExpiryMs(expiresAt: unknown): number | null {
-  if (typeof expiresAt !== "string" || !RECEIPT_EXPIRY_PATTERN.test(expiresAt)) {
+  if (typeof expiresAt !== "string") {
     return null;
   }
-  const ms = Date.parse(expiresAt);
-  return Number.isNaN(ms) ? null : ms;
+  const m = RECEIPT_EXPIRY_PATTERN.exec(expiresAt);
+  if (m === null) {
+    return null;
+  }
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  const daysInMonth = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || day > daysInMonth[month - 1]) {
+    return null;
+  }
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, Math.floor(Number(`0.${m[7] ?? "0"}`) * 1000));
+  const offsetMinutes = m[8] === undefined ? 0 : (m[8] === "-" ? -1 : 1) * (Number(m[9]) * 60 + Number(m[10]));
+  return date.getTime() - offsetMinutes * 60_000;
 }
 
 /** An own property's value, as Python's dict.get reads it; undefined when absent. */

@@ -511,30 +511,25 @@ async def send_message(session_id: str, request: Request,
 # POST /sessions/{session_id}/approval-receipt
 # ---------------------------------------------------------------------------
 
-async def _resolve_approver_did_document(receipt: dict) -> None:
-    """Make the receipt approver's DID document available for verification.
+async def _resolve_approver_did_document(approver: str) -> dict | None:
+    """The approver's DID document, resolved for this receipt alone.
 
-    A document already registered is used as is and never re-resolved within the
-    server's lifetime (Section 5.5). Otherwise a did:web approver is resolved
-    over HTTP. Any failure leaves it unregistered, and the receipt is
-    then refused because its key cannot be resolved.
+    A document the operator pre-registered is used as configured. Otherwise a
+    did:web approver is fetched now, for this receipt only, and is not stored,
+    so a key the approver adds or removes takes effect on the next receipt.
+    Any failure, or a method other than did:web, returns None, and the receipt
+    is then refused because its key cannot be resolved.
     """
-    approver = receipt.get("approver_did") or receipt.get("operator_did") or receipt.get("signed_by")
-    if not isinstance(approver, str):
-        return
     approver_did = approver.partition("#")[0]
-    if (
-        approver_did in _did_doc_override
-        or manager.has_did_document(approver_did)
-        or not approver_did.startswith("did:web:")
-    ):
-        return
+    if approver_did in _did_doc_override:
+        return _did_doc_override[approver_did]
+    if not approver_did.startswith("did:web:"):
+        return None
     try:
         async with httpx.AsyncClient() as http:
-            did_doc = await resolve_did_web(approver_did, http)
-        manager.register_did_document(approver_did, did_doc)
+            return await resolve_did_web(approver_did, http)
     except Exception:
-        return
+        return None
 
 
 @app.post("/sessions/{session_id}/approval-receipt")
@@ -543,14 +538,22 @@ async def post_approval_receipt(session_id: str, request: Request,
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
 
+    if not isinstance(body, dict):
+        return error_response("APPROVAL_RECEIPT_INVALID",
+                               "ApprovalReceipt must be a JSON object",
+                               400, session_id=session_id)
+
     if body.get("session_id") is not None and body.get("session_id") != session_id:
         return error_response("SESSION_ID_MISMATCH",
                                "session_id in request body does not match URL path",
                                400, session_id=session_id)
 
-    await _resolve_approver_did_document(body)
     try:
-        response = manager.apply_approval_receipt(session, body)
+        # Every check that needs no key runs first, so a receipt that fails one
+        # never causes the approver's DID document to be fetched.
+        approver = manager.check_approval_receipt(session, body)
+        did_document = await _resolve_approver_did_document(approver)
+        response = manager.apply_approval_receipt(session, body, approver_did_document=did_document)
     except A2CNError as exc:
         return error_response(exc.code, exc.message, exc.http_status, exc.detail, exc.session_id, exc.message_id)
 

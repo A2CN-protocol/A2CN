@@ -373,10 +373,31 @@ const B64URL_ALPHABET = /^[A-Za-z0-9_-]*$/;
  * (JCS) form of the receipt with its top-level `signature` member removed. A
  * `signature` member nested inside the receipt is kept.
  */
+/** Whether any string or member name in `value` holds an unpaired surrogate. */
+function hasLoneSurrogate(value: unknown): boolean {
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  if (typeof value === "string") {
+    return lone.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasLoneSurrogate);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value).some(([k, v]) => lone.test(k) || hasLoneSurrogate(v));
+  }
+  return false;
+}
+
 export function approvalReceiptSigningBytes(receipt: Record<string, unknown>): Buffer {
   // Object.fromEntries defines each member as an own property, so a member named
   // "__proto__" stays in the signed bytes instead of setting the prototype.
-  return canonicalize(Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature")));
+  const signable = Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature"));
+  // RFC 8785 input is I-JSON, which has no unpaired surrogates; refuse them
+  // rather than sign an escape the Python implementation cannot reproduce.
+  if (hasLoneSurrogate(signable)) {
+    throw new Error("ApprovalReceipt contains an unpaired surrogate, which RFC 8785 does not canonicalize");
+  }
+  return canonicalize(signable);
 }
 
 /**

@@ -429,6 +429,92 @@
         }
       },
       "verifies": false
+    },
+    {
+      "name": "es256_signature_labelled_ed25519",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "MEUCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIgY8I-LGDik04QegXqpedd3-br93L-HidBGXD3mCoAiLg="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "python_signed_with_a_nested_signature_member",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "DIqVsEUraNT7Hdaj5UV8ek2Bqu3yabYa4u0X3c9sVeg"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:nested",
+        "attachment": {
+          "kind": "quote",
+          "signature": "a nested member, covered like any other"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "l-ZI4Lo_zA6PQRZvxBim0mAy1ufhvQOSW__LS5dMFuGKFSicSrtx30w0xX26OOst1OgSt67P910_viGjffsBAQ=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "nested_signature_member_altered_after_signing",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "DIqVsEUraNT7Hdaj5UV8ek2Bqu3yabYa4u0X3c9sVeg"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:nested",
+        "attachment": {
+          "kind": "quote",
+          "signature": "altered"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "l-ZI4Lo_zA6PQRZvxBim0mAy1ufhvQOSW__LS5dMFuGKFSicSrtx30w0xX26OOst1OgSt67P910_viGjffsBAQ=="
+        }
+      },
+      "verifies": false
     }
   ]
 }

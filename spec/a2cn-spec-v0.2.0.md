@@ -1855,7 +1855,7 @@ From NEGOTIATING or ACTIVE:
 - → AWAITING_HUMAN_APPROVAL: ApprovalReceipt expires before the paused act is sent or accepted; the session remains paused and requires a fresh ApprovalReceipt
 - → WITHDRAWN: Withdrawal sent or received
 - → TIMED_OUT: session_timeout_seconds elapsed
-- → ERROR: invalid ApprovalReceipt received (wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`)
+- An ApprovalReceipt that fails any Section 14.1 check (for example a wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`) is refused and causes no transition: the session stays in `AWAITING_HUMAN_APPROVAL`
 
 **Terminal states** (COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, ERROR):
 - No further state transitions are valid
@@ -4117,7 +4117,7 @@ SessionReject messages also use this format via the `error_code` and
 | `OFFER_EXPIRED` | 422 | Yes | Acceptance of expired offer attempted |
 | `OFFER_HASH_MISMATCH` | 400 | Yes | Acceptance hash doesn't match offer hash, or an ApprovalReceipt's `scope.offer_hash` is not the paused offer's hash (Section 14.1) |
 | `NOT_IN_AWAITING_HUMAN_APPROVAL` | 409 | Yes | An ApprovalReceipt was posted for a session not awaiting human approval |
-| `APPROVAL_RECEIPT_INVALID` | 400 | Yes | An ApprovalReceipt's decision is not `approve`, or it lacks the session or mandate reference, or its `expires_at` is missing or malformed (Section 14.1) |
+| `APPROVAL_RECEIPT_INVALID` | 400 | Yes | An ApprovalReceipt or its `scope` is not an object, its decision is not `approve`, it lacks the session or mandate reference, its `expires_at` is missing or not in the Section 14.1 form, or it names no approver (Section 14.1) |
 | `APPROVAL_RECEIPT_EXPIRED` | 422 | Yes | The ApprovalReceipt has expired (Section 14.1) |
 | `APPROVAL_RECEIPT_UNSIGNED` | 400 | Yes | The ApprovalReceipt has no well-formed `signature` member (Section 14.1) |
 | `APPROVAL_RECEIPT_KEY_UNRESOLVED` | 400 | Yes | No DID document or usable verification key could be found for the receipt's approver (Section 14.1) |
@@ -4125,6 +4125,7 @@ SessionReject messages also use this format via the `error_code` and
 | `APPROVAL_RECEIPT_SIGNATURE_INVALID` | 400 | Yes | The receipt's signature does not verify against the approver's key (Section 14.1) |
 | `UNAUTHORIZED_APPROVER` | 403 | Yes | The receipt's approver is not authorized by the mandate that required approval (Section 14.1) |
 | `APPROVAL_RECEIPT_SELF_APPROVAL` | 403 | Yes | The receipt's approver is the party whose act is paused, or that party cannot be determined (Section 14.1) |
+| `APPROVAL_RECEIPT_REPLAYED` | 409 | Yes | The ApprovalReceipt already released a pause in this session (Section 14.1) |
 | `SEQUENCE_ERROR` | 422 | Yes | Gap or duplicate in sequence_number |
 | `DID_RESOLUTION_FAILURE` | 503 | No | DID temporarily unresolvable |
 | `DID_NOT_FOUND` | 403 | Yes | DID does not exist (permanent) |
@@ -4647,10 +4648,10 @@ but not read.
 | `scope.offer_hash` | The paused offer's `protocol_act_hash` (Section 7.3.2), the session's `approval_pending_offer_hash`, exactly as A2CN spells it |
 | `references[]` with `type` `"negotiation_session"` | `id` is a string: the session id, optionally prefixed `a2cn:session:` |
 | `references[]` with `type` `"mandate"` | `id` is a string that identifies the mandate that required approval as the compliance export does (Section 10.5). It SHOULD be the mandate's `mandate_hash`, the base64url SHA-256 of the mandate's RFC 8785 form, spelled as `scope.offer_hash` is. The mandate's `mandate_id`, when it has one, is also accepted, and either may be prefixed `a2cn:mandate:` |
-| `approver_did` | The approver, as a DID or a DID URL naming one verification method. `operator_did`, then `signed_by`, are read when it is absent. It MUST be a string |
-| `expires_at` | REQUIRED. An RFC 3339 date-time with an explicit offset (`Z` or `±hh:mm`) |
+| `approver_did` | The approver, as a DID or a DID URL naming one verification method. `operator_did` is read only when `approver_did` is absent, and `signed_by` only when both are absent. The first of these members that is present names the approver and MUST be a non-empty string; if it is not, the receipt names no approver, and a later member is not read |
+| `expires_at` | REQUIRED. One fixed form of RFC 3339 date-time: `YYYY-MM-DDThh:mm:ss`, an optional fraction of one to six digits, then `Z` or `±hh:mm`, with uppercase `T` and `Z`, seconds `00` to `59`, an offset hour `00` to `23`, and a real calendar date from year `0001`. Any other form is refused |
 | `signature` | The signature member defined below |
-| `id` | Recorded as the session's `approval_receipt_id` |
+| `id` | Recorded as the session's `approval_receipt_id` (`approval_receipt_id` is read when `id` is absent or empty) |
 
 **Authorized approvers.** The mandate authorizes the DIDs in its
 `approval_operator_dids`, or, when that is absent or empty, its
@@ -4667,6 +4668,21 @@ is by DID, not by key: a second key under the paused party's own DID is not a
 second approver. If the only approver the mandate authorizes is the paused party,
 the pause cannot be released.
 
+This separation is only as strong as the mandate it is read from. A declared
+mandate (Section 5.3) is supplied by the party it governs, which can name as
+approver a second DID it controls; the verifier sees two DIDs and cannot tell
+that one party holds both. DIDs are also compared as strings: a mandate that
+names an alias of the paused party's DID (for example the same `did:web` host
+spelled differently) is not recognized as naming the paused party.
+
+**A receipt releases at most one pause.** Once a receipt has released a pause in
+a session, it is refused for any later pause in that session
+(`APPROVAL_RECEIPT_REPLAYED`), whether it is presented again unchanged or with
+the same `id` and other content. An approval given for one act therefore cannot
+be reused for another act whose pause happens to name the same offer hash, such
+as an Acceptance of the approved offer. A pause with no recorded offer hash
+cannot be released.
+
 **Signing rule.** The signature covers the RFC 8785 (JCS) form of the receipt
 with its top-level `signature` member removed. A `signature` member nested inside
 the receipt is kept. The signature member is:
@@ -4680,6 +4696,9 @@ the receipt is kept. The signature member is:
 - For `ES256`, `value` is the DER-encoded ECDSA signature over SHA-256 with a low
   `s` (at most half the P-256 group order).
 - A member named `__proto__` is an ordinary member and is covered like any other.
+- The receipt MUST be I-JSON (RFC 7493), as RFC 8785 requires: a receipt holding
+  an unpaired surrogate in any string or member name cannot be signed and does
+  not verify.
 - `value` is base64url, padded or unpadded, and MUST be the canonical encoding of
   the signature bytes.
 
@@ -4687,8 +4706,14 @@ the receipt is kept. The signature member is:
 verification method listed under `assertionMethod` or `authentication` and
 controlled by the approver's DID: its id is under that DID, and its
 `controller`, when stated, is that DID. When `approver_did` is a DID URL, only
-that method is used; otherwise the receipt may be signed by any such method. A
-DID document already resolved for the session is not re-resolved (Section 5.5).
+that method is used; otherwise the receipt may be signed by any such method.
+
+The approver's DID document is resolved for each receipt when that receipt is
+verified, and only after every check above that needs no key has passed. It is
+not kept for later receipts, so a key the approver adds or removes takes effect
+on the next receipt. A document the operator has configured for an approver is
+used as configured. A document that cannot be resolved means the key is
+unresolved, and the receipt is refused.
 
 | Refusal | Error code |
 |---------|------------|
@@ -4698,9 +4723,10 @@ DID document already resolved for the session is not re-resolved (Section 5.5).
 | The signature does not verify against the approver's key | `APPROVAL_RECEIPT_SIGNATURE_INVALID` |
 | The approver is not authorized by the mandate | `UNAUTHORIZED_APPROVER` |
 | The approver is the paused party, or the paused party cannot be determined | `APPROVAL_RECEIPT_SELF_APPROVAL` |
-| Decision not `approve`, `scope` not an object, missing session or mandate reference, or missing or malformed expiry | `APPROVAL_RECEIPT_INVALID` |
+| The receipt already released a pause in this session | `APPROVAL_RECEIPT_REPLAYED` |
+| The receipt or its `scope` is not an object, the decision is not `approve`, the session or mandate reference is missing, the expiry is missing or not in the form above, or the receipt names no approver | `APPROVAL_RECEIPT_INVALID` |
 | Expired at release | `APPROVAL_RECEIPT_EXPIRED` |
-| `scope.offer_hash` is not the paused offer's hash | `OFFER_HASH_MISMATCH` |
+| `scope.offer_hash` is not the paused offer's hash, or no paused offer hash is recorded | `OFFER_HASH_MISMATCH` |
 
 **Relation to Concordia.** The signing rule is Concordia's: the top-level
 signature removal of Concordia SPEC `0.7.0-draft` §9.2 (rule 1), with the
