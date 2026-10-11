@@ -477,6 +477,7 @@ def _receipt(session_id: str, offer: dict, mandate: dict, approver_did: str,
                 "id": hash_object(mandate),
                 "relationship": "fulfills",
             },
+            {"type": "paused_party", "id": INITIATOR_DID, "relationship": "approves"},
         ],
         "approver_did": approver_did,
         "expires_at": "2030-01-01T00:00:00Z",
@@ -806,3 +807,20 @@ async def test_a_non_object_receipt_body_is_refused_cleanly(test_client, initiat
         headers={**init_headers("receipt-non-object"), "Content-Type": "application/a2cn+json"},
     )
     assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_a_did_web_redirect_is_not_followed(test_client, initiator_keypair):
+    # Both implementations follow no redirects when resolving an approver.
+    key, public = generate_ed25519_keypair()
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(DYNAMIC_APPROVER_URL).mock(
+            return_value=httpx.Response(302, headers={"Location": "https://dyn-approver.example/moved/did.json"})
+        )
+        moved = mock.get("https://dyn-approver.example/moved/did.json").mock(
+            return_value=httpx.Response(200, json=make_did_document(DYNAMIC_APPROVER_DID, "key-1", public_key_to_jwk(public)))
+        )
+        session_id, offer, mandate = await _paused_over_http(test_client, initiator_keypair, (DYNAMIC_APPROVER_DID,))
+        r = await _post_receipt(test_client, session_id, _receipt(session_id, offer, mandate, DYNAMIC_APPROVER_DID), key)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "APPROVAL_RECEIPT_KEY_UNRESOLVED"
+    assert moved.call_count == 0

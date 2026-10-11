@@ -514,6 +514,7 @@ function httpReceipt(
         id: hashObject(mandate),
         relationship: "fulfills",
       },
+      { type: "paused_party", id: INITIATOR_DID, relationship: "approves" },
     ],
     approver_did: approverDid,
     expires_at: "2030-01-01T00:00:00Z",
@@ -856,3 +857,26 @@ for (const [label, body] of [
     expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_INVALID");
   });
 }
+
+test("did web resolution follows no redirects and has a timeout", async () => {
+  // Both implementations follow no redirects when resolving an approver; the
+  // TypeScript one asks fetch to refuse them and to give up after a timeout.
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const seen: Array<RequestInit | undefined> = [];
+  fixture.ctx.fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+    seen.push(init);
+    return String(url) === DYNAMIC_APPROVER_URL
+      ? new Response(JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey))), {
+          status: 200,
+        })
+      : new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  seen.length = 0;
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(200);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]?.redirect).toBe("error");
+  expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
+});

@@ -373,6 +373,32 @@ const B64URL_ALPHABET = /^[A-Za-z0-9_-]*$/;
  * (JCS) form of the receipt with its top-level `signature` member removed. A
  * `signature` member nested inside the receipt is kept.
  */
+/**
+ * The deepest nesting an ApprovalReceipt may have (Section 14.1), so both
+ * implementations refuse the same receipts instead of meeting their own limits.
+ */
+export const APPROVAL_RECEIPT_MAX_DEPTH = 64;
+
+/** The nesting depth of a JSON object or array, counted up to `limit`. */
+function nestingDepth(value: unknown, limit = APPROVAL_RECEIPT_MAX_DEPTH + 1): number {
+  let depth = 0;
+  let level: unknown[] = [value];
+  while (level.length > 0 && depth < limit) {
+    depth += 1;
+    const children: unknown[] = [];
+    for (const item of level) {
+      const members = Array.isArray(item) ? item : Object.values(item as Record<string, unknown>);
+      for (const child of members) {
+        if (child !== null && typeof child === "object") {
+          children.push(child);
+        }
+      }
+    }
+    level = children;
+  }
+  return depth;
+}
+
 /** Whether any string or member name in `value` holds an unpaired surrogate. */
 function hasLoneSurrogate(value: unknown): boolean {
   const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
@@ -392,6 +418,9 @@ export function approvalReceiptSigningBytes(receipt: Record<string, unknown>): B
   // Object.fromEntries defines each member as an own property, so a member named
   // "__proto__" stays in the signed bytes instead of setting the prototype.
   const signable = Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature"));
+  if (nestingDepth(signable) > APPROVAL_RECEIPT_MAX_DEPTH) {
+    throw new Error("ApprovalReceipt is nested too deeply");
+  }
   // RFC 8785 input is I-JSON, which has no unpaired surrogates; refuse them
   // rather than sign an escape the Python implementation cannot reproduce.
   if (hasLoneSurrogate(signable)) {

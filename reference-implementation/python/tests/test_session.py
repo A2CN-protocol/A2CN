@@ -760,7 +760,8 @@ def _paused_session(**mandate_extra) -> tuple[SessionManager, Session]:
 
 def _approval_receipt(sess: Session, *, offer_hash=None, approver_did=APPROVER_DID,
                       expires_at="2030-01-01T00:00:00Z", sign_with=APPROVER_PRIVATE_KEY,
-                      mandate_ref="hash", receipt_id="urn:concordia:receipt:test"):
+                      mandate_ref="hash", receipt_id="urn:concordia:receipt:test",
+                      paused_party="auto"):
     receipt = {
         "artifact_type": "ApprovalReceipt",
         "id": receipt_id,
@@ -787,6 +788,13 @@ def _approval_receipt(sess: Session, *, offer_hash=None, approver_did=APPROVER_D
         })
     elif mandate_ref is not None:
         receipt["references"].append({"type": "mandate", "id": mandate_ref, "relationship": "fulfills"})
+    if paused_party == "auto":
+        info = {"initiator": sess.initiator_info, "responder": sess.responder_info}.get(
+            sess.approval_pending_sender_role or ""
+        )
+        paused_party = info.get("did") if info else None
+    if paused_party is not None:
+        receipt["references"].append({"type": "paused_party", "id": paused_party, "relationship": "approves"})
     if expires_at is not None:
         receipt["expires_at"] = expires_at
     if sign_with is not None:
@@ -1353,3 +1361,203 @@ def test_a_receipt_with_an_unpaired_surrogate_cannot_be_signed_or_verified():
     receipt["signature"] = {"alg": "Ed25519", "value": "A" * 86}
     from a2cn.crypto import verify_approval_receipt_signature
     assert verify_approval_receipt_signature(receipt, APPROVER_PUBLIC_KEY) is False
+
+
+# --- A receipt names the party whose act it approves: one party's act, once. ---
+
+def test_a_fresh_receipt_for_the_initiators_offer_does_not_release_the_responders_acceptance():
+    # Shared approver, identically referenced mandates: the two pauses carry the
+    # same offer hash, and only the named paused party tells them apart.
+    mgr, sess, offer = _paused_offer_then_acceptance_sharing_a_mandate_reference()
+    mgr.apply_approval_receipt(sess, _approval_receipt(sess, mandate_ref="a2cn:mandate:group-default"))
+    mgr.process_message(sess, _make_acceptance(sess, offer, msg_id="acc-requires-approval"))
+    for_the_offer = _approval_receipt(
+        sess, mandate_ref="a2cn:mandate:group-default", receipt_id="urn:concordia:receipt:retry",
+        paused_party=INITIATOR_DID,
+    )
+    assert _refused_after_use(mgr, sess, for_the_offer) == "APPROVAL_RECEIPT_INVALID"
+    assert sess._final_acceptance is None
+
+
+def test_a_receipt_that_names_no_paused_party_is_refused():
+    mgr, sess = _paused_session()
+    assert _refused(mgr, sess, _approval_receipt(sess, paused_party=None)) == "APPROVAL_RECEIPT_INVALID"
+
+
+def test_a_receipt_that_names_another_party_as_paused_is_refused():
+    mgr, sess = _paused_session()
+    assert _refused(mgr, sess, _approval_receipt(sess, paused_party=RESPONDER_DID)) == "APPROVAL_RECEIPT_INVALID"
+
+
+def test_a_receipt_that_also_names_another_party_as_paused_is_refused():
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None)
+    receipt["references"].append({"type": "paused_party", "id": RESPONDER_DID, "relationship": "approves"})
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "APPROVAL_RECEIPT_INVALID"
+
+
+# --- Single use, by id or by signed content. ---
+
+def _pause_again(sess: Session, pause: dict) -> None:
+    """Re-enter the same pause, as Section 14.2 allows when a receipt expires before release."""
+    sess.state = SessionState.AWAITING_HUMAN_APPROVAL
+    sess.approval_pending_offer_hash = pause["hash"]
+    sess.approval_pending_mandate = pause["mandate"]
+    sess.approval_pending_sender_role = pause["role"]
+
+
+def _pause_of(sess: Session) -> dict:
+    return {
+        "hash": sess.approval_pending_offer_hash,
+        "mandate": sess.approval_pending_mandate,
+        "role": sess.approval_pending_sender_role,
+    }
+
+
+def _reuse_after_release(build):
+    """Release a pause with a receipt that has no id, pause again, and try `build(receipt)`."""
+    mgr, sess = _paused_session()
+    pause = _pause_of(sess)
+    first = _approval_receipt(sess, sign_with=None)
+    first.pop("id")
+    first["signature"] = sign_approval_receipt(first, APPROVER_PRIVATE_KEY)
+    mgr.apply_approval_receipt(sess, first)
+    _pause_again(sess, pause)
+    return mgr, sess, build(first)
+
+
+def test_a_receipt_without_an_id_is_still_single_use():
+    import copy
+    mgr, sess, again = _reuse_after_release(copy.deepcopy)
+    assert _refused_after_use(mgr, sess, again) == "APPROVAL_RECEIPT_REPLAYED"
+
+
+def test_a_replayed_receipt_with_a_re_padded_signature_is_still_single_use():
+    import copy
+    def re_padded(receipt):
+        again = copy.deepcopy(receipt)
+        again["signature"]["value"] = again["signature"]["value"].rstrip("=")
+        return again
+    mgr, sess, again = _reuse_after_release(re_padded)
+    assert _refused_after_use(mgr, sess, again) == "APPROVAL_RECEIPT_REPLAYED"
+
+
+def test_a_receipt_reusing_an_id_through_approval_receipt_id_is_single_use():
+    mgr, sess = _paused_session()
+    pause = _pause_of(sess)
+    first = _approval_receipt(sess, receipt_id="urn:concordia:receipt:shared")
+    mgr.apply_approval_receipt(sess, first)
+    _pause_again(sess, pause)
+    again = _approval_receipt(sess, sign_with=None, expires_at="2031-01-01T00:00:00Z")
+    again.pop("id")
+    again["approval_receipt_id"] = "urn:concordia:receipt:shared"
+    again["signature"] = sign_approval_receipt(again, APPROVER_PRIVATE_KEY)
+    assert _refused_after_use(mgr, sess, again) == "APPROVAL_RECEIPT_REPLAYED"
+
+
+
+def test_a_pause_with_an_empty_recorded_offer_hash_cannot_be_released():
+    mgr, sess = _paused_session()
+    sess.approval_pending_offer_hash = ""
+    receipt = _approval_receipt(sess, sign_with=None)
+    receipt["scope"]["offer_hash"] = ""
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert _refused(mgr, sess, receipt) == "OFFER_HASH_MISMATCH"
+
+
+def test_a_non_object_receipt_is_refused_by_the_library():
+    mgr, sess = _paused_session()
+    for receipt in ([], "receipt", 5, None):
+        with pytest.raises(A2CNError) as exc_info:
+            mgr.check_approval_receipt(sess, receipt)
+        assert exc_info.value.code == "APPROVAL_RECEIPT_INVALID"
+
+
+# --- expires_at: calendar, offset arithmetic and fractions. ---
+
+@pytest.mark.parametrize("expires_at", ["2100-02-29T00:00:00Z", "2030-01-01T00:00:00+24:00", "2030-01-01T00:00:00-99:00"])
+def test_more_expiry_forms_outside_section_14_1_are_refused(expires_at):
+    mgr, sess = _paused_session()
+    assert _refused(mgr, sess, _approval_receipt(sess, expires_at=expires_at)) == "APPROVAL_RECEIPT_INVALID"
+
+
+def _in_offset(moment, offset_minutes):
+    from datetime import timedelta as _td, timezone as _tz
+    return moment.astimezone(_tz(_td(minutes=offset_minutes))).isoformat(timespec="seconds")
+
+
+@pytest.mark.parametrize("offset_minutes", [330, -540, 1439, -1439])
+def test_expiry_offsets_are_applied_with_the_right_sign(offset_minutes):
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    now = _dt.now(_tz.utc)
+    mgr, sess = _paused_session()
+    ahead = _approval_receipt(sess, expires_at=_in_offset(now + _td(hours=2), offset_minutes))
+    assert mgr.apply_approval_receipt(sess, ahead)["state"] == SessionState.NEGOTIATING
+    mgr, sess = _paused_session()
+    behind = _approval_receipt(sess, expires_at=_in_offset(now - _td(hours=2), offset_minutes))
+    assert _refused(mgr, sess, behind) == "APPROVAL_RECEIPT_EXPIRED"
+
+
+def _clock(monkeypatch, iso):
+    import a2cn.session as session_module
+    from datetime import datetime as _dt
+    fixed = _dt.fromisoformat(iso)
+
+    class FixedClock(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(session_module, "datetime", FixedClock)
+
+
+def test_a_fractional_expiry_is_compared_to_the_millisecond(monkeypatch):
+    _clock(monkeypatch, "2030-01-01T00:00:00.400+00:00")
+    mgr, sess = _paused_session()
+    assert mgr.apply_approval_receipt(sess, _approval_receipt(sess, expires_at="2030-01-01T00:00:00.500Z"))["state"] == (
+        SessionState.NEGOTIATING
+    )
+    _clock(monkeypatch, "2030-01-01T00:00:00.600+00:00")
+    mgr, sess = _paused_session()
+    assert _refused(mgr, sess, _approval_receipt(sess, expires_at="2030-01-01T00:00:00.500Z")) == "APPROVAL_RECEIPT_EXPIRED"
+
+
+def test_expiry_within_the_same_millisecond_is_not_yet_expired(monkeypatch):
+    # Both implementations compare whole milliseconds.
+    _clock(monkeypatch, "2030-01-01T00:00:00.000700+00:00")
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, expires_at="2030-01-01T00:00:00.000400Z")
+    assert mgr.apply_approval_receipt(sess, receipt)["state"] == SessionState.NEGOTIATING
+
+
+# --- Nesting depth. ---
+
+def _nested(depth):
+    value = {}
+    inner = value
+    for _ in range(depth - 1):
+        inner["n"] = {}
+        inner = inner["n"]
+    return value
+
+
+def test_a_receipt_at_the_depth_limit_signs_and_one_deeper_does_not():
+    from a2cn.crypto import verify_approval_receipt_signature
+    at_limit = {"id": "deep", "payload": _nested(63)}   # the receipt object is level 1
+    at_limit["signature"] = sign_approval_receipt(at_limit, APPROVER_PRIVATE_KEY)
+    assert verify_approval_receipt_signature(at_limit, APPROVER_PUBLIC_KEY) is True
+    too_deep = {"id": "deeper", "payload": _nested(64)}
+    with pytest.raises(ValueError):
+        sign_approval_receipt(too_deep, APPROVER_PRIVATE_KEY)
+    too_deep["signature"] = at_limit["signature"]
+    assert verify_approval_receipt_signature(too_deep, APPROVER_PUBLIC_KEY) is False
+
+
+@pytest.mark.parametrize("odd_id", [5, {"a": 1}, ["x"], True])
+def test_a_non_string_receipt_id_is_not_recorded(odd_id):
+    mgr, sess = _paused_session()
+    receipt = _approval_receipt(sess, sign_with=None)
+    receipt["id"] = odd_id
+    receipt["signature"] = sign_approval_receipt(receipt, APPROVER_PRIVATE_KEY)
+    assert mgr.apply_approval_receipt(sess, receipt)["approval_receipt_id"] is None

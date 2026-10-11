@@ -1204,6 +1204,17 @@ export class SessionManager {
       );
     }
 
+    // The receipt names the party whose act it approves, so an approval of one
+    // party's act cannot release the other party's pause on the same offer.
+    if (!receiptNamesPausedParty(receipt, pausedParty)) {
+      throw new A2CNError(
+        "APPROVAL_RECEIPT_INVALID",
+        "ApprovalReceipt must name the party whose act is paused",
+        400,
+        { sessionId: session.session_id },
+      );
+    }
+
     return approverDid;
   }
 
@@ -1218,10 +1229,8 @@ export class SessionManager {
     const approverDid = this.checkApprovalReceipt(session, receipt);
     this.verifyApprovalReceiptSigner(session, receipt, approverDid, approverDidDocument);
 
-    const receiptId = (isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id) as
-      | string
-      | undefined;
-    session.approval_receipt_id = receiptId ?? null;
+    const receiptId = receiptIdOf(receipt);
+    session.approval_receipt_id = receiptId;
     session.approval_receipts.push(receipt);
     if (session._pending_acceptance !== null) {
       const pending = session._pending_acceptance;
@@ -1700,12 +1709,35 @@ export function receiptApprover(receipt: unknown): string | null {
 }
 
 /** Whether this receipt, by its id or its signed content, already released a pause. */
+/** The receipt's id: `id`, else `approval_receipt_id`, when a non-empty string. */
+function receiptIdOf(receipt: Dict): string | null {
+  for (const member of ["id", "approval_receipt_id"]) {
+    const value = ownValue(receipt, member);
+    if (typeof value === "string" && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+/** Whether references[] names the paused party, and names no one else, as paused_party. */
+function receiptNamesPausedParty(receipt: Dict, pausedParty: string): boolean {
+  const references = receipt.references;
+  if (!Array.isArray(references)) {
+    return false;
+  }
+  const named = references
+    .filter((ref) => ref !== null && typeof ref === "object" && !Array.isArray(ref) && (ref as Dict).type === "paused_party")
+    .map((ref) => (ref as Dict).id);
+  return named.length > 0 && named.every((name) => name === pausedParty);
+}
+
 function receiptAlreadyUsed(session: Session, receipt: Dict): boolean {
-  const receiptId = isPythonTruthy(receipt.id) ? receipt.id : receipt.approval_receipt_id;
+  const receiptId = receiptIdOf(receipt);
   const content = receiptContentHash(receipt);
   for (const used of session.approval_receipts as Dict[]) {
-    const usedId = isPythonTruthy(used.id) ? used.id : used.approval_receipt_id;
-    if (typeof receiptId === "string" && receiptId !== "" && usedId === receiptId) {
+    const usedId = receiptIdOf(used);
+    if (receiptId !== null && usedId === receiptId) {
       return true;
     }
     if (content !== null && receiptContentHash(used) === content) {

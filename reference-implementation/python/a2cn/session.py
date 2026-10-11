@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from a2cn.crypto import hash_object, verify_approval_receipt_signature, verify_jws
@@ -1118,7 +1118,7 @@ class SessionManager:
                 400,
                 session_id=session.session_id,
             )
-        if datetime.now(timezone.utc) > expiry:
+        if _epoch_ms(datetime.now(timezone.utc)) > _epoch_ms(expiry):
             raise A2CNError(
                 "APPROVAL_RECEIPT_EXPIRED",
                 "ApprovalReceipt has expired",
@@ -1165,6 +1165,17 @@ class SessionManager:
                 session_id=session.session_id,
             )
 
+        # The receipt names the party whose act it approves, so an approval of
+        # one party's act cannot release the other party's pause on the same
+        # offer.
+        if not _receipt_names_paused_party(receipt, paused_party):
+            raise A2CNError(
+                "APPROVAL_RECEIPT_INVALID",
+                "ApprovalReceipt must name the party whose act is paused",
+                400,
+                session_id=session.session_id,
+            )
+
         return approver_did
 
     def apply_approval_receipt(
@@ -1180,7 +1191,7 @@ class SessionManager:
         approver_did = self.check_approval_receipt(session, receipt)
         self._verify_approval_receipt_signature(session, receipt, approver_did, approver_did_document)
 
-        receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
+        receipt_id = _receipt_id(receipt)
         session.approval_receipt_id = receipt_id
         session.approval_receipts.append(receipt)
         if session._pending_acceptance is not None:
@@ -1645,13 +1656,36 @@ def receipt_approver(receipt: dict) -> str | None:
     return None
 
 
+def _receipt_id(receipt: dict) -> str | None:
+    """The receipt's id: ``id``, else ``approval_receipt_id``, when a non-empty string."""
+    for member in ("id", "approval_receipt_id"):
+        value = receipt.get(member)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _receipt_names_paused_party(receipt: dict, paused_party: str) -> bool:
+    """Whether references[] names the paused party, and names no one else, as paused_party."""
+    references = receipt.get("references", [])
+    if not isinstance(references, list):
+        return False
+    named = [ref.get("id") for ref in references if isinstance(ref, dict) and ref.get("type") == "paused_party"]
+    return bool(named) and all(name == paused_party for name in named)
+
+
+def _epoch_ms(moment: datetime) -> int:
+    """Whole milliseconds since the Unix epoch, as the TypeScript implementation compares."""
+    return (moment - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
+
+
 def _receipt_already_used(session: Session, receipt: dict) -> bool:
     """Whether this receipt, by its id or its signed content, already released a pause."""
-    receipt_id = receipt.get("id") or receipt.get("approval_receipt_id")
+    receipt_id = _receipt_id(receipt)
     content = _receipt_content_hash(receipt)
     for used in session.approval_receipts:
-        used_id = used.get("id") or used.get("approval_receipt_id")
-        if isinstance(receipt_id, str) and receipt_id and used_id == receipt_id:
+        used_id = _receipt_id(used)
+        if receipt_id is not None and used_id == receipt_id:
             return True
         if content is not None and _receipt_content_hash(used) == content:
             return True

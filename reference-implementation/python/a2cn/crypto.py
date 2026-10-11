@@ -351,13 +351,35 @@ def verify_invitation_signature(invitation_dict: dict, public_key: SigningPublic
 _P256_ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
 
 
+# The deepest nesting an ApprovalReceipt may have (Section 14.1), so both
+# implementations refuse the same receipts instead of meeting their own limits.
+APPROVAL_RECEIPT_MAX_DEPTH = 64
+
+
 def approval_receipt_signing_bytes(receipt: dict) -> bytes:
     """The bytes an ApprovalReceipt signature covers (Section 14.1).
 
     The RFC 8785 (JCS) form of the receipt with its top-level ``signature``
     member removed. A ``signature`` member nested inside the receipt is kept.
+    A receipt nested deeper than ``APPROVAL_RECEIPT_MAX_DEPTH`` is refused.
     """
-    return canonicalize({k: v for k, v in receipt.items() if k != "signature"})
+    signable = {k: v for k, v in receipt.items() if k != "signature"}
+    if _nesting_depth(signable) > APPROVAL_RECEIPT_MAX_DEPTH:
+        raise ValueError("ApprovalReceipt is nested too deeply")
+    return canonicalize(signable)
+
+
+def _nesting_depth(value: Any, limit: int = APPROVAL_RECEIPT_MAX_DEPTH + 1) -> int:
+    """The nesting depth of a JSON object or array, counted up to ``limit``."""
+    depth, level = 0, [value]
+    while level and depth < limit:
+        depth += 1
+        children = []
+        for item in level:
+            members = item.values() if isinstance(item, dict) else item
+            children.extend(child for child in members if isinstance(child, (dict, list)))
+        level = children
+    return depth
 
 
 def _strict_b64url_decode(value: str) -> bytes | None:

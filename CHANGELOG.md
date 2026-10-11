@@ -45,7 +45,14 @@ This project is pre-1.0: the minor version moves for substantive additions.
   approver adds or removes takes effect on the next receipt. `expires_at` has one
   exact form in both implementations, a present approver member must be a
   non-empty string, a non-object request body is refused with a 400, and an
-  invalid receipt leaves the session paused (Section 8 now says so too). Section 14.1 states the signing
+  invalid receipt leaves the session paused (Section 8 now says so too).
+  A receipt must also name, in `references[]`, the party whose act it approves:
+  a receipt approves one party's act, on one offer, in one session, once.
+  Resolving an approver follows no HTTP redirect in either implementation, and
+  times out after five seconds in both. A receipt nested more than 64 levels
+  deep is refused in both, expiry is compared to the millisecond in both, only a
+  non-empty string is recorded as a receipt id, and Section 5.5's
+  session-duration key binding is limited to the parties' act keys. Section 14.1 states the signing
   rule, the fields read and the Concordia version followed, and its example is a
   signed receipt that both implementations verify. A shared test vector checks
   that receipts signed in either language verify in both. Approval systems that

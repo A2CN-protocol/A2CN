@@ -9,7 +9,10 @@
 
 import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
 
-export type FetchLike = (url: string) => Promise<{
+export type FetchLike = (
+  url: string,
+  init?: { redirect?: "error" | "follow" | "manual"; signal?: AbortSignal },
+) => Promise<{
   ok: boolean;
   status: number;
   json(): Promise<unknown>;
@@ -27,7 +30,9 @@ export async function resolveDidWeb(
   fetchFn: FetchLike = fetch,
 ): Promise<Record<string, unknown>> {
   const url = didWebToUrl(did);
-  const response = await fetchFn(url);
+  // Follow no redirects and give up after five seconds, as the Python
+  // implementation's HTTP client does, so both resolve the same documents.
+  const response = await fetchFn(url, { redirect: "error", signal: AbortSignal.timeout(5000) });
   if (!response.ok) {
     throw new Error(`Failed to fetch DID document: HTTP ${response.status}`);
   }

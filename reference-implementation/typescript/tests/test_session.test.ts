@@ -1,7 +1,7 @@
 /** Tests for a2cn/session — state machine, turn-taking, idempotency. */
 
 import { randomUUID, type KeyObject } from "node:crypto";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { Session, SessionManager, SessionState, A2CNError } from "../src/a2cn/session.js";
 import {
@@ -768,6 +768,7 @@ function approvalReceipt(
     signWith = APPROVER_PRIVATE_KEY as KeyObject | null,
     mandateRef = "hash" as string | null,
     receiptId = "urn:concordia:receipt:test",
+    pausedParty = "auto" as string | null,
   }: {
     offerHash?: string;
     approverDid?: string;
@@ -775,6 +776,7 @@ function approvalReceipt(
     signWith?: KeyObject | null;
     mandateRef?: string | null;
     receiptId?: string;
+    pausedParty?: string | null;
   } = {},
 ): Dict {
   const references: Dict[] = [
@@ -805,6 +807,15 @@ function approvalReceipt(
     references,
     approver_did: approverDid,
   };
+  let named = pausedParty;
+  if (named === "auto") {
+    const role = sess.approval_pending_sender_role;
+    const info = role === "initiator" ? sess.initiator_info : role === "responder" ? sess.responder_info : null;
+    named = info ? ((info as Dict).did as string) : null;
+  }
+  if (named !== null) {
+    references.push({ type: "paused_party", id: named, relationship: "approves" });
+  }
   if (expiresAt !== null) {
     receipt.expires_at = expiresAt;
   }
@@ -1398,3 +1409,220 @@ test("a receipt with an unpaired surrogate cannot be signed or verified", () => 
   receipt.signature = { alg: "Ed25519", value: "A".repeat(86) };
   expect(verifyApprovalReceiptSignature(receipt, APPROVER_PUBLIC_KEY)).toBe(false);
 });
+
+// --- A receipt names the party whose act it approves (one party's act, once). ---
+
+test("a fresh receipt for the initiators offer does not release the responders acceptance", () => {
+  // Shared approver, identically referenced mandates: the two pauses carry the
+  // same offer hash, and only the named paused party tells them apart.
+  const [mgr, sess, offer] = pausedOfferThenAcceptanceSharingAMandateReference();
+  mgr.applyApprovalReceipt(sess, approvalReceipt(sess, { mandateRef: "a2cn:mandate:group-default" }));
+  mgr.processMessage(sess, makeAcceptance(sess, offer, "acc-requires-approval"));
+  const forTheOffer = approvalReceipt(sess, {
+    mandateRef: "a2cn:mandate:group-default",
+    receiptId: "urn:concordia:receipt:retry",
+    pausedParty: INITIATOR_DID,
+  });
+  expect(refusedAfterUse(mgr, sess, forTheOffer)).toBe("APPROVAL_RECEIPT_INVALID");
+  expect(sess._final_acceptance).toBeNull();
+});
+
+test("a receipt that names no paused party is refused", () => {
+  const [mgr, sess] = pausedSession();
+  expect(refused(mgr, sess, approvalReceipt(sess, { pausedParty: null }))).toBe("APPROVAL_RECEIPT_INVALID");
+});
+
+test("a receipt that names another party as paused is refused", () => {
+  const [mgr, sess] = pausedSession();
+  expect(refused(mgr, sess, approvalReceipt(sess, { pausedParty: RESPONDER_DID }))).toBe("APPROVAL_RECEIPT_INVALID");
+});
+
+test("a receipt that also names another party as paused is refused", () => {
+  const [mgr, sess] = pausedSession();
+  const receipt = approvalReceipt(sess, { signWith: null });
+  (receipt.references as Dict[]).push({ type: "paused_party", id: RESPONDER_DID, relationship: "approves" });
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(refused(mgr, sess, receipt)).toBe("APPROVAL_RECEIPT_INVALID");
+});
+
+// --- Single use, by id or by signed content. ---
+
+function pauseOf(sess: Session): Dict {
+  return {
+    hash: sess.approval_pending_offer_hash,
+    mandate: sess.approval_pending_mandate,
+    role: sess.approval_pending_sender_role,
+  };
+}
+
+/** Re-enter the same pause, as Section 14.2 allows when a receipt expires before release. */
+function pauseAgain(sess: Session, pause: Dict): void {
+  sess.state = SessionState.AWAITING_HUMAN_APPROVAL;
+  sess.approval_pending_offer_hash = pause.hash as string;
+  sess.approval_pending_mandate = pause.mandate as Dict;
+  sess.approval_pending_sender_role = pause.role as string;
+}
+
+function reuseAfterRelease(build: (receipt: Dict) => Dict): [SessionManager, Session, Dict] {
+  const [mgr, sess] = pausedSession();
+  const pause = pauseOf(sess);
+  const first = approvalReceipt(sess, { signWith: null });
+  delete first.id;
+  first.signature = signApprovalReceipt(first, APPROVER_PRIVATE_KEY);
+  mgr.applyApprovalReceipt(sess, first);
+  pauseAgain(sess, pause);
+  return [mgr, sess, build(first)];
+}
+
+test("a receipt without an id is still single use", () => {
+  const [mgr, sess, again] = reuseAfterRelease((r) => structuredClone(r));
+  expect(refusedAfterUse(mgr, sess, again)).toBe("APPROVAL_RECEIPT_REPLAYED");
+});
+
+test("a replayed receipt with a re padded signature is still single use", () => {
+  const [mgr, sess, again] = reuseAfterRelease((r) => {
+    const copy = structuredClone(r);
+    (copy.signature as Dict).value = ((copy.signature as Dict).value as string).replace(/=+$/, "");
+    return copy;
+  });
+  expect(refusedAfterUse(mgr, sess, again)).toBe("APPROVAL_RECEIPT_REPLAYED");
+});
+
+test("a receipt reusing an id through approval_receipt_id is single use", () => {
+  const [mgr, sess] = pausedSession();
+  const pause = pauseOf(sess);
+  mgr.applyApprovalReceipt(sess, approvalReceipt(sess, { receiptId: "urn:concordia:receipt:shared" }));
+  pauseAgain(sess, pause);
+  const again = approvalReceipt(sess, { signWith: null, expiresAt: "2031-01-01T00:00:00Z" });
+  delete again.id;
+  again.approval_receipt_id = "urn:concordia:receipt:shared";
+  again.signature = signApprovalReceipt(again, APPROVER_PRIVATE_KEY);
+  expect(refusedAfterUse(mgr, sess, again)).toBe("APPROVAL_RECEIPT_REPLAYED");
+});
+
+test("a pause with an empty recorded offer hash cannot be released", () => {
+  const [mgr, sess] = pausedSession();
+  sess.approval_pending_offer_hash = "";
+  const receipt = approvalReceipt(sess, { signWith: null });
+  (receipt.scope as Dict).offer_hash = "";
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+  expect(refused(mgr, sess, receipt)).toBe("OFFER_HASH_MISMATCH");
+});
+
+test("a non object receipt is refused by the library", () => {
+  const [mgr, sess] = pausedSession();
+  for (const receipt of [[], "receipt", 5, null]) {
+    const exc = expectA2CNError(() => mgr.checkApprovalReceipt(sess, receipt as unknown as Dict));
+    expect(exc.code).toBe("APPROVAL_RECEIPT_INVALID");
+  }
+});
+
+// --- expires_at: calendar, offset arithmetic and fractions. ---
+
+for (const expiresAt of ["2100-02-29T00:00:00Z", "2030-01-01T00:00:00+24:00", "2030-01-01T00:00:00-99:00"]) {
+  test(`more expiry forms outside section 14.1 are refused: ${expiresAt}`, () => {
+    const [mgr, sess] = pausedSession();
+    expect(refused(mgr, sess, approvalReceipt(sess, { expiresAt }))).toBe("APPROVAL_RECEIPT_INVALID");
+  });
+}
+
+/** `ms` written as a date-time in the given offset, to the second. */
+function inOffset(ms: number, offsetMinutes: number): string {
+  const local = new Date(Math.floor(ms / 1000) * 1000 + offsetMinutes * 60_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const sign = offsetMinutes < 0 ? "-" : "+";
+  const abs = Math.abs(offsetMinutes);
+  return (
+    `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}` +
+    `T${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  );
+}
+
+for (const offsetMinutes of [330, -540, 1439, -1439]) {
+  test(`expiry offsets are applied with the right sign: ${offsetMinutes}`, () => {
+    const now = Date.now();
+    let [mgr, sess] = pausedSession();
+    const ahead = approvalReceipt(sess, { expiresAt: inOffset(now + 2 * 3_600_000, offsetMinutes) });
+    expect(mgr.applyApprovalReceipt(sess, ahead).state).toBe(SessionState.NEGOTIATING);
+    [mgr, sess] = pausedSession();
+    const behind = approvalReceipt(sess, { expiresAt: inOffset(now - 2 * 3_600_000, offsetMinutes) });
+    expect(refused(mgr, sess, behind)).toBe("APPROVAL_RECEIPT_EXPIRED");
+  });
+}
+
+test("a fractional expiry is compared to the millisecond", () => {
+  const clock = vi.spyOn(Date, "now");
+  try {
+    clock.mockReturnValue(Date.parse("2030-01-01T00:00:00.400Z"));
+    let [mgr, sess] = pausedSession();
+    expect(mgr.applyApprovalReceipt(sess, approvalReceipt(sess, { expiresAt: "2030-01-01T00:00:00.500Z" })).state).toBe(
+      SessionState.NEGOTIATING,
+    );
+    clock.mockReturnValue(Date.parse("2030-01-01T00:00:00.600Z"));
+    [mgr, sess] = pausedSession();
+    expect(refused(mgr, sess, approvalReceipt(sess, { expiresAt: "2030-01-01T00:00:00.500Z" }))).toBe(
+      "APPROVAL_RECEIPT_EXPIRED",
+    );
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test("expiry within the same millisecond is not yet expired", () => {
+  // Both implementations compare whole milliseconds.
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2030-01-01T00:00:00.000Z"));
+  try {
+    const [mgr, sess] = pausedSession();
+    const receipt = approvalReceipt(sess, { expiresAt: "2030-01-01T00:00:00.000400Z" });
+    expect(mgr.applyApprovalReceipt(sess, receipt).state).toBe(SessionState.NEGOTIATING);
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+// --- Nesting depth, and unpaired surrogates anywhere. ---
+
+function nested(depth: number): Dict {
+  const value: Dict = {};
+  let inner = value;
+  for (let i = 1; i < depth; i++) {
+    inner.n = {};
+    inner = inner.n as Dict;
+  }
+  return value;
+}
+
+test("a receipt at the depth limit signs and one deeper does not", () => {
+  const atLimit: Dict = { id: "deep", payload: nested(63) }; // the receipt object is level 1
+  atLimit.signature = signApprovalReceipt(atLimit, APPROVER_PRIVATE_KEY);
+  expect(verifyApprovalReceiptSignature(atLimit, APPROVER_PUBLIC_KEY)).toBe(true);
+  const tooDeep: Dict = { id: "deeper", payload: nested(64) };
+  expect(() => signApprovalReceipt(tooDeep, APPROVER_PRIVATE_KEY)).toThrow();
+  tooDeep.signature = atLimit.signature;
+  expect(verifyApprovalReceiptSignature(tooDeep, APPROVER_PUBLIC_KEY)).toBe(false);
+});
+
+for (const [label, receipt] of [
+  ["lone low surrogate", { id: "x", note: "\udc00" }],
+  ["surrogate in a member name", { id: "x", ["\ud800key"]: 1 }],
+] as const) {
+  test(`unpaired surrogates are refused anywhere: ${label}`, () => {
+    expect(() => signApprovalReceipt({ ...receipt }, APPROVER_PRIVATE_KEY)).toThrow();
+  });
+}
+
+for (const [label, oddId] of [
+  ["number", 5],
+  ["object", { a: 1 }],
+  ["array", ["x"]],
+  ["boolean", true],
+] as const) {
+  test(`a non string receipt id is not recorded: ${label}`, () => {
+    const [mgr, sess] = pausedSession();
+    const receipt = approvalReceipt(sess, { signWith: null });
+    receipt.id = oddId;
+    receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+    expect(mgr.applyApprovalReceipt(sess, receipt).approval_receipt_id).toBeNull();
+  });
+}
