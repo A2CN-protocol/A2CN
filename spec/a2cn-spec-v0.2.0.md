@@ -2234,6 +2234,22 @@ Any party verifying a transaction record MUST:
      `terms.basis` (Section 7.2), so an older genuine record may legitimately
      differ, and a verifier must not begin rejecting records that verified
      before.
+9. Verify that `agreed_terms` satisfies Section 7.2's money encoding exactly as
+   an offer's `terms` must. Its `currency` is one whose minor-unit exponent the
+   verifier can establish to be 2, whether or not the terms carry line items.
+   `agreed_terms.line_items`, when present, is an
+   array; every entry is an object carrying `unit_price_minor` and
+   `total_minor`, each an integer number of minor units within ±(2^53 − 1),
+   and neither of the bare names `unit_price` or `total`; and a `quantity`, when
+   present, is a non-negative integer. An amount is an integer by value, not by
+   spelling, so `36000.0` is the integer `36000`. A line item is not otherwise
+   closed: the extension fields of a deal type (Section 18) are admitted.
+
+   A verifier applies these rules itself. It MUST NOT rely on the producer
+   having checked the offer: a producer that signed bare-name or major-unit line
+   items directly would otherwise obtain a record whose hashes and signatures are all
+   genuine, and a reader of it could misread every agreed price by a factor of
+   one hundred.
 
 Both sides of a `"0.4"` record are recomputable from the record alone, each from
 its own stored fields. The offering party's signature covers the protocol act

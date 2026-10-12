@@ -59,6 +59,17 @@ This project is pre-1.0: the minor version moves for substantive additions.
   signed receipt that both implementations verify. A shared test vector checks
   that receipts signed in either language verify in both. Approval systems that
   issue receipts must sign them as Section 14.1 describes.
+- **Record verification holds agreed terms to Section 7.2's money encoding
+  (Section 9.5, step 9).** Both verifiers now refuse a TransactionRecord whose
+  `agreed_terms.line_items` states money under the bare `unit_price` / `total`
+  names, omits `unit_price_minor` or `total_minor`, or gives either as anything
+  other than an integer number of minor units, or whose currency is not one the
+  implementation can state minor amounts in, with the new reason
+  `LINE_ITEMS_INVALID`. The verifier applies the rule itself rather than
+  relying on the producer having checked the offer, using the same checks as
+  the offer path. Deal-type extension fields on a line item are still admitted, and
+  a whole-number float such as `36000.0` is still an integer. A shared test
+  vector of re-signed records gives both implementations the same verdicts.
 
 ### Changed
 

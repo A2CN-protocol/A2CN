@@ -320,3 +320,29 @@ export function lineItemKeyViolations(lineItem: unknown): string[] {
   }
   return violations;
 }
+
+/**
+ * Why `terms.line_items` breaks Section 7.2, or null when it does not.
+ *
+ * `line_items` is OPTIONAL; where present it is an array, and every entry
+ * passes `lineItemKeyViolations`. The first offending line is reported, in the
+ * words the offer path refuses it with. Both the offer path
+ * (`checkOfferLineItems`) and record verification (Section 9.5) call this, so
+ * the rule exists once.
+ */
+export function termsLineItemViolation(terms: unknown): string | null {
+  if (!isObject(terms) || !Object.prototype.hasOwnProperty.call(terms, "line_items")) {
+    return null;
+  }
+  const lineItems = terms.line_items;
+  if (!Array.isArray(lineItems)) {
+    return "terms.line_items must be an array";
+  }
+  for (const [index, lineItem] of lineItems.entries()) {
+    const violations = lineItemKeyViolations(lineItem);
+    if (violations.length > 0) {
+      return `terms.line_items[${index}] ${violations.join("; ")}`;
+    }
+  }
+  return null;
+}

@@ -276,3 +276,24 @@ def line_item_key_violations(line_item: Any) -> list[str]:
                 "price, not a negative count (Section 7.2)"
             )
     return violations
+
+
+def terms_line_item_violation(terms: Any) -> str | None:
+    """Why ``terms.line_items`` breaks Section 7.2, or ``None`` when it does not.
+
+    ``line_items`` is OPTIONAL; where present it is an array, and every entry
+    passes :func:`line_item_key_violations`. The first offending line is
+    reported, in the words the offer path refuses it with. Both the offer path
+    (``check_offer_line_items``) and record verification (Section 9.5) call
+    this, so the rule exists once.
+    """
+    if not isinstance(terms, dict) or "line_items" not in terms:
+        return None
+    line_items = terms["line_items"]
+    if not isinstance(line_items, list):
+        return "terms.line_items must be an array"
+    for index, line_item in enumerate(line_items):
+        violations = line_item_key_violations(line_item)
+        if violations:
+            return f"terms.line_items[{index}] {'; '.join(violations)}"
+    return None

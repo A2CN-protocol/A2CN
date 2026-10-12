@@ -236,6 +236,22 @@ because a verifier refuses them at the version check long before a signature is
 examined, which is exactly what they exist to demonstrate. Re-signing them with
 today's key would make them verify, which is the opposite of their purpose.
 
+`transaction-record-line-items.json` covers Section 9.5 step 9, which holds a
+record's `agreed_terms` to Section 7.2's money encoding. Each case is
+`transaction-record-basis.json`'s bound record with `agreed_terms.line_items` set
+as the case says, in some cases with the record and its terms in another
+currency, and both acts re-signed with that vector's test-only keys, so
+the record hash, the act hash, the offer chain and both signatures are genuine.
+Verified with the vector's `did_documents` and the case's `offer_hashes`, each
+record must reach the case's verdict and `expected_reason` (`null` when it
+verifies) in both suites. The refused cases include bare `unit_price` / `total`
+in major units, a bare name beside the pinned keys, an omitted or fractional or
+textual amount, one past 2^53 − 1, a negative quantity, a bad second line, and a
+`line_items` that is not an array, and a currency this build cannot state
+minor amounts in, with line items and without. The controls show that a line item stays open
+to deal-type extension fields and that a whole-number float such as
+`100000.0` is an integer amount.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

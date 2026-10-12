@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).parents[3]
 VECTORS = REPO_ROOT / "spec" / "test-vectors"
 VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
+LINE_ITEMS = json.loads((VECTORS / "transaction-record-line-items.json").read_text())
 # Each artifact versions its own shape, so the TransactionRecord's set is its own.
 TR_VERSIONS = RECORD_VERSIONS["transaction_record"]
 WITHOUT_BASIS = VECTOR["without_basis"]
@@ -347,5 +348,14 @@ def test_every_reason_code_is_reachable():
     reach is either a missing test or a lie in the taxonomy.
     """
     observed = {_verdict(_mutated(case))[1] for case in REASON_API["cases"]}
+    # A line-item refusal needs terms a producer signed itself, so its cases
+    # live in their own vector of re-signed records rather than as a mutation.
+    observed |= {
+        verify_transaction_record_reason(
+            case["record"], LINE_ITEMS["did_documents"], case["offer_hashes"]
+        )
+        for case in LINE_ITEMS["cases"]
+        if not case["verifies"]
+    }
 
     assert observed == ALL_REASON_CODES

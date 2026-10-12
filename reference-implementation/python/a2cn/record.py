@@ -17,6 +17,7 @@ from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     _is_act_integer,
     negotiated_protocol_version,
@@ -59,13 +60,17 @@ ACCEPTED_TRANSACTION_RECORD_VERSIONS = (TRANSACTION_RECORD_VERSION_SIGNED_ACCEPT
 # Why a record failed (Section 9.5). verify_transaction_record returns a bool;
 # verify_transaction_record_reason returns one of these, or None when the record
 # verifies. A version this implementation knows but cannot rebind is reported as
-# unbound, distinct from a value that is no version at all.
+# unbound, distinct from a value that is no version at all. A record whose
+# agreed_terms break Section 7.2's money encoding is refused here too
+# (Section 9.5, step 9): the verifier applies the rule itself rather than
+# trusting that the producer checked the offer.
 REASON_UNRECOGNIZED_RECORD_VERSION = "UNRECOGNIZED_RECORD_VERSION"
 REASON_UNBOUND_RECORD_VERSION = "UNBOUND_RECORD_VERSION"
 REASON_RECORD_HASH_MISMATCH = "RECORD_HASH_MISMATCH"
 REASON_ACT_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE"
 REASON_BASIS_MISMATCH = "BASIS_MISMATCH"
 REASON_CURRENCY_MISMATCH = "CURRENCY_MISMATCH"
+REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID"
 REASON_ACCEPTED_HASH_MISMATCH = "ACCEPTED_HASH_MISMATCH"
 REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH"
 REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID"
@@ -417,6 +422,23 @@ def _record_currency_matches(record: dict) -> bool:
     )
 
 
+def _record_line_items_hold(record: dict) -> bool:
+    """Section 9.5 step 9: agreed_terms meets Section 7.2's money encoding.
+
+    The same two checks the offer path makes, applied to the signed terms: the
+    currency must be one this build can state minor amounts in, whether or not
+    there are line items, and every line item states its money under the
+    pinned keys. Step 8 has already held agreed_terms.currency equal to the
+    record's currency. The verifier makes these checks itself rather than
+    trusting that the producer checked the offer.
+    """
+    agreed_terms = record["agreed_terms"]
+    return (
+        session_currency_is_supported(agreed_terms.get("currency"))
+        and terms_line_item_violation(agreed_terms) is None
+    )
+
+
 def verify_transaction_record(
     record: dict,
     did_resolver: Mapping[str, dict] | Callable[[str], dict],
@@ -473,6 +495,9 @@ def verify_transaction_record_reason(
 
         if not _record_currency_matches(record):
             return REASON_CURRENCY_MISMATCH
+
+        if not _record_line_items_hold(record):
+            return REASON_LINE_ITEMS_INVALID
 
         if accepted_hash != offer_hash:
             return REASON_ACCEPTED_HASH_MISMATCH

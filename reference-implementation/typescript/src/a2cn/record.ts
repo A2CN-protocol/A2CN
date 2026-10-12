@@ -18,6 +18,7 @@ import {
   InvalidSignatureError,
 } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
+import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
   isActInteger,
@@ -85,13 +86,17 @@ export const ACCEPTED_TRANSACTION_RECORD_VERSIONS: readonly string[] = [
 // Why a record failed (Section 9.5). verifyTransactionRecord returns a boolean;
 // verifyTransactionRecordReason returns one of these, or null when the record
 // verifies. A version this implementation knows but cannot rebind is reported as
-// unbound, distinct from a value that is no version at all.
+// unbound, distinct from a value that is no version at all. A record whose
+// agreed_terms break Section 7.2's money encoding is refused here too
+// (Section 9.5, step 9): the verifier applies the rule itself rather than
+// trusting that the producer checked the offer.
 export const REASON_UNRECOGNIZED_RECORD_VERSION = "UNRECOGNIZED_RECORD_VERSION";
 export const REASON_UNBOUND_RECORD_VERSION = "UNBOUND_RECORD_VERSION";
 export const REASON_RECORD_HASH_MISMATCH = "RECORD_HASH_MISMATCH";
 export const REASON_ACT_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE";
 export const REASON_BASIS_MISMATCH = "BASIS_MISMATCH";
 export const REASON_CURRENCY_MISMATCH = "CURRENCY_MISMATCH";
+export const REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID";
 export const REASON_ACCEPTED_HASH_MISMATCH = "ACCEPTED_HASH_MISMATCH";
 export const REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH";
 export const REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID";
@@ -533,6 +538,10 @@ export function verifyTransactionRecordReason(
       return REASON_CURRENCY_MISMATCH;
     }
 
+    if (!recordLineItemsHold(record)) {
+      return REASON_LINE_ITEMS_INVALID;
+    }
+
     if (acceptedHash !== offerHash) {
       return REASON_ACCEPTED_HASH_MISMATCH;
     }
@@ -570,6 +579,24 @@ export function verifyTransactionRecordReason(
   } catch {
     return REASON_MALFORMED_RECORD;
   }
+}
+
+/**
+ * Section 9.5 step 9: agreed_terms meets Section 7.2's money encoding.
+ *
+ * The same two checks the offer path makes, applied to the signed terms: the
+ * currency must be one this build can state minor amounts in, whether or not
+ * there are line items, and every line item states its money under the pinned
+ * keys. Step 8 has already held agreed_terms.currency equal to the record's
+ * currency. The verifier makes these checks itself rather than trusting that
+ * the producer checked the offer.
+ */
+function recordLineItemsHold(record: Dict): boolean {
+  const agreedTerms = record.agreed_terms as Dict;
+  return (
+    sessionCurrencyIsSupported(agreedTerms.currency) &&
+    termsLineItemViolation(agreedTerms) === null
+  );
 }
 
 function recordHashMatches(record: Dict): boolean {

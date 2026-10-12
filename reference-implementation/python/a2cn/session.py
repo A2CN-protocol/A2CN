@@ -21,8 +21,8 @@ from a2cn.did import get_public_key, get_verification_method
 from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
 from a2cn.line_items import (
     SUPPORTED_SESSION_CURRENCIES,
-    line_item_key_violations,
     session_currency_is_supported,
+    terms_line_item_violation,
 )
 from a2cn.messages import (
     ESTABLISHMENT_WIRE_VERSIONS,
@@ -274,23 +274,15 @@ def check_offer_line_items(
     (Section 12.3), and the message names the line and the key, so a sender can
     fix the one field rather than resend the whole offer blind.
     """
-    if not isinstance(terms, dict) or "line_items" not in terms:
-        return
-    context = {"session_id": session_id, "message_id": message_id}
-    line_items = terms["line_items"]
-    if not isinstance(line_items, list):
+    violation = terms_line_item_violation(terms)
+    if violation is not None:
         raise A2CNError(
-            "INVALID_LINE_ITEM", "terms.line_items must be an array", 400, **context
+            "INVALID_LINE_ITEM",
+            violation,
+            400,
+            session_id=session_id,
+            message_id=message_id,
         )
-    for index, line_item in enumerate(line_items):
-        violations = line_item_key_violations(line_item)
-        if violations:
-            raise A2CNError(
-                "INVALID_LINE_ITEM",
-                f"terms.line_items[{index}] {'; '.join(violations)}",
-                400,
-                **context,
-            )
 
 
 def check_offer_money_params(

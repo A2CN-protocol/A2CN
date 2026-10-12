@@ -356,6 +356,20 @@ test("every reason code is reachable", () => {
   // returned false instead. A code no case can reach is either a missing test
   // or a lie in the taxonomy.
   const observed = new Set(REASON_CASES.map((c) => verdict(mutated(c))[1]));
+  // A line-item refusal needs terms a producer signed itself, so its cases live
+  // in their own vector of re-signed records rather than as a mutation.
+  const lineItems = readJson("spec", "test-vectors", "transaction-record-line-items.json");
+  for (const c of lineItems.cases as Dict[]) {
+    if (!c.verifies) {
+      observed.add(
+        verifyTransactionRecordReason(
+          c.record as Dict,
+          lineItems.did_documents as Record<string, Dict>,
+          c.offer_hashes as string[],
+        ),
+      );
+    }
+  }
 
   expect([...observed].sort()).toEqual([...ALL_REASON_CODES].sort());
 });
