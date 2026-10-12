@@ -986,9 +986,9 @@ def test_validly_signed_approval_receipt_from_an_unauthorised_approver_is_refuse
 
 def test_approver_list_given_as_a_string_authorises_no_one():
     # Membership in a string would be a substring test: "did:web:approver.example"
-    # is inside "did:web:approver.example.attacker". Only a list counts.
+    # is inside "did:web:approver.example.other". Only a list counts.
     mgr, sess = _paused_session(approvers=())
-    sess.approval_pending_mandate["approval_operator_dids"] = f"{APPROVER_DID}.attacker"
+    sess.approval_pending_mandate["approval_operator_dids"] = f"{APPROVER_DID}.other"
     receipt = _approval_receipt(sess)
     assert _refused(mgr, sess, receipt) == "UNAUTHORIZED_APPROVER"
 

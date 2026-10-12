@@ -29,13 +29,14 @@ async def resolve_did_web(
     Resolve a did:web DID to its DID document.
 
     The document must be UTF-8 JSON (an optional UTF-8 byte-order mark is
-    allowed), without NaN or Infinity literals, no larger than
-    ``DID_DOCUMENT_MAX_BYTES``, and fetched within ``timeout`` seconds in total
-    (``DID_RESOLUTION_TIMEOUT_SECONDS`` by default) with no redirect followed.
+    allowed), without NaN or Infinity literals, sent without a content
+    encoding, no larger than ``DID_DOCUMENT_MAX_BYTES``, and fetched within
+    ``timeout`` seconds in total (``DID_RESOLUTION_TIMEOUT_SECONDS`` by
+    default) with no redirect followed.
 
     Raises:
         ValueError: if the DID is not a did:web DID, or the document is too
-            large or not valid UTF-8 JSON
+            large, compressed, or not valid UTF-8 JSON
         httpx.HTTPError: if the DID document cannot be fetched
         TimeoutError: if the fetch does not finish in time
     """
@@ -49,10 +50,16 @@ async def resolve_did_web(
 
 
 async def _fetch_did_document(client: httpx.AsyncClient, url: str):
-    async with client.stream("GET", url, follow_redirects=False) as response:
+    headers = {"Accept-Encoding": "identity"}
+    async with client.stream("GET", url, headers=headers, follow_redirects=False) as response:
         response.raise_for_status()
+        # The size limit counts bytes as sent, so a compressed body is refused
+        # rather than inflated.
+        encoding = response.headers.get("content-encoding", "identity").strip().lower()
+        if encoding != "identity":
+            raise ValueError("DID document is sent with a content encoding")
         body = bytearray()
-        async for chunk in response.aiter_bytes():
+        async for chunk in response.aiter_raw():
             body.extend(chunk)
             if len(body) > DID_DOCUMENT_MAX_BYTES:
                 raise ValueError("DID document is larger than the resolution limit")

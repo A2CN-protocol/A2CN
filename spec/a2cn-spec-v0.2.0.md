@@ -4723,8 +4723,10 @@ The approver's DID document is resolved for each receipt when that receipt is
 verified, and only after every check above that needs no key has passed. It is
 not kept for later receipts, so a key the approver adds or removes takes effect
 on the next receipt. Resolution follows no HTTP redirect, MUST finish within
-five seconds in total (the response body included), and refuses a document
-larger than 64 KiB. The document MUST be UTF-8 JSON, optionally preceded by a
+five seconds in total (the response body included), requests the document
+without a content encoding and refuses one sent with any encoding other than
+`identity`, and refuses a document larger than 64 KiB. The document MUST be
+UTF-8 JSON, optionally preceded by a
 UTF-8 byte-order mark, without `NaN` or `Infinity` literals. A document the
 operator has configured for an approver is used as configured. A document that cannot be resolved means the key is
 unresolved, and the receipt is refused.

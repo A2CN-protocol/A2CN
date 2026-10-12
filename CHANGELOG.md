@@ -49,8 +49,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
   A receipt must also name, in `references[]`, the party whose act it approves:
   a receipt approves one party's act, on one offer, in one session, once.
   Resolving an approver follows no HTTP redirect, must finish within five
-  seconds in total, refuses a document over 64 KiB, and reads it as strict
-  UTF-8 JSON, identically in both implementations. A receipt nested more than
+  seconds in total, refuses a compressed document or one over 64 KiB, and
+  reads it as strict UTF-8 JSON, identically in both implementations; the
+  same limits apply to every did:web resolution the reference servers make. A receipt nested more than
   64 levels deep, its signature member included, is refused in both, expiry is compared to the millisecond in both, only a
   non-empty string is recorded as a receipt id, and Section 5.5's
   session-duration key binding is limited to the parties' act keys. Section 14.1 states the signing

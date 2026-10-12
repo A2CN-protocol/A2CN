@@ -1016,9 +1016,9 @@ test("validly signed approval receipt from an unauthorised approver is refused",
 
 test("approver list given as a string authorises no one", () => {
   // Membership in a string would be a substring test: "did:web:approver.example"
-  // is inside "did:web:approver.example.attacker". Only a list counts.
+  // is inside "did:web:approver.example.other". Only a list counts.
   const [mgr, sess] = pausedSession([]);
-  (sess.approval_pending_mandate as Dict).approval_operator_dids = `${APPROVER_DID}.attacker`;
+  (sess.approval_pending_mandate as Dict).approval_operator_dids = `${APPROVER_DID}.other`;
   const receipt = approvalReceipt(sess);
   expect(refused(mgr, sess, receipt)).toBe("UNAUTHORIZED_APPROVER");
 });

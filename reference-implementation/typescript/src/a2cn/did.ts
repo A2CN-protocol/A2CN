@@ -11,10 +11,15 @@ import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
 
 export type FetchLike = (
   url: string,
-  init?: { redirect?: "error" | "follow" | "manual"; signal?: AbortSignal },
+  init?: {
+    redirect?: "error" | "follow" | "manual";
+    signal?: AbortSignal;
+    headers?: Record<string, string>;
+  },
 ) => Promise<{
   ok: boolean;
   status: number;
+  headers?: { get(name: string): string | null };
   body?: ReadableStream<Uint8Array> | null;
   json(): Promise<unknown>;
 }>;
@@ -32,14 +37,14 @@ export const DID_DOCUMENT_MAX_BYTES = 65536;
  * Resolve a did:web DID to its DID document.
  *
  * The document must be UTF-8 JSON (an optional UTF-8 byte-order mark is
- * allowed), without NaN or Infinity literals, no larger than
- * DID_DOCUMENT_MAX_BYTES, and fetched within `timeoutMs` in total with no
- * redirect followed.
+ * allowed), without NaN or Infinity literals, sent without a content encoding,
+ * no larger than DID_DOCUMENT_MAX_BYTES, and fetched within `timeoutMs` in
+ * total with no redirect followed.
  *
  * Throws:
  * - Error if the DID is not a did:web DID or cannot be parsed
- * - Error if the DID document cannot be fetched, is too large, or is not
- *   valid UTF-8 JSON, or if the fetch does not finish in time
+ * - Error if the DID document cannot be fetched, is too large, compressed, or
+ *   is not valid UTF-8 JSON, or if the fetch does not finish in time
  */
 export async function resolveDidWeb(
   did: string,
@@ -48,9 +53,20 @@ export async function resolveDidWeb(
 ): Promise<Record<string, unknown>> {
   const url = didWebToUrl(did);
   const signal = AbortSignal.timeout(timeoutMs);
-  const response = await fetchFn(url, { redirect: "error", signal });
+  const response = await fetchFn(url, {
+    redirect: "error",
+    signal,
+    headers: { "Accept-Encoding": "identity" },
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch DID document: HTTP ${response.status}`);
+  }
+  // The size limit counts bytes as sent, so a compressed body is refused
+  // rather than inflated.
+  const encoding = (response.headers?.get("content-encoding") ?? "identity").trim().toLowerCase();
+  if (encoding !== "identity") {
+    await response.body?.cancel();
+    throw new Error("DID document is sent with a content encoding");
   }
   if (!response.body) {
     // A response object without a byte stream: its parsed JSON is all there is.

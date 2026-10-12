@@ -386,6 +386,123 @@
       "verifies": false
     },
     {
+      "name": "es256_der_integer_not_minimal",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEYCIgAAuGYJRtGaVDauIkdyGTvB6blVORvadkLCXrKM3G0kB2ICIGPCPixg4pNOEHoF6qXnXd_m6_dy_h4nQRlw95gqAIi4"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_der_length_not_minimal",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MIFFAiEAuGYJRtGaVDauIkdyGTvB6blVORvadkLCXrKM3G0kB2ICIGPCPixg4pNOEHoF6qXnXd_m6_dy_h4nQRlw95gqAIi4"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_der_trailing_byte",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEUCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIgY8I-LGDik04QegXqpedd3-br93L-HidBGXD3mCoAiLgA"
+        }
+      },
+      "verifies": false
+    },
+    {
       "name": "python_signed_with_a___proto___member",
       "signed_in": "python",
       "public_key_jwk": {
