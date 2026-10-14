@@ -264,6 +264,19 @@ without `total_minor` verifies in the `"0.1"` record and is refused in the
 `"0.5"` one. Verified with the vector's `did_documents`, each record must reach
 the stated verdict in both suites.
 
+`session-evidence-record-external-acceptance.json` covers Section 9A.12
+condition 7 clause (c): an external-channel record must not attest an in-band
+acceptance of terms the responder signed. In every case the responder signed
+`counteroffer-1`. The refused cases edit one unsigned act of a record the
+generator sealed, then reseal it with the test producer key: an acceptance that
+points at the signed counteroffer through `in_reply_to`, one that names it by
+`message_id` inside its `terms`, one that states the signed terms itself, and an
+acceptance of an unsigned copy of the signed terms recorded under a new id. The
+two controls, an acceptance of the initiator's offer and one of the responder's
+unsigned observed counteroffer at another price, verify. Verified with the
+vector's `did_documents`, each record must reach the stated verdict in both
+suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

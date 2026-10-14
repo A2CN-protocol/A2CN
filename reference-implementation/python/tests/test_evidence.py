@@ -122,8 +122,10 @@ def _offer(
     message_id: str = "offer-1",
     timestamp: str = "2026-03-24T10:01:00Z",
     in_reply_to: str | None = None,
+    terms: dict | None = None,
 ) -> dict:
-    terms = {"total_value": 9_500_000, "currency": "USD"}
+    if terms is None:
+        terms = {"total_value": 9_500_000, "currency": "USD"}
     verification_method = INITIATOR_VM if sender_did == INITIATOR_DID else RESPONDER_VM
     private_key = (
         INITIATOR_PRIVATE_KEY if sender_did == INITIATOR_DID else RESPONDER_PRIVATE_KEY

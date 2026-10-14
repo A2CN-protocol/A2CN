@@ -2786,7 +2786,10 @@ version published after this text was written. It then:
     name by its `accepted_protocol_act_hash` or `accepted_offer_id` an Offer or
     Counteroffer the responder signed, and once the responder has signed an act
     every such target MUST resolve exactly to an Offer or Counteroffer in the
-    record; `evidence_level` MUST be `unilateral` or `mixed`
+    record; no act that accepts may accept terms equal to the terms of an Offer
+    or Counteroffer the responder signed, whichever field names them and
+    whether it names the signed act or an unsigned copy (Section 9A.12
+    condition 7, clause (c)); `evidence_level` MUST be `unilateral` or `mixed`
     and never `bilateral`; `producer.did` MUST equal `parties.initiator.did`;
     and at least one act MUST claim `verified_signature` with a `sender_did`
     equal to `parties.initiator.did`. Do not dereference its `locator`. The
@@ -3123,6 +3126,21 @@ following, and a verifier MUST reject it otherwise:
    `offer` or `counteroffer` is named by the `protocol_act_hash` it states and by
    the hash of its signed act rebuilt (Section 7.3.1), which for a verified act
    are the same value.
+
+   A verifier MUST also reject the record when (c) an act that accepts accepts
+   **terms** the responder signed. That is so when its own `terms`, or the
+   `terms` of any `offer` or `counteroffer` in the record that it names, equal
+   the `terms` of an `offer` or `counteroffer` that claims `verified_signature`
+   with a `sender_did` equal to `parties.responder.did`. An act that accepts
+   names a recorded act by its `accepted_protocol_act_hash`, its
+   `accepted_offer_id`, its `in_reply_to`, or any string anywhere inside its
+   `terms`, matched against that act's hashes and `message_id` as above. Two
+   `terms` objects are equal when their content hashes are: SHA-256 over the
+   RFC 8785 canonical form of the whole `terms` object, which is the object an
+   act's protocol act hash covers (Section 7.3.1). Clause (c) is keyed on what is
+   accepted, not on how it is referenced, so neither a reference carried in a
+   field clause (b) does not read nor an unsigned copy of the signed terms
+   recorded under another identifier evades it.
 
 Below `"0.5"` conditions 2 and 3 are narrower, as condition 4 states: they
 require an `observed_party` responder at `unilateral`. That pair is an

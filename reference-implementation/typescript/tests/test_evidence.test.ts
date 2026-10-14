@@ -128,6 +128,7 @@ function makeOffer(
     messageId?: string;
     timestamp?: string;
     inReplyTo?: string | null;
+    terms?: Dict;
   } = {},
 ): Dict {
   const {
@@ -138,8 +139,8 @@ function makeOffer(
     messageId = "offer-1",
     timestamp = "2026-03-24T10:01:00Z",
     inReplyTo = null,
+    terms = { total_value: 9_500_000, currency: "USD" },
   } = options;
-  const terms = { total_value: 9_500_000, currency: "USD" };
   const verificationMethod = senderDid === INITIATOR_DID ? INITIATOR_VM : RESPONDER_VM;
   const privateKey =
     senderDid === INITIATOR_DID ? INITIATOR_PRIVATE_KEY : RESPONDER_PRIVATE_KEY;
@@ -2911,6 +2912,11 @@ function attachTheCounterpartySignature(
   return reseal(record);
 }
 
+// The responder's counter-price. Distinct from the initiator's offer, so an
+// acceptance of that offer accepts terms the responder never signed (the
+// accepted-act rule is keyed on the terms, Section 9A.12).
+const RESPONDER_COUNTER_TERMS = { total_value: 9_400_000, currency: "USD" };
+
 function signedCounteroffer(sessionId: string): Dict {
   return makeOffer(sessionId, {
     senderDid: RESPONDER_DID,
@@ -2919,6 +2925,7 @@ function signedCounteroffer(sessionId: string): Dict {
     messageType: "counteroffer",
     messageId: "counteroffer-1",
     timestamp: "2026-03-24T10:02:00Z",
+    terms: RESPONDER_COUNTER_TERMS,
   });
 }
 
@@ -4209,6 +4216,172 @@ test("an unsigned offer stating no hash resolves by its rebuild", () => {
   expect(verifiedActs(record)).toContainEqual(["counteroffer", RESPONDER_DID]);
   expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
 });
+
+/**
+ * observed beside the responder's signed counteroffer, verifier and generator legs.
+ *
+ * The twin — the same acts with the counteroffer unsigned — verifies, since the
+ * accepted-act rule applies only once the responder has signed. Signing the
+ * counteroffer is then the only change, and both the verifier and the generator
+ * refuse the result through the accepted-act rule.
+ */
+function refusedBesideSignedCounteroffer(
+  session: Session,
+  didDocuments: Record<string, Dict>,
+  observed: Dict[],
+): Dict {
+  const counteroffer = signedCounteroffer(session.session_id);
+  const twin = generateEvidenceWith(
+    session,
+    [unsignedObservationOf(counteroffer), ...observed, orderConfirmation()],
+    { externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE },
+  );
+  expect(verifySessionEvidenceRecord(twin, didDocuments)).toBe(true);
+  const signed = signObservedAct(twin, counteroffer, "protocol_act_signature");
+  expect(verifiedActs(signed)).toContainEqual(["counteroffer", RESPONDER_DID]);
+  expect(assessSessionEvidenceRecord(signed, didDocuments).invalid_acts).toBe(0);
+  expect(() =>
+    generateEvidenceWith(session, [counteroffer, ...observed, orderConfirmation()], {
+      externalCommitmentReference: EXTERNAL_COMMITMENT_REFERENCE,
+    }),
+  ).toThrow(/accepts an offer or counteroffer the responder signed/);
+  return signed;
+}
+
+/** The initiator's acceptance, recorded unsigned, naming the target given. */
+function unsignedAcceptanceOf(targetId: unknown, targetHash: unknown): Dict {
+  const acceptance = acceptanceBy("unused", {
+    acceptedId: "placeholder",
+    acceptedHash: hashObject({ placeholder: true }),
+    roundNumber: 3,
+    sequenceNumber: 4,
+    timestamp: "2026-03-24T10:04:00Z",
+  });
+  const observed = unsignedObservationOf(acceptance);
+  (observed.act as Dict).accepted_protocol_act_hash = targetHash;
+  (observed.act as Dict).accepted_offer_id = targetId;
+  return observed;
+}
+
+for (const spelling of ["padded", "hex", "leading-space"]) {
+  test(`a non-canonical hash is refused even when an unsigned decoy states it [${spelling}]`, () => {
+    // The 43-character base64url requirement is load-bearing, not only defensive.
+    // An unsigned offer with no sender STATES a non-canonical spelling of the
+    // responder-signed counteroffer's hash as its own protocol_act_hash, and the
+    // acceptance names that spelling and the decoy's message_id. The signed-first
+    // check compares exactly, so it does not match; the target resolves to the
+    // decoy, and the id resolves too. Only the canonical-hash requirement refuses
+    // it — without it the record would verify while its acceptance names the
+    // signed act in another encoding.
+    const [session, didDocuments] = mandateOnlySession();
+    const signedHash = signedCounteroffer(session.session_id).protocol_act_hash as string;
+    const decoyHash = hashSpellings(signedHash)[spelling];
+    const decoy = unsignedCounterpartyAct("offer", "decoy-1", {
+      sequenceNumber: 3,
+      roundNumber: 3,
+      timestamp: "2026-03-24T10:03:00Z",
+    });
+    decoy.sender_did = null;
+    (decoy.act as Dict).protocol_act_hash = decoyHash;
+    const acceptance = unsignedAcceptanceOf("decoy-1", decoyHash);
+
+    const record = refusedBesideSignedCounteroffer(session, didDocuments, [decoy, acceptance]);
+
+    expect(decoyHash).not.toBe(signedHash);
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(false);
+  });
+}
+
+/**
+ * The responder's LATER offer as observed unsigned, and the wire hash it was sent
+ * with. The observation states no hash, so it is named by its rebuild; lossy says
+ * how the observation differs from what was sent, which moves the rebuild away
+ * from the wire hash the acceptance names.
+ */
+function lossyObservation(sessionId: string, lossy: string): [Dict, string] {
+  const sent = makeOffer(sessionId, {
+    senderDid: RESPONDER_DID,
+    sequenceNumber: 3,
+    roundNumber: 3,
+    messageType: "counteroffer",
+    messageId: "counteroffer-2",
+    timestamp: "2026-03-24T10:03:00Z",
+  });
+  const act: Dict = {};
+  for (const [field, value] of Object.entries(sent)) {
+    if (
+      !["protocol_act_hash", "protocol_act_signature", "sender_verification_method"].includes(
+        field,
+      )
+    ) {
+      act[field] = value;
+    }
+  }
+  act.protocol_version = PROTOCOL_ACT_VERSION;
+  if (lossy === "omits-expires_at") {
+    delete act.expires_at;
+  } else if (lossy === "alters-terms") {
+    act.terms = { ...(act.terms as Dict), note: "as observed" };
+  }
+  const observed: Dict = {};
+  for (const field of COUNTERPARTY_ENVELOPE) {
+    observed[field] = sent[field];
+  }
+  Object.assign(observed, { sender_did: RESPONDER_DID, source_protocol: "supplier_portal", act });
+  return [observed, sent.protocol_act_hash as string];
+}
+
+for (const target of ["arbitrary-canonical", "omits-expires_at", "alters-terms"]) {
+  test(`an acceptance naming an unrecorded hash is refused once the responder signed [${target}]`, () => {
+    // A canonical hash that names no act in the record is refused (fail-closed).
+    // The acceptance's accepted_offer_id resolves to a recorded offer, so only the
+    // hash is unresolved: an arbitrary canonical digest, or the wire hash of an
+    // offer whose observation dropped a field or recorded different terms, so that
+    // nothing in the record hashes to what was accepted. Once the responder has
+    // signed an act, nothing shows such an acceptance does not accept a signed act
+    // the producer left out.
+    const [session, didDocuments] = mandateOnlySession();
+    let observed: Dict;
+    let targetHash: string;
+    if (target === "arbitrary-canonical") {
+      observed = laterUnsignedOffer();
+      targetHash = hashObject({ an: "act this record does not carry" });
+    } else {
+      [observed, targetHash] = lossyObservation(session.session_id, target);
+    }
+    const acceptance = unsignedAcceptanceOf("counteroffer-2", targetHash);
+
+    const record = refusedBesideSignedCounteroffer(session, didDocuments, [observed, acceptance]);
+
+    expect(targetHash).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(false);
+  });
+}
+
+const ODD_IDS: Record<string, unknown> = {
+  int: 1,
+  null: null,
+  list: ["counteroffer-2"],
+  object: { id: "counteroffer-2" },
+  unrecorded: "offer-not-recorded",
+};
+
+for (const odd of Object.keys(ODD_IDS)) {
+  test(`an odd or unrecorded accepted_offer_id is refused once the responder signed [${odd}]`, () => {
+    // An accepted_offer_id that is not a recorded offer's message_id is refused.
+    // The hash names a recorded unsigned offer, so only the id is unresolved: a
+    // number, null, a list, an object, or a string naming no recorded offer.
+    const [session, didDocuments] = mandateOnlySession();
+    const later = laterUnsignedOffer();
+    const acceptance = unsignedAcceptanceOf(ODD_IDS[odd], (later.act as Dict).protocol_act_hash);
+
+    const record = refusedBesideSignedCounteroffer(session, didDocuments, [later, acceptance]);
+
+    const entry = (record.acts as Dict[]).find((item) => item.message_type === "acceptance")!;
+    expect((entry.act as Dict).accepted_offer_id).toStrictEqual(ODD_IDS[odd]);
+    expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(false);
+  });
+}
 
 test("a third-party signed acceptance is refused", () => {
   // An acceptance signed by a DID that is neither party. Refused by the

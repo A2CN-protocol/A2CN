@@ -1119,6 +1119,37 @@ def _negotiation_act_hashes(act: dict) -> list[str]:
     return hashes
 
 
+def _terms_content_hash(act: dict) -> str | None:
+    """The content hash of an act's ``terms``: SHA-256 over its RFC 8785 form.
+
+    The same canonical form, of the same object, that the act's own protocol
+    act hash covers (Section 7.3.1). ``None`` when the act carries no terms
+    object.
+    """
+    terms = act.get("terms")
+    if not isinstance(terms, dict):
+        return None
+    try:
+        return hash_object(terms)
+    except Exception:  # terms that cannot be canonicalized match nothing
+        return None
+
+
+def _string_leaves(value: Any) -> list[str]:
+    """Every string inside ``value``, at any depth: the references terms may carry."""
+    leaves: list[str] = []
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            leaves.append(item)
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return leaves
+
+
 def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
     """No act in an external-channel record accepts an act the responder signed.
 
@@ -1144,6 +1175,23 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
       carrying no hash, a target in another spelling or encoding, or one naming
       nothing in the record is refused (fail-closed): nothing shows it does not
       accept a signed act the producer left out.
+    * if it accepts TERMS the responder signed, the record is refused: its own
+      ``terms``, or the ``terms`` of any recorded offer or counteroffer it
+      names through ``accepted_offer_id``, ``accepted_protocol_act_hash``,
+      ``in_reply_to`` or any string inside its ``terms``, equal the terms of an
+      offer or counteroffer the responder signed, compared by
+      ``_terms_content_hash``. Keyed on what is accepted, not on how it is
+      referenced, so neither an unchecked reference field nor an unsigned copy
+      of the signed terms under another id gets past it (Section 9A.12
+      condition 7, clause (c)).
+
+    The canonical-digest requirement is load-bearing, not merely defensive: an
+    unsigned act may STATE a non-canonical spelling of a responder-signed hash
+    as its own ``protocol_act_hash``, so a target in that spelling resolves to
+    the decoy and passes the exact signed-set check; only the requirement
+    refuses it. The explicit "an ``acceptance`` carries no hash" check is
+    implied by it -- a missing hash is not a canonical string -- and is stated
+    anyway, so the rule says what it means on its own.
 
     Keyed on the ACCEPTED act, not on the acceptance's own signature. An
     acceptance recorded unsigned still names what it accepted, and is still an
@@ -1187,6 +1235,10 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
     if not responder_signed:
         return True
     signed_hashes, signed_ids, recorded_hashes, recorded_ids = [], [], [], []
+    # The terms the responder signed, and the terms each recorded offer or
+    # counteroffer carries, by every name an acceptance may use for it.
+    signed_terms: set[str] = set()
+    terms_by_reference: dict[str, set[str]] = {}
     for entry in entries:
         act = entry.get("act")
         if entry.get("message_type") not in _NEGOTIATION_MESSAGE_TYPES or not isinstance(act, dict):
@@ -1196,12 +1248,18 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
         ids = [message_id] if isinstance(message_id, str) and message_id else []
         recorded_hashes.extend(hashes)
         recorded_ids.extend(ids)
+        terms_hash = _terms_content_hash(act)
+        if terms_hash is not None:
+            for reference in hashes + ids:
+                terms_by_reference.setdefault(reference, set()).add(terms_hash)
         if (
             entry.get("attribution") == ATTRIBUTION_VERIFIED
             and entry.get("sender_did") == responder_did
         ):
             signed_hashes.extend(hashes)
             signed_ids.extend(ids)
+            if terms_hash is not None:
+                signed_terms.add(terms_hash)
     for entry in entries:
         act = entry.get("act")
         if not isinstance(act, dict):
@@ -1216,6 +1274,16 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
         target_id = act.get("accepted_offer_id")
         if target_hash in signed_hashes or target_id in signed_ids:
             return False
+        # Keyed on the terms, not on the reference: an act accepting terms the
+        # responder signed is refused whichever field names them, and whether
+        # it names the signed act or an unsigned copy of the same terms.
+        if _terms_content_hash(act) in signed_terms:
+            return False
+        references = [target_hash, target_id, act.get("in_reply_to")]
+        references.extend(_string_leaves(act.get("terms")))
+        for reference in references:
+            if isinstance(reference, str) and terms_by_reference.get(reference, set()) & signed_terms:
+                return False
         if not has_hash:
             return False
         if not (

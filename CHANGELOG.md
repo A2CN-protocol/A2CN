@@ -80,6 +80,16 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `unit_price_minor` without `total_minor` still verify. No currency condition
   applies to evidence records.
 
+- **The external-channel accepted-act rule is keyed on the terms (Section
+  9A.12, condition 7).** Both verifiers, and both generators before sealing,
+  now refuse an external-channel record in which an act that accepts accepts
+  terms equal to those of an offer or counteroffer the responder signed. That
+  holds whether the act names them through `accepted_offer_id`,
+  `accepted_protocol_act_hash`, `in_reply_to` or a reference inside its
+  `terms`, and whether it names the signed act or an unsigned copy of the same
+  terms. Terms are compared by the SHA-256 of their RFC 8785 form. A shared test
+  vector gives both implementations the same verdicts.
+
 ### Changed
 
 - **Both reference servers refuse a `did_vc` (Tier 2) mandate, and advertise
