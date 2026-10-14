@@ -252,6 +252,18 @@ minor amounts in, with line items and without. The controls show that a line ite
 to deal-type extension fields and that a whole-number float such as
 `100000.0` is an integer amount.
 
+`session-evidence-record-line-items.json` covers Section 9A.6 step 13, which holds
+the line items of the acts an evidence record carries to Section 7.2. Each case
+is `session-evidence-record-parity.json`'s stored `"0.1"` record, or the `"0.5"`
+record this implementation generates for the same session, with the observed
+counteroffer's `terms.line_items` set as the case says, its act hash and the
+chain recomputed, and the record resealed with that vector's test-only producer
+key. At every version a bare `unit_price` / `total` or a non-integer pinned
+amount is refused; from `"0.5"` the rest of the rule applies too, so a line
+without `total_minor` verifies in the `"0.1"` record and is refused in the
+`"0.5"` one. Verified with the vector's `did_documents`, each record must reach
+the stated verdict in both suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

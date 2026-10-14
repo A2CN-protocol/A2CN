@@ -18,6 +18,7 @@ import {
   type SigningPrivateKey,
 } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
+import { termsLineItemViolation } from "./line_items.js";
 import {
   A2CN_NAMESPACE,
   generateTransactionRecord,
@@ -381,6 +382,12 @@ export function generateSessionEvidenceRecord(
         "or contradicts the currency or basis of the act it describes",
     );
   }
+  if (!recordedLineItemsHold(record)) {
+    throw new Error(
+      "an act's terms.line_items do not state their money as integer minor " +
+        "units under the pinned keys (Section 7.2)",
+    );
+  }
   if (!observedResponderRulesHold(record)) {
     throw new Error(
       "An observed responder requires unsigned counterparty acts and unilateral evidence",
@@ -568,6 +575,9 @@ export function assessSessionEvidenceRecord(
       return assessment;
     }
     if (!moneyBasisClaimsVerify(record)) {
+      return assessment;
+    }
+    if (!recordedLineItemsHold(record)) {
       return assessment;
     }
     if (!observedResponderRulesHold(record)) {
@@ -1686,6 +1696,41 @@ function moneyBasisLabelAgreesWithAct(moneyBasis: Dict, terms: Dict): boolean {
 }
 
 /** Every money_basis in the record recomputes, or the record is rejected. */
+// The first record_version whose acts' line items are held to the whole of
+// Section 7.2's line-item rule. Earlier versions are held to its money hazards
+// only (Section 9A.6, step 13).
+export const LINE_ITEM_RULE_FULL_FROM = "0.5";
+
+/**
+ * Every recorded act's line items meet Section 7.2 (Section 9A.6, step 13).
+ *
+ * The same check the offer path and TransactionRecord verification apply, to
+ * the terms of each act the record carries, signed or observed. Every version
+ * is refused a money hazard: a bare unit_price or total, or a pinned amount
+ * that is not an integer. Labelling a record with an older version therefore
+ * cannot get one past this check. From "0.5" the whole rule applies: both
+ * pinned keys present, and the quantity rules. An act without terms, or terms
+ * without line_items, has nothing to check. No currency condition applies here.
+ */
+function recordedLineItemsHold(record: Dict): boolean {
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  const hazardsOnly = !versionAtOrAfter(record.record_version, LINE_ITEM_RULE_FULL_FROM);
+  const isDict = (value: unknown): value is Dict =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  for (const entry of acts) {
+    const act = isDict(entry) ? entry.act : undefined;
+    if (isDict(act) && hasOwn(act, "terms")) {
+      if (termsLineItemViolation(act.terms, { hazardsOnly }) !== null) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function moneyBasisClaimsVerify(record: Dict): boolean {
   const acts = record.acts;
   if (!Array.isArray(acts)) {

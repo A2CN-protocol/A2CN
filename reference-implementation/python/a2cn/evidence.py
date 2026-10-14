@@ -17,6 +17,7 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.line_items import terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
     RECORD_ENTRY_WRAPPER_FIELDS,
@@ -341,6 +342,11 @@ def generate_session_evidence_record(
             "money_basis does not recompute to the claimed and signed totals, "
             "or contradicts the currency or basis of the act it describes"
         )
+    if not _recorded_line_items_hold(record):
+        raise ValueError(
+            "an act's terms.line_items do not state their money as integer minor "
+            "units under the pinned keys (Section 7.2)"
+        )
     if not _observed_responder_rules_hold(record):
         raise ValueError(
             "An observed responder requires unsigned counterparty acts and "
@@ -510,6 +516,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
         if assessment["invalid_acts"]:
             return assessment
         if not _money_basis_claims_verify(record):
+            return assessment
+        if not _recorded_line_items_hold(record):
             return assessment
         if not _observed_responder_rules_hold(record):
             return assessment
@@ -1463,6 +1471,38 @@ def _money_basis_label_agrees_with_act(money_basis: dict, terms: dict) -> bool:
     if "basis" not in terms or money_basis["basis"] not in SESSION_BASES:
         return True
     return terms["basis"] == money_basis["basis"]
+
+
+#: The first record_version whose acts' line items are held to the whole of
+#: Section 7.2's line-item rule. Earlier versions are held to its money hazards
+#: only (Section 9A.6, step 13).
+LINE_ITEM_RULE_FULL_FROM = "0.5"
+
+
+def _recorded_line_items_hold(record: dict) -> bool:
+    """Every recorded act's line items meet Section 7.2 (Section 9A.6, step 13).
+
+    The same check the offer path and TransactionRecord verification apply,
+    to the terms of each act the record carries, signed or observed. Every
+    version is refused a money hazard: a bare unit_price or total, or a pinned
+    amount that is not an integer. Labelling a record with an older version
+    therefore cannot get one past this check. From "0.5" the whole rule
+    applies: both pinned keys present, and the quantity rules. An act without
+    terms, or terms without line_items, has nothing to check. No currency
+    condition applies here.
+    """
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    hazards_only = not _version_at_or_after(
+        record.get("record_version"), LINE_ITEM_RULE_FULL_FROM
+    )
+    for entry in acts:
+        act = entry.get("act") if isinstance(entry, dict) else None
+        if isinstance(act, dict) and "terms" in act:
+            if terms_line_item_violation(act["terms"], hazards_only=hazards_only) is not None:
+                return False
+    return True
 
 
 def _money_basis_claims_verify(record: dict) -> bool:

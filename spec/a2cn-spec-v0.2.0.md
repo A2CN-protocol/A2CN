@@ -2739,7 +2739,8 @@ signature types. That rule is one-directional: the vocabulary requires the
 version, while a `"0.4"` or later record is under no obligation to carry a
 decline. Each of these version-keyed rules is read as a floor, not as membership
 of a fixed set — the historical rule applies below `"0.4"`, the responder rule
-below `"0.5"`, and the decline rule from `"0.4"` — so "or later" includes every
+below `"0.5"`, the decline rule from `"0.4"`, and the full line-item rule of
+step 13 from `"0.5"` — so "or later" includes every
 version published after this text was written. It then:
 
 1. Validate the record structure, including `external_commitment_reference`
@@ -2803,6 +2804,19 @@ version published after this text was written. It then:
     its `terms.basis`.
 12. Confirm every key of `extensions` is namespaced per Section 9A.11. Do not
     interpret their values.
+13. Hold the `terms.line_items` of every act the record carries, signed or
+    observed, to Section 7.2, by the same rule Section 9.5 step 9 applies to
+    `agreed_terms.line_items`. At every `record_version`, reject a line item
+    that carries the bare name `unit_price` or `total`, or a `unit_price_minor`
+    or `total_minor` that is present but not an integer by value (`36000.0` is
+    the integer `36000`): these are the money hazards, and a record cannot avoid
+    them by carrying an older version label. From `"0.5"`, apply the rest of
+    Section 7.2's line-item rule as well: `line_items` is an array of objects,
+    each carrying both `unit_price_minor` and `total_minor`, with any `quantity`
+    a non-negative integer. Records labelled below `"0.5"` were written before
+    that rule was enforced on evidence, and a line item in one of them that
+    states `unit_price_minor` without `total_minor` still verifies. The
+    currency condition of Section 7.2 is not applied to evidence records.
 
 A signature that is present but invalid, references the wrong key, signs the
 wrong payload, or conflicts with the complete `act` MUST cause verification to

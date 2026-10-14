@@ -70,6 +70,15 @@ This project is pre-1.0: the minor version moves for substantive additions.
   the offer path. Deal-type extension fields on a line item are still admitted, and
   a whole-number float such as `36000.0` is still an integer. A shared test
   vector of re-signed records gives both implementations the same verdicts.
+- **Evidence records hold their acts' line items to Section 7.2 (Section 9A.6,
+  step 13).** Both verifiers, and both generators before sealing, apply the
+  same shared check to the `terms.line_items` of every recorded act. At every
+  `record_version` a bare `unit_price` / `total`, or a `unit_price_minor` /
+  `total_minor` that is not an integer, is refused, so an older version label
+  cannot carry one. From `"0.5"` the rest of the rule applies as well (both
+  pinned keys, the quantity rules). Records labelled below `"0.5"` that state
+  `unit_price_minor` without `total_minor` still verify. No currency condition
+  applies to evidence records.
 
 ### Changed
 
