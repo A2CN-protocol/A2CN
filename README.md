@@ -6,7 +6,7 @@ A2CN defines neutral infrastructure for agent-to-agent commercial negotiation.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Spec Version](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](spec/a2cn-spec-v0.2.0.md)
-[![Tests](https://img.shields.io/badge/Tests-2054%20Python%20%7C%201871%20TypeScript-brightgreen.svg)](reference-implementation/python/tests)
+[![Tests](https://img.shields.io/badge/Tests-2340%20Python%20%7C%202160%20TypeScript-brightgreen.svg)](reference-implementation/python/tests)
 [![Status](https://img.shields.io/badge/Status-Partner%20Ready-orange.svg)]()
 
 ---
@@ -309,7 +309,7 @@ rather than platform-local implementation details.
 
 Full protocol specification: [`spec/a2cn-spec-v0.2.0.md`](spec/a2cn-spec-v0.2.0.md) — 6,300+ lines covering eight protocol components with normative JSON schemas, platform integration patterns across procurement, revenue, CLM, CPQ, renewal, and eSignature systems, and a complete four-round SaaS renewal walkthrough with concrete message envelopes.
 
-**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against the Python and TypeScript reference implementations (2054 and 1871 tests).
+**Spec status:** v0.2.0. Passed four independent critique cycles. Verified against the Python and TypeScript reference implementations (2340 and 2160 tests).
 
 ---
 
@@ -327,8 +327,8 @@ The library's own version is its semver and moves independently of the protocol 
 | SessionEvidenceRecord — emits | `0.5` |
 | SessionEvidenceRecord — verifies | `0.1` `0.2` `0.3` `0.4` `0.5` |
 | Specification document | `0.2.0` |
-| Python package `a2cn` | `0.3.0` |
-| TypeScript package `a2cn` | `0.3.0` |
+| Python package `a2cn` | `0.3.1` |
+| TypeScript package `a2cn` | `0.3.1` |
 <!-- versions-table:end -->
 
 A TransactionRecord verifier accepts only `0.4`: the earlier shapes are described by their published schemas but cannot be rebound to their signatures from the record alone, so they are refused.
@@ -377,7 +377,7 @@ A2CN/
 | Milestone | Status |
 |-----------|--------|
 | Protocol spec v0.2.0 | ✓ Complete — 6,300+ lines, 8 components |
-| Reference implementation (Python) | ✓ Complete — 2054 tests passing |
+| Reference implementation (Python) | ✓ Complete — 2340 tests passing |
 | Session Invitation (Component 8) | ✓ Complete — signed invitations, lifecycle, hosted endpoint pattern |
 | Platform adapters | 11 implemented: Fairmarkit, Keelvar, Salesforce Revenue Cloud, DealHub, Nue.io, SAP Ariba, JAGGAER, Conga, Ironclad, Vendr, DocuSign. Each is built against the platform's published API surface and tested against those schemas; see each adapter's **Validation status** section for what has and has not been exercised against a live instance. |
 | LLM agent skills file | ✓ Complete — `reference-implementation/skills/a2cn-negotiation.md` |
@@ -391,9 +391,9 @@ A2CN/
 | Post-commitment lifecycle (`delivery_notice` / `delivery_acknowledged` / `dispute_notice` / `dispute_resolved`) | ✓ Complete — v0.2.0 |
 | SessionStore interface (pluggable persistence for Redis / PostgreSQL) | ✓ Complete — InMemorySessionStore default shipped |
 | UBL 2.1 invoice export from transaction records | ✓ Complete — `ubl_export.py` / `ubl_export.ts` |
-| TypeScript reference implementation | ✓ Complete — `reference-implementation/typescript/`, 1871 tests passing |
+| TypeScript reference implementation | ✓ Complete — `reference-implementation/typescript/`, 2160 tests passing |
 | Session Evidence Record (Section 9A) | ✓ Complete — sealed evidence for every terminal outcome, including external-channel completion |
-| SDK (pip + npm) | 🔄 In progress — the Python package is prepared for PyPI from release 0.3.0 |
+| SDK (pip + npm) | 🔄 In progress — the Python package is prepared for PyPI from release 0.3.1 |
 
 ---
 

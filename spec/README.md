@@ -2,7 +2,7 @@
 
 **The formal definition of the A2CN protocol.**
 
-[![Release](https://img.shields.io/badge/Release-0.3.0-green.svg)](../CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-0.3.1-green.svg)](../CHANGELOG.md)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-blue.svg)](a2cn-spec-v0.2.0.md)
 [![Wire protocol](https://img.shields.io/badge/Wire%20protocol-0.3-blue.svg)](a2cn-spec-v0.2.0.md#status-of-this-document)
 [![Status](https://img.shields.io/badge/Status-Draft%20%E2%80%94%20Feedback%20Welcome-yellow.svg)]()
@@ -18,7 +18,7 @@ most common source of confusion, so they are named separately here.
 
 | Axis | Current | What it is | When it moves |
 |------|---------|------------|---------------|
-| **Release** | `0.3.0` | The published package and repository release (`pyproject.toml`, `package.json`, git tag). | Any shipped change, additive or not. See [CHANGELOG](../CHANGELOG.md). |
+| **Release** | `0.3.1` | The published package and repository release (`pyproject.toml`, `package.json`, git tag). | Any shipped change, additive or not. See [CHANGELOG](../CHANGELOG.md). |
 | **Spec / wire protocol** | `0.3` | The on-the-wire contract: the `protocol_version` and `a2cn_version` fields, and the `$id` of every message schema. | Only on a **wire-incompatible** change. See [Status of This Document](a2cn-spec-v0.2.0.md#status-of-this-document). |
 | **`record_version`** | TransactionRecord `0.4` (a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields), with `0.3`, `0.2` and `0.1` known but no longer accepted<br>AuditLog `0.1`<br>SessionEvidenceRecord `0.5` for every record, with `0.4`, `0.3`, `0.2` and `0.1` still accepted | The version of each terminal artifact, carried inside its own hashed bytes. Each artifact has its **own** line. | Only when that artifact's shape or canonical meaning changes (Section 9A.1). A TransactionRecord's version follows its content (Section 9.3); a SessionEvidenceRecord's does not — every record carries the current version (Section 9A.2). |
 
