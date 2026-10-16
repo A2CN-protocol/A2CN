@@ -17,6 +17,7 @@ from typing import Any
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import get_public_key, get_verification_method
+from a2cn.line_items import terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
     RECORD_ENTRY_WRAPPER_FIELDS,
@@ -341,6 +342,11 @@ def generate_session_evidence_record(
             "money_basis does not recompute to the claimed and signed totals, "
             "or contradicts the currency or basis of the act it describes"
         )
+    if not _recorded_line_items_hold(record):
+        raise ValueError(
+            "an act's terms.line_items do not state their money as integer minor "
+            "units under the pinned keys (Section 7.2)"
+        )
     if not _observed_responder_rules_hold(record):
         raise ValueError(
             "An observed responder requires unsigned counterparty acts and "
@@ -510,6 +516,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
         if assessment["invalid_acts"]:
             return assessment
         if not _money_basis_claims_verify(record):
+            return assessment
+        if not _recorded_line_items_hold(record):
             return assessment
         if not _observed_responder_rules_hold(record):
             return assessment
@@ -1111,6 +1119,37 @@ def _negotiation_act_hashes(act: dict) -> list[str]:
     return hashes
 
 
+def _terms_content_hash(act: dict) -> str | None:
+    """The content hash of an act's ``terms``: SHA-256 over its RFC 8785 form.
+
+    The same canonical form, of the same object, that the act's own protocol
+    act hash covers (Section 7.3.1). ``None`` when the act carries no terms
+    object.
+    """
+    terms = act.get("terms")
+    if not isinstance(terms, dict):
+        return None
+    try:
+        return hash_object(terms)
+    except Exception:  # terms that cannot be canonicalized match nothing
+        return None
+
+
+def _string_leaves(value: Any) -> list[str]:
+    """Every string inside ``value``, at any depth: the references terms may carry."""
+    leaves: list[str] = []
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            leaves.append(item)
+        elif isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+    return leaves
+
+
 def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
     """No act in an external-channel record accepts an act the responder signed.
 
@@ -1136,6 +1175,23 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
       carrying no hash, a target in another spelling or encoding, or one naming
       nothing in the record is refused (fail-closed): nothing shows it does not
       accept a signed act the producer left out.
+    * if it accepts TERMS the responder signed, the record is refused: its own
+      ``terms``, or the ``terms`` of any recorded offer or counteroffer it
+      names through ``accepted_offer_id``, ``accepted_protocol_act_hash``,
+      ``in_reply_to`` or any string inside its ``terms``, equal the terms of an
+      offer or counteroffer the responder signed, compared by
+      ``_terms_content_hash``. Keyed on what is accepted, not on how it is
+      referenced, so neither an unchecked reference field nor an unsigned copy
+      of the signed terms under another id gets past it (Section 9A.12
+      condition 7, clause (c)).
+
+    The canonical-digest requirement is load-bearing, not merely defensive: an
+    unsigned act may STATE a non-canonical spelling of a responder-signed hash
+    as its own ``protocol_act_hash``, so a target in that spelling resolves to
+    the decoy and passes the exact signed-set check; only the requirement
+    refuses it. The explicit "an ``acceptance`` carries no hash" check is
+    implied by it -- a missing hash is not a canonical string -- and is stated
+    anyway, so the rule says what it means on its own.
 
     Keyed on the ACCEPTED act, not on the acceptance's own signature. An
     acceptance recorded unsigned still names what it accepted, and is still an
@@ -1179,6 +1235,10 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
     if not responder_signed:
         return True
     signed_hashes, signed_ids, recorded_hashes, recorded_ids = [], [], [], []
+    # The terms the responder signed, and the terms each recorded offer or
+    # counteroffer carries, by every name an acceptance may use for it.
+    signed_terms: set[str] = set()
+    terms_by_reference: dict[str, set[str]] = {}
     for entry in entries:
         act = entry.get("act")
         if entry.get("message_type") not in _NEGOTIATION_MESSAGE_TYPES or not isinstance(act, dict):
@@ -1188,12 +1248,18 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
         ids = [message_id] if isinstance(message_id, str) and message_id else []
         recorded_hashes.extend(hashes)
         recorded_ids.extend(ids)
+        terms_hash = _terms_content_hash(act)
+        if terms_hash is not None:
+            for reference in hashes + ids:
+                terms_by_reference.setdefault(reference, set()).add(terms_hash)
         if (
             entry.get("attribution") == ATTRIBUTION_VERIFIED
             and entry.get("sender_did") == responder_did
         ):
             signed_hashes.extend(hashes)
             signed_ids.extend(ids)
+            if terms_hash is not None:
+                signed_terms.add(terms_hash)
     for entry in entries:
         act = entry.get("act")
         if not isinstance(act, dict):
@@ -1208,6 +1274,16 @@ def _no_acceptance_of_responder_signed_act(record: dict) -> bool:
         target_id = act.get("accepted_offer_id")
         if target_hash in signed_hashes or target_id in signed_ids:
             return False
+        # Keyed on the terms, not on the reference: an act accepting terms the
+        # responder signed is refused whichever field names them, and whether
+        # it names the signed act or an unsigned copy of the same terms.
+        if _terms_content_hash(act) in signed_terms:
+            return False
+        references = [target_hash, target_id, act.get("in_reply_to")]
+        references.extend(_string_leaves(act.get("terms")))
+        for reference in references:
+            if isinstance(reference, str) and terms_by_reference.get(reference, set()) & signed_terms:
+                return False
         if not has_hash:
             return False
         if not (
@@ -1463,6 +1539,38 @@ def _money_basis_label_agrees_with_act(money_basis: dict, terms: dict) -> bool:
     if "basis" not in terms or money_basis["basis"] not in SESSION_BASES:
         return True
     return terms["basis"] == money_basis["basis"]
+
+
+#: The first record_version whose acts' line items are held to the whole of
+#: Section 7.2's line-item rule. Earlier versions are held to its money hazards
+#: only (Section 9A.6, step 13).
+LINE_ITEM_RULE_FULL_FROM = "0.5"
+
+
+def _recorded_line_items_hold(record: dict) -> bool:
+    """Every recorded act's line items meet Section 7.2 (Section 9A.6, step 13).
+
+    The same check the offer path and TransactionRecord verification apply,
+    to the terms of each act the record carries, signed or observed. Every
+    version is refused a money hazard: a bare unit_price or total, or a pinned
+    amount that is not an integer. Labelling a record with an older version
+    therefore cannot get one past this check. From "0.5" the whole rule
+    applies: both pinned keys present, and the quantity rules. An act without
+    terms, or terms without line_items, has nothing to check. No currency
+    condition applies here.
+    """
+    acts = record.get("acts")
+    if not isinstance(acts, list):
+        return False
+    hazards_only = not _version_at_or_after(
+        record.get("record_version"), LINE_ITEM_RULE_FULL_FROM
+    )
+    for entry in acts:
+        act = entry.get("act") if isinstance(entry, dict) else None
+        if isinstance(act, dict) and "terms" in act:
+            if terms_line_item_violation(act["terms"], hazards_only=hazards_only) is not None:
+                return False
+    return True
 
 
 def _money_basis_claims_verify(record: dict) -> bool:

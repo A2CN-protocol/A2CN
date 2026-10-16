@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import re
 
 import pytest
 
@@ -429,6 +430,12 @@ def _attach_the_counterparty_signature(record: dict, message: dict, signature_ty
     return _reseal(record)
 
 
+#: The responder's counter-price. Distinct from the initiator's offer, so an
+#: acceptance of that offer accepts terms the responder never signed (the
+#: accepted-act rule is keyed on the terms, Section 9A.12).
+RESPONDER_COUNTER_TERMS = {"total_value": 9_400_000, "currency": "USD"}
+
+
 def _signed_counteroffer(session_id: str) -> dict:
     return _offer(
         session_id,
@@ -438,6 +445,7 @@ def _signed_counteroffer(session_id: str) -> dict:
         message_type="counteroffer",
         message_id="counteroffer-1",
         timestamp="2026-03-24T10:02:00Z",
+        terms=RESPONDER_COUNTER_TERMS,
     )
 
 
@@ -1738,6 +1746,167 @@ def test_an_unsigned_offer_stating_no_hash_resolves_by_its_rebuild():
     assert "protocol_act_hash" not in stated["act"], "the observed offer states no hash"
     assert ("counteroffer", RESPONDER_DID) in _verified(record)
     assert verify_session_evidence_record(record, did_documents)
+
+
+def _refused_beside_signed_counteroffer(session, did_documents, observed: list) -> dict:
+    """``observed`` beside the responder's signed counteroffer, verifier and generator legs.
+
+    The twin -- the same acts with the counteroffer unsigned -- verifies, since
+    the accepted-act rule applies only once the responder has signed. Signing
+    the counteroffer is then the only change, and both the verifier and the
+    generator refuse the result through the accepted-act rule.
+    """
+    counteroffer = _signed_counteroffer(session.session_id)
+    twin = _generate(
+        session,
+        [_unsigned_observation_of(counteroffer), *observed, _order_confirmation()],
+        external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+    )
+    assert verify_session_evidence_record(twin, did_documents), "responder signed nothing"
+    signed = _sign_observed_act(twin, counteroffer, "protocol_act_signature")
+    assert ("counteroffer", RESPONDER_DID) in _verified(signed)
+    assert assess_session_evidence_record(signed, did_documents)["invalid_acts"] == 0
+    with pytest.raises(ValueError, match="accepts an offer or counteroffer the responder signed"):
+        _generate(
+            session,
+            [counteroffer, *observed, _order_confirmation()],
+            external_commitment_reference=EXTERNAL_COMMITMENT_REFERENCE,
+        )
+    return signed
+
+
+def _unsigned_acceptance_of(target_id, target_hash) -> dict:
+    """The initiator's acceptance, recorded unsigned, naming the target given."""
+    acceptance = _acceptance_by(
+        "unused",
+        accepted_id="placeholder",
+        accepted_hash=hash_object({"placeholder": True}),
+        round_number=3,
+        sequence_number=4,
+        timestamp="2026-03-24T10:04:00Z",
+    )
+    observed = _unsigned_observation_of(acceptance)
+    observed["act"]["accepted_protocol_act_hash"] = target_hash
+    observed["act"]["accepted_offer_id"] = target_id
+    return observed
+
+
+@pytest.mark.parametrize("spelling", ["padded", "hex", "leading-space"])
+def test_a_non_canonical_hash_is_refused_even_when_an_unsigned_decoy_states_it(spelling):
+    """The 43-character base64url requirement is load-bearing, not only defensive.
+
+    An unsigned offer with no sender STATES a non-canonical spelling of the
+    responder-signed counteroffer's hash as its own ``protocol_act_hash``, and
+    the acceptance names that spelling and the decoy's ``message_id``. The
+    signed-first check compares exactly, so it does not match; the target
+    resolves to the decoy, and the id resolves too. Only the canonical-hash
+    requirement refuses it -- without it the record would verify while its
+    acceptance names the signed act in another encoding.
+    """
+    session, did_documents = _mandate_only_session()
+    signed_hash = _signed_counteroffer(session.session_id)["protocol_act_hash"]
+    decoy_hash = _hash_spellings(signed_hash)[spelling]
+    decoy = _unsigned_counterparty_act(
+        "offer", "decoy-1", sequence_number=3, round_number=3, timestamp="2026-03-24T10:03:00Z"
+    )
+    decoy["sender_did"] = None
+    decoy["act"]["protocol_act_hash"] = decoy_hash
+    acceptance = _unsigned_acceptance_of("decoy-1", decoy_hash)
+
+    record = _refused_beside_signed_counteroffer(session, did_documents, [decoy, acceptance])
+
+    assert decoy_hash != signed_hash
+    assert not verify_session_evidence_record(record, did_documents)
+
+
+def _lossy_observation(session_id: str, lossy: str) -> tuple[dict, str]:
+    """The responder's LATER offer as observed unsigned, and the wire hash it was sent with.
+
+    The observation states no hash, so it is named by its rebuild; ``lossy``
+    says how the observation differs from what was sent, which moves the
+    rebuild away from the wire hash the acceptance names.
+    """
+    sent = _offer(
+        session_id,
+        sender_did=RESPONDER_DID,
+        sequence_number=3,
+        round_number=3,
+        message_type="counteroffer",
+        message_id="counteroffer-2",
+        timestamp="2026-03-24T10:03:00Z",
+    )
+    act = {
+        field: value
+        for field, value in sent.items()
+        if field not in ("protocol_act_hash", "protocol_act_signature", "sender_verification_method")
+    }
+    act["protocol_version"] = PROTOCOL_ACT_VERSION
+    if lossy == "omits-expires_at":
+        del act["expires_at"]
+    elif lossy == "alters-terms":
+        act["terms"] = {**act["terms"], "note": "as observed"}
+    observed = {
+        **{field: sent[field] for field in _COUNTERPARTY_ENVELOPE},
+        "sender_did": RESPONDER_DID,
+        "source_protocol": "supplier_portal",
+        "act": act,
+    }
+    return observed, sent["protocol_act_hash"]
+
+
+@pytest.mark.parametrize("target", ["arbitrary-canonical", "omits-expires_at", "alters-terms"])
+def test_an_acceptance_naming_an_unrecorded_hash_is_refused_once_the_responder_signed(target):
+    """A canonical hash that names no act in the record is refused (fail-closed).
+
+    The acceptance's ``accepted_offer_id`` resolves to a recorded offer, so only
+    the hash is unresolved: an arbitrary canonical digest, or the wire hash of
+    an offer whose observation dropped a field or recorded different terms, so
+    that nothing in the record hashes to what was accepted. Once the responder
+    has signed an act, nothing shows such an acceptance does not accept a signed
+    act the producer left out.
+    """
+    session, did_documents = _mandate_only_session()
+    if target == "arbitrary-canonical":
+        observed = _later_unsigned_offer()
+        target_hash = hash_object({"an": "act this record does not carry"})
+    else:
+        observed, target_hash = _lossy_observation(session.session_id, target)
+    acceptance = _unsigned_acceptance_of("counteroffer-2", target_hash)
+
+    record = _refused_beside_signed_counteroffer(session, did_documents, [observed, acceptance])
+
+    assert _HASH_SHAPE.fullmatch(target_hash), "canonical, so only resolution refuses it"
+    assert not verify_session_evidence_record(record, did_documents)
+
+
+_ODD_IDS = {
+    "int": 1,
+    "null": None,
+    "list": ["counteroffer-2"],
+    "object": {"id": "counteroffer-2"},
+    "unrecorded": "offer-not-recorded",
+}
+
+
+@pytest.mark.parametrize("odd", list(_ODD_IDS))
+def test_an_odd_or_unrecorded_accepted_offer_id_is_refused_once_the_responder_signed(odd):
+    """An ``accepted_offer_id`` that is not a recorded offer's ``message_id`` is refused.
+
+    The hash names a recorded unsigned offer, so only the id is unresolved: a
+    number, null, a list, an object, or a string naming no recorded offer.
+    """
+    session, did_documents = _mandate_only_session()
+    later = _later_unsigned_offer()
+    acceptance = _unsigned_acceptance_of(_ODD_IDS[odd], later["act"]["protocol_act_hash"])
+
+    record = _refused_beside_signed_counteroffer(session, did_documents, [later, acceptance])
+
+    entry = next(item for item in record["acts"] if item["message_type"] == "acceptance")
+    assert entry["act"]["accepted_offer_id"] == _ODD_IDS[odd]
+    assert not verify_session_evidence_record(record, did_documents)
+
+
+_HASH_SHAPE = re.compile(r"[A-Za-z0-9_-]{43}")
 
 
 def test_a_third_party_signed_acceptance_is_refused():

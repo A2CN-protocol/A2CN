@@ -1,0 +1,1519 @@
+{
+  "description": "Section 9A.6, step 13: the line items of the acts a SessionEvidenceRecord records are held to Section 7.2. At every record_version a money hazard is refused: a bare unit_price or total, or a unit_price_minor or total_minor that is present but not an integer by value. From record_version \"0.5\" the whole line-item rule applies as well: both pinned keys present, line_items an array of objects, and the quantity rules. Each case is session-evidence-record-parity.json's stored \"0.1\" record, or the \"0.5\" record generated for the same session, with the observed counteroffer's terms.line_items set as the case says, its act hash and the chain recomputed, and the record resealed with that vector's test-only producer key. Verified with did_documents, each record must reach the stated verdict in both implementations.",
+  "did_documents": {
+    "did:example:buyer": {
+      "assertionMethod": [
+        "did:example:buyer#key-1"
+      ],
+      "authentication": [
+        "did:example:buyer#key-1"
+      ],
+      "id": "did:example:buyer",
+      "verificationMethod": [
+        {
+          "controller": "did:example:buyer",
+          "id": "did:example:buyer#key-1",
+          "publicKeyJwk": {
+            "crv": "Ed25519",
+            "kty": "OKP",
+            "x": "7pGHEzTRKFR0l2BepF9bfS1mpTmods6vjiyYk2Z5TMY"
+          },
+          "type": "JsonWebKey2020"
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "pre_0_5_pinned_keys",
+      "description": "Both pinned keys, integer amounts.",
+      "record_version": "0.1",
+      "verifies": true,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000,
+                    "total_minor": 90000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "veLtFirSiJP_Cb2aeeu2dccTshPumRbNE_aW4IeOk2g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "8efe_V4gqCZd6abVf5qoqj8Lyx1tPifbBYMXYnKtqbU",
+        "evidence_level": "mixed",
+        "record_hash": "ljrNMvrrpMcNMudqGLuizuOO9fpYUAYFTsTjZuyDObA",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bGpyTk12cnJwTWNOTXVkcUdMdWl6dU9POWZwWVVBWUZUc1RqWnV5RE9iQQ.g69jvLcsqIXaPvUJvV6Dg7V2FSNFTMLzVtntrgonDJxZPBa-ujv0iy6TmFAFb-eOg_jBlSOa_Gxe4bOVGP7JAQ"
+      }
+    },
+    {
+      "name": "pre_0_5_missing_total_minor",
+      "description": "A line with unit_price_minor and no total_minor, as records written before 0.5 carry: before 0.5 only the money hazards are refused.",
+      "record_version": "0.1",
+      "verifies": true,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "-FPx9hRu_feh9kJaq0sA6Cx-IEEGp_u6j_nHFd-ly7w",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "tXXF4GkLRKAPNTbbOSsGDN8qqB71cdBMdtPhJKJ08E4",
+        "evidence_level": "mixed",
+        "record_hash": "hbxgqnEpPx3Yo5YN2RFiSNDlNj7X236Z_6JpcqQfGzU",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.aGJ4Z3FuRXBQeDNZbzVZTjJSRmlTTkRsTmo3WDIzNlpfNkpwY3FRZkd6VQ.QWAXT00gir_HUrg0XjuuFxC_V44Ijh2fD8xMBOIhaoC_sBJfeu-l0o6CufL9r-g3ivrZlz5RF6UbhqF9Hxp_Cw"
+      }
+    },
+    {
+      "name": "pre_0_5_negative_quantity",
+      "description": "The quantity rules apply from 0.5.",
+      "record_version": "0.1",
+      "verifies": true,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": -1,
+                    "unit": "seat",
+                    "unit_price_minor": -9000,
+                    "total_minor": 9000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "0CX8hHg8Gj_luROtRwRmTyKxyBTWLTGK3d7Z0TZDN7o",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "tiwVcStzpMkTwtrZG4NF2AXjEeb8loks0-fxNlxsoV4",
+        "evidence_level": "mixed",
+        "record_hash": "zd-TpxindKoUeMWW3OU8kpSNugBp_pEw_xsA36Z349c",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.emQtVHB4aW5kS29VZU1XVzNPVThrcFNOdWdCcF9wRXdfeHNBMzZaMzQ5Yw.0AIHWgtoCMFHI-7zmTwDz1iVoys0GxCRTtIJtDR25FRU6cCJRdxNG6i5PwrgzARbUSJGaE1DdV_7-6aToDSKCw"
+      }
+    },
+    {
+      "name": "pre_0_5_bare_names",
+      "description": "A bare unit_price / total is a money hazard, refused at every version, so an older label cannot get one past the check.",
+      "record_version": "0.1",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price": 90.0,
+                    "total": 900.0
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "0s2-Tg2Z5ZxPFVqS4nkJ5cyhd8QXZbRwQsvuwLGHdew",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "LsLUK05QBUgMwvjyn9p7MNLsIBIMwmfEI4p49MNx8gY",
+        "evidence_level": "mixed",
+        "record_hash": "K2xrFQIRcqrtRQj0TaSoeQ4NdEDAIIZAhJVBEcJn1Bo",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.SzJ4ckZRSVJjcXJ0UlFqMFRhU29lUTROZEVEQUlJWkFoSlZCRWNKbjFCbw._cWycNG8TcB1UpbXgputY5Z1hSAb8aTlWUH2KjP0YxuK9zTXasnX1C9XlrpgHmn0--bEQt8i-3F4RnJXc0HPCA"
+      }
+    },
+    {
+      "name": "pre_0_5_bare_name_beside_pinned",
+      "description": "A bare name is refused even beside the pinned keys.",
+      "record_version": "0.1",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000,
+                    "total": 900.0
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "auSEoXDZSzQtb_sIU31cOFnr0uIhvEMGQfzaDOVcJFg",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "K8CEDJ3gY-qmg04QwpdM1YQBhTmm0-m9rZR8d2YZVtQ",
+        "evidence_level": "mixed",
+        "record_hash": "m3DXRTLafdjUdM8ai1O4jEEdJ9AGk9MH1M4uO0N-618",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bTNEWFJUTGFmZGpVZE04YWkxTzRqRUVkSjlBR2s5TUgxTTR1TzBOLTYxOA.PXFl_Qal6llTLg13gqDJuV2DolUYLYwIeWHez4r8HJP9YxOzyrF_pyPOKHEGfZTdvgtGUDuKWJGmbhv2csZ8Aw"
+      }
+    },
+    {
+      "name": "pre_0_5_fractional_minor",
+      "description": "A pinned amount that is present must be an integer by value, at every version.",
+      "record_version": "0.1",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000.5
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "qyMic1Yt4ANNd76LH2t2s5VdctbblB0cHH_vQXUaQIM",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "EpX9teFt4H2CVWrRBR_WERLsNDmkDIDeyUr505qoSdM",
+        "evidence_level": "mixed",
+        "record_hash": "vgmU_-SNl6xCRP6t0Ss5eckZufwyzUHAeD61xQPpDF0",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dmdtVV8tU05sNnhDUlA2dDBTczVlY2tadWZ3eXpVSEFlRDYxeFFQcERGMA.Hc3xYF-W5iXLyyFiO8U5wx_2jD6KS2eh9IA5ohJrM2HVO2BTVN4UvqeEySBUGIHj9SmnTKGQroRbVHoRDFVuDQ"
+      }
+    },
+    {
+      "name": "pre_0_5_whole_number_float_minor",
+      "description": "9000.0 is the integer 9000.",
+      "record_version": "0.1",
+      "verifies": true,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.1",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z"
+            },
+            "act_hash": "2qQY9q1u3XyymYDm8xcNHZGkYaByusGCeEhZ6svUwfg",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000.0,
+                    "total_minor": 90000.0
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z"
+            },
+            "act_hash": "veLtFirSiJP_Cb2aeeu2dccTshPumRbNE_aW4IeOk2g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "8efe_V4gqCZd6abVf5qoqj8Lyx1tPifbBYMXYnKtqbU",
+        "evidence_level": "mixed",
+        "record_hash": "ljrNMvrrpMcNMudqGLuizuOO9fpYUAYFTsTjZuyDObA",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.bGpyTk12cnJwTWNOTXVkcUdMdWl6dU9POWZwWVVBWUZUc1RqWnV5RE9iQQ.g69jvLcsqIXaPvUJvV6Dg7V2FSNFTMLzVtntrgonDJxZPBa-ujv0iy6TmFAFb-eOg_jBlSOa_Gxe4bOVGP7JAQ"
+      }
+    },
+    {
+      "name": "pinned_keys",
+      "description": "Both pinned keys, integer amounts.",
+      "record_version": "0.5",
+      "verifies": true,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000,
+                    "total_minor": 90000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "_LZP8FhyuTOboK8lQmMAgw7AOQxc2sU7KQeOfZO54ZY",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "TK-NKn8zs2nGfohc5SWkLEhKseuy3HFea0HrDvSBjKQ",
+        "evidence_level": "mixed",
+        "record_hash": "3JT7If5C0jZ8NjZZfh5HOVAu-TwEOSg4n6c7gN-M4gs",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.M0pUN0lmNUMwalo4TmpaWmZoNUhPVkF1LVR3RU9TZzRuNmM3Z04tTTRncw.hRi6Ycjp76Lj9PhRnW2v6xAQm8qxavStW_s4jgGMOJzl6_TIWF2tOPY9TFMO8H7aONdFcL2vfTTbE4WYnyJ8Aw"
+      }
+    },
+    {
+      "name": "missing_total_minor",
+      "description": "From 0.5 both pinned keys are REQUIRED.",
+      "record_version": "0.5",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "B1v0DutG4RmmVKs72q0Yc7FHor5YwW7al7cvoiUELEI",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "VwbB1SHFu_2SQJQ5HCl8i-9A_ob94pglOFp5FsNPYsc",
+        "evidence_level": "mixed",
+        "record_hash": "DjVW--IbmYvEs-0ld2euxEH87aLCh6vc6UyofK29Ezw",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.RGpWVy0tSWJtWXZFcy0wbGQyZXV4RUg4N2FMQ2g2dmM2VXlvZksyOUV6dw.UBPb3bTZsYEBsvZtAu7PTx9QelAiC45CQU6N1jM74kFb57fYBww1QnLgzJWG4JKwWKXwPIIEdv6bohBqbVriCQ"
+      }
+    },
+    {
+      "name": "negative_quantity",
+      "description": "From 0.5 the quantity rules apply.",
+      "record_version": "0.5",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": -1,
+                    "unit": "seat",
+                    "unit_price_minor": -9000,
+                    "total_minor": 9000
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "Ibf7wYlr9W7b3pjUi9AIkHPgXAmYn2jM90GEbDm_l9M",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "8lHceFXGcAUDGvWjrQmENmlNgNHZ19RuHlCXJcltPgo",
+        "evidence_level": "mixed",
+        "record_hash": "ukUBO-QHVZoI6frC8hhDV8e9zUq_qc4syeYNvBLLZ68",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.dWtVQk8tUUhWWm9JNmZyQzhoaERWOGU5elVxX3FjNHN5ZVlOdkJMTFo2OA.DwEhbHwNn4PyAfLYZoQD4yRndUZpeOh1bDTa1cLGZIT1k6ZKSuNskTUsRYzWFyz_5tDp00OMY6oMyjimnFLuDw"
+      }
+    },
+    {
+      "name": "bare_names",
+      "description": "A bare unit_price / total is refused.",
+      "record_version": "0.5",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price": 90.0,
+                    "total": 900.0
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "UgGhhkHsgYZfuqPQAR6YdKJFq-Hj4Bwp5R3KfUZ7PWw",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "wwNHOR6TMSTDs39twcIy9OTRJo1bygMrsrfD6mn2Loc",
+        "evidence_level": "mixed",
+        "record_hash": "8imA71QhjmcAew-vGTzl7s6pdNYbd-8aKKgaVnFu96E",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGltQTcxUWhqbWNBZXctdkdUemw3czZwZE5ZYmQtOGFLS2dhVm5GdTk2RQ.O58U22Y4KFlvcOFzvkTAf2eYGfi5_m57rXjMo52WNIgpficaxeGaCJ2UG3mNFOguV45pRerR8BzooR9gtQVIBw"
+      }
+    },
+    {
+      "name": "fractional_minor",
+      "description": "A fractional pinned amount is refused.",
+      "record_version": "0.5",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": [
+                  {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000.5,
+                    "total_minor": 90005
+                  }
+                ]
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "WSeeIMoaaShXiGeWlJy80jpTj06BEywBiluy6HsjQpA",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "8C4GqzQghd8Vk5q2X50fElIvcL2-gD_g4qiN_6p1EY4",
+        "evidence_level": "mixed",
+        "record_hash": "QEKGsmzYmPbo8PTmwooKtEYzSi4dl36YYnociG2zBls",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.UUVLR3NtelltUGJvOFBUbXdvb0t0RVl6U2k0ZGwzNllZbm9jaUcyekJscw.7twYCxjpm8uAGh5qPhe8OXpNC8l_RX_myfeBcQ5tzpqmQAWaRwv3N8At0lPgENE7bIGAo5EHuczJXZUTLVsXAA"
+      }
+    },
+    {
+      "name": "line_items_not_array",
+      "description": "From 0.5, line_items is an array.",
+      "record_version": "0.5",
+      "verifies": false,
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "96a20713-e99f-5742-971e-f4fa69cd14fe",
+        "session_id": "00000000-0000-4000-8000-000000000125",
+        "generated_at": "2026-08-31T12:10:00Z",
+        "producer": {
+          "did": "did:example:buyer",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:example:buyer#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "Parity Buyer",
+            "did": "did:example:buyer",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:example:buyer#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Parity Seller",
+            "did": "did:example:seller",
+            "agent_id": "seller-agent",
+            "verification_method": "did:example:seller#key-1",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-08-31T12:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "parity-offer-1",
+            "sender_did": "did:example:buyer",
+            "timestamp": "2026-08-31T12:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "expires_at": "2026-08-31T12:16:00Z",
+              "message_id": "parity-offer-1",
+              "message_type": "offer",
+              "protocol_act_hash": "8bR1yXmlZLbl0W2oHuC71DEKuMW77gTeDIg3bf9z2Q8",
+              "protocol_act_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+              "round_number": 1,
+              "sender_agent_id": "buyer-agent",
+              "sender_did": "did:example:buyer",
+              "sender_verification_method": "did:example:buyer#key-1",
+              "sequence_number": 1,
+              "session_id": "00000000-0000-4000-8000-000000000125",
+              "terms": {
+                "currency": "USD",
+                "total_value": 95000
+              },
+              "timestamp": "2026-08-31T12:01:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "kpnxvQE5N3sKS0KeKHHVchZdMyabrbYfirrDEvGsQss",
+            "sender_verification_method": "did:example:buyer#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.OGJSMXlYbWxaTGJsMFcyb0h1QzcxREVLdU1XNzdnVGVESWczYmY5ejJROA.pBfI9v0zrGl8m4c_MwlCd0_4xy_BOTwW1G34RjX47fp-fUcY3GUCwhcTuJ5dQtmWfCY2t3J9SE7Xx0WkW9dtDg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "parity-external-1",
+            "sender_did": "did:example:seller",
+            "timestamp": "2026-08-31T12:02:00Z",
+            "source_protocol": "commerce_api",
+            "act": {
+              "external_session_id": "commerce-7",
+              "message_id": "parity-external-1",
+              "message_type": "counteroffer",
+              "sender_did": "did:example:seller",
+              "terms": {
+                "currency": "USD",
+                "total_value": 90300,
+                "line_items": {
+                  "line-1": {
+                    "id": "line-1",
+                    "description": "Seats",
+                    "quantity": 10,
+                    "unit": "seat",
+                    "unit_price_minor": 9000,
+                    "total_minor": 90000
+                  }
+                }
+              },
+              "timestamp": "2026-08-31T12:02:00Z",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "yEgNB0Vt7d2a4uykv7JWse9ANEqPDZ5Sh1SsUjvTuTk",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation"
+          }
+        ],
+        "act_chain_hash": "Hwl1G6OBHM4jUp0CggF_krTaE1VfO_1q5sytC2MIkEY",
+        "evidence_level": "mixed",
+        "record_hash": "XdmZwpJga8zZp7FaoAIAaE6NbWgrMaVrdxBrED0GUZM",
+        "producer_signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDpleGFtcGxlOmJ1eWVyI2tleS0xIn0.WGRtWndwSmdhOHpacDdGYW9BSUFhRTZOYldnck1hVnJkeEJyRUQwR1VaTQ.qZ-vaEH-HsCdHk2AhZUue2Ulem6sBhgrDJH3Ec1npA5UwePDO-syhIgujXA6r0S0P4IeRWvodSwKHLdrqyxwBA"
+      }
+    }
+  ]
+}

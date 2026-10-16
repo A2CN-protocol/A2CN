@@ -18,6 +18,7 @@ import {
   type SigningPrivateKey,
 } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
+import { termsLineItemViolation } from "./line_items.js";
 import {
   A2CN_NAMESPACE,
   generateTransactionRecord,
@@ -381,6 +382,12 @@ export function generateSessionEvidenceRecord(
         "or contradicts the currency or basis of the act it describes",
     );
   }
+  if (!recordedLineItemsHold(record)) {
+    throw new Error(
+      "an act's terms.line_items do not state their money as integer minor " +
+        "units under the pinned keys (Section 7.2)",
+    );
+  }
   if (!observedResponderRulesHold(record)) {
     throw new Error(
       "An observed responder requires unsigned counterparty acts and unilateral evidence",
@@ -568,6 +575,9 @@ export function assessSessionEvidenceRecord(
       return assessment;
     }
     if (!moneyBasisClaimsVerify(record)) {
+      return assessment;
+    }
+    if (!recordedLineItemsHold(record)) {
       return assessment;
     }
     if (!observedResponderRulesHold(record)) {
@@ -1272,6 +1282,42 @@ function negotiationActHashes(act: Dict): string[] {
 }
 
 /**
+ * The content hash of an act's `terms`: SHA-256 over its RFC 8785 form.
+ *
+ * The same canonical form, of the same object, that the act's own protocol act
+ * hash covers (Section 7.3.1). Null when the act carries no terms object.
+ */
+function termsContentHash(act: Dict): string | null {
+  const terms = hasOwn(act, "terms") ? act.terms : undefined;
+  if (typeof terms !== "object" || terms === null || Array.isArray(terms)) {
+    return null;
+  }
+  try {
+    return hashObject(terms);
+  } catch {
+    // Terms that cannot be canonicalized match nothing.
+    return null;
+  }
+}
+
+/** Every string inside `value`, at any depth: the references terms may carry. */
+function stringLeaves(value: unknown): string[] {
+  const leaves: string[] = [];
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (typeof item === "string") {
+      leaves.push(item);
+    } else if (Array.isArray(item)) {
+      pending.push(...item);
+    } else if (typeof item === "object" && item !== null) {
+      pending.push(...Object.values(item));
+    }
+  }
+  return leaves;
+}
+
+/**
  * No act in an external-channel record accepts an act the responder signed.
  *
  * Section 9A.12: an external-channel record MUST NOT attest an in-band acceptance
@@ -1295,6 +1341,22 @@ function negotiationActHashes(act: Dict): string[] {
  *     hash, a target in another spelling or encoding, or one naming nothing in
  *     the record is refused (fail-closed): nothing shows it does not accept a
  *     signed act the producer left out.
+ *   - if it accepts TERMS the responder signed, the record is refused: its own
+ *     `terms`, or the `terms` of any recorded offer or counteroffer it names
+ *     through `accepted_offer_id`, `accepted_protocol_act_hash`, `in_reply_to`
+ *     or any string inside its `terms`, equal the terms of an offer or
+ *     counteroffer the responder signed, compared by `termsContentHash`. Keyed
+ *     on what is accepted, not on how it is referenced, so neither an unchecked
+ *     reference field nor an unsigned copy of the signed terms under another id
+ *     gets past it (Section 9A.12 condition 7, clause (c)).
+ *
+ * The canonical-digest requirement is load-bearing, not merely defensive: an
+ * unsigned act may STATE a non-canonical spelling of a responder-signed hash as
+ * its own protocol_act_hash, so a target in that spelling resolves to the decoy and
+ * passes the exact signed-set check; only the requirement refuses it. The explicit
+ * "an acceptance carries no hash" check is implied by it — a missing hash is not a
+ * canonical string — and is stated anyway, so the rule says what it means on its
+ * own.
  *
  * Keyed on the ACCEPTED act, not on the acceptance's own signature. An acceptance
  * recorded unsigned still names what it accepted, and is still an acceptance the
@@ -1345,6 +1407,10 @@ function noAcceptanceOfResponderSignedAct(record: Dict): boolean {
   const signedIds: string[] = [];
   const recordedHashes: string[] = [];
   const recordedIds: string[] = [];
+  // The terms the responder signed, and the terms each recorded offer or
+  // counteroffer carries, by every name an acceptance may use for it.
+  const signedTerms = new Set<string>();
+  const termsByReference = new Map<string, Set<string>>();
   for (const entry of entries) {
     const act = entry.act;
     if (
@@ -1358,9 +1424,20 @@ function noAcceptanceOfResponderSignedAct(record: Dict): boolean {
     const ids = typeof messageId === "string" && messageId ? [messageId] : [];
     recordedHashes.push(...hashes);
     recordedIds.push(...ids);
+    const termsHash = termsContentHash(act);
+    if (termsHash !== null) {
+      for (const reference of [...hashes, ...ids]) {
+        const known = termsByReference.get(reference) ?? new Set<string>();
+        known.add(termsHash);
+        termsByReference.set(reference, known);
+      }
+    }
     if (entry.attribution === EvidenceAttribution.VERIFIED && entry.sender_did === responderDid) {
       signedHashes.push(...hashes);
       signedIds.push(...ids);
+      if (termsHash !== null) {
+        signedTerms.add(termsHash);
+      }
     }
   }
   for (const entry of entries) {
@@ -1383,6 +1460,29 @@ function noAcceptanceOfResponderSignedAct(record: Dict): boolean {
       (typeof targetId === "string" && signedIds.includes(targetId))
     ) {
       return false;
+    }
+    // Keyed on the terms, not on the reference: an act accepting terms the
+    // responder signed is refused whichever field names them, and whether it
+    // names the signed act or an unsigned copy of the same terms.
+    const ownTerms = termsContentHash(act);
+    if (ownTerms !== null && signedTerms.has(ownTerms)) {
+      return false;
+    }
+    const references: unknown[] = [
+      targetHash,
+      targetId,
+      hasOwn(act, "in_reply_to") ? act.in_reply_to : undefined,
+      ...stringLeaves(hasOwn(act, "terms") ? act.terms : undefined),
+    ];
+    for (const reference of references) {
+      if (typeof reference !== "string") {
+        continue;
+      }
+      for (const termsHash of termsByReference.get(reference) ?? []) {
+        if (signedTerms.has(termsHash)) {
+          return false;
+        }
+      }
     }
     if (!hasHash) {
       return false;
@@ -1686,6 +1786,41 @@ function moneyBasisLabelAgreesWithAct(moneyBasis: Dict, terms: Dict): boolean {
 }
 
 /** Every money_basis in the record recomputes, or the record is rejected. */
+// The first record_version whose acts' line items are held to the whole of
+// Section 7.2's line-item rule. Earlier versions are held to its money hazards
+// only (Section 9A.6, step 13).
+export const LINE_ITEM_RULE_FULL_FROM = "0.5";
+
+/**
+ * Every recorded act's line items meet Section 7.2 (Section 9A.6, step 13).
+ *
+ * The same check the offer path and TransactionRecord verification apply, to
+ * the terms of each act the record carries, signed or observed. Every version
+ * is refused a money hazard: a bare unit_price or total, or a pinned amount
+ * that is not an integer. Labelling a record with an older version therefore
+ * cannot get one past this check. From "0.5" the whole rule applies: both
+ * pinned keys present, and the quantity rules. An act without terms, or terms
+ * without line_items, has nothing to check. No currency condition applies here.
+ */
+function recordedLineItemsHold(record: Dict): boolean {
+  const acts = record.acts;
+  if (!Array.isArray(acts)) {
+    return false;
+  }
+  const hazardsOnly = !versionAtOrAfter(record.record_version, LINE_ITEM_RULE_FULL_FROM);
+  const isDict = (value: unknown): value is Dict =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  for (const entry of acts) {
+    const act = isDict(entry) ? entry.act : undefined;
+    if (isDict(act) && hasOwn(act, "terms")) {
+      if (termsLineItemViolation(act.terms, { hazardsOnly }) !== null) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function moneyBasisClaimsVerify(record: Dict): boolean {
   const acts = record.acts;
   if (!Array.isArray(acts)) {

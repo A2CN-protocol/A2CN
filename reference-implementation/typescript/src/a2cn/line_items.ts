@@ -276,10 +276,20 @@ export function requireMinor(lineItem: unknown, key: string): number {
  * is fixed so that two implementations refusing the same line item refuse it
  * for the same stated reason: a bare spelling first (it is the money-moving
  * mistake), then an omitted pinned key, then a malformed value.
+ *
+ * `hazardsOnly` checks the money hazards and nothing else: a bare `unit_price`
+ * or `total`, and a pinned amount that is present but not an integer. It skips
+ * the requirement that both pinned keys be present and the quantity rules. It
+ * exists for evidence records written before those rules were enforced on them
+ * (Section 9A).
  */
-export function lineItemKeyViolations(lineItem: unknown): string[] {
+export function lineItemKeyViolations(
+  lineItem: unknown,
+  options: { hazardsOnly?: boolean } = {},
+): string[] {
+  const hazardsOnly = options.hazardsOnly === true;
   if (!isObject(lineItem)) {
-    return ["is not an object"];
+    return hazardsOnly ? [] : ["is not an object"];
   }
 
   const violations: string[] = [];
@@ -292,7 +302,7 @@ export function lineItemKeyViolations(lineItem: unknown): string[] {
     }
   }
   for (const key of [UNIT_PRICE_MINOR, TOTAL_MINOR]) {
-    if (!Object.prototype.hasOwnProperty.call(lineItem, key)) {
+    if (!Object.prototype.hasOwnProperty.call(lineItem, key) && !hazardsOnly) {
       violations.push(`omits ${JSON.stringify(key)}, which is REQUIRED on every line item`);
     }
   }
@@ -307,7 +317,7 @@ export function lineItemKeyViolations(lineItem: unknown): string[] {
       );
     }
   }
-  if (Object.prototype.hasOwnProperty.call(lineItem, "quantity")) {
+  if (Object.prototype.hasOwnProperty.call(lineItem, "quantity") && !hazardsOnly) {
     const quantity = integralMinor(lineItem.quantity);
     if (quantity === null) {
       violations.push(`has "quantity" ${show(lineItem.quantity)}, which is not an integer`);
@@ -319,4 +329,34 @@ export function lineItemKeyViolations(lineItem: unknown): string[] {
     }
   }
   return violations;
+}
+
+/**
+ * Why `terms.line_items` breaks Section 7.2, or null when it does not.
+ *
+ * `line_items` is OPTIONAL; where present it is an array, and every entry
+ * passes `lineItemKeyViolations`. The first offending line is reported, in the
+ * words the offer path refuses it with. The offer path (`checkOfferLineItems`),
+ * TransactionRecord verification (Section 9.5) and evidence records
+ * (Section 9A) all call this, so the rule exists once. `hazardsOnly` is passed
+ * through, and also skips the array requirement.
+ */
+export function termsLineItemViolation(
+  terms: unknown,
+  options: { hazardsOnly?: boolean } = {},
+): string | null {
+  if (!isObject(terms) || !Object.prototype.hasOwnProperty.call(terms, "line_items")) {
+    return null;
+  }
+  const lineItems = terms.line_items;
+  if (!Array.isArray(lineItems)) {
+    return options.hazardsOnly === true ? null : "terms.line_items must be an array";
+  }
+  for (const [index, lineItem] of lineItems.entries()) {
+    const violations = lineItemKeyViolations(lineItem, options);
+    if (violations.length > 0) {
+      return `terms.line_items[${index}] ${violations.join("; ")}`;
+    }
+  }
+  return null;
 }

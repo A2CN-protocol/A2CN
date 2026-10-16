@@ -14,8 +14,8 @@ import { getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
 import {
   SUPPORTED_SESSION_CURRENCIES,
-  lineItemKeyViolations,
   sessionCurrencyIsSupported,
+  termsLineItemViolation,
 } from "./line_items.js";
 import {
   ESTABLISHMENT_WIRE_VERSIONS,
@@ -297,23 +297,9 @@ export function checkOfferLineItems(
   terms: unknown,
   context: { sessionId?: string | null; messageId?: string | null } = {},
 ): void {
-  if (!isJsonObject(terms) || terms.line_items === undefined) {
-    return;
-  }
-  const lineItems = terms.line_items;
-  if (!Array.isArray(lineItems)) {
-    throw new A2CNError("INVALID_LINE_ITEM", "terms.line_items must be an array", 400, context);
-  }
-  for (const [index, lineItem] of lineItems.entries()) {
-    const violations = lineItemKeyViolations(lineItem);
-    if (violations.length > 0) {
-      throw new A2CNError(
-        "INVALID_LINE_ITEM",
-        `terms.line_items[${index}] ${violations.join("; ")}`,
-        400,
-        context,
-      );
-    }
+  const violation = termsLineItemViolation(terms);
+  if (violation !== null) {
+    throw new A2CNError("INVALID_LINE_ITEM", violation, 400, context);
   }
 }
 

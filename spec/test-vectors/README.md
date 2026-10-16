@@ -236,6 +236,47 @@ because a verifier refuses them at the version check long before a signature is
 examined, which is exactly what they exist to demonstrate. Re-signing them with
 today's key would make them verify, which is the opposite of their purpose.
 
+`transaction-record-line-items.json` covers Section 9.5 step 9, which holds a
+record's `agreed_terms` to Section 7.2's money encoding. Each case is
+`transaction-record-basis.json`'s bound record with `agreed_terms.line_items` set
+as the case says, in some cases with the record and its terms in another
+currency, and both acts re-signed with that vector's test-only keys, so
+the record hash, the act hash, the offer chain and both signatures are genuine.
+Verified with the vector's `did_documents` and the case's `offer_hashes`, each
+record must reach the case's verdict and `expected_reason` (`null` when it
+verifies) in both suites. The refused cases include bare `unit_price` / `total`
+in major units, a bare name beside the pinned keys, an omitted or fractional or
+textual amount, one past 2^53 − 1, a negative quantity, a bad second line, and a
+`line_items` that is not an array, and a currency this build cannot state
+minor amounts in, with line items and without. The controls show that a line item stays open
+to deal-type extension fields and that a whole-number float such as
+`100000.0` is an integer amount.
+
+`session-evidence-record-line-items.json` covers Section 9A.6 step 13, which holds
+the line items of the acts an evidence record carries to Section 7.2. Each case
+is `session-evidence-record-parity.json`'s stored `"0.1"` record, or the `"0.5"`
+record this implementation generates for the same session, with the observed
+counteroffer's `terms.line_items` set as the case says, its act hash and the
+chain recomputed, and the record resealed with that vector's test-only producer
+key. At every version a bare `unit_price` / `total` or a non-integer pinned
+amount is refused; from `"0.5"` the rest of the rule applies too, so a line
+without `total_minor` verifies in the `"0.1"` record and is refused in the
+`"0.5"` one. Verified with the vector's `did_documents`, each record must reach
+the stated verdict in both suites.
+
+`session-evidence-record-external-acceptance.json` covers Section 9A.12
+condition 7 clause (c): an external-channel record must not attest an in-band
+acceptance of terms the responder signed. In every case the responder signed
+`counteroffer-1`. The refused cases edit one unsigned act of a record the
+generator sealed, then reseal it with the test producer key: an acceptance that
+points at the signed counteroffer through `in_reply_to`, one that names it by
+`message_id` inside its `terms`, one that states the signed terms itself, and an
+acceptance of an unsigned copy of the signed terms recorded under a new id. The
+two controls, an acceptance of the initiator's offer and one of the responder's
+unsigned observed counteroffer at another price, verify. Verified with the
+vector's `did_documents`, each record must reach the stated verdict in both
+suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

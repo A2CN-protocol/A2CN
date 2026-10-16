@@ -2234,6 +2234,22 @@ Any party verifying a transaction record MUST:
      `terms.basis` (Section 7.2), so an older genuine record may legitimately
      differ, and a verifier must not begin rejecting records that verified
      before.
+9. Verify that `agreed_terms` satisfies Section 7.2's money encoding exactly as
+   an offer's `terms` must. Its `currency` is one whose minor-unit exponent the
+   verifier can establish to be 2, whether or not the terms carry line items.
+   `agreed_terms.line_items`, when present, is an
+   array; every entry is an object carrying `unit_price_minor` and
+   `total_minor`, each an integer number of minor units within ±(2^53 − 1),
+   and neither of the bare names `unit_price` or `total`; and a `quantity`, when
+   present, is a non-negative integer. An amount is an integer by value, not by
+   spelling, so `36000.0` is the integer `36000`. A line item is not otherwise
+   closed: the extension fields of a deal type (Section 18) are admitted.
+
+   A verifier applies these rules itself. It MUST NOT rely on the producer
+   having checked the offer: a producer that signed bare-name or major-unit line
+   items directly would otherwise obtain a record whose hashes and signatures are all
+   genuine, and a reader of it could misread every agreed price by a factor of
+   one hundred.
 
 Both sides of a `"0.4"` record are recomputable from the record alone, each from
 its own stored fields. The offering party's signature covers the protocol act
@@ -2723,7 +2739,8 @@ signature types. That rule is one-directional: the vocabulary requires the
 version, while a `"0.4"` or later record is under no obligation to carry a
 decline. Each of these version-keyed rules is read as a floor, not as membership
 of a fixed set — the historical rule applies below `"0.4"`, the responder rule
-below `"0.5"`, and the decline rule from `"0.4"` — so "or later" includes every
+below `"0.5"`, the decline rule from `"0.4"`, and the full line-item rule of
+step 13 from `"0.5"` — so "or later" includes every
 version published after this text was written. It then:
 
 1. Validate the record structure, including `external_commitment_reference`
@@ -2769,7 +2786,10 @@ version published after this text was written. It then:
     name by its `accepted_protocol_act_hash` or `accepted_offer_id` an Offer or
     Counteroffer the responder signed, and once the responder has signed an act
     every such target MUST resolve exactly to an Offer or Counteroffer in the
-    record; `evidence_level` MUST be `unilateral` or `mixed`
+    record; no act that accepts may accept terms equal to the terms of an Offer
+    or Counteroffer the responder signed, whichever field names them and
+    whether it names the signed act or an unsigned copy (Section 9A.12
+    condition 7, clause (c)); `evidence_level` MUST be `unilateral` or `mixed`
     and never `bilateral`; `producer.did` MUST equal `parties.initiator.did`;
     and at least one act MUST claim `verified_signature` with a `sender_did`
     equal to `parties.initiator.did`. Do not dereference its `locator`. The
@@ -2787,6 +2807,19 @@ version published after this text was written. It then:
     its `terms.basis`.
 12. Confirm every key of `extensions` is namespaced per Section 9A.11. Do not
     interpret their values.
+13. Hold the `terms.line_items` of every act the record carries, signed or
+    observed, to Section 7.2, by the same rule Section 9.5 step 9 applies to
+    `agreed_terms.line_items`. At every `record_version`, reject a line item
+    that carries the bare name `unit_price` or `total`, or a `unit_price_minor`
+    or `total_minor` that is present but not an integer by value (`36000.0` is
+    the integer `36000`): these are the money hazards, and a record cannot avoid
+    them by carrying an older version label. From `"0.5"`, apply the rest of
+    Section 7.2's line-item rule as well: `line_items` is an array of objects,
+    each carrying both `unit_price_minor` and `total_minor`, with any `quantity`
+    a non-negative integer. Records labelled below `"0.5"` were written before
+    that rule was enforced on evidence, and a line item in one of them that
+    states `unit_price_minor` without `total_minor` still verifies. The
+    currency condition of Section 7.2 is not applied to evidence records.
 
 A signature that is present but invalid, references the wrong key, signs the
 wrong payload, or conflicts with the complete `act` MUST cause verification to
@@ -3093,6 +3126,21 @@ following, and a verifier MUST reject it otherwise:
    `offer` or `counteroffer` is named by the `protocol_act_hash` it states and by
    the hash of its signed act rebuilt (Section 7.3.1), which for a verified act
    are the same value.
+
+   A verifier MUST also reject the record when (c) an act that accepts accepts
+   **terms** the responder signed. That is so when its own `terms`, or the
+   `terms` of any `offer` or `counteroffer` in the record that it names, equal
+   the `terms` of an `offer` or `counteroffer` that claims `verified_signature`
+   with a `sender_did` equal to `parties.responder.did`. An act that accepts
+   names a recorded act by its `accepted_protocol_act_hash`, its
+   `accepted_offer_id`, its `in_reply_to`, or any string anywhere inside its
+   `terms`, matched against that act's hashes and `message_id` as above. Two
+   `terms` objects are equal when their content hashes are: SHA-256 over the
+   RFC 8785 canonical form of the whole `terms` object, which is the object an
+   act's protocol act hash covers (Section 7.3.1). Clause (c) is keyed on what is
+   accepted, not on how it is referenced, so neither a reference carried in a
+   field clause (b) does not read nor an unsigned copy of the signed terms
+   recorded under another identifier evades it.
 
 Below `"0.5"` conditions 2 and 3 are narrower, as condition 4 states: they
 require an `observed_party` responder at `unilateral`. That pair is an

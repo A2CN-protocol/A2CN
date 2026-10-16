@@ -237,16 +237,22 @@ def require_minor(line_item: Any, key: str) -> int:
     return amount
 
 
-def line_item_key_violations(line_item: Any) -> list[str]:
+def line_item_key_violations(line_item: Any, *, hazards_only: bool = False) -> list[str]:
     """Why this line item is not a well-formed priced line, or an empty list.
 
     Each violation is a phrase that reads after ``terms.line_items[n]``. The
     order is fixed so that two implementations refusing the same line item
     refuse it for the same stated reason: a bare spelling first (it is the
     money-moving mistake), then an omitted pinned key, then a malformed value.
+
+    ``hazards_only`` checks the money hazards and nothing else: a bare
+    ``unit_price`` or ``total``, and a pinned amount that is present but not an
+    integer. It skips the requirement that both pinned keys be present and the
+    quantity rules. It exists for evidence records written before those rules
+    were enforced on them (Section 9A).
     """
     if not isinstance(line_item, dict):
-        return ["is not an object"]
+        return [] if hazards_only else ["is not an object"]
 
     violations: list[str] = []
     for bare in sorted(REJECTED_MONEY_KEYS):
@@ -256,7 +262,7 @@ def line_item_key_violations(line_item: Any) -> list[str]:
                 f"units under {bare + '_minor'!r} (Section 7.2)"
             )
     for key in (UNIT_PRICE_MINOR, TOTAL_MINOR):
-        if key not in line_item:
+        if key not in line_item and not hazards_only:
             violations.append(f"omits {key!r}, which is REQUIRED on every line item")
     for key in (UNIT_PRICE_MINOR, TOTAL_MINOR):
         if key in line_item and integral_minor(line_item[key]) is None:
@@ -264,7 +270,7 @@ def line_item_key_violations(line_item: Any) -> list[str]:
                 f"has {key!r} {line_item[key]!r}, which is not an integer number of "
                 f"minor units within ±{MAX_SAFE_MINOR}"
             )
-    if "quantity" in line_item:
+    if "quantity" in line_item and not hazards_only:
         quantity = integral_minor(line_item["quantity"])
         if quantity is None:
             violations.append(
@@ -276,3 +282,25 @@ def line_item_key_violations(line_item: Any) -> list[str]:
                 "price, not a negative count (Section 7.2)"
             )
     return violations
+
+
+def terms_line_item_violation(terms: Any, *, hazards_only: bool = False) -> str | None:
+    """Why ``terms.line_items`` breaks Section 7.2, or ``None`` when it does not.
+
+    ``line_items`` is OPTIONAL; where present it is an array, and every entry
+    passes :func:`line_item_key_violations`. The first offending line is
+    reported, in the words the offer path refuses it with. The offer path
+    (``check_offer_line_items``), TransactionRecord verification (Section 9.5)
+    and evidence records (Section 9A) all call this, so the rule exists once.
+    ``hazards_only`` is passed through, and also skips the array requirement.
+    """
+    if not isinstance(terms, dict) or "line_items" not in terms:
+        return None
+    line_items = terms["line_items"]
+    if not isinstance(line_items, list):
+        return None if hazards_only else "terms.line_items must be an array"
+    for index, line_item in enumerate(line_items):
+        violations = line_item_key_violations(line_item, hazards_only=hazards_only)
+        if violations:
+            return f"terms.line_items[{index}] {'; '.join(violations)}"
+    return None

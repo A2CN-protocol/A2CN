@@ -9,7 +9,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 
 | Axis | Current |
 |------|---------|
-| Release | `0.3.0` |
+| Release | `0.3.1` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
 | `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.5` for every record, with `0.1`, `0.2`, `0.3` and `0.4` still accepted |
 
@@ -19,6 +19,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+## [0.3.1] — 2026-10-15
 
 ### Security
 
@@ -48,17 +50,50 @@ This project is pre-1.0: the minor version moves for substantive additions.
   invalid receipt leaves the session paused (Section 8 now says so too).
   A receipt must also name, in `references[]`, the party whose act it approves:
   a receipt approves one party's act, on one offer, in one session, once.
-  Resolving an approver follows no HTTP redirect, must finish within five
-  seconds in total, refuses a compressed document or one over 64 KiB, and
-  reads it as strict UTF-8 JSON, identically in both implementations; the
-  same limits apply to every did:web resolution the reference servers make. A receipt nested more than
-  64 levels deep, its signature member included, is refused in both, expiry is compared to the millisecond in both, only a
+  A receipt nested more than 64 levels deep, its signature member included, is
+  refused in both, expiry is compared to the millisecond in both, only a
   non-empty string is recorded as a receipt id, and Section 5.5's
-  session-duration key binding is limited to the parties' act keys. Section 14.1 states the signing
-  rule, the fields read and the Concordia version followed, and its example is a
-  signed receipt that both implementations verify. A shared test vector checks
-  that receipts signed in either language verify in both. Approval systems that
-  issue receipts must sign them as Section 14.1 describes.
+  session-duration key binding is limited to the parties' act keys. Section 14.1
+  states the signing rule, the fields read and the Concordia version followed,
+  and its example is a signed receipt that both implementations verify. A shared
+  test vector checks that receipts signed in either language verify in both.
+  Approval systems that issue receipts must sign them as Section 14.1 describes.
+- **did:web resolution is bounded.** Every did:web resolution the reference
+  servers make (a token issuer's, an inviter's and an approver's DID document)
+  follows no HTTP redirect, must finish within five seconds in total, the
+  response body included, requests the document without a content encoding and
+  refuses a compressed one, refuses a document over 64 KiB, and reads it as
+  strict UTF-8 JSON without `NaN` or `Infinity`, identically in both
+  implementations.
+- **Record verification holds agreed terms to Section 7.2's money encoding
+  (Section 9.5, step 9).** Both verifiers now refuse a TransactionRecord whose
+  `agreed_terms.line_items` states money under the bare `unit_price` / `total`
+  names, omits `unit_price_minor` or `total_minor`, or gives either as anything
+  other than an integer number of minor units, or whose currency is not one the
+  implementation can state minor amounts in, with the new reason
+  `LINE_ITEMS_INVALID`. The verifier applies the rule itself rather than
+  relying on the producer having checked the offer, using the same checks as
+  the offer path. Deal-type extension fields on a line item are still admitted, and
+  a whole-number float such as `36000.0` is still an integer. A shared test
+  vector of re-signed records gives both implementations the same verdicts.
+- **Evidence records hold their acts' line items to Section 7.2 (Section 9A.6,
+  step 13).** Both verifiers, and both generators before sealing, apply the
+  same shared check to the `terms.line_items` of every recorded act. At every
+  `record_version` a bare `unit_price` / `total`, or a `unit_price_minor` /
+  `total_minor` that is not an integer, is refused, so an older version label
+  cannot carry one. From `"0.5"` the rest of the rule applies as well (both
+  pinned keys, the quantity rules). Records labelled below `"0.5"` that state
+  `unit_price_minor` without `total_minor` still verify. No currency condition
+  applies to evidence records.
+- **The external-channel accepted-act rule is keyed on the terms (Section
+  9A.12, condition 7).** Both verifiers, and both generators before sealing,
+  now refuse an external-channel record in which an act that accepts accepts
+  terms equal to those of an offer or counteroffer the responder signed. That
+  holds whether the act names them through `accepted_offer_id`,
+  `accepted_protocol_act_hash`, `in_reply_to` or a reference inside its
+  `terms`, and whether it names the signed act or an unsigned copy of the same
+  terms. Terms are compared by the SHA-256 of their RFC 8785 form. A shared test
+  vector gives both implementations the same verdicts.
 
 ### Changed
 
@@ -993,6 +1028,7 @@ strict turn-taking.
 
 Initial draft.
 
-[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.1
 [0.3.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.0
 [0.2.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.2.0
