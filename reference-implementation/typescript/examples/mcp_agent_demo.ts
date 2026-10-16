@@ -101,7 +101,7 @@ async function main(): Promise<void> {
       mandate_type: "declared",
       agent_id: "sales-agent-acme-007",
       principal_organization: "Acme Corp",
-      principal_did: SELLER_DID,
+      principal_did: `${SELLER_DID}:principal`,
       authorized_deal_types: ["saas_renewal"],
       max_commitment_value: 20_000_000,
       max_commitment_currency: "USD",

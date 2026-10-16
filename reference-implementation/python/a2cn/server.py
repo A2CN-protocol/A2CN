@@ -525,11 +525,37 @@ async def send_message(session_id: str, request: Request,
 # POST /sessions/{session_id}/approval-receipt
 # ---------------------------------------------------------------------------
 
+async def _resolve_approver_did_document(approver: str) -> dict | None:
+    """The approver's DID document, resolved for this receipt alone.
+
+    A document the operator pre-registered is used as configured. Otherwise a
+    did:web approver is fetched now, for this receipt only, and is not stored,
+    so a key the approver adds or removes takes effect on the next receipt.
+    Any failure, or a method other than did:web, returns None, and the receipt
+    is then refused because its key cannot be resolved.
+    """
+    approver_did = approver.partition("#")[0]
+    if approver_did in _did_doc_override:
+        return _did_doc_override[approver_did]
+    if not approver_did.startswith("did:web:"):
+        return None
+    try:
+        async with httpx.AsyncClient() as http:
+            return await resolve_did_web(approver_did, http)
+    except Exception:
+        return None
+
+
 @app.post("/sessions/{session_id}/approval-receipt")
 async def post_approval_receipt(session_id: str, request: Request,
                                 _jwt: dict = Depends(verify_jwt_auth)) -> Response:
     session = _get_session_or_404(session_id)
     body = await _parse_body(request)
+
+    if not isinstance(body, dict):
+        return error_response("APPROVAL_RECEIPT_INVALID",
+                               "ApprovalReceipt must be a JSON object",
+                               400, session_id=session_id)
 
     if body.get("session_id") is not None and body.get("session_id") != session_id:
         return error_response("SESSION_ID_MISMATCH",
@@ -537,7 +563,11 @@ async def post_approval_receipt(session_id: str, request: Request,
                                400, session_id=session_id)
 
     try:
-        response = manager.apply_approval_receipt(session, body)
+        # Every check that needs no key runs first, so a receipt that fails one
+        # never causes the approver's DID document to be fetched.
+        approver = manager.check_approval_receipt(session, body)
+        did_document = await _resolve_approver_did_document(approver)
+        response = manager.apply_approval_receipt(session, body, approver_did_document=did_document)
     except A2CNError as exc:
         return error_response(exc.code, exc.message, exc.http_status, exc.detail, exc.session_id, exc.message_id)
 

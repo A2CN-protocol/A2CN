@@ -1,8 +1,10 @@
 /** Tests for a2cn/did — using a fake fetch to mock HTTPS fetches. */
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
+  DID_DOCUMENT_MAX_BYTES,
+  DID_RESOLUTION_TIMEOUT_MS,
   resolveDidWeb,
   didWebToUrl,
   getVerificationMethod,
@@ -75,6 +77,129 @@ test("resolve did web 404 raises", async () => {
   await expect(resolveDidWeb("did:web:notfound.example", fetchFn)).rejects.toThrow(
     /Failed to fetch DID document/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// resolveDidWeb limits: content encoding, size, decoding, deadline
+// ---------------------------------------------------------------------------
+
+const LIMITS_DID = "did:web:limits.example";
+
+/** A valid DID document padded to exactly `size` bytes. */
+function documentOfSize(size: number): Buffer {
+  const { publicKey } = generateEd25519Keypair();
+  const text = JSON.stringify(makeDidDocument(LIMITS_DID, "key-1", publicKeyToJwk(publicKey)));
+  const head = text.slice(0, -1) + ', "pad": "';
+  const body = Buffer.from(head + "a".repeat(size - head.length - 2) + '"}', "utf8");
+  expect(body.length).toBe(size);
+  return body;
+}
+
+function answering(body: ConstructorParameters<typeof Response>[0], headers: Record<string, string> = {}): typeof fetch {
+  return (async () => new Response(body, { status: 200, headers })) as unknown as typeof fetch;
+}
+
+/** A body stream that ignores the fetch signal, as an injected fetch may. */
+function streamOf(next: (count: number) => Promise<Uint8Array | null>): ReadableStream<Uint8Array> {
+  let count = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const chunk = await next(count++);
+      if (chunk === null) {
+        controller.close();
+      } else {
+        controller.enqueue(chunk);
+      }
+    },
+  });
+}
+
+test("resolve did web asks for an unencoded document", async () => {
+  const seen: unknown[] = [];
+  const fetchFn = (async (_url: string, init?: { headers?: Record<string, string> }) => {
+    seen.push(init?.headers?.["Accept-Encoding"]);
+    return new Response(documentOfSize(2000), { status: 200 });
+  }) as unknown as typeof fetch;
+  await resolveDidWeb(LIMITS_DID, fetchFn);
+  expect(seen).toEqual(["identity"]);
+});
+
+for (const encoding of ["gzip", "x-gzip", "deflate", "br", "zstd", "gzip, gzip"]) {
+  test(`resolve did web refuses a compressed document: ${encoding}`, async () => {
+    await expect(
+      resolveDidWeb(LIMITS_DID, answering(documentOfSize(2000), { "Content-Encoding": encoding })),
+    ).rejects.toThrow("content encoding");
+  });
+}
+
+test("resolve did web accepts an explicit identity encoding", async () => {
+  const doc = await resolveDidWeb(LIMITS_DID, answering(documentOfSize(2000), { "Content-Encoding": "identity" }));
+  expect(doc.id).toBe(LIMITS_DID);
+});
+
+test("resolve did web size limit is inclusive", async () => {
+  expect(DID_DOCUMENT_MAX_BYTES).toBe(65536);
+  expect((await resolveDidWeb(LIMITS_DID, answering(documentOfSize(65536)))).id).toBe(LIMITS_DID);
+  await expect(resolveDidWeb(LIMITS_DID, answering(documentOfSize(65537)))).rejects.toThrow(
+    "larger than the resolution limit",
+  );
+});
+
+test("resolve did web size limit counts every chunk", async () => {
+  const body = documentOfSize(70000);
+  const stream = streamOf(async (i) => (i * 1000 < body.length ? body.subarray(i * 1000, i * 1000 + 1000) : null));
+  await expect(resolveDidWeb(LIMITS_DID, answering(stream))).rejects.toThrow("larger than the resolution limit");
+});
+
+test("resolve did web stops reading at the size limit", async () => {
+  // 1 MiB of whitespace, offered 4 KiB at a time; reading should stop near 64 KiB.
+  let sent = 0;
+  const stream = streamOf(async (i) => {
+    if (i >= 256) {
+      return null;
+    }
+    sent += 4096;
+    return new Uint8Array(4096).fill(0x20);
+  });
+  await expect(resolveDidWeb(LIMITS_DID, answering(stream))).rejects.toThrow(
+    "larger than the resolution limit",
+  );
+  expect(sent).toBeLessThanOrEqual(65536 + 2 * 4096);
+});
+
+test("resolve did web deadline covers the body", async () => {
+  // One byte every 20 ms, from a stream that never sees the abort signal.
+  const stream = streamOf(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return new Uint8Array([0x20]);
+  });
+  const started = Date.now();
+  await expect(resolveDidWeb(LIMITS_DID, answering(stream), 200)).rejects.toThrow("timed out");
+  expect(Date.now() - started).toBeLessThan(2000);
+});
+
+test("resolve did web uses the five second deadline by default", async () => {
+  const timeout = vi.spyOn(AbortSignal, "timeout");
+  try {
+    await resolveDidWeb(LIMITS_DID, answering(documentOfSize(2000)));
+    expect(timeout).toHaveBeenCalledWith(DID_RESOLUTION_TIMEOUT_MS);
+  } finally {
+    timeout.mockRestore();
+  }
+});
+
+for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+  test(`resolve did web refuses non json number literals: ${literal}`, async () => {
+    const text = documentOfSize(2000).toString("utf8");
+    const body = Buffer.from(text.slice(0, -1) + `, "x": ${literal}}`, "utf8");
+    await expect(resolveDidWeb(LIMITS_DID, answering(body))).rejects.toThrow();
+  });
+}
+
+test("resolve did web refuses invalid utf8", async () => {
+  const doc = documentOfSize(2000);
+  const body = Buffer.concat([doc.subarray(0, -2), Buffer.from([0xff]), Buffer.from('"}')]);
+  await expect(resolveDidWeb(LIMITS_DID, answering(body))).rejects.toThrow(TypeError);
 });
 
 // ---------------------------------------------------------------------------

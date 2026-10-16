@@ -78,6 +78,131 @@ async def test_resolve_did_web_404_raises():
 
 
 # ---------------------------------------------------------------------------
+# resolve_did_web limits: content encoding, size, decoding, deadline
+# ---------------------------------------------------------------------------
+
+LIMITS_DID = "did:web:limits.example"
+LIMITS_URL = "https://limits.example/.well-known/did.json"
+
+
+def _document_of_size(size: int) -> bytes:
+    """A valid DID document padded to exactly ``size`` bytes."""
+    _, pub = generate_ed25519_keypair()
+    text = json.dumps(make_did_document(LIMITS_DID, "key-1", public_key_to_jwk(pub)))
+    head = text[:-1] + ', "pad": "'
+    pad = size - len(head) - len('"}')
+    assert pad >= 0
+    body = (head + "a" * pad + '"}').encode("utf-8")
+    assert len(body) == size
+    return body
+
+
+async def _resolve(response=None, side_effect=None, timeout=None):
+    with respx.mock(assert_all_called=False) as mock:
+        route = mock.get(LIMITS_URL)
+        if side_effect is not None:
+            route.mock(side_effect=side_effect)
+        else:
+            route.mock(return_value=response)
+        async with httpx.AsyncClient() as client:
+            return await resolve_did_web(LIMITS_DID, client, timeout=timeout)
+
+
+async def test_resolve_did_web_asks_for_an_unencoded_document():
+    seen = []
+
+    def answer(request):
+        seen.append(request.headers.get("accept-encoding"))
+        return httpx.Response(200, content=_document_of_size(2000))
+
+    await _resolve(side_effect=answer)
+    assert seen == ["identity"]
+
+
+def _compressed(encoding: str, body: bytes) -> bytes:
+    import gzip
+    import zlib
+    if encoding == "gzip":
+        return gzip.compress(body)
+    if encoding == "deflate":
+        return zlib.compress(body)
+    if encoding == "gzip, gzip":
+        return gzip.compress(gzip.compress(body))
+    return body  # an encoding the client does not decode; only the header matters
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "x-gzip", "deflate", "br", "zstd", "gzip, gzip"])
+async def test_resolve_did_web_refuses_a_compressed_document(encoding):
+    body = _compressed(encoding, _document_of_size(2000))
+    response = httpx.Response(200, content=body, headers={"Content-Encoding": encoding})
+    with pytest.raises(ValueError, match="content encoding"):
+        await _resolve(response)
+
+
+async def test_resolve_did_web_accepts_an_explicit_identity_encoding():
+    response = httpx.Response(200, content=_document_of_size(2000), headers={"Content-Encoding": "identity"})
+    assert (await _resolve(response))["id"] == LIMITS_DID
+
+
+async def test_resolve_did_web_size_limit_is_inclusive():
+    assert (await _resolve(httpx.Response(200, content=_document_of_size(65536))))["id"] == LIMITS_DID
+    with pytest.raises(ValueError, match="larger than the resolution limit"):
+        await _resolve(httpx.Response(200, content=_document_of_size(65537)))
+
+
+async def test_resolve_did_web_size_limit_counts_every_chunk():
+    body = _document_of_size(70000)
+
+    async def chunks():
+        for i in range(0, len(body), 1000):
+            yield body[i:i + 1000]
+
+    with pytest.raises(ValueError, match="larger than the resolution limit"):
+        await _resolve(httpx.Response(200, content=chunks()))
+
+
+async def test_resolve_did_web_stops_reading_at_the_size_limit():
+    # 1 MiB of whitespace, offered 4 KiB at a time; reading should stop near 64 KiB.
+    sent = 0
+
+    async def whitespace():
+        nonlocal sent
+        for _ in range(256):
+            sent += 4096
+            yield b" " * 4096
+
+    with pytest.raises(ValueError, match="larger than the resolution limit"):
+        await _resolve(httpx.Response(200, content=whitespace()))
+    assert sent <= 65536 + 4096
+
+
+async def test_resolve_did_web_deadline_covers_the_body():
+    import asyncio
+    body = _document_of_size(2000)
+
+    async def stalls():
+        yield body[:1000]
+        await asyncio.sleep(1.0)
+        yield body[1000:]
+
+    with pytest.raises(TimeoutError):
+        await _resolve(httpx.Response(200, content=stalls()), timeout=0.2)
+
+
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+async def test_resolve_did_web_refuses_non_json_number_literals(literal):
+    body = _document_of_size(2000)[:-1] + b', "x": ' + literal.encode() + b"}"
+    with pytest.raises(ValueError, match="non-JSON literal"):
+        await _resolve(httpx.Response(200, content=body))
+
+
+async def test_resolve_did_web_refuses_invalid_utf8():
+    body = _document_of_size(2000)[:-2] + b'\xff"}'
+    with pytest.raises(UnicodeDecodeError):
+        await _resolve(httpx.Response(200, content=body))
+
+
+# ---------------------------------------------------------------------------
 # get_verification_method
 # ---------------------------------------------------------------------------
 

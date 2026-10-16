@@ -1,0 +1,1268 @@
+{
+  "description": "ApprovalReceipt signatures (Section 14.1): the RFC 8785 JCS form of the receipt with its top-level signature member removed, signed with Ed25519 (raw signature) or ES256 (DER, low s), value base64url. Both reference implementations verify every case and agree on the verdict.",
+  "cases": [
+    {
+      "name": "python_signed_ed25519",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Bk7tWRIOJjIvobBsiz_iZxJ_xOq9EujuZjdIJ2U5Qfs"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "5BhXOxkK_kcRe-lF5Tel64amo3EVzQz9YhdMxyeutfKhYkSaMEB7aMNkpYIUSw63cbRqBpum61ETfELrWHrdDw=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "python_signed_es256",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEUCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIgY8I-LGDik04QegXqpedd3-br93L-HidBGXD3mCoAiLg="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "typescript_signed_ed25519",
+      "signed_in": "typescript",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Oz_UGM2agQt77lmn7Z1ukuUIqxqGuuiZCN_57-Y8y10"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:typescript-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "X2jHGJ37hokO6Wi5HS_m-96hLa-2XbjKn-yscUyp0NrrI3NHG1IpEBMajHH7im3NxTl7v7qXEuLZ27AahHzSCg=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "typescript_signed_es256",
+      "signed_in": "typescript",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "9cBFTQxmS7hDL8reHGwOhcQE9c3cGxyLJJDwu6i4HMg",
+        "y": "FMgtSdfPtmS0x9CzGjjKQ6a-7aWGdod-eFserGb0w1U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:typescript-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEUCIQCFjeOBp8MOT4z31Aob8Gr8lRleeeZkX4LkhfWAqSPF1wIgA1vCeBT4NuZh4gdpoyWgwUbg_gAjf5uR2POAEPZQiS8="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "altered_after_signing",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Bk7tWRIOJjIvobBsiz_iZxJ_xOq9EujuZjdIJ2U5Qfs"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "1.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "5BhXOxkK_kcRe-lF5Tel64amo3EVzQz9YhdMxyeutfKhYkSaMEB7aMNkpYIUSw63cbRqBpum61ETfELrWHrdDw=="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "algorithm_label_mismatch",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Bk7tWRIOJjIvobBsiz_iZxJ_xOq9EujuZjdIJ2U5Qfs"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "5BhXOxkK_kcRe-lF5Tel64amo3EVzQz9YhdMxyeutfKhYkSaMEB7aMNkpYIUSw63cbRqBpum61ETfELrWHrdDw=="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "signature_removed",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Bk7tWRIOJjIvobBsiz_iZxJ_xOq9EujuZjdIJ2U5Qfs"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode"
+      },
+      "verifies": false
+    },
+    {
+      "name": "value_with_extra_padding",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "Bk7tWRIOJjIvobBsiz_iZxJ_xOq9EujuZjdIJ2U5Qfs"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-ed25519",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "5BhXOxkK_kcRe-lF5Tel64amo3EVzQz9YhdMxyeutfKhYkSaMEB7aMNkpYIUSw63cbRqBpum61ETfELrWHrdDw==="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_high_s",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEYCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIhAJw9wdKfHWyy74X6FVoYoh_V-wM6qPl3Q9pI0yrSYpyZ"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_raw_r_s_not_der",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "uGYJRtGaVDauIkdyGTvB6blVORvadkLCXrKM3G0kB2Jjwj4sYOKTThB6Beql513f5uv3cv4eJ0EZcPeYKgCIuA=="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_der_integer_not_minimal",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEYCIgAAuGYJRtGaVDauIkdyGTvB6blVORvadkLCXrKM3G0kB2ICIGPCPixg4pNOEHoF6qXnXd_m6_dy_h4nQRlw95gqAIi4"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_der_length_not_minimal",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MIFFAiEAuGYJRtGaVDauIkdyGTvB6blVORvadkLCXrKM3G0kB2ICIGPCPixg4pNOEHoF6qXnXd_m6_dy_h4nQRlw95gqAIi4"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_der_trailing_byte",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "ES256",
+          "value": "MEUCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIgY8I-LGDik04QegXqpedd3-br93L-HidBGXD3mCoAiLgA"
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "python_signed_with_a___proto___member",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "qBWHT8Seb6HMahc1-U8AdWdGSu5q7EQQEo76D7XDGx0"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:proto-member",
+        "__proto__": {
+          "note": "an ordinary member"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "ExfZa9PptKpNprkG_azmTKMM6_PsWE7-kha7imQiCyD0nVvPBaT5TVNtHUSV8zH-0WDzPZRzTQs098zqfHcOBw=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "__proto___member_altered_after_signing",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "qBWHT8Seb6HMahc1-U8AdWdGSu5q7EQQEo76D7XDGx0"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:proto-member",
+        "__proto__": {
+          "note": "altered"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "ExfZa9PptKpNprkG_azmTKMM6_PsWE7-kha7imQiCyD0nVvPBaT5TVNtHUSV8zH-0WDzPZRzTQs098zqfHcOBw=="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "es256_signature_labelled_ed25519",
+      "public_key_jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "3H1XKE2qov738wK5BoVKy-PeaVWcGnWqxOC3xE8r0KI",
+        "y": "nGCYMbgwEevZq0R8fau5OvrNGluVcMND7n85jbum40U"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:python-es256",
+        "scope": {
+          "decision": "approve",
+          "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "amount": "95000.00 USD",
+          "threshold_crossed": "90000.00 USD"
+        },
+        "references": [
+          {
+            "type": "negotiation_session",
+            "id": "a2cn:session:sess-vector",
+            "relationship": "approves"
+          },
+          {
+            "type": "mandate",
+            "id": "a2cn:mandate:m-vector",
+            "relationship": "fulfills"
+          }
+        ],
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "note": "naïve – ünïcode",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "MEUCIQC4ZglG0ZpUNq4iR3IZO8HpuVU5G9p2QsJesozcbSQHYgIgY8I-LGDik04QegXqpedd3-br93L-HidBGXD3mCoAiLg="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "python_signed_with_a_nested_signature_member",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "DIqVsEUraNT7Hdaj5UV8ek2Bqu3yabYa4u0X3c9sVeg"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:nested",
+        "attachment": {
+          "kind": "quote",
+          "signature": "a nested member, covered like any other"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "l-ZI4Lo_zA6PQRZvxBim0mAy1ufhvQOSW__LS5dMFuGKFSicSrtx30w0xX26OOst1OgSt67P910_viGjffsBAQ=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "nested_signature_member_altered_after_signing",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "DIqVsEUraNT7Hdaj5UV8ek2Bqu3yabYa4u0X3c9sVeg"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:nested",
+        "attachment": {
+          "kind": "quote",
+          "signature": "altered"
+        },
+        "approver_did": "did:web:approver.example",
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "l-ZI4Lo_zA6PQRZvxBim0mAy1ufhvQOSW__LS5dMFuGKFSicSrtx30w0xX26OOst1OgSt67P910_viGjffsBAQ=="
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "python_signed_at_the_depth_limit_member",
+      "signed_in": "python",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "WFu-ubiUaduaTkiUYzHFuHc-r6_fO2P0rn5Zt__DRqU"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:depth-64",
+        "payload": {
+          "n": {
+            "n": {
+              "n": {
+                "n": {
+                  "n": {
+                    "n": {
+                      "n": {
+                        "n": {
+                          "n": {
+                            "n": {
+                              "n": {
+                                "n": {
+                                  "n": {
+                                    "n": {
+                                      "n": {
+                                        "n": {
+                                          "n": {
+                                            "n": {
+                                              "n": {
+                                                "n": {
+                                                  "n": {
+                                                    "n": {
+                                                      "n": {
+                                                        "n": {
+                                                          "n": {
+                                                            "n": {
+                                                              "n": {
+                                                                "n": {
+                                                                  "n": {
+                                                                    "n": {
+                                                                      "n": {
+                                                                        "n": {
+                                                                          "n": {
+                                                                            "n": {
+                                                                              "n": {
+                                                                                "n": {
+                                                                                  "n": {
+                                                                                    "n": {
+                                                                                      "n": {
+                                                                                        "n": {
+                                                                                          "n": {
+                                                                                            "n": {
+                                                                                              "n": {
+                                                                                                "n": {
+                                                                                                  "n": {
+                                                                                                    "n": {
+                                                                                                      "n": {
+                                                                                                        "n": {
+                                                                                                          "n": {
+                                                                                                            "n": {
+                                                                                                              "n": {
+                                                                                                                "n": {
+                                                                                                                  "n": {
+                                                                                                                    "n": {
+                                                                                                                      "n": {
+                                                                                                                        "n": {
+                                                                                                                          "n": {
+                                                                                                                            "n": {
+                                                                                                                              "n": {
+                                                                                                                                "n": {
+                                                                                                                                  "n": {
+                                                                                                                                    "n": {}
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "XCZWYIxB6SRP4TjH7OU1CSHZUanmrGTH4_amwJ-2Mu-MvsBhZdCXsBo4sZvsvuEjW1Do6dJfsWkE02Yv5ST5BQ=="
+        }
+      },
+      "verifies": true
+    },
+    {
+      "name": "signature_member_nested_too_deep",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "WFu-ubiUaduaTkiUYzHFuHc-r6_fO2P0rn5Zt__DRqU"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:depth-64",
+        "payload": {
+          "n": {
+            "n": {
+              "n": {
+                "n": {
+                  "n": {
+                    "n": {
+                      "n": {
+                        "n": {
+                          "n": {
+                            "n": {
+                              "n": {
+                                "n": {
+                                  "n": {
+                                    "n": {
+                                      "n": {
+                                        "n": {
+                                          "n": {
+                                            "n": {
+                                              "n": {
+                                                "n": {
+                                                  "n": {
+                                                    "n": {
+                                                      "n": {
+                                                        "n": {
+                                                          "n": {
+                                                            "n": {
+                                                              "n": {
+                                                                "n": {
+                                                                  "n": {
+                                                                    "n": {
+                                                                      "n": {
+                                                                        "n": {
+                                                                          "n": {
+                                                                            "n": {
+                                                                              "n": {
+                                                                                "n": {
+                                                                                  "n": {
+                                                                                    "n": {
+                                                                                      "n": {
+                                                                                        "n": {
+                                                                                          "n": {
+                                                                                            "n": {
+                                                                                              "n": {
+                                                                                                "n": {
+                                                                                                  "n": {
+                                                                                                    "n": {
+                                                                                                      "n": {
+                                                                                                        "n": {
+                                                                                                          "n": {
+                                                                                                            "n": {
+                                                                                                              "n": {
+                                                                                                                "n": {
+                                                                                                                  "n": {
+                                                                                                                    "n": {
+                                                                                                                      "n": {
+                                                                                                                        "n": {
+                                                                                                                          "n": {
+                                                                                                                            "n": {
+                                                                                                                              "n": {
+                                                                                                                                "n": {
+                                                                                                                                  "n": {
+                                                                                                                                    "n": {}
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "XCZWYIxB6SRP4TjH7OU1CSHZUanmrGTH4_amwJ-2Mu-MvsBhZdCXsBo4sZvsvuEjW1Do6dJfsWkE02Yv5ST5BQ==",
+          "x": {
+            "n": {
+              "n": {
+                "n": {
+                  "n": {
+                    "n": {
+                      "n": {
+                        "n": {
+                          "n": {
+                            "n": {
+                              "n": {
+                                "n": {
+                                  "n": {
+                                    "n": {
+                                      "n": {
+                                        "n": {
+                                          "n": {
+                                            "n": {
+                                              "n": {
+                                                "n": {
+                                                  "n": {
+                                                    "n": {
+                                                      "n": {
+                                                        "n": {
+                                                          "n": {
+                                                            "n": {
+                                                              "n": {
+                                                                "n": {
+                                                                  "n": {
+                                                                    "n": {
+                                                                      "n": {
+                                                                        "n": {
+                                                                          "n": {
+                                                                            "n": {
+                                                                              "n": {
+                                                                                "n": {
+                                                                                  "n": {
+                                                                                    "n": {
+                                                                                      "n": {
+                                                                                        "n": {
+                                                                                          "n": {
+                                                                                            "n": {
+                                                                                              "n": {
+                                                                                                "n": {
+                                                                                                  "n": {
+                                                                                                    "n": {
+                                                                                                      "n": {
+                                                                                                        "n": {
+                                                                                                          "n": {
+                                                                                                            "n": {
+                                                                                                              "n": {
+                                                                                                                "n": {
+                                                                                                                  "n": {
+                                                                                                                    "n": {
+                                                                                                                      "n": {
+                                                                                                                        "n": {
+                                                                                                                          "n": {
+                                                                                                                            "n": {
+                                                                                                                              "n": {
+                                                                                                                                "n": {
+                                                                                                                                  "n": {
+                                                                                                                                    "n": {
+                                                                                                                                      "n": {
+                                                                                                                                        "n": {
+                                                                                                                                          "n": {
+                                                                                                                                            "n": {
+                                                                                                                                              "n": {
+                                                                                                                                                "n": {
+                                                                                                                                                  "n": {
+                                                                                                                                                    "n": {
+                                                                                                                                                      "n": {
+                                                                                                                                                        "n": {
+                                                                                                                                                          "n": {
+                                                                                                                                                            "n": {
+                                                                                                                                                              "n": {
+                                                                                                                                                                "n": {
+                                                                                                                                                                  "n": {
+                                                                                                                                                                    "n": {
+                                                                                                                                                                      "n": {
+                                                                                                                                                                        "n": {
+                                                                                                                                                                          "n": {
+                                                                                                                                                                            "n": {
+                                                                                                                                                                              "n": {
+                                                                                                                                                                                "n": {
+                                                                                                                                                                                  "n": {
+                                                                                                                                                                                    "n": {
+                                                                                                                                                                                      "n": {
+                                                                                                                                                                                        "n": {
+                                                                                                                                                                                          "n": {
+                                                                                                                                                                                            "n": {
+                                                                                                                                                                                              "n": {
+                                                                                                                                                                                                "n": {
+                                                                                                                                                                                                  "n": {
+                                                                                                                                                                                                    "n": {
+                                                                                                                                                                                                      "n": {
+                                                                                                                                                                                                        "n": {
+                                                                                                                                                                                                          "n": {
+                                                                                                                                                                                                            "n": {
+                                                                                                                                                                                                              "n": {
+                                                                                                                                                                                                                "n": {}
+                                                                                                                                                                                                              }
+                                                                                                                                                                                                            }
+                                                                                                                                                                                                          }
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                      }
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                  }
+                                                                                                                                                                                                }
+                                                                                                                                                                                              }
+                                                                                                                                                                                            }
+                                                                                                                                                                                          }
+                                                                                                                                                                                        }
+                                                                                                                                                                                      }
+                                                                                                                                                                                    }
+                                                                                                                                                                                  }
+                                                                                                                                                                                }
+                                                                                                                                                                              }
+                                                                                                                                                                            }
+                                                                                                                                                                          }
+                                                                                                                                                                        }
+                                                                                                                                                                      }
+                                                                                                                                                                    }
+                                                                                                                                                                  }
+                                                                                                                                                                }
+                                                                                                                                                              }
+                                                                                                                                                            }
+                                                                                                                                                          }
+                                                                                                                                                        }
+                                                                                                                                                      }
+                                                                                                                                                    }
+                                                                                                                                                  }
+                                                                                                                                                }
+                                                                                                                                              }
+                                                                                                                                            }
+                                                                                                                                          }
+                                                                                                                                        }
+                                                                                                                                      }
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "verifies": false
+    },
+    {
+      "name": "arrays_nested_past_the_depth_limit",
+      "public_key_jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "WFu-ubiUaduaTkiUYzHFuHc-r6_fO2P0rn5Zt__DRqU"
+      },
+      "receipt": {
+        "artifact_type": "ApprovalReceipt",
+        "id": "urn:concordia:receipt:depth-64",
+        "payload": [
+          [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      [
+                                                                        [
+                                                                          [
+                                                                            [
+                                                                              [
+                                                                                [
+                                                                                  [
+                                                                                    [
+                                                                                      [
+                                                                                        [
+                                                                                          [
+                                                                                            [
+                                                                                              [
+                                                                                                [
+                                                                                                  [
+                                                                                                    [
+                                                                                                      [
+                                                                                                        [
+                                                                                                          [
+                                                                                                            [
+                                                                                                              [
+                                                                                                                [
+                                                                                                                  [
+                                                                                                                    [
+                                                                                                                      [
+                                                                                                                        [
+                                                                                                                          [
+                                                                                                                            [
+                                                                                                                              [
+                                                                                                                                [
+                                                                                                                                  [
+                                                                                                                                    [
+                                                                                                                                      []
+                                                                                                                                    ]
+                                                                                                                                  ]
+                                                                                                                                ]
+                                                                                                                              ]
+                                                                                                                            ]
+                                                                                                                          ]
+                                                                                                                        ]
+                                                                                                                      ]
+                                                                                                                    ]
+                                                                                                                  ]
+                                                                                                                ]
+                                                                                                              ]
+                                                                                                            ]
+                                                                                                          ]
+                                                                                                        ]
+                                                                                                      ]
+                                                                                                    ]
+                                                                                                  ]
+                                                                                                ]
+                                                                                              ]
+                                                                                            ]
+                                                                                          ]
+                                                                                        ]
+                                                                                      ]
+                                                                                    ]
+                                                                                  ]
+                                                                                ]
+                                                                              ]
+                                                                            ]
+                                                                          ]
+                                                                        ]
+                                                                      ]
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ],
+        "expires_at": "2030-01-01T00:00:00Z",
+        "signature": {
+          "alg": "Ed25519",
+          "value": "XCZWYIxB6SRP4TjH7OU1CSHZUanmrGTH4_amwJ-2Mu-MvsBhZdCXsBo4sZvsvuEjW1Do6dJfsWkE02Yv5ST5BQ=="
+        }
+      },
+      "verifies": false
+    }
+  ]
+}

@@ -10,12 +10,14 @@ import {
   hashBytes,
   hashObject,
   publicKeyToJwk,
+  signApprovalReceipt,
   signInvitation,
   signJws,
   verifyJws,
   b64urlDecode,
 } from "../src/a2cn/crypto.js";
 import { createServerContext } from "../src/a2cn/server.js";
+import { DID_RESOLUTION_TIMEOUT_MS, resolveDidWeb } from "../src/a2cn/did.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import {
   INITIATOR_DID,
@@ -515,10 +517,28 @@ test("get messages cursor tolerates sequence less page item", async () => {
   expect(r.json().next_cursor).toBeNull();
 });
 
-test("approval receipt endpoint releases human approval pause", async () => {
-  const { client, initiatorKeypair } = freshServer();
+const APPROVER_DID = "did:web:approver.example";
+const { privateKey: APPROVER_PRIVATE_KEY, publicKey: APPROVER_PUBLIC_KEY } = generateEd25519Keypair();
+
+/** A session whose initiator offer is paused for an operator's approval. */
+async function pausedOverHttp(
+  fixture: ReturnType<typeof freshServer> = freshServer(),
+  approvers: string[] = [APPROVER_DID],
+): Promise<{
+  client: TestClient;
+  sessionId: string;
+  offer: Dict;
+  mandate: Dict;
+  initiatorKeypair: { privateKey: KeyObject };
+}> {
+  const { ctx, client, initiatorKeypair } = fixture;
+  ctx.registerDidDocument(
+    APPROVER_DID,
+    makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY)),
+  );
   const body = makeSessionInit();
   (body.initiator_mandate as Dict).requires_human_approval_above = 9_000_000;
+  (body.initiator_mandate as Dict).approval_operator_dids = [...approvers];
   const r = await client.post("/sessions", {
     json: body,
     headers: initHeaders(body.message_id as string),
@@ -532,10 +552,19 @@ test("approval receipt endpoint releases human approval pause", async () => {
   });
   expect(offerR.statusCode).toBe(200);
   expect(offerR.json().state).toBe("AWAITING_HUMAN_APPROVAL");
+  return { client, sessionId, offer, mandate: body.initiator_mandate as Dict, initiatorKeypair };
+}
 
-  const receipt = {
+function httpReceipt(
+  sessionId: string,
+  offer: Dict,
+  mandate: Dict,
+  approverDid: string,
+  receiptId = "urn:concordia:receipt:test",
+): Dict {
+  return {
     artifact_type: "ApprovalReceipt",
-    id: "urn:concordia:receipt:test",
+    id: receiptId,
     scope: {
       decision: "approve",
       offer_hash: offer.protocol_act_hash,
@@ -548,10 +577,23 @@ test("approval receipt endpoint releases human approval pause", async () => {
         id: `a2cn:session:${sessionId}`,
         relationship: "approves",
       },
+      {
+        type: "mandate",
+        id: hashObject(mandate),
+        relationship: "fulfills",
+      },
+      { type: "paused_party", id: INITIATOR_DID, relationship: "approves" },
     ],
-    approver_did: INITIATOR_DID,
+    approver_did: approverDid,
     expires_at: "2030-01-01T00:00:00Z",
   };
+}
+
+test("approval receipt endpoint releases human approval pause", async () => {
+  const { client, sessionId, offer, mandate } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+  receipt.signature = signApprovalReceipt(receipt, APPROVER_PRIVATE_KEY);
+
   const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
     json: receipt,
     headers: initHeaders("approval-receipt-test"),
@@ -561,6 +603,39 @@ test("approval receipt endpoint releases human approval pause", async () => {
   expect(receiptR.json().state).toBe("NEGOTIATING");
   expect(receiptR.json().current_turn).toBe("responder");
   expect(receiptR.json().approval_receipt_id).toBe("urn:concordia:receipt:test");
+});
+
+test("a session party cannot release its own pause with an unsigned receipt", async () => {
+  // The paused agent posts an unsigned receipt naming an authorised approver.
+  // It is refused and the session stays paused.
+  const { client, sessionId, offer, mandate } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+
+  const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: receipt,
+    headers: initHeaders("approval-receipt-unsigned"),
+  });
+
+  expect(receiptR.statusCode).toBe(400);
+  expect((receiptR.json().error as Dict).code).toBe("APPROVAL_RECEIPT_UNSIGNED");
+  const state = (await client.get(`/sessions/${sessionId}`)).json();
+  expect(state.state).toBe("AWAITING_HUMAN_APPROVAL");
+});
+
+test("a receipt signed with the paused agents own key is refused", async () => {
+  const { client, sessionId, offer, mandate, initiatorKeypair } = await pausedOverHttp();
+  const receipt = httpReceipt(sessionId, offer, mandate, APPROVER_DID);
+  receipt.signature = signApprovalReceipt(receipt, initiatorKeypair.privateKey);
+
+  const receiptR = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: receipt,
+    headers: initHeaders("approval-receipt-self-signed"),
+  });
+
+  expect(receiptR.statusCode).toBe(400);
+  expect((receiptR.json().error as Dict).code).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+  const state = (await client.get(`/sessions/${sessionId}`)).json();
+  expect(state.state).toBe("AWAITING_HUMAN_APPROVAL");
 });
 
 // ---------------------------------------------------------------------------
@@ -727,3 +802,195 @@ test("audit available after withdrawal", async () => {
   const data = r.json();
   expect(data.session_outcome).toBe("WITHDRAWN");
 });
+
+// --- The approver's DID document is resolved per receipt, after the cheap checks. ---
+
+const DYNAMIC_APPROVER_DID = "did:web:dyn-approver.example";
+const DYNAMIC_APPROVER_URL = "https://dyn-approver.example/.well-known/did.json";
+
+/** Serve DID documents from `documents` by URL, counting every fetch. */
+function serveDidDocuments(
+  ctx: ReturnType<typeof freshServer>["ctx"],
+  documents: Record<string, Dict>,
+): { calls: string[] } {
+  const calls: string[] = [];
+  ctx.fetchFn = (async (url: string | URL | Request) => {
+    const target = String(url);
+    calls.push(target);
+    const document = documents[target];
+    return document === undefined
+      ? new Response("not found", { status: 404 })
+      : new Response(JSON.stringify(document), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  return { calls };
+}
+
+async function postReceipt(client: TestClient, sessionId: string, receipt: Dict, key: KeyObject) {
+  const signed = { ...receipt, signature: signApprovalReceipt(receipt, key) };
+  return client.post(`/sessions/${sessionId}/approval-receipt`, {
+    json: signed,
+    headers: initHeaders(`receipt-${randomUUID()}`),
+  });
+}
+
+test("an unregistered did web approver is resolved for the receipt", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(200);
+  expect(r.json().state).toBe("NEGOTIATING");
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(1);
+});
+
+test("a rotated approver key takes effect on the next receipt", async () => {
+  const fixture = freshServer();
+  const { privateKey: oldKey, publicKey: oldPublic } = generateEd25519Keypair();
+  const { privateKey: newKey, publicKey: newPublic } = generateEd25519Keypair();
+  const documents: Record<string, Dict> = {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(oldPublic)),
+  };
+  serveDidDocuments(fixture.ctx, documents);
+  const first = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const ok = await postReceipt(first.client, first.sessionId, httpReceipt(first.sessionId, first.offer, first.mandate, DYNAMIC_APPROVER_DID), oldKey);
+  expect(ok.statusCode).toBe(200);
+
+  // The approver rotates: its document now lists only the new key.
+  documents[DYNAMIC_APPROVER_URL] = makeDidDocument(DYNAMIC_APPROVER_DID, "key-2", publicKeyToJwk(newPublic));
+  const second = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  const old = await postReceipt(second.client, second.sessionId, httpReceipt(second.sessionId, second.offer, second.mandate, DYNAMIC_APPROVER_DID, "urn:r:old"), oldKey);
+  const fresh = await postReceipt(second.client, second.sessionId, httpReceipt(second.sessionId, second.offer, second.mandate, DYNAMIC_APPROVER_DID, "urn:r:new"), newKey);
+  expect(old.statusCode).toBe(400);
+  expect((old.json().error as Dict).code).toBe("APPROVAL_RECEIPT_SIGNATURE_INVALID");
+  expect(fresh.statusCode).toBe(200);
+  expect(fresh.json().state).toBe("NEGOTIATING");
+});
+
+test("a did url approver is resolved from its base did", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const approver = `${DYNAMIC_APPROVER_DID}#key-1`;
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [approver]);
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, approver), key);
+  expect(r.statusCode).toBe(200);
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(1);
+});
+
+test("an approver outside did web is never fetched", async () => {
+  const fixture = freshServer();
+  const { privateKey: key } = generateEd25519Keypair();
+  const approver = "did:example:approver";
+  const { calls } = serveDidDocuments(fixture.ctx, {});
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [approver]);
+  const before = calls.length;
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, approver), key);
+  expect(r.statusCode).toBe(400);
+  expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+  expect(calls.length).toBe(before);
+});
+
+test("a receipt failing a check that needs no key causes no fetch", async () => {
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const { calls } = serveDidDocuments(fixture.ctx, {
+    [DYNAMIC_APPROVER_URL]: makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)),
+  });
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture); // approver not authorised
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(403);
+  expect((r.json().error as Dict).code).toBe("UNAUTHORIZED_APPROVER");
+  expect(calls.filter((u) => u === DYNAMIC_APPROVER_URL)).toHaveLength(0);
+});
+
+for (const [label, body] of [
+  ["null", null],
+  ["array", []],
+  ["string", "receipt"],
+  ["number", 5],
+  ["boolean", true],
+] as const) {
+  test(`a non object receipt body is refused cleanly: ${label}`, async () => {
+    const { client, sessionId } = await pausedOverHttp();
+    const r = await client.post(`/sessions/${sessionId}/approval-receipt`, {
+      json: body,
+      headers: initHeaders("receipt-non-object"),
+    });
+    expect(r.statusCode).toBe(400);
+    expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_INVALID");
+  });
+}
+
+test("did web resolution follows no redirects and has a timeout", async () => {
+  // Both implementations follow no redirects when resolving an approver; the
+  // TypeScript one asks fetch to refuse them and to give up after a timeout.
+  const fixture = freshServer();
+  const { privateKey: key, publicKey } = generateEd25519Keypair();
+  const seen: Array<RequestInit | undefined> = [];
+  fixture.ctx.fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+    seen.push(init);
+    return String(url) === DYNAMIC_APPROVER_URL
+      ? new Response(JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey))), {
+          status: 200,
+        })
+      : new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+  seen.length = 0;
+  const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+  expect(r.statusCode).toBe(200);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]?.redirect).toBe("error");
+  expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
+});
+
+// --- did:web resolution limits: total deadline, size, encoding. ---
+
+test("did web resolution gives up after five seconds in total", () => {
+  expect(DID_RESOLUTION_TIMEOUT_MS).toBe(5000);
+});
+
+test("a slow did web host is cut off at the deadline", async () => {
+  // A fetch that answers only when its signal aborts; the deadline must abort it.
+  const hanging = ((_url: string, init?: { signal?: AbortSignal }) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    })) as unknown as typeof fetch;
+  const started = Date.now();
+  await expect(resolveDidWeb(DYNAMIC_APPROVER_DID, hanging, 200)).rejects.toThrow();
+  expect(Date.now() - started).toBeLessThan(2000);
+});
+
+function documentBytesVariants(publicKey: KeyObject): Record<string, [Uint8Array, number]> {
+  const text = JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey)));
+  const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+  return {
+    utf8_bom: [Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]), 200],
+    utf16: [utf16, 400],
+    nan_literal: [Buffer.from(text.slice(0, -1) + ', "x": NaN}', "utf8"), 400],
+    too_large: [Buffer.from(text.slice(0, -1) + ', "pad": "' + "a".repeat(70000) + '"}', "utf8"), 400],
+  };
+}
+
+for (const variant of ["utf8_bom", "utf16", "nan_literal", "too_large"]) {
+  test(`did documents are strict utf8 json within the size limit: ${variant}`, async () => {
+    const fixture = freshServer();
+    const { privateKey: key, publicKey } = generateEd25519Keypair();
+    const [body, expected] = documentBytesVariants(publicKey)[variant];
+    fixture.ctx.fetchFn = (async (url: string | URL | Request) =>
+      String(url) === DYNAMIC_APPROVER_URL
+        ? new Response(body, { status: 200 })
+        : new Response("not found", { status: 404 })) as typeof fetch;
+    const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [DYNAMIC_APPROVER_DID]);
+    const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, DYNAMIC_APPROVER_DID), key);
+    expect(r.statusCode).toBe(expected);
+    if (expected === 400) {
+      expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+    }
+  });
+}

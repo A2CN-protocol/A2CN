@@ -9,29 +9,97 @@
 
 import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
 
-export type FetchLike = (url: string) => Promise<{
+export type FetchLike = (
+  url: string,
+  init?: {
+    redirect?: "error" | "follow" | "manual";
+    signal?: AbortSignal;
+    headers?: Record<string, string>;
+  },
+) => Promise<{
   ok: boolean;
   status: number;
+  headers?: { get(name: string): string | null };
+  body?: ReadableStream<Uint8Array> | null;
   json(): Promise<unknown>;
 }>;
 
 /**
+ * Resolution limits, identical in both reference implementations: the whole
+ * fetch, body included, must finish within the timeout; no redirect is
+ * followed; and a document larger than the cap is refused before it is read in
+ * full.
+ */
+export const DID_RESOLUTION_TIMEOUT_MS = 5000;
+export const DID_DOCUMENT_MAX_BYTES = 65536;
+
+/**
  * Resolve a did:web DID to its DID document.
+ *
+ * The document must be UTF-8 JSON (an optional UTF-8 byte-order mark is
+ * allowed), without NaN or Infinity literals, sent without a content encoding,
+ * no larger than DID_DOCUMENT_MAX_BYTES, and fetched within `timeoutMs` in
+ * total with no redirect followed.
  *
  * Throws:
  * - Error if the DID is not a did:web DID or cannot be parsed
- * - Error if the DID document cannot be fetched
+ * - Error if the DID document cannot be fetched, is too large, compressed, or
+ *   is not valid UTF-8 JSON, or if the fetch does not finish in time
  */
 export async function resolveDidWeb(
   did: string,
   fetchFn: FetchLike = fetch,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   const url = didWebToUrl(did);
-  const response = await fetchFn(url);
+  const signal = AbortSignal.timeout(timeoutMs);
+  const response = await fetchFn(url, {
+    redirect: "error",
+    signal,
+    headers: { "Accept-Encoding": "identity" },
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch DID document: HTTP ${response.status}`);
   }
-  return (await response.json()) as Record<string, unknown>;
+  // The size limit counts bytes as sent, so a compressed body is refused
+  // rather than inflated.
+  const encoding = (response.headers?.get("content-encoding") ?? "identity").trim().toLowerCase();
+  if (encoding !== "identity") {
+    await response.body?.cancel();
+    throw new Error("DID document is sent with a content encoding");
+  }
+  if (!response.body) {
+    // A response object without a byte stream: its parsed JSON is all there is.
+    return (await response.json()) as Record<string, unknown>;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    if (signal.aborted) {
+      await reader.cancel();
+      throw new Error("DID document fetch timed out");
+    }
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > DID_DOCUMENT_MAX_BYTES) {
+      await reader.cancel();
+      throw new Error("DID document is larger than the resolution limit");
+    }
+    chunks.push(value);
+  }
+  return parseDidDocument(Buffer.concat(chunks));
+}
+
+/** Parse a fetched DID document: strict UTF-8 JSON, no NaN or Infinity. */
+export function parseDidDocument(body: Uint8Array): Record<string, unknown> {
+  // TextDecoder strips a leading UTF-8 byte-order mark; JSON.parse already
+  // refuses NaN and Infinity.
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
+  return JSON.parse(text) as Record<string, unknown>;
 }
 
 /** Convert a did:web DID to the corresponding HTTPS URL. */

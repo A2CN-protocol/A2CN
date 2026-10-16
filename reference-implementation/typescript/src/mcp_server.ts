@@ -173,7 +173,9 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
       mandate_type: "declared",
       agent_id: agentId,
       principal_organization: agentOrg,
-      principal_did: agentDid,
+      // The principal is a separate DID from the agent: an agent never
+      // approves its own act (Section 14.1).
+      principal_did: `${agentDid}:principal`,
       authorized_deal_types: [dealType],
       max_commitment_value: parseInt(process.env.A2CN_MAX_COMMITMENT ?? "100000000", 10),
       max_commitment_currency: "USD",

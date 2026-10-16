@@ -775,7 +775,10 @@ An absent or empty array means the mandate is valid for any counterparty.
 successfully resolved from a DID document and used to verify a signature within
 a session, that verification method MUST be treated as valid for the entire
 duration of that session. Implementations MUST NOT re-resolve the DID document
-mid-session and apply newly discovered key material to the current session. This
+mid-session and apply newly discovered key material to the current session.
+This binding applies to the session parties' verification methods for protocol
+acts; an ApprovalReceipt approver's key is resolved for each receipt instead
+(Section 14.1). This
 prevents mid-session key rotation from causing asymmetric verification failures
 where one party re-resolves to a new key while the other continues using the
 original. New sessions always use freshly resolved DID documents.
@@ -1855,7 +1858,7 @@ From NEGOTIATING or ACTIVE:
 - → AWAITING_HUMAN_APPROVAL: ApprovalReceipt expires before the paused act is sent or accepted; the session remains paused and requires a fresh ApprovalReceipt
 - → WITHDRAWN: Withdrawal sent or received
 - → TIMED_OUT: session_timeout_seconds elapsed
-- → ERROR: invalid ApprovalReceipt received (wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`)
+- An ApprovalReceipt that fails any Section 14.1 check (for example a wrong session reference, wrong offer hash, invalid signature, or decision other than `approve`) is refused and causes no transition: the session stays in `AWAITING_HUMAN_APPROVAL`
 
 **Terminal states** (COMPLETED, REJECTED_FINAL, WITHDRAWN, TIMED_OUT, ERROR):
 - No further state transitions are valid
@@ -4115,7 +4118,17 @@ SessionReject messages also use this format via the `error_code` and
 | `SESSION_WRONG_STATE` | 409 | Yes | Message invalid for current session state |
 | `ROUND_LIMIT_EXCEEDED` | 422 | Yes | Message would exceed max_rounds |
 | `OFFER_EXPIRED` | 422 | Yes | Acceptance of expired offer attempted |
-| `OFFER_HASH_MISMATCH` | 400 | Yes | Acceptance hash doesn't match offer hash |
+| `OFFER_HASH_MISMATCH` | 400 | Yes | Acceptance hash doesn't match offer hash, or an ApprovalReceipt's `scope.offer_hash` is not the paused offer's hash (Section 14.1) |
+| `NOT_IN_AWAITING_HUMAN_APPROVAL` | 409 | Yes | An ApprovalReceipt was posted for a session not awaiting human approval |
+| `APPROVAL_RECEIPT_INVALID` | 400 | Yes | An ApprovalReceipt or its `scope` is not an object, its decision is not `approve`, it lacks the session or mandate reference, its `expires_at` is missing or not in the Section 14.1 form, it names no approver, or it does not name the paused party (Section 14.1) |
+| `APPROVAL_RECEIPT_EXPIRED` | 422 | Yes | The ApprovalReceipt has expired (Section 14.1) |
+| `APPROVAL_RECEIPT_UNSIGNED` | 400 | Yes | The ApprovalReceipt has no well-formed `signature` member (Section 14.1) |
+| `APPROVAL_RECEIPT_KEY_UNRESOLVED` | 400 | Yes | No DID document or usable verification key could be found for the receipt's approver (Section 14.1) |
+| `APPROVAL_RECEIPT_SIGNER_MISMATCH` | 400 | Yes | The only verification keys found for the approver are controlled by another DID (Section 14.1) |
+| `APPROVAL_RECEIPT_SIGNATURE_INVALID` | 400 | Yes | The receipt's signature does not verify against the approver's key (Section 14.1) |
+| `UNAUTHORIZED_APPROVER` | 403 | Yes | The receipt's approver is not authorized by the mandate that required approval (Section 14.1) |
+| `APPROVAL_RECEIPT_SELF_APPROVAL` | 403 | Yes | The receipt's approver is the party whose act is paused, or that party cannot be determined (Section 14.1) |
+| `APPROVAL_RECEIPT_REPLAYED` | 409 | Yes | The ApprovalReceipt already released a pause in this session (Section 14.1) |
 | `SEQUENCE_ERROR` | 422 | Yes | Gap or duplicate in sequence_number |
 | `DID_RESOLUTION_FAILURE` | 503 | No | DID temporarily unresolvable |
 | `DID_NOT_FOUND` | 403 | Yes | DID does not exist (permanent) |
@@ -4607,45 +4620,188 @@ and the receipt binding required to resume the session.
 ### 14.1 ApprovalReceipt Artifact
 
 An ApprovalReceipt is an operator-side artifact that records a human approval
-decision. Concordia defines the receipt artifact shape; A2CN binds that receipt
-to an A2CN session and offer hash.
+decision. A2CN binds that receipt to an A2CN session, a mandate and the paused
+act. Its signing rule and signature member follow Concordia (see *Relation to
+Concordia* below).
 
 An A2CN implementation MAY accept ApprovalReceipt artifacts from Concordia or
-from another approval system if the artifact is signed and contains equivalent
-fields. To leave `AWAITING_HUMAN_APPROVAL`, the receipt MUST:
+from another approval system if the artifact carries the fields below and is
+signed as below. To leave `AWAITING_HUMAN_APPROVAL`, the receipt MUST:
 
 1. State an approval decision for the paused act
 2. Reference the A2CN session id
-3. Reference the paused offer's `protocol_act_hash`
+3. Reference the paused offer's `protocol_act_hash`: the offer or counteroffer
+   held, or, when an Acceptance is held, the offer it accepts
 4. Reference the mandate that required approval
-5. Be signed by an operator-side key trusted by the mandate issuer
-6. Be unexpired at the time the paused act is transmitted
+5. Be signed by the approver it names, with a key that approver's DID controls,
+   and name an approver the mandate authorizes that is not the paused party
+6. Carry an expiry, and be unexpired when the paused act is released
+7. Name the party whose act it approves, which must be the paused party
 
-Example:
+A receipt that fails any of these is refused and the session stays in
+`AWAITING_HUMAN_APPROVAL`. Every check fails closed: in particular, a key that
+cannot be resolved is a refusal, never a pass.
+
+**Fields A2CN reads.** Other members of the receipt are covered by its signature
+but not read.
+
+| Field | Requirement |
+|-------|-------------|
+| `scope` | A JSON object. `decision` and `offer_hash` are read from it only |
+| `scope.decision` | `"approve"` |
+| `scope.offer_hash` | The paused offer's `protocol_act_hash` (Section 7.3.2), the session's `approval_pending_offer_hash`, exactly as A2CN spells it |
+| `references[]` with `type` `"negotiation_session"` | `id` is a string: the session id, optionally prefixed `a2cn:session:` |
+| `references[]` with `type` `"mandate"` | `id` is a string that identifies the mandate that required approval as the compliance export does (Section 10.5). It SHOULD be the mandate's `mandate_hash`, the base64url SHA-256 of the mandate's RFC 8785 form, spelled as `scope.offer_hash` is. The mandate's `mandate_id`, when it has one, is also accepted, and either may be prefixed `a2cn:mandate:` |
+| `references[]` with `type` `"paused_party"` | REQUIRED. `id` is the DID of the party whose act the receipt approves, exactly as the session records it, and MUST be the paused party. A receipt with no such entry, or with any such entry naming someone else, is refused |
+| `approver_did` | The approver, as a DID or a DID URL naming one verification method. `operator_did` is read only when `approver_did` is absent, and `signed_by` only when both are absent. The first of these members that is present names the approver and MUST be a non-empty string; if it is not, the receipt names no approver, and a later member is not read |
+| `expires_at` | REQUIRED, and compared with the current time in whole milliseconds. One fixed form of RFC 3339 date-time: `YYYY-MM-DDThh:mm:ss`, an optional fraction of one to six digits, then `Z` or `±hh:mm`, with uppercase `T` and `Z`, seconds `00` to `59`, an offset hour `00` to `23`, and a real calendar date from year `0001`. Any other form is refused |
+| `signature` | The signature member defined below |
+| `id` | Recorded as the session's `approval_receipt_id`. It is read when it is a non-empty string; otherwise `approval_receipt_id` is read on the same terms, and a receipt with neither records no id |
+
+**Authorized approvers.** The mandate authorizes the DIDs in its
+`approval_operator_dids`, or, when that is absent or empty, its
+`trusted_approver_dids`, then `human_approver_dids`. The value MUST be a list of
+DIDs; any other value authorizes no approver from that field. The mandate's
+`principal_did` is also authorized.
+
+**An approver is never the paused party.** The paused party is the DID that sent
+the paused act. A receipt whose approver, without any DID URL fragment, is that
+DID is refused even when its signature is valid, and so is a receipt for a
+session whose paused party cannot be determined. `principal_did` therefore counts
+as an approver only when it is a different DID from the paused party. Separation
+is by DID, not by key: a second key under the paused party's own DID is not a
+second approver. If the only approver the mandate authorizes is the paused party,
+the pause cannot be released.
+
+This separation is only as strong as the mandate it is read from. A declared
+mandate (Section 5.3) is supplied by the party it governs, which can name as
+approver a second DID it controls; the verifier sees two DIDs and cannot tell
+that one party holds both. DIDs are also compared as strings: a mandate that
+names an alias of the paused party's DID (for example the same `did:web` host
+spelled differently) is not recognized as naming the paused party.
+
+**A receipt approves one party's act, on one offer, in one session, once.** It
+names the paused party (item 7), the offer by its hash (item 3) and the session
+(item 2), and once it has released a pause in a session it is refused for any
+later pause there (`APPROVAL_RECEIPT_REPLAYED`). Two receipts are the same
+receipt when they carry the same id (read as in the table above), or when their
+RFC 8785 forms with the top-level `signature` member removed are identical, so a
+receipt presented again with its signature re-encoded is still the same
+receipt. An implementation that persists and restores sessions MUST persist the
+receipts already used in each session with them. A pause with no recorded offer
+hash cannot be released.
+
+**Signing rule.** The signature covers the RFC 8785 (JCS) form of the receipt
+with its top-level `signature` member removed. A `signature` member nested inside
+the receipt is kept. The signature member is:
+
+```json
+"signature": { "alg": "Ed25519", "value": "<base64url>" }
+```
+
+- `alg` is `"Ed25519"` or `"ES256"`, and MUST match the approver key's type.
+- For `Ed25519`, `value` is the raw 64-byte signature.
+- For `ES256`, `value` is the DER-encoded ECDSA signature over SHA-256 with a low
+  `s` (at most half the P-256 group order).
+- A member named `__proto__` is an ordinary member and is covered like any other.
+- The receipt MUST be I-JSON (RFC 7493), as RFC 8785 requires: a receipt holding
+  an unpaired surrogate in any string or member name cannot be signed and does
+  not verify.
+- The receipt MUST NOT be nested more than 64 levels deep, the receipt object
+  itself being level 1 and its `signature` member counted like any other; a
+  deeper receipt cannot be signed and does not verify.
+- `value` is base64url, padded or unpadded, and MUST be the canonical encoding of
+  the signature bytes.
+
+**Key resolution.** The verifier resolves the approver's DID document and uses a
+verification method listed under `assertionMethod` or `authentication` and
+controlled by the approver's DID: its id is under that DID, and its
+`controller`, when stated, is that DID. When `approver_did` is a DID URL, only
+that method is used; otherwise the receipt may be signed by any such method.
+
+The approver's DID document is resolved for each receipt when that receipt is
+verified, and only after every check above that needs no key has passed. It is
+not kept for later receipts, so a key the approver adds or removes takes effect
+on the next receipt. Resolution follows no HTTP redirect, MUST finish within
+five seconds in total (the response body included), requests the document
+without a content encoding and refuses one sent with any encoding other than
+`identity`, and refuses a document larger than 64 KiB. The document MUST be
+UTF-8 JSON, optionally preceded by a
+UTF-8 byte-order mark, without `NaN` or `Infinity` literals. A document the
+operator has configured for an approver is used as configured. A document that cannot be resolved means the key is
+unresolved, and the receipt is refused.
+
+| Refusal | Error code |
+|---------|------------|
+| Missing or malformed signature member | `APPROVAL_RECEIPT_UNSIGNED` |
+| No DID document or usable key for the approver | `APPROVAL_RECEIPT_KEY_UNRESOLVED` |
+| The only keys found are controlled by another DID | `APPROVAL_RECEIPT_SIGNER_MISMATCH` |
+| The signature does not verify against the approver's key | `APPROVAL_RECEIPT_SIGNATURE_INVALID` |
+| The approver is not authorized by the mandate | `UNAUTHORIZED_APPROVER` |
+| The approver is the paused party, or the paused party cannot be determined | `APPROVAL_RECEIPT_SELF_APPROVAL` |
+| The receipt already released a pause in this session | `APPROVAL_RECEIPT_REPLAYED` |
+| The receipt or its `scope` is not an object, the decision is not `approve`, the session or mandate reference is missing, the expiry is missing or not in the form above, the receipt names no approver, or it does not name the paused party as the only `paused_party` | `APPROVAL_RECEIPT_INVALID` |
+| Expired at release | `APPROVAL_RECEIPT_EXPIRED` |
+| `scope.offer_hash` is not the paused offer's hash, or no paused offer hash is recorded | `OFFER_HASH_MISMATCH` |
+
+**Relation to Concordia.** The signing rule is Concordia's: the top-level
+signature removal of Concordia SPEC `0.7.0-draft` §9.2 (rule 1), with the
+ApprovalReceipt signature member of §9.6.4b (schema
+`urn:concordia:schema:approval_receipt:v0.5`). An Ed25519 receipt signed by
+Concordia's reference implementation verifies under this rule, and the reverse.
+Concordia's v0.5 receipt schema allows only Ed25519, so an `ES256` receipt
+verifies in A2CN but not in Concordia's receipt verifier. Two field spellings differ from Concordia's receipt:
+A2CN reads `approver_did` where Concordia uses `approver.identity`, and A2CN's
+`scope.offer_hash` is the paused offer's `protocol_act_hash`, while Concordia's is
+`sha256:` followed by the hex SHA-256 of the whole offer, which is a different
+digest. A receipt is accepted only in A2CN's spellings. This section follows the
+Concordia version named here; a later Concordia change takes effect in A2CN only
+when this section is updated.
+
+Example, signed with the example key below (the approver's DID document lists
+it under `assertionMethod`):
 
 ```json
 {
   "artifact_type": "ApprovalReceipt",
   "id": "urn:concordia:receipt:7f2e1a93",
+  "issued_at": "2026-05-10T14:22:08Z",
+  "expires_at": "2026-05-10T15:22:08Z",
+  "approver_did": "did:web:acme.example:procurement-lead",
   "scope": {
     "decision": "approve",
-    "offer_hash": "sha256:b4c1...e09f",
+    "offer_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
     "amount": "150000.00 USD",
     "threshold_crossed": "100000.00 USD"
   },
   "references": [
     {
       "type": "negotiation_session",
-      "id": "a2cn:session:9e4d2c11",
+      "id": "a2cn:session:9e4d2c11-0b6f-4a8e-9a51-6f3a7c2d1e40",
       "relationship": "approves"
     },
     {
       "type": "mandate",
-      "id": "a2cn:mandate:m-2026-04-19-0007",
+      "id": "Mu9sYOntFzaLv0uiZjyjWlEJZU_c7zKmMSUP8rtDyNA",
       "relationship": "fulfills"
+    },
+    {
+      "type": "paused_party",
+      "id": "did:web:acme.example:agents:procurement-07",
+      "relationship": "approves"
     }
-  ]
+  ],
+  "signature": {
+    "alg": "Ed25519",
+    "value": "p43KaG1HZ7Iw9qT4_71cyU70IOY3b7a9dYZ8nmzOHTdmMGnqA9fRgmM39g149XufSkds70tSLxpZwv4eqiN7AQ=="
+  }
 }
+```
+
+Example approver key (public JWK):
+
+```json
+{ "kty": "OKP", "crv": "Ed25519", "x": "I4u37CZHnH6MSiKZ42pGm-w3L3yzCgt6zBh9MXijgJQ" }
 ```
 
 ### 14.2 Transition Semantics

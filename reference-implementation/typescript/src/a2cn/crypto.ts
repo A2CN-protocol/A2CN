@@ -360,6 +360,228 @@ function withoutSignatureFields(obj: Record<string, unknown>): Record<string, un
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ApprovalReceipt signatures (Section 14.1)
+// ---------------------------------------------------------------------------
+
+/** The P-256 group order, for the low-S rule on ES256 receipt signatures. */
+const P256_ORDER = BigInt("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
+const B64URL_ALPHABET = /^[A-Za-z0-9_-]*$/;
+
+/**
+ * The bytes an ApprovalReceipt signature covers (Section 14.1): the RFC 8785
+ * (JCS) form of the receipt with its top-level `signature` member removed. A
+ * `signature` member nested inside the receipt is kept.
+ */
+/**
+ * The deepest nesting an ApprovalReceipt may have (Section 14.1), so both
+ * implementations refuse the same receipts instead of meeting their own limits.
+ */
+export const APPROVAL_RECEIPT_MAX_DEPTH = 64;
+
+/** The nesting depth of a JSON object or array, counted up to `limit`. */
+function nestingDepth(value: unknown, limit = APPROVAL_RECEIPT_MAX_DEPTH + 1): number {
+  let depth = 0;
+  let level: unknown[] = [value];
+  while (level.length > 0 && depth < limit) {
+    depth += 1;
+    const children: unknown[] = [];
+    for (const item of level) {
+      const members = Array.isArray(item) ? item : Object.values(item as Record<string, unknown>);
+      for (const child of members) {
+        if (child !== null && typeof child === "object") {
+          children.push(child);
+        }
+      }
+    }
+    level = children;
+  }
+  return depth;
+}
+
+/** Whether any string or member name in `value` holds an unpaired surrogate. */
+function hasLoneSurrogate(value: unknown): boolean {
+  const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  if (typeof value === "string") {
+    return lone.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasLoneSurrogate);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value).some(([k, v]) => lone.test(k) || hasLoneSurrogate(v));
+  }
+  return false;
+}
+
+export function approvalReceiptSigningBytes(receipt: Record<string, unknown>): Buffer {
+  // Object.fromEntries defines each member as an own property, so a member named
+  // "__proto__" stays in the signed bytes instead of setting the prototype.
+  const signable = Object.fromEntries(Object.entries(receipt).filter(([k]) => k !== "signature"));
+  // The limit covers the whole receipt, its signature member included.
+  if (nestingDepth(receipt) > APPROVAL_RECEIPT_MAX_DEPTH) {
+    throw new Error("ApprovalReceipt is nested too deeply");
+  }
+  // RFC 8785 input is I-JSON, which has no unpaired surrogates; refuse them
+  // rather than sign an escape the Python implementation cannot reproduce.
+  if (hasLoneSurrogate(signable)) {
+    throw new Error("ApprovalReceipt contains an unpaired surrogate, which RFC 8785 does not canonicalize");
+  }
+  return canonicalize(signable);
+}
+
+/**
+ * Return the `signature` member for an ApprovalReceipt (Section 14.1):
+ * `{alg: "Ed25519" | "ES256", value: <base64url>}`, the algorithm following the
+ * key type. An Ed25519 value is the raw 64-byte signature; an ES256 value is the
+ * DER-encoded ECDSA signature with a low `s`. The caller sets
+ * `receipt.signature` to the result.
+ */
+export function signApprovalReceipt(
+  receipt: Record<string, unknown>,
+  privateKey: SigningPrivateKey,
+): { alg: string; value: string } {
+  const payload = approvalReceiptSigningBytes(receipt);
+  if (isEd25519(privateKey)) {
+    return { alg: "Ed25519", value: Buffer.from(cryptoSign(null, payload, privateKey)).toString("base64url") + padding(64) };
+  }
+  if (privateKey.asymmetricKeyDetails?.namedCurve === "prime256v1") {
+    const der = cryptoSign("sha256", payload, { key: privateKey, dsaEncoding: "der" });
+    const decoded = decodeEcdsaDer(der);
+    if (decoded === null) {
+      throw new Error("ES256 signing produced an unparseable DER signature");
+    }
+    const s = decoded.s > P256_ORDER / 2n ? P256_ORDER - decoded.s : decoded.s;
+    const lowS = encodeEcdsaDer(decoded.r, s);
+    return { alg: "ES256", value: lowS.toString("base64url") + padding(lowS.length) };
+  }
+  throw new Error("ApprovalReceipt signing supports Ed25519 and P-256 (ES256) keys only");
+}
+
+/**
+ * Verify an ApprovalReceipt's signature against one public key (Section 14.1).
+ *
+ * The declared `alg` must match the key type: `Ed25519` for an Ed25519 key,
+ * `ES256` for a P-256 key. An ES256 value must be strict DER with a low `s`.
+ * Returns false for any missing, malformed or non-verifying signature; it never
+ * throws.
+ */
+export function verifyApprovalReceiptSignature(
+  receipt: Record<string, unknown>,
+  publicKey: SigningPublicKey,
+): boolean {
+  const signature = Object.prototype.hasOwnProperty.call(receipt, "signature")
+    ? receipt.signature
+    : undefined;
+  if (signature === null || typeof signature !== "object" || Array.isArray(signature)) {
+    return false;
+  }
+  const sig = signature as Record<string, unknown>;
+  const alg = Object.prototype.hasOwnProperty.call(sig, "alg") ? sig.alg : undefined;
+  const value = Object.prototype.hasOwnProperty.call(sig, "value") ? sig.value : undefined;
+  if (typeof alg !== "string" || typeof value !== "string" || value === "") {
+    return false;
+  }
+  const raw = strictB64urlDecode(value);
+  if (raw === null) {
+    return false;
+  }
+  try {
+    const payload = approvalReceiptSigningBytes(receipt);
+    if (alg === "Ed25519" && isEd25519(publicKey)) {
+      return cryptoVerify(null, payload, publicKey, raw);
+    }
+    if (
+      alg === "ES256" &&
+      publicKey.asymmetricKeyType === "ec" &&
+      publicKey.asymmetricKeyDetails?.namedCurve === "prime256v1"
+    ) {
+      const decoded = decodeEcdsaDer(raw);
+      if (decoded === null || !encodeEcdsaDer(decoded.r, decoded.s).equals(raw)) {
+        return false;
+      }
+      if (decoded.s <= 0n || decoded.s > P256_ORDER / 2n) {
+        return false;
+      }
+      return cryptoVerify("sha256", payload, { key: publicKey, dsaEncoding: "der" }, raw);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Base64 padding that a padded encoding of `byteLength` bytes ends with. */
+function padding(byteLength: number): string {
+  return "=".repeat((3 - (byteLength % 3)) % 3);
+}
+
+/**
+ * Decode base64url only if `value` is its canonical encoding: padded or
+ * unpadded, but the decoded bytes must re-encode to exactly `value` (no stray
+ * characters, no `+` or `/`, no extra padding).
+ */
+function strictB64urlDecode(value: string): Buffer | null {
+  const unpadded = value.replace(/=+$/, "");
+  if (value === "" || !B64URL_ALPHABET.test(unpadded)) {
+    return null;
+  }
+  const raw = Buffer.from(unpadded, "base64url");
+  const canonical = raw.toString("base64url");
+  const padded = canonical + padding(raw.length);
+  return value === canonical || value === padded ? raw : null;
+}
+
+/** Parse a DER ECDSA signature strictly; null unless it is minimal DER. */
+function decodeEcdsaDer(der: Buffer | Uint8Array): { r: bigint; s: bigint } | null {
+  const buf = Buffer.from(der);
+  if (buf.length < 8 || buf[0] !== 0x30 || buf[1] >= 0x80 || buf[1] !== buf.length - 2) {
+    return null;
+  }
+  let offset = 2;
+  const readInt = (): bigint | null => {
+    if (buf[offset] !== 0x02) {
+      return null;
+    }
+    const len = buf[offset + 1];
+    if (len === undefined || len === 0 || len >= 0x80 || offset + 2 + len > buf.length) {
+      return null;
+    }
+    const bytes = buf.subarray(offset + 2, offset + 2 + len);
+    if (bytes[0] & 0x80) {
+      return null;
+    }
+    if (len > 1 && bytes[0] === 0x00 && !(bytes[1] & 0x80)) {
+      return null;
+    }
+    offset += 2 + len;
+    return BigInt("0x" + (bytes.toString("hex") || "0"));
+  };
+  const r = readInt();
+  const s = readInt();
+  if (r === null || s === null || offset !== buf.length) {
+    return null;
+  }
+  return { r, s };
+}
+
+/** Encode r and s as a minimal DER ECDSA signature. */
+function encodeEcdsaDer(r: bigint, s: bigint): Buffer {
+  const encodeInt = (x: bigint): Buffer => {
+    let hex = x.toString(16);
+    if (hex.length % 2) {
+      hex = "0" + hex;
+    }
+    let bytes = Buffer.from(hex, "hex");
+    if (bytes[0] & 0x80) {
+      bytes = Buffer.concat([Buffer.from([0x00]), bytes]);
+    }
+    return Buffer.concat([Buffer.from([0x02, bytes.length]), bytes]);
+  };
+  const body = Buffer.concat([encodeInt(r), encodeInt(s)]);
+  return Buffer.concat([Buffer.from([0x30, body.length]), body]);
+}
+
 export function b64urlEncode(data: Buffer | Uint8Array): string {
   return Buffer.from(data).toString("base64url");
 }

@@ -20,6 +20,46 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Security
+
+- **ApprovalReceipts are verified in full before a human-approval pause is
+  released (Section 14.1).** Both reference implementations now require a
+  receipt to:
+  - carry a signature by the approver it names, over the RFC 8785 form of the
+    receipt with its top-level `signature` member removed, with Ed25519 or ES256,
+    from a key that approver's DID controls;
+  - reference the mandate that required approval;
+  - carry an `expires_at` that has not passed.
+
+  Each refusal has its own error code, and the session stays paused. A
+  malformed receipt or approver DID document is refused cleanly rather than
+  raising an error. `scope` must be an object, and `decision` and `offer_hash`
+  are read from it only. An approver field in a mandate must be a list of DIDs.
+  An approver is never the paused party: a receipt whose approver is the DID
+  that sent the paused act is refused even when validly signed, so a mandate
+  whose only approver is the agent itself cannot release its pause. The
+  examples, demos and MCP servers now give the principal its own DID.
+  A receipt releases at most one pause in a session, so an approval for one act
+  cannot be reused for another. The approver's DID document is resolved for each
+  receipt, after the checks that need no key, and is not kept, so a key the
+  approver adds or removes takes effect on the next receipt. `expires_at` has one
+  exact form in both implementations, a present approver member must be a
+  non-empty string, a non-object request body is refused with a 400, and an
+  invalid receipt leaves the session paused (Section 8 now says so too).
+  A receipt must also name, in `references[]`, the party whose act it approves:
+  a receipt approves one party's act, on one offer, in one session, once.
+  Resolving an approver follows no HTTP redirect, must finish within five
+  seconds in total, refuses a compressed document or one over 64 KiB, and
+  reads it as strict UTF-8 JSON, identically in both implementations; the
+  same limits apply to every did:web resolution the reference servers make. A receipt nested more than
+  64 levels deep, its signature member included, is refused in both, expiry is compared to the millisecond in both, only a
+  non-empty string is recorded as a receipt id, and Section 5.5's
+  session-duration key binding is limited to the parties' act keys. Section 14.1 states the signing
+  rule, the fields read and the Concordia version followed, and its example is a
+  signed receipt that both implementations verify. A shared test vector checks
+  that receipts signed in either language verify in both. Approval systems that
+  issue receipts must sign them as Section 14.1 describes.
+
 ### Changed
 
 - **Both reference servers refuse a `did_vc` (Tier 2) mandate, and advertise
