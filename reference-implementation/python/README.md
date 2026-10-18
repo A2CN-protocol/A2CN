@@ -27,6 +27,9 @@ git clone https://github.com/A2CN-protocol/A2CN.git
 cd A2CN/reference-implementation/python
 pip install -e .
 
+# Optional: MCP server support (mcp_server.py)
+pip install -e '.[mcp]'
+
 # Run the bilateral SaaS renewal demo
 python examples/saas_renewal.py
 

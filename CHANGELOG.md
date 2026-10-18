@@ -20,6 +20,17 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Changed
+
+- **The MCP server's dependencies are an optional extra.** `mcp` is no longer a
+  core dependency of the Python package: `pip install a2cn` installs the
+  protocol library without it, and `pip install -e '.[mcp]'` adds what
+  `mcp_server.py` needs. The `dev` extra includes it. Run without the extra,
+  `mcp_server.py` exits with an install hint, and its tests are skipped. The
+  extra holds pydantic below 2.14, because `mcp` 1.12.4 does not import under
+  pydantic 2.14; a fresh install previously resolved pydantic 2.14 and the MCP
+  server failed to start.
+
 ## [0.3.1] — 2026-10-15
 
 ### Security

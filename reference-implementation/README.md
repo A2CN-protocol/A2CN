@@ -20,8 +20,11 @@ This directory holds both reference implementations side by side: [`python/`](py
 git clone https://github.com/A2CN-protocol/A2CN.git
 cd A2CN/reference-implementation/python
 
-# Install
+# Install the core runtime
 python -m pip install -e .
+
+# Optional: MCP server support (mcp_server.py)
+python -m pip install -e '.[mcp]'
 
 # Run the bilateral negotiation demo
 python examples/saas_renewal.py
@@ -279,7 +282,7 @@ client.process_incoming(response)
 ## Running the tests
 
 ```bash
-pip install -r requirements.txt
+pip install -e '.[dev]'
 pytest tests/ -v
 ```
 
@@ -349,12 +352,15 @@ httpx==0.27.0          # Async HTTP client
 PyJWT==2.9.0           # JWT/JWS signing (ES256)
 cryptography==43.0.0   # P-256 key generation and operations
 jcs==0.2.1             # RFC 8785 JSON Canonicalization Scheme
-mcp==1.12.4            # MCP server and tool registration
+mcp==1.12.4            # MCP server and tool registration (the mcp extra)
+pydantic<2.14          # held below 2.14 for mcp 1.12.4 (the mcp extra)
 pytest==8.3.0          # Test runner
 pytest-asyncio==0.24.0 # Async test support
 ```
 
-Install: `pip install -r requirements.txt`
+Install the core runtime with `pip install -e .`, add MCP server support with
+`pip install -e '.[mcp]'`, or install everything the tests need with
+`pip install -e '.[dev]'` (`requirements.txt` lists the same set).
 
 ---
 
