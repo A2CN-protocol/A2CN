@@ -352,6 +352,7 @@ httpx==0.27.0          # Async HTTP client
 PyJWT==2.9.0           # JWT/JWS signing (ES256)
 cryptography==43.0.0   # P-256 key generation and operations
 jcs==0.2.1             # RFC 8785 JSON Canonicalization Scheme
+jsonschema==4.26.0     # Schema validation (fulfillment attestations)
 mcp==1.12.4            # MCP server and tool registration (the mcp extra)
 pydantic<2.14          # held below 2.14 for mcp 1.12.4 (the mcp extra)
 pytest==8.3.0          # Test runner

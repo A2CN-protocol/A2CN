@@ -15,7 +15,7 @@ import uuid
 import pytest
 
 from a2cn.crypto import hash_object, sign_jws
-from a2cn.fulfillment import FULFILLMENT_ATTESTATION_SCHEMA
+from a2cn.fulfillment import FULFILLMENT_ATTESTATION_SCHEMA, validate_fulfillment_attestation
 from a2cn.messages import (
     PROTOCOL_ACT_VERSION,
     DeliveryNoticeMessage,
@@ -1009,3 +1009,20 @@ class TestDisputeResolvedEndpoint:
         )
         assert r.status_code == 400
         assert r.json()["error"]["code"] == "MISSING_REQUIRED_FIELD"
+
+
+def test_validate_fulfillment_attestation_refuses_a_nonconforming_attestation():
+    """The schema check always runs: jsonschema is a core dependency, not optional."""
+    import jsonschema
+
+    with pytest.raises(jsonschema.ValidationError):
+        validate_fulfillment_attestation({})
+
+
+def test_validate_fulfillment_attestation_fails_loudly_without_jsonschema(monkeypatch):
+    """A missing jsonschema is an error, never a silent pass."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "jsonschema", None)
+    with pytest.raises(ImportError):
+        validate_fulfillment_attestation({})

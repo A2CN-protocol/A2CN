@@ -29,7 +29,12 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `mcp_server.py` exits with an install hint, and its tests are skipped. The
   extra holds pydantic below 2.14, because `mcp` 1.12.4 does not import under
   pydantic 2.14; a fresh install previously resolved pydantic 2.14 and the MCP
-  server failed to start.
+  server failed to start. An installed `mcp` that fails to import now shows its
+  real error, not the install hint, and its tests fail rather than skip.
+- **`jsonschema` is a core dependency.** It used to arrive only because `mcp`
+  required it. `validate_fulfillment_attestation` now always checks the
+  attestation against its schema and raises when it does not conform; it no
+  longer returns without checking when `jsonschema` is missing.
 
 ## [0.3.1] — 2026-10-15
 

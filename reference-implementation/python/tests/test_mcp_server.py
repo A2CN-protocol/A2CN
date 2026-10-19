@@ -19,7 +19,9 @@ import pytest
 import pytest_asyncio
 import respx
 
-pytest.importorskip("mcp")
+# Skip only when mcp is not installed; an installed mcp that fails to import is
+# an error, not a skip.
+pytest.importorskip("mcp", exc_type=ModuleNotFoundError)
 
 # mcp_server lives at reference-implementation/python/mcp_server.py (one level up)
 _REPO_PY = Path(__file__).parent.parent
