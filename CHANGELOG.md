@@ -33,17 +33,23 @@ This project is pre-1.0: the minor version moves for substantive additions.
   addresses through the bounded resolver; `--offline` uses only DID documents
   among the inputs. A missing DID document, a key no document lists, or a
   multi-round record without its evidence record is "could not finish", never a
-  pass or a refusal. Exit status: 0 verified, 1 refused, 3 could not finish,
-  2 bad usage.
+  pass; a definite failure is still "refused" when some document is missing,
+  with the missing ones noted. A record verified against a supplied DID
+  document anywhere among the inputs it relied on, its offer history included,
+  is "could not finish", never a clean pass. Exit status: 0 verified, 1 refused,
+  3 could not finish, 2 bad usage.
 - **`offer_history_from_evidence` / `offerHistoryFromEvidence`.** A
   TransactionRecord's `offer_chain_hash` is covered by neither signature, so a
   verifier that was not a session party takes the earlier offers from the
   session's SessionEvidenceRecord: linked by `transaction_record_hash`,
   verified, every offer a signed act, rounds 1..N, ending with the final offer.
-- **`KEY_NOT_FOUND`.** When a signer's DID document does not list the key its
-  signature names, the TransactionRecord, SessionEvidenceRecord and act
-  verifiers report `KEY_NOT_FOUND` instead of a malformed record or an invalid
-  act; an evidence record's assessment lists the keys in `unresolved_keys`.
+- **`KEY_NOT_FOUND`.** When a signer's DID document cannot be obtained or does
+  not list the key its signature names, the signature is checked neither way:
+  the TransactionRecord, SessionEvidenceRecord and act verifiers count it as
+  neither verified nor invalid, run every other check, and report
+  `KEY_NOT_FOUND` only when nothing else failed. A TransactionRecord checks both
+  signatures before deciding. An evidence record's assessment lists the keys in
+  `unresolved_keys`.
 - **`verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.**
   A refused SessionEvidenceRecord now names the first check it failed, as a
   TransactionRecord already did, with the same reason in both implementations;

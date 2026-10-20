@@ -566,8 +566,8 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
     ``reason`` is None for a record that verifies, and otherwise one of the
     EVIDENCE_REASON_* constants, naming the first check the record failed.
 
-    A signature whose key the signer's DID document does not list cannot be
-    checked either way. Such an act is not counted as verified or invalid, its
+    A signature whose key is unavailable (the signer's DID document cannot be
+    obtained, or does not list the key) cannot be checked either way. Such an act is not counted as verified or invalid, its
     signer and key are listed in ``unresolved_keys``, and the record's other
     checks still run: a record that fails one of them is refused for it. Only a
     record that passes everything else ends at EVIDENCE_REASON_KEY_NOT_FOUND.
@@ -2168,15 +2168,19 @@ def _verify_signature(
     signature: str,
     expected_payload: str,
 ) -> bool:
-    did_document = _resolve_did_document(did_resolver, did)
+    try:
+        did_document = _resolve_did_document(did_resolver, did)
+    except Exception:
+        # A DID document the resolver cannot supply is a key that is not
+        # available, exactly like one the document does not list.
+        raise _KeyNotFound(did, verification_method) from None
     try:
         vm = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:
         raise _KeyNotFound(did, verification_method) from None
     public_key = get_public_key(vm)
     # verify_jws raises on bad signature bytes. That is this check failing, not
-    # the record being unreadable, so the caller reports a signature reason. An
-    # unresolvable DID still raises.
+    # the record being unreadable, so the caller reports a signature reason.
     try:
         return verify_jws(signature, public_key) == expected_payload
     except InvalidSignatureError:

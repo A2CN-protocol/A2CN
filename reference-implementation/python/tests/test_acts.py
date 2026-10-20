@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from a2cn.acts import (
-    ACT_REASON_DID_UNRESOLVED,
     ACT_REASON_HASH_MISMATCH,
+    ACT_REASON_KEY_NOT_FOUND,
     ACT_REASON_METHOD_NOT_CONTROLLED,
     ACT_REASON_NOT_RECOMPUTABLE,
     ACT_REASON_SIGNATURE_INVALID,
@@ -85,8 +85,14 @@ def test_a_method_outside_the_senders_did_is_refused():
     assert verify_signed_act_reason(act, DIDS, wire_version=WIRE) == ACT_REASON_METHOD_NOT_CONTROLLED
 
 
-def test_an_unresolvable_did_is_reported_as_such():
-    assert verify_signed_act_reason(ACCEPTANCE, {}, wire_version=WIRE) == ACT_REASON_DID_UNRESOLVED
+def test_an_unavailable_did_document_is_a_key_not_found():
+    """Checked neither way: the signer's document could not be obtained."""
+    assert verify_signed_act_reason(ACCEPTANCE, {}, wire_version=WIRE) == ACT_REASON_KEY_NOT_FOUND
+
+
+def test_a_definite_failure_comes_before_an_unavailable_document():
+    act = _changed(OFFER, terms={**OFFER["terms"], "total_value": OFFER["terms"]["total_value"] + 1})
+    assert verify_signed_act_reason(act, {}, wire_version=WIRE) == ACT_REASON_HASH_MISMATCH
 
 
 def test_an_act_that_cannot_be_rebuilt_is_refused():

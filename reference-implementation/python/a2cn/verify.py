@@ -249,7 +249,8 @@ class _Keys:
                 try:
                     self._live[did] = (_fetch_did_web(did), url)
                 except Exception as exc:  # noqa: BLE001 - reported, never a pass
-                    self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {exc}")
+                    first_line = str(exc).splitlines()[0] if str(exc) else ""
+                    self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {first_line}")
         return self._live[did]
 
 
@@ -355,8 +356,17 @@ def _lists(document: dict, verification_method: str) -> bool:
 
 
 def _keys_not_listed(kind, document, attempt: _Attempt, assessment) -> list[tuple[str, str]]:
+    """Keys a signature names that the DID document used does not list.
+
+    A signer whose document could not be obtained at all is in attempt.missing
+    and reported as such, not here.
+    """
     if assessment is not None:
-        pairs = [(key["did"], key["verification_method"]) for key in assessment["unresolved_keys"]]
+        pairs = [
+            (key["did"], key["verification_method"])
+            for key in assessment["unresolved_keys"]
+            if key["did"] not in attempt.missing
+        ]
     else:
         pairs = []
         for did, vm in _signers(kind, document):
@@ -382,7 +392,11 @@ def _verify_with_keys(kind, document, keys: _Keys, history=None, wire_version=No
     attempt = _Attempt(keys)
     reason, assessment = _run_library(kind, document, attempt, history, wire_version)
     not_listed: list[tuple[str, str]] = []
-    if reason in KEY_NOT_FOUND_REASONS and not attempt.missing:
+    # A TransactionRecord checks its offer chain after both signatures, so a
+    # chain mismatch can sit beside a key that was not available.
+    if reason in KEY_NOT_FOUND_REASONS or (
+        kind == TYPE_TRANSACTION_RECORD and reason == REASON_OFFER_CHAIN_HASH_MISMATCH
+    ):
         not_listed = _keys_not_listed(kind, document, attempt, assessment)
         retry = frozenset(
             did
@@ -392,32 +406,40 @@ def _verify_with_keys(kind, document, keys: _Keys, history=None, wire_version=No
         if retry:
             attempt = _Attempt(keys, use_supplied=retry)
             reason, assessment = _run_library(kind, document, attempt, history, wire_version)
-            not_listed = (
-                _keys_not_listed(kind, document, attempt, assessment)
-                if reason in KEY_NOT_FOUND_REASONS
-                else []
-            )
+            not_listed = _keys_not_listed(kind, document, attempt, assessment)
     return reason, assessment, attempt, not_listed
 
 
 def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, not_listed) -> _Outcome:
-    """Turn a library reason into the record's verdict, and say where its keys came from."""
-    if attempt.missing:
+    """Turn a library reason into the record's verdict, and say where its keys came from.
+
+    A definite failure is REFUSED even when some DID documents were missing:
+    the library checks everything it can and reports a failure ahead of a key
+    it could not find, so the missing documents are listed as notes. COULD NOT
+    FINISH is only for a key that was not available, or for a record that
+    verified only against a supplied copy.
+    """
+    if reason is not None and reason not in KEY_NOT_FOUND_REASONS:
+        outcome.status = EXIT_REFUSED
+        outcome.headline = f"REFUSED: {reason}"
+        for did, why in attempt.missing.items():
+            outcome.lines.append(f"note: no DID document for {did} ({why}); its signatures were not checked")
+        for did, vm in not_listed:
+            outcome.lines.append(f"note: {did} doesn't list key {vm}; that signature was not checked")
+    elif reason in KEY_NOT_FOUND_REASONS or attempt.missing:
         outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: a DID document the check needed is not available"
+        if attempt.missing and not not_listed:
+            outcome.headline = "COULD NOT FINISH: a DID document the check needed is not available"
+        elif not_listed and not attempt.missing:
+            outcome.headline = "COULD NOT FINISH: a signature names a key no available DID document lists"
+        else:
+            outcome.headline = "COULD NOT FINISH: keys the check needed are not available"
         for did, why in attempt.missing.items():
             outcome.lines.append(f"no DID document for {did}: {why}")
-        counts = None
-    elif reason in KEY_NOT_FOUND_REASONS:
-        outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: a signature names a key no available DID document lists"
         for did, vm in not_listed:
             outcome.lines.append(
                 f"{did} doesn't list key {vm} (rotated?); supply the DID document as it was at signing time"
             )
-    elif reason is not None:
-        outcome.status = EXIT_REFUSED
-        outcome.headline = f"REFUSED: {reason}"
     elif attempt.fallback:
         outcome.status = EXIT_UNFINISHED
         outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
@@ -438,6 +460,8 @@ def verify_transaction_record(
 
     history: list[str] | None = None
     history_line: str | None = None
+    history_attempt: _Attempt | None = None
+    history_fallback: list[str] = []
     unlinked: list[str] = []
     linked = [e for e in evidence if e.document.get("transaction_record_hash") == document.get("record_hash")]
     if args.offer_hash:
@@ -458,9 +482,9 @@ def verify_transaction_record(
             )
             return outcome
         # The same DID documents the evidence record's own verdict used.
-        attempt = _Attempt(keys, use_supplied=verdict.use_supplied)
-        hashes, why = offer_history_from_evidence(document, source.document, attempt)
-        if attempt.missing or why == HISTORY_REASON_EVIDENCE_NOT_VERIFIED:
+        history_attempt = _Attempt(keys, use_supplied=verdict.use_supplied)
+        hashes, why = offer_history_from_evidence(document, source.document, history_attempt)
+        if history_attempt.missing or why == HISTORY_REASON_EVIDENCE_NOT_VERIFIED:
             outcome.status = EXIT_UNFINISHED
             outcome.headline = "COULD NOT FINISH: its evidence record could not be checked"
             outcome.lines.append(
@@ -481,6 +505,19 @@ def verify_transaction_record(
             f"offer history: {len(hashes)} offers, each signed by its sender, "
             f"from the evidence record {source.name}"
         )
+        # Offers in the history whose key came from a supplied copy: the record
+        # is never stronger than the weakest input it relied on.
+        for entry in source.document.get("acts", []):
+            did = entry.get("sender_did")
+            if (
+                entry.get("message_type") in ("offer", "counteroffer")
+                and did in history_attempt.fallback
+            ):
+                history_fallback.append(
+                    f"the round-{entry.get('act', {}).get('round_number')} {entry.get('message_type')} "
+                    f"in the offer history was verified against a supplied copy of {did}'s DID "
+                    f"document, {keys.supplied[did][1]} ({history_attempt.fallback[did]})"
+                )
     else:
         unlinked = [
             f"the evidence record {e.name} names another TransactionRecord "
@@ -493,43 +530,90 @@ def verify_transaction_record(
         TYPE_TRANSACTION_RECORD, document, keys, history
     )
 
+    unchecked = _unchecked_signatures(document, attempt, not_listed)
     if (
         history is None
         and reason == REASON_OFFER_CHAIN_HASH_MISMATCH
         and isinstance(final_round, int)
         and final_round > 1
     ):
-        # The chain is checked last, so everything else verified.
+        # The chain is checked last, after both signatures.
+        rounds_note = (
+            f"this deal took {final_round} rounds and the record carries only the final offer; "
+            "add this session's evidence record to check the earlier offers"
+        )
+        if unchecked:
+            _finish(outcome, REASON_KEY_NOT_FOUND, _record_counts(None, unchecked), attempt, not_listed)
+            outcome.lines.insert(0, rounds_note)
+            outcome.lines[1:1] = unlinked
+            return outcome
         outcome.status = EXIT_UNFINISHED
         outcome.headline = "COULD NOT FINISH: the earlier offers are not available"
-        outcome.lines.append(
-            f"agreed terms and both signatures verified; this deal took {final_round} rounds and the "
-            "record carries only the final offer; add this session's evidence record to check the "
-            "earlier offers"
-        )
+        outcome.lines.append(f"agreed terms and both signatures verified; {rounds_note}")
         outcome.lines.extend(unlinked)
-        reason = None
-        counts = _counts(2, 0, 0)
-        if attempt.missing or attempt.fallback:
-            return _finish(outcome, None, counts, attempt, not_listed)
-        outcome.lines.append(f"acts: {counts}")
-        for did, source in attempt.sources.items():
-            outcome.lines.append(f"keys: {did} {source}")
+        _finish(outcome, None, _counts(2, 0, 0), attempt, not_listed)
+        if outcome.status == EXIT_VERIFIED:  # _finish found nothing weaker
+            outcome.status = EXIT_UNFINISHED
+            outcome.headline = "COULD NOT FINISH: the earlier offers are not available"
         return outcome
 
-    outcome.lines.append(history_line or "offer history: the final offer only (a one-round deal)")
+    if history_line is None:
+        if isinstance(final_round, int) and final_round > 1:
+            history_line = (
+                f"offer history: not available; this deal took {final_round} rounds and the record "
+                "carries only the final offer"
+            )
+        else:
+            history_line = "offer history: the final offer only (a one-round deal)"
+    outcome.lines.append(history_line)
+    outcome.lines.extend(history_fallback)
     outcome.lines.extend(unlinked)
-    if reason in (None, REASON_OFFER_CHAIN_HASH_MISMATCH):
-        counts = _counts(2, 0, 0)
-    elif reason == REASON_OFFER_SIGNATURE_INVALID:
-        counts = _counts(0, 0, 1, "(the final offer)")
-    elif reason == REASON_ACCEPTANCE_SIGNATURE_INVALID:
-        counts = _counts(1, 0, 1, "(the acceptance)")
-    elif reason in KEY_NOT_FOUND_REASONS:
-        counts = None
-    else:
-        counts = "not reached: the record was refused before its signatures were checked"
-    return _finish(outcome, reason, counts, attempt, not_listed)
+    _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+    if history_attempt is not None:
+        for did, where in history_attempt.sources.items():
+            if attempt.sources.get(did) != where:
+                outcome.lines.append(f"keys (offer history): {did} {where}")
+    if history_fallback and outcome.status == EXIT_VERIFIED:
+        outcome.status = EXIT_UNFINISHED
+        outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
+    return outcome
+
+
+def _unchecked_signatures(document: dict, attempt: _Attempt, not_listed) -> set[str]:
+    """Which of a TransactionRecord's two signatures could not be checked."""
+    unavailable = set(attempt.missing) | {did for did, _vm in not_listed}
+    names = {"final_offer": "the final offer", "final_acceptance": "the acceptance"}
+    unchecked = set()
+    for act, name in names.items():
+        try:
+            if document[act].get("sender_did") in unavailable:
+                unchecked.add(name)
+        except Exception:  # noqa: BLE001
+            pass
+    return unchecked
+
+
+def _record_counts(reason, unchecked: set[str]) -> str:
+    """A TransactionRecord's two signed acts: verified, invalid, or not checked."""
+    if reason not in (
+        None,
+        REASON_OFFER_SIGNATURE_INVALID,
+        REASON_ACCEPTANCE_SIGNATURE_INVALID,
+        REASON_OFFER_CHAIN_HASH_MISMATCH,
+        REASON_KEY_NOT_FOUND,
+    ):
+        return "not reached: the record was refused before its signatures were checked"
+    invalid = {
+        REASON_OFFER_SIGNATURE_INVALID: "the final offer",
+        REASON_ACCEPTANCE_SIGNATURE_INVALID: "the acceptance",
+    }.get(reason)
+    verified = 2 - len(unchecked) - (1 if invalid else 0)
+    notes = []
+    if invalid:
+        notes.append(f"invalid: {invalid}")
+    if unchecked:
+        notes.append(f"not checked, key not available: {', '.join(sorted(unchecked))}")
+    return _counts(verified, 0, 1 if invalid else 0, f"({'; '.join(notes)})" if notes else "")
 
 
 def verify_evidence_record(item: _Input, keys: _Keys) -> _Outcome:
@@ -548,7 +632,7 @@ def verify_evidence_record(item: _Input, keys: _Keys) -> _Outcome:
             assessment["verified_acts"],
             assessment["unsigned_acts"],
             assessment["invalid_acts"],
-            f"({unchecked} signature{'' if unchecked == 1 else 's'} not checked: key not listed)"
+            f"({unchecked} signature{'' if unchecked == 1 else 's'} not checked: key not available)"
             if unchecked
             else "",
         )
