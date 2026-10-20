@@ -259,11 +259,17 @@ class _Attempt:
 
     def __init__(self, keys: _Keys, use_supplied: frozenset[str] = frozenset()):
         self.keys = keys
+        # DIDs whose live document lacks a signing key: a supplied copy may add
+        # the keys the party's site no longer lists, and nothing else.
         self.use_supplied = use_supplied
         self.used: dict[str, dict] = {}
         self.sources: dict[str, str] = {}
         self.fallback: dict[str, str] = {}
         self.missing: dict[str, str] = {}
+        # Key ids taken from a supplied copy, per DID, and ids the copy lists
+        # with different material from the party's site (the site's key wins).
+        self.copied: dict[str, set[str]] = {}
+        self.conflicts: dict[str, list[str]] = {}
 
     def __call__(self, did: str) -> dict:
         if did in self.used:
@@ -278,18 +284,28 @@ class _Attempt:
             return self._use(
                 did, supplied[0], f"from {supplied[1]} (offline: not checked against the party's site)"
             )
-        if did in self.use_supplied and supplied is not None:
+        document, where = self.keys.live(did)
+        if document is not None and did in self.use_supplied and supplied is not None:
+            merged, copied, conflicts = _merge_keys(document, supplied[0])
+            if conflicts:
+                self.conflicts[did] = conflicts
+            if not copied:
+                return self._use(did, document, f"from {where}")
+            self.copied[did] = set(copied)
             self.fallback[did] = "the party's site does not list the signing key now"
+            listed = ", ".join(sorted(copied))
             return self._use(
                 did,
-                supplied[0],
-                f"from a supplied copy, {supplied[1]}; the party's site does not list the signing key now",
+                merged,
+                f"from {where}, with {listed} from a supplied copy, {supplied[1]}; "
+                "the party's site does not list it now",
             )
-        document, where = self.keys.live(did)
         if document is not None:
             return self._use(did, document, f"from {where}")
         if supplied is not None:
+            # The live fetch failed outright: the copy is the only source.
             self.fallback[did] = where
+            self.copied[did] = set(_methods(supplied[0]))
             return self._use(did, supplied[0], f"from a supplied copy, {supplied[1]}; {where}")
         self.missing[did] = where
         raise KeyError(did)
@@ -298,6 +314,55 @@ class _Attempt:
         self.used[did] = document
         self.sources[did] = source
         return document
+
+
+_RELATIONSHIPS = ("assertionMethod", "authentication")
+
+
+def _methods(document: dict) -> dict[str, dict]:
+    """Every verification method a DID document lists, by id, embedded ones included."""
+    methods: dict[str, dict] = {}
+    for method in document.get("verificationMethod", []) or []:
+        if isinstance(method, dict) and isinstance(method.get("id"), str):
+            methods[method["id"]] = method
+    for relationship in _RELATIONSHIPS:
+        for method in document.get(relationship, []) or []:
+            if isinstance(method, dict) and isinstance(method.get("id"), str):
+                methods.setdefault(method["id"], method)
+    return methods
+
+
+def _merge_keys(live: dict, copy_document: dict) -> tuple[dict, list[str], list[str]]:
+    """The live document, plus the keys a supplied copy lists that the site no longer does.
+
+    Keys the party's site lists always come from the site. Returns the merged
+    document, the key ids taken from the copy, and the ids the copy lists with
+    different material from the site (the site's key is kept).
+    """
+    live_methods = _methods(live)
+    copy_methods = _methods(copy_document)
+    conflicts = sorted(
+        method_id
+        for method_id, method in copy_methods.items()
+        if method_id in live_methods
+        and method.get("publicKeyJwk") != live_methods[method_id].get("publicKeyJwk")
+    )
+    copied = sorted(set(copy_methods) - set(live_methods))
+    if not copied:
+        return live, [], conflicts
+    merged = json.loads(json.dumps(live))
+    merged.setdefault("verificationMethod", [])
+    for method_id in copied:
+        method = {key: value for key, value in copy_methods[method_id].items()}
+        merged["verificationMethod"].append(method)
+        for relationship in _RELATIONSHIPS:
+            authorized = any(
+                entry == method_id or (isinstance(entry, dict) and entry.get("id") == method_id)
+                for entry in copy_document.get(relationship, []) or []
+            )
+            if authorized:
+                merged.setdefault(relationship, []).append(method_id)
+    return merged, copied, conflicts
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +508,13 @@ def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, no
     elif attempt.fallback:
         outcome.status = EXIT_UNFINISHED
         outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
+    for did, ids in attempt.conflicts.items():
+        copy_name = attempt.keys.supplied[did][1]
+        for method_id in ids:
+            outcome.lines.append(
+                f"note: the supplied copy {copy_name} disagrees with the party's site about key "
+                f"{method_id}; the site's key was used"
+            )
     if counts:
         outcome.lines.append(f"acts: {counts}")
     for did, source in attempt.sources.items():
@@ -509,14 +581,21 @@ def verify_transaction_record(
         # is never stronger than the weakest input it relied on.
         for entry in source.document.get("acts", []):
             did = entry.get("sender_did")
+            method = entry.get("sender_verification_method")
             if (
                 entry.get("message_type") in ("offer", "counteroffer")
-                and did in history_attempt.fallback
+                and method in history_attempt.copied.get(did, set())
             ):
                 history_fallback.append(
                     f"the round-{entry.get('act', {}).get('round_number')} {entry.get('message_type')} "
-                    f"in the offer history was verified against a supplied copy of {did}'s DID "
-                    f"document, {keys.supplied[did][1]} ({history_attempt.fallback[did]})"
+                    f"in the offer history was signed with {method}, which came from a supplied copy, "
+                    f"{keys.supplied[did][1]} ({history_attempt.fallback[did]})"
+                )
+        for did, ids in history_attempt.conflicts.items():
+            for method_id in ids:
+                history_fallback.append(
+                    f"note: the supplied copy {keys.supplied[did][1]} disagrees with the party's site "
+                    f"about key {method_id}; the site's key was used"
                 )
     else:
         unlinked = [

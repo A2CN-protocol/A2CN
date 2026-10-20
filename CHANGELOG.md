@@ -34,9 +34,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   among the inputs. A missing DID document, a key no document lists, or a
   multi-round record without its evidence record is "could not finish", never a
   pass; a definite failure is still "refused" when some document is missing,
-  with the missing ones noted. A record verified against a supplied DID
-  document anywhere among the inputs it relied on, its offer history included,
-  is "could not finish", never a clean pass. Exit status: 0 verified, 1 refused,
+  with the missing ones noted. A supplied DID document only adds keys the
+  party's site no longer lists; keys the site lists always come from the site,
+  and a copy that disagrees with the site about one is noted. A record verified
+  against a supplied key anywhere among the inputs it relied on, its offer
+  history included, is "could not finish", never a clean pass. Exit status: 0 verified, 1 refused,
   3 could not finish, 2 bad usage.
 - **`offer_history_from_evidence` / `offerHistoryFromEvidence`.** A
   TransactionRecord's `offer_chain_hash` is covered by neither signature, so a

@@ -170,9 +170,10 @@ def test_a_supplied_copy_used_for_a_key_the_site_no_longer_lists_cannot_be_a_cle
     assert status == EXIT_UNFINISHED, output
     assert "COULD NOT FINISH: verified only against a supplied DID document" in output
     assert (
-        f"keys: {ROTATED_KEY['did']} from a supplied copy, "
+        f"keys: {ROTATED_KEY['did']} from {did_web_document_url(ROTATED_KEY['did'])}, with "
+        f"{ROTATED_KEY['verification_method']} from a supplied copy, "
     ) in output
-    assert "the party's site does not list the signing key now" in output
+    assert "the party's site does not list it now" in output
 
 
 def test_a_failed_live_fetch_falls_back_to_a_supplied_copy_and_says_so(tmp_path):

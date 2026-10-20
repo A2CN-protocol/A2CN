@@ -280,8 +280,12 @@ def test_a_record_whose_history_used_a_supplied_copy_cannot_be_a_clean_pass(tmp_
     record_block = _block(output, folder / "transaction_record.json")
     assert "COULD NOT FINISH: verified only against a supplied DID document" in evidence_block
     assert "COULD NOT FINISH: verified only against a supplied DID document" in record_block
-    assert "the round-1 offer in the offer history was verified against a supplied copy" in record_block
-    assert str(folder / "buyer_saved.json") in record_block
+    assert (
+        f"the round-1 offer in the offer history was signed with {BUYER}#key-1, which came from a "
+        f"supplied copy, {folder / 'buyer_saved.json'}"
+    ) in record_block
+    # Round 3 was signed with key-2, which the party's site still lists.
+    assert "round-3" not in record_block
     assert "  VERIFIED" not in output
 
 
@@ -311,4 +315,52 @@ def test_a_supplied_copy_in_the_history_is_not_hidden_by_the_records_own_live_ke
         _status, output = _cli([str(folder)])
     record_block = _block(output, folder / "transaction_record.json")
     assert f"keys: {BUYER} from {did_web_document_url(BUYER)}" in record_block
-    assert f"keys (offer history): {BUYER} from a supplied copy" in record_block
+    assert (
+        f"keys (offer history): {BUYER} from {did_web_document_url(BUYER)}, with {BUYER}#key-1 "
+        f"from a supplied copy, {folder / 'buyer_saved.json'}; the party's site does not list it now"
+    ) in record_block
+
+
+def test_a_copy_that_disagrees_with_the_site_cannot_refuse_a_genuine_record(tmp_path):
+    """The copy is right about the retired key-1 but carries other material under key-2.
+
+    The site still lists key-2, so the site's key-2 is used: the copy only adds
+    keys the site no longer lists. Swapping in the whole copy would check round
+    3 against the copy's key-2 and wrongly refuse a genuine record.
+    """
+    record, evidence, at_signing, buyer_now = _three_round_deal()
+    _other, other_public = generate_keypair()
+    conflicting = copy.deepcopy(at_signing[BUYER])
+    for method in conflicting["verificationMethod"]:
+        if method["id"] == f"{BUYER}#key-2":
+            method["publicKeyJwk"] = public_key_to_jwk(other_public)
+    folder = _deal(
+        tmp_path, "conflict", transaction_record=record, evidence_record=evidence, buyer_saved=conflicting
+    )
+    with _host({BUYER: buyer_now, SELLER: at_signing[SELLER]}):
+        status, output = _cli([str(folder)])
+
+    assert status == EXIT_UNFINISHED, output
+    assert "REFUSED" not in output
+    assert (
+        f"note: the supplied copy {folder / 'buyer_saved.json'} disagrees with the party's site about "
+        f"key {BUYER}#key-2; the site's key was used"
+    ) in output
+    for name in ("evidence_record.json", "transaction_record.json"):
+        assert "COULD NOT FINISH: verified only against a supplied DID document" in _block(output, folder / name)
+
+
+def test_an_outright_fetch_failure_still_falls_back_to_the_whole_copy(tmp_path):
+    record, evidence, at_signing, _buyer_now = _three_round_deal()
+    folder = _deal(
+        tmp_path, "fetch_failed", transaction_record=record, evidence_record=evidence, buyer_saved=at_signing[BUYER]
+    )
+    with _host(at_signing, withheld=(BUYER,)):
+        status, output = _cli([str(folder)])
+
+    assert status == EXIT_UNFINISHED, output
+    assert f"keys: {BUYER} from a supplied copy, {folder / 'buyer_saved.json'}; fetching" in output
+    record_block = _block(output, folder / "transaction_record.json")
+    # Every key came from the copy, so both of the buyer's offers are named.
+    assert "the round-1 offer in the offer history was signed with" in record_block
+    assert "the round-3 counteroffer in the offer history was signed with" in record_block
