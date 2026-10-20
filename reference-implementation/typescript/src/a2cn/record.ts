@@ -547,31 +547,29 @@ export function verifyTransactionRecordReason(
       return REASON_ACCEPTED_HASH_MISMATCH;
     }
 
-    if (
-      !verifyRecordSignature(didResolver, record, {
-        did: finalOffer.sender_did as string,
-        signature: finalOffer.protocol_act_signature as string,
-        expectedPayload: offerHash,
-      })
-    ) {
-      return REASON_OFFER_SIGNATURE_INVALID;
-    }
-
+    // Both signatures are checked even when one key is unavailable: a definite
+    // failure is reported ahead of a key that could not be found.
+    const offerVerified = verifiedOrUnresolved(didResolver, record, {
+      did: finalOffer.sender_did as string,
+      signature: finalOffer.protocol_act_signature as string,
+      expectedPayload: offerHash,
+    });
     const acceptanceAct = finalAcceptanceAct(record);
     if (acceptanceAct === null) {
       return REASON_UNBOUND_RECORD_VERSION;
     }
-    if (
-      !verifyRecordSignature(didResolver, record, {
-        did: finalAcceptance.sender_did as string,
-        signature: finalAcceptance.acceptance_signature as string,
-        expectedPayload: hashObject(acceptanceAct),
-      })
-    ) {
+    const acceptanceVerified = verifiedOrUnresolved(didResolver, record, {
+      did: finalAcceptance.sender_did as string,
+      signature: finalAcceptance.acceptance_signature as string,
+      expectedPayload: hashObject(acceptanceAct),
+    });
+    if (offerVerified === false) {
+      return REASON_OFFER_SIGNATURE_INVALID;
+    }
+    if (acceptanceVerified === false) {
       return REASON_ACCEPTANCE_SIGNATURE_INVALID;
     }
 
-    // Checked last, so a mismatch here means everything else verified.
     // offer_chain_hash is covered by neither signature: the earlier offers must
     // come from somewhere trustworthy (offerHistoryFromEvidence).
     const chainHashes = offerHashes !== null ? offerHashes : [offerHash];
@@ -579,12 +577,31 @@ export function verifyTransactionRecordReason(
       return REASON_OFFER_CHAIN_HASH_MISMATCH;
     }
 
-    return null;
-  } catch (exc) {
-    if (exc instanceof KeyNotFound) {
+    // Reported only when nothing else failed: a signature whose key no available
+    // DID document lists, or whose signer's document could not be obtained, was
+    // checked neither way.
+    if (offerVerified === null || acceptanceVerified === null) {
       return REASON_KEY_NOT_FOUND;
     }
+    return null;
+  } catch {
     return REASON_MALFORMED_RECORD;
+  }
+}
+
+/** True or false for a signature that was checked; null when its key is unavailable. */
+function verifiedOrUnresolved(
+  didResolver: DidResolver,
+  record: Dict,
+  options: { did: string; signature: string; expectedPayload?: string | null },
+): boolean | null {
+  try {
+    return verifyRecordSignature(didResolver, record, options);
+  } catch (exc) {
+    if (exc instanceof KeyNotFound) {
+      return null;
+    }
+    throw exc;
   }
 }
 
@@ -637,7 +654,17 @@ function verifyRecordSignature(
     return false;
   }
 
-  const didDocument = resolveDidDocument(didResolver, did);
+  let didDocument: Dict;
+  try {
+    didDocument = resolveDidDocument(didResolver, did);
+    if (didDocument === undefined || didDocument === null) {
+      throw new Error(`no DID document for ${did}`);
+    }
+  } catch {
+    // A DID document the resolver cannot supply is a key that is not available,
+    // exactly like one the document does not list.
+    throw new KeyNotFound(did, verificationMethod);
+  }
   let vm;
   try {
     vm = getVerificationMethod(didDocument, verificationMethod);
@@ -650,8 +677,8 @@ function verifyRecordSignature(
   const publicKey = getPublicKey(vm);
   // verifyJws throws on bad signature bytes. That is this check failing, not
   // the record being unreadable, so it is caught here and the caller reports
-  // the signature reason. An unresolvable DID is a different thing and still
-  // reaches the outer handler as a malformed record.
+  // the signature reason. An unavailable DID document or key is thrown as
+  // KeyNotFound above: it was checked neither way.
   let signedPayload: string;
   try {
     signedPayload = verifyJws(signature, publicKey);

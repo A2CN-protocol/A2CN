@@ -56,7 +56,7 @@ test("every reason code is reachable", () => {
     if (c.record === "evidence_record") {
       observed.add(
         verifySessionEvidenceRecordReason(
-          HISTORY.evidence_record as Dict,
+          (c.record_document ?? HISTORY.evidence_record) as Dict,
           (HISTORY.did_documents as Record<string, Record<string, Dict>>)[c.did_documents as string],
         ) as string,
       );
