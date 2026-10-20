@@ -16,7 +16,7 @@ from typing import Callable, Mapping
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
-from a2cn.did import get_public_key, get_verification_method
+from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
 from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     _is_act_integer,
@@ -71,6 +71,7 @@ REASON_ACT_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE"
 REASON_BASIS_MISMATCH = "BASIS_MISMATCH"
 REASON_CURRENCY_MISMATCH = "CURRENCY_MISMATCH"
 REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID"
+REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND"
 REASON_ACCEPTED_HASH_MISMATCH = "ACCEPTED_HASH_MISMATCH"
 REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH"
 REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID"
@@ -502,10 +503,6 @@ def verify_transaction_record_reason(
         if accepted_hash != offer_hash:
             return REASON_ACCEPTED_HASH_MISMATCH
 
-        chain_hashes = offer_hashes if offer_hashes is not None else [offer_hash]
-        if record.get("offer_chain_hash") != _compute_offer_chain_hash(chain_hashes):
-            return REASON_OFFER_CHAIN_HASH_MISMATCH
-
         if not _verify_record_signature(
             did_resolver,
             record,
@@ -527,12 +524,30 @@ def verify_transaction_record_reason(
         ):
             return REASON_ACCEPTANCE_SIGNATURE_INVALID
 
+        # Checked last, so a mismatch here means everything else verified.
+        # offer_chain_hash is covered by neither signature: the earlier offers
+        # must come from somewhere trustworthy (offer_history_from_evidence).
+        chain_hashes = offer_hashes if offer_hashes is not None else [offer_hash]
+        if record.get("offer_chain_hash") != _compute_offer_chain_hash(chain_hashes):
+            return REASON_OFFER_CHAIN_HASH_MISMATCH
+
         return None
+    except _KeyNotFound:
+        return REASON_KEY_NOT_FOUND
     except Exception:
         # The last resort: a record whose shape stopped us reaching a verdict at
         # all. A signature that simply does not verify is caught where it is
         # checked, so it reports its own reason instead of arriving here.
         return REASON_MALFORMED_RECORD
+
+
+class _KeyNotFound(Exception):
+    """The signer's DID document does not list the key the signature names."""
+
+    def __init__(self, did: str, verification_method: str):
+        super().__init__(did, verification_method)
+        self.did = did
+        self.verification_method = verification_method
 
 
 def _record_hash_matches(record: dict) -> bool:
@@ -557,7 +572,10 @@ def _verify_record_signature(
         return False
 
     did_document = _resolve_did_document(did_resolver, did)
-    vm = get_verification_method(did_document, verification_method)
+    try:
+        vm = get_verification_method(did_document, verification_method)
+    except VerificationMethodNotFoundError:
+        raise _KeyNotFound(did, verification_method) from None
     public_key = get_public_key(vm)
     # verify_jws raises on bad signature bytes. That is this check failing, not
     # the record being unreadable, so it is caught here and the caller reports

@@ -46,8 +46,24 @@ def test_the_reason_names_the_check_that_failed(case):
     assert assess_session_evidence_record(case["record"], did_documents)["reason"] == reason
 
 
+HISTORY = json.loads(
+    (
+        Path(__file__).parents[3] / "spec" / "test-vectors" / "transaction-record-offer-history.json"
+    ).read_text()
+)
+
+
 def test_every_reason_code_is_reachable():
-    assert {case["expected_reason"] for case in CASES} == ALL_REASON_CODES
+    observed = {case["expected_reason"] for case in CASES}
+    # A key the signer's document does not list needs other DID documents.
+    observed |= {
+        verify_session_evidence_record_reason(
+            HISTORY["evidence_record"], HISTORY["did_documents"][case["did_documents"]]
+        )
+        for case in HISTORY["record_cases"]
+        if case["record"] == "evidence_record"
+    }
+    assert observed == ALL_REASON_CODES
 
 
 def test_a_record_that_verifies_has_no_reason():

@@ -144,7 +144,7 @@ export interface DidDocument {
  * relationships. By default this permits assertion signatures and JWT
  * authentication signatures, while excluding keyAgreement-only keys.
  *
- * Throws Error if the method is not found.
+ * Throws VerificationMethodNotFoundError if the method is not found.
  */
 export function getVerificationMethod(
   didDocument: DidDocument,
@@ -174,7 +174,21 @@ export function getVerificationMethod(
     }
   }
 
-  throw new Error(`Verification method ${JSON.stringify(methodId)} not found in DID document`);
+  throw new VerificationMethodNotFoundError(
+    `Verification method ${JSON.stringify(methodId)} not found in DID document`,
+  );
+}
+
+/**
+ * The DID document does not list the verification method asked for. Verifiers
+ * catch it to tell a key the document does not list (rotated, or never
+ * published) from a signature that is wrong.
+ */
+export class VerificationMethodNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VerificationMethodNotFoundError";
+  }
 }
 
 /**

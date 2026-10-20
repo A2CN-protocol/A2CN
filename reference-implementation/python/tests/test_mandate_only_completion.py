@@ -161,6 +161,7 @@ def test_the_counterparty_act_of_a_mandate_only_record_stays_unsigned():
     assert assess_session_evidence_record(record, did_documents) == {
         "valid": True,
         "reason": None,
+        "unresolved_keys": [],
         "evidence_level": "mixed",
         "verified_acts": 1,
         "unsigned_acts": 1,
@@ -518,6 +519,7 @@ def test_a_completion_whose_counterparty_signed_a_counteroffer_verifies_as_mixed
     assert assess_session_evidence_record(signed, did_documents) == {
         "valid": True,
         "reason": None,
+        "unresolved_keys": [],
         "evidence_level": "mixed",
         "verified_acts": 2,
         "unsigned_acts": 1,
@@ -806,6 +808,7 @@ def test_a_completion_carrying_a_third_party_signature_is_refused():
     assert assess_session_evidence_record(signed, did_documents) == {
         "valid": False,
         "reason": "EXTERNAL_COMMITMENT_RULES",
+        "unresolved_keys": [],
         "evidence_level": "mixed",
         "verified_acts": 2,
         "unsigned_acts": 1,

@@ -358,6 +358,19 @@ test("every reason code is reachable", () => {
   const observed = new Set(REASON_CASES.map((c) => verdict(mutated(c))[1]));
   // A line-item refusal needs terms a producer signed itself, so its cases live
   // in their own vector of re-signed records rather than as a mutation.
+  // A key the signer's document does not list needs other DID documents.
+  const history = readJson("spec", "test-vectors", "transaction-record-offer-history.json");
+  for (const c of history.record_cases as Dict[]) {
+    if (c.record === "transaction_record" && c.expected_reason !== null) {
+      observed.add(
+        verifyTransactionRecordReason(
+          history.transaction_record as Dict,
+          (history.did_documents as Record<string, Record<string, Dict>>)[c.did_documents as string],
+          c.offer_hashes as string[] | null,
+        ),
+      );
+    }
+  }
   const lineItems = readJson("spec", "test-vectors", "transaction-record-line-items.json");
   for (const c of lineItems.cases as Dict[]) {
     if (!c.verifies) {

@@ -233,22 +233,28 @@ python examples/invitation_flow.py
 
 ### Verify a record
 
-`pip install a2cn` installs `a2cn-verify`, which checks a TransactionRecord, a
-SessionEvidenceRecord or a single signed act with the library's own
-verification, offline:
+`pip install a2cn` installs `a2cn-verify`. Put a deal's TransactionRecord and
+its session's evidence record in one folder, and point the verifier at it:
 
 ```bash
-a2cn-verify record.json --did-dir dids/          # or: python -m a2cn.verify record.json ...
+a2cn-verify deal/                 # or: python -m a2cn.verify deal/
 ```
 
-It prints `VERIFIED` or `REFUSED:` with the reason, the signed and unsigned act
-counts, any extension block (present, sealed, not interpreted), the record
-version judged and the verifier version. DID documents come from files
-(`--did-doc DID=FILE`, `--did-dir DIR`); nothing is fetched unless you pass
-`--resolve`, which uses the bounded did:web resolver. A TransactionRecord from a
-session of more than one round needs its offer hashes, in order
-(`--offer-hash`). Exit status: 0 verified, 1 refused, 2 bad usage, 3 could not
-finish (for example, a DID document the check needed was not supplied).
+It verifies each record with the library's own checks and fetches the parties'
+DID documents from their sites itself (a did:web DID is its own address),
+through the bounded resolver. The TransactionRecord holds only its final offer,
+so its earlier offers are taken from the evidence record, each a signed act.
+For every record it prints `VERIFIED`, `REFUSED:` with the reason, or `COULD NOT
+FINISH` with what is missing; the act counts; where the offer history and each
+key came from; any extension block (present, sealed, not interpreted); and the
+record version judged.
+
+`a2cn-verify deal/ --offline` fetches nothing and uses DID documents saved in
+the folder, which is also how a record signed with a since-retired key is
+checked. A saved copy is otherwise used only when the live document cannot be
+fetched or no longer lists the signing key, and the verdict then says so.
+Exit status: 0 everything verified, 1 something was refused, 3 nothing was
+refused but something could not finish, 2 bad usage.
 
 ### Run the test suite
 

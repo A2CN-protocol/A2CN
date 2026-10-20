@@ -128,9 +128,15 @@ def _write_dids(directory: Path, documents: dict) -> Path:
 
 
 def _cli(args: list[str]) -> tuple[int, str]:
+    """Run offline: these tests supply every DID document as a file."""
     out, err = io.StringIO(), io.StringIO()
-    status = run(args, out=out, err=err)
+    status = run(args + ["--offline"], out=out, err=err)
     return status, out.getvalue() + err.getvalue()
+
+
+def _headline(output: str) -> str:
+    """The first verdict line: the record's name line comes first."""
+    return output.splitlines()[1].strip()
 
 
 def _expected_status(reason, missing):
@@ -156,7 +162,7 @@ def test_every_vector_record_gets_the_librarys_verdict(item, tmp_path):
     status, output = _cli(args)
 
     assert status == _expected_status(reason, missing), output
-    first = output.splitlines()[0]
+    first = _headline(output)
     if status == EXIT_VERIFIED:
         assert first == "VERIFIED"
     elif status == EXIT_REFUSED:
@@ -189,7 +195,7 @@ def test_every_vector_act_gets_the_librarys_verdict(item, wire_version, tmp_path
         assert status == EXIT_VERIFIED, output
     else:
         assert status == EXIT_REFUSED, output
-        assert output.splitlines()[0] == f"REFUSED: {reason}"
+        assert _headline(output) == f"REFUSED: {reason}"
 
 
 def test_the_vectors_exercise_every_kind_and_both_verdicts():
@@ -226,7 +232,7 @@ def test_a_tampered_copy_is_refused(kind, tmp_path):
     status, output = _cli(args)
 
     assert status == EXIT_REFUSED, output
-    assert output.startswith("REFUSED: ")
+    assert _headline(output).startswith("REFUSED: ")
 
 
 @pytest.mark.parametrize("kind", ["transaction-record", "evidence-record"])
@@ -241,8 +247,8 @@ def test_a_missing_did_document_cannot_finish(kind, tmp_path):
     status, output = _cli(args)
 
     assert status == EXIT_UNFINISHED, output
-    assert output.startswith("COULD NOT FINISH")
-    assert "VERIFIED" not in output
+    assert _headline(output).startswith("COULD NOT FINISH")
+    assert "  VERIFIED" not in output
 
 
 def test_the_verified_output_states_the_counts_and_versions(tmp_path):
@@ -280,7 +286,7 @@ def test_an_extension_block_is_listed_and_not_interpreted(tmp_path):
     [
         (["does-not-exist.json"], "does not exist"),
         (["{input}", "--did-doc", "no-equals-sign"], "DID=FILE"),
-        (["{unknown}"], "cannot tell what the input is"),
+        (["{unknown}"], "cannot tell what"),
         (["{input}", "--wire-version", "0.3"], "single act only"),
         (["{input}", "--type", "nonsense"], "invalid choice"),
     ],
@@ -308,7 +314,8 @@ def test_python_dash_m_runs_the_verifier(tmp_path):
     for offer_hash in hashes or []:
         args += ["--offer-hash", offer_hash]
 
+    args.append("--offline")
     completed = subprocess.run(args, cwd=PYTHON_ROOT, capture_output=True, text=True, timeout=60)
 
     assert completed.returncode == EXIT_VERIFIED, completed.stdout + completed.stderr
-    assert completed.stdout.startswith("VERIFIED")
+    assert completed.stdout.splitlines()[1].strip() == "VERIFIED"

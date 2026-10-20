@@ -286,6 +286,17 @@ suites must give its `expected_reason` from
 `verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.
 Together the cases reach every reason code a verifier can return.
 
+`transaction-record-offer-history.json` covers taking a TransactionRecord's
+offer history from its SessionEvidenceRecord. `transaction-record-basis.json`'s
+two-round session is replayed and both records are produced, the evidence record
+naming the TransactionRecord by `transaction_record_hash`. `history_cases` give
+what `offer_history_from_evidence` / `offerHistoryFromEvidence` returns for each
+evidence record: the offer hashes in order, or `null` and a reason (not linked,
+not verified, an unsigned offer, a missing round). `record_cases` give verdicts
+with the named DID documents and offer hashes; `did_documents.rotated` renames
+the producer's key, so a signature names a key no document lists
+(`KEY_NOT_FOUND`).
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

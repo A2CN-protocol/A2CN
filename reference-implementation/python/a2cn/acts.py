@@ -20,7 +20,7 @@ from typing import Any
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, verify_jws
-from a2cn.did import get_public_key, get_verification_method
+from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
 from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, SUPPORTED_WIRE_VERSIONS, rebuild_signed_act
 
 DidResolver = Mapping[str, dict] | Callable[[str], dict]
@@ -37,6 +37,7 @@ ACT_REASON_HASH_MISMATCH = "PROTOCOL_ACT_HASH_MISMATCH"
 ACT_REASON_SIGNATURE_MISSING = "SIGNATURE_MISSING"
 ACT_REASON_METHOD_NOT_CONTROLLED = "VERIFICATION_METHOD_NOT_CONTROLLED"
 ACT_REASON_DID_UNRESOLVED = "DID_DOCUMENT_UNRESOLVED"
+ACT_REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND"
 ACT_REASON_KEY_UNUSABLE = "VERIFICATION_METHOD_UNUSABLE"
 ACT_REASON_SIGNATURE_INVALID = "SIGNATURE_INVALID"
 
@@ -88,7 +89,15 @@ def verify_signed_act_reason(
     except Exception:
         return ACT_REASON_DID_UNRESOLVED
     try:
-        public_key = get_public_key(get_verification_method(did_document, verification_method))
+        method = get_verification_method(did_document, verification_method)
+    except VerificationMethodNotFoundError:
+        # The document does not list this key: rotated, or never published. The
+        # signature cannot be checked either way, which is not a refusal.
+        return ACT_REASON_KEY_NOT_FOUND
+    except Exception:
+        return ACT_REASON_KEY_UNUSABLE
+    try:
+        public_key = get_public_key(method)
     except Exception:
         return ACT_REASON_KEY_UNUSABLE
     try:

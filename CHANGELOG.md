@@ -23,13 +23,27 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ### Added
 
 - **`a2cn-verify`, a command-line verifier.** `pip install a2cn` installs it
-  (also `python -m a2cn.verify`). It checks a TransactionRecord, a
-  SessionEvidenceRecord or one signed act with the library's own verification,
-  and prints the verdict and reason, the act counts, any extension block as
-  present, sealed and not interpreted, the record version judged and the
-  verifier version. DID documents are read from files; nothing is fetched
-  without `--resolve`, which uses the bounded did:web resolver. Exit status: 0
-  verified, 1 refused, 2 bad usage, 3 could not finish.
+  (also `python -m a2cn.verify`). Given files or a folder (`a2cn-verify deal/`)
+  it checks every TransactionRecord, SessionEvidenceRecord and signed act among
+  them with the library's own verification, and prints each verdict and reason,
+  the act counts, where the offer history and each key came from, any extension
+  block as present, sealed and not interpreted, and the record version judged.
+  A TransactionRecord takes its earlier offers from the session's evidence
+  record among the inputs. DID documents are fetched from the parties' did:web
+  addresses through the bounded resolver; `--offline` uses only DID documents
+  among the inputs. A missing DID document, a key no document lists, or a
+  multi-round record without its evidence record is "could not finish", never a
+  pass or a refusal. Exit status: 0 verified, 1 refused, 3 could not finish,
+  2 bad usage.
+- **`offer_history_from_evidence` / `offerHistoryFromEvidence`.** A
+  TransactionRecord's `offer_chain_hash` is covered by neither signature, so a
+  verifier that was not a session party takes the earlier offers from the
+  session's SessionEvidenceRecord: linked by `transaction_record_hash`,
+  verified, every offer a signed act, rounds 1..N, ending with the final offer.
+- **`KEY_NOT_FOUND`.** When a signer's DID document does not list the key its
+  signature names, the TransactionRecord, SessionEvidenceRecord and act
+  verifiers report `KEY_NOT_FOUND` instead of a malformed record or an invalid
+  act; an evidence record's assessment lists the keys in `unresolved_keys`.
 - **`verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.**
   A refused SessionEvidenceRecord now names the first check it failed, as a
   TransactionRecord already did, with the same reason in both implementations;
@@ -42,6 +56,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ### Changed
 
+- **TransactionRecord verification checks `offer_chain_hash` last**, after both
+  signatures, so `OFFER_CHAIN_HASH_MISMATCH` now means everything else
+  verified. No committed vector's expected reason changes.
 - **The MCP server's dependencies are an optional extra.** `mcp` is no longer a
   core dependency of the Python package: `pip install a2cn` installs the
   protocol library without it, and `pip install -e '.[mcp]'` adds what

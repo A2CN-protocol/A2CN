@@ -39,6 +39,7 @@ VECTORS = REPO_ROOT / "spec" / "test-vectors"
 VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
 LINE_ITEMS = json.loads((VECTORS / "transaction-record-line-items.json").read_text())
+HISTORY = json.loads((VECTORS / "transaction-record-offer-history.json").read_text())
 # Each artifact versions its own shape, so the TransactionRecord's set is its own.
 TR_VERSIONS = RECORD_VERSIONS["transaction_record"]
 WITHOUT_BASIS = VECTOR["without_basis"]
@@ -356,6 +357,16 @@ def test_every_reason_code_is_reachable():
         )
         for case in LINE_ITEMS["cases"]
         if not case["verifies"]
+    }
+    # A key the signer's document does not list needs other DID documents.
+    observed |= {
+        verify_transaction_record_reason(
+            HISTORY["transaction_record"],
+            HISTORY["did_documents"][case["did_documents"]],
+            case["offer_hashes"],
+        )
+        for case in HISTORY["record_cases"]
+        if case["record"] == "transaction_record" and case["expected_reason"] is not None
     }
 
     assert observed == ALL_REASON_CODES

@@ -45,7 +45,22 @@ for (const c of CASES) {
   });
 }
 
+const HISTORY = JSON.parse(
+  readFileSync(join(SPEC_DIR, "test-vectors", "transaction-record-offer-history.json"), "utf-8"),
+) as Dict;
+
 test("every reason code is reachable", () => {
   const observed = new Set(CASES.map((c) => c.expected_reason as string));
+  // A key the signer's document does not list needs other DID documents.
+  for (const c of HISTORY.record_cases as Dict[]) {
+    if (c.record === "evidence_record") {
+      observed.add(
+        verifySessionEvidenceRecordReason(
+          HISTORY.evidence_record as Dict,
+          (HISTORY.did_documents as Record<string, Record<string, Dict>>)[c.did_documents as string],
+        ) as string,
+      );
+    }
+  }
   expect([...observed].sort()).toEqual([...ALL_REASON_CODES].sort());
 });
