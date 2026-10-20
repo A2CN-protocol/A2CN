@@ -364,3 +364,77 @@ def test_an_outright_fetch_failure_still_falls_back_to_the_whole_copy(tmp_path):
     # Every key came from the copy, so both of the buyer's offers are named.
     assert "the round-1 offer in the offer history was signed with" in record_block
     assert "the round-3 counteroffer in the offer history was signed with" in record_block
+
+
+# ---------------------------------------------------------------------------
+# Pairing: a TransactionRecord's own checks come first, and only a verified
+# evidence record supplies its earlier offers.
+# ---------------------------------------------------------------------------
+
+
+def _junk_evidence_for(record: dict) -> dict:
+    """An evidence record naming ``record`` whose seal claims a key no document lists.
+
+    Building it needs no private key: a seal whose key cannot be found is never
+    checked, so the record cannot verify, only fail to finish.
+    """
+    junk = copy.deepcopy(VECTOR["evidence_record"])
+    junk["transaction_record_hash"] = record["record_hash"]
+    junk["producer"]["verification_method"] = junk["producer"]["did"] + "#key-junk"
+    junk["record_hash"] = ""
+    junk["producer_signature"] = ""
+    junk["record_hash"] = hash_object(junk)
+    junk["producer_signature"] = "eyJhbGciOiJFUzI1NiJ9.e30.c2lnbmF0dXJl"
+    return junk
+
+
+def test_a_tampered_record_is_refused_whatever_a_junk_evidence_record_says(tmp_path):
+    tampered = copy.deepcopy(VECTOR["transaction_record"])
+    tampered["agreed_terms"]["total_value"] += 1
+    tampered["record_hash"] = ""
+    tampered["record_hash"] = hash_object(tampered)
+    folder = _deal(tmp_path, "tampered", transaction_record=tampered, evidence_record=_junk_evidence_for(tampered))
+    with _host(CURRENT):
+        status, output = _cli([str(folder)])
+
+    assert status == EXIT_REFUSED, output
+    record_block = _block(output, folder / "transaction_record.json")
+    assert "REFUSED: ACT_NOT_RECOMPUTABLE" in record_block
+    assert f"note: the evidence record {folder / 'evidence_record.json'} names this record" in record_block
+    assert "COULD NOT FINISH" in _block(output, folder / "evidence_record.json")
+
+
+def test_a_junk_evidence_record_sorting_first_does_not_hide_the_verified_one(tmp_path):
+    record = VECTOR["transaction_record"]
+    folder = _deal(
+        tmp_path,
+        "junk_first",
+        a_junk_evidence=_junk_evidence_for(record),
+        evidence_record=VECTOR["evidence_record"],
+        transaction_record=record,
+    )
+    with _host(CURRENT):
+        status, output = _cli([str(folder)])
+
+    record_block = _block(output, folder / "transaction_record.json")
+    assert "  VERIFIED" in record_block, output
+    assert f"from the evidence record {folder / 'evidence_record.json'}" in record_block
+    assert f"note: the evidence record {folder / 'a_junk_evidence.json'} names this record" in record_block
+    assert "COULD NOT FINISH" in _block(output, folder / "a_junk_evidence.json")
+    assert "  VERIFIED" in _block(output, folder / "evidence_record.json")
+    assert status == EXIT_UNFINISHED  # the junk record keeps its own verdict
+
+
+def test_only_unverifiable_evidence_records_leave_the_history_unchecked(tmp_path):
+    record = VECTOR["transaction_record"]
+    folder = _deal(tmp_path, "junk_only", a_junk_evidence=_junk_evidence_for(record), transaction_record=record)
+    with _host(CURRENT):
+        status, output = _cli([str(folder)])
+
+    assert status == EXIT_UNFINISHED, output
+    record_block = _block(output, folder / "transaction_record.json")
+    assert "COULD NOT FINISH: the earlier offers cannot be checked" in record_block
+    assert (
+        "its own signatures verified; no linked evidence record could be verified, so the earlier "
+        "offers cannot be checked"
+    ) in record_block

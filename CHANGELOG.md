@@ -28,8 +28,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   them with the library's own verification, and prints each verdict and reason,
   the act counts, where the offer history and each key came from, any extension
   block as present, sealed and not interpreted, and the record version judged.
-  A TransactionRecord takes its earlier offers from the session's evidence
-  record among the inputs. DID documents are fetched from the parties' did:web
+  A TransactionRecord's own checks decide first, so a definite failure is
+  refused whatever its evidence records say; only then are its earlier offers
+  taken from a linked evidence record among the inputs that verified, and
+  linked records that disagree, or none that verifies, leave it "could not
+  finish". DID documents are fetched from the parties' did:web
   addresses through the bounded resolver; `--offline` uses only DID documents
   among the inputs. A missing DID document, a key no document lists, or a
   multi-round record without its evidence record is "could not finish", never a

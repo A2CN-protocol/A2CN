@@ -525,136 +525,156 @@ def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, no
 def verify_transaction_record(
     item: _Input, evidence: list[_Input], verdicts: dict[str, _Outcome], keys: _Keys, args
 ) -> _Outcome:
+    """A TransactionRecord's verdict: its own checks first, then its earlier offers.
+
+    The record's own checks decide everything except its offer chain, so a
+    definite failure is REFUSED whatever its evidence records say. Only a
+    record that passes them, except the chain, needs its earlier offers, and
+    those come only from a linked evidence record that verified.
+    """
     document = item.document
     outcome = _Outcome(item.name, f"TransactionRecord, record_version {document.get('record_version')!r}")
     final_offer = document.get("final_offer")
     final_round = final_offer.get("round_number") if isinstance(final_offer, dict) else None
-
-    history: list[str] | None = None
-    history_line: str | None = None
-    history_attempt: _Attempt | None = None
-    history_fallback: list[str] = []
-    unlinked: list[str] = []
+    multi_round = isinstance(final_round, int) and not isinstance(final_round, bool) and final_round > 1
     linked = [e for e in evidence if e.document.get("transaction_record_hash") == document.get("record_hash")]
+    states = [
+        f"note: the evidence record {e.name} names this record; its own verdict: {verdicts[e.name].headline}"
+        for e in linked
+    ]
+    unlinked = [
+        f"the evidence record {e.name} names another TransactionRecord "
+        f"(transaction_record_hash {e.document.get('transaction_record_hash')!r}), "
+        "so it does not belong to this one"
+        for e in evidence
+        if e not in linked
+    ]
+
     if args.offer_hash:
         history = list(args.offer_hash)
-        history_line = (
+        reason, _assessment, attempt, not_listed = _verify_with_keys(
+            TYPE_TRANSACTION_RECORD, document, keys, history
+        )
+        outcome.lines.append(
             f"offer history: {len(history)} hashes typed on the command line; not covered by any signature"
         )
-    elif linked:
-        source = linked[0]
-        verdict = verdicts[source.name]
-        if verdict.status != EXIT_VERIFIED and not verdict.use_supplied:
-            outcome.status = EXIT_UNFINISHED
-            state = "was refused" if verdict.status == EXIT_REFUSED else "could not be checked"
-            outcome.headline = f"COULD NOT FINISH: its evidence record {state}"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record but {state} (see its own "
-                "verdict), so the earlier offers cannot be checked"
-            )
-            return outcome
-        # The same DID documents the evidence record's own verdict used.
-        history_attempt = _Attempt(keys, use_supplied=verdict.use_supplied)
-        hashes, why = offer_history_from_evidence(document, source.document, history_attempt)
-        if history_attempt.missing or why == HISTORY_REASON_EVIDENCE_NOT_VERIFIED:
-            outcome.status = EXIT_UNFINISHED
-            outcome.headline = "COULD NOT FINISH: its evidence record could not be checked"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record but could not be checked, so "
-                "the earlier offers cannot be checked"
-            )
-            return outcome
-        if why is not None:
-            outcome.status = EXIT_REFUSED
-            outcome.headline = f"REFUSED: {why}"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record, but its offers are not this "
-                "record's complete signed offer history"
-            )
-            return outcome
-        history = hashes
-        history_line = (
-            f"offer history: {len(hashes)} offers, each signed by its sender, "
-            f"from the evidence record {source.name}"
-        )
-        # Offers in the history whose key came from a supplied copy: the record
-        # is never stronger than the weakest input it relied on.
-        for entry in source.document.get("acts", []):
-            did = entry.get("sender_did")
-            method = entry.get("sender_verification_method")
-            if (
-                entry.get("message_type") in ("offer", "counteroffer")
-                and method in history_attempt.copied.get(did, set())
-            ):
-                history_fallback.append(
-                    f"the round-{entry.get('act', {}).get('round_number')} {entry.get('message_type')} "
-                    f"in the offer history was signed with {method}, which came from a supplied copy, "
-                    f"{keys.supplied[did][1]} ({history_attempt.fallback[did]})"
-                )
-        for did, ids in history_attempt.conflicts.items():
-            for method_id in ids:
-                history_fallback.append(
-                    f"note: the supplied copy {keys.supplied[did][1]} disagrees with the party's site "
-                    f"about key {method_id}; the site's key was used"
-                )
-    else:
-        unlinked = [
-            f"the evidence record {e.name} names another TransactionRecord "
-            f"(transaction_record_hash {e.document.get('transaction_record_hash')!r}), "
-            "so it does not belong to this one"
-            for e in evidence
-        ]
+        unchecked = _unchecked_signatures(document, attempt, not_listed)
+        return _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
 
+    # 1. The record's own checks, before any evidence record is consulted.
+    reason, _assessment, attempt, not_listed = _verify_with_keys(TYPE_TRANSACTION_RECORD, document, keys)
+    unchecked = _unchecked_signatures(document, attempt, not_listed)
+    definite = reason not in (None, REASON_OFFER_CHAIN_HASH_MISMATCH, REASON_KEY_NOT_FOUND)
+    if definite or not multi_round:
+        if not multi_round:
+            outcome.lines.append("offer history: the final offer only (a one-round deal)")
+        else:
+            outcome.lines.append("offer history: not needed; the record was refused on its own checks")
+        outcome.lines.extend(states or unlinked)
+        return _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+
+    rounds_note = f"this deal took {final_round} rounds and the record carries only the final offer"
+    if unchecked:
+        _finish(outcome, REASON_KEY_NOT_FOUND, _record_counts(None, unchecked), attempt, not_listed)
+        outcome.lines[0:0] = [f"{rounds_note}; the earlier offers were not checked"] + (states or unlinked)
+        return outcome
+
+    # 2. Both signatures verified; the earlier offers come from a linked
+    # evidence record that verified (or verified only against a supplied copy).
+    if not linked:
+        outcome.lines.append(
+            f"agreed terms and both signatures verified; {rounds_note}; add this session's evidence "
+            "record to check the earlier offers"
+        )
+        outcome.lines.extend(unlinked)
+        return _unfinished(outcome, "COULD NOT FINISH: the earlier offers are not available", attempt, not_listed)
+
+    candidates = [
+        e for e in linked if verdicts[e.name].status == EXIT_VERIFIED or verdicts[e.name].use_supplied
+    ]
+    histories: list[tuple[_Input, list[str], _Attempt]] = []
+    contradictions: list[tuple[_Input, str]] = []
+    for source in candidates:
+        # The same DID documents the evidence record's own verdict used.
+        history_attempt = _Attempt(keys, use_supplied=verdicts[source.name].use_supplied)
+        hashes, why = offer_history_from_evidence(document, source.document, history_attempt)
+        if why is None and not history_attempt.missing:
+            histories.append((source, hashes, history_attempt))
+        elif why not in (None, HISTORY_REASON_EVIDENCE_NOT_VERIFIED) and not history_attempt.missing:
+            contradictions.append((source, why))
+
+    if not histories:
+        if contradictions:
+            source, why = contradictions[0]
+            outcome.lines.append(
+                f"the evidence record {source.name} names this record and verified, but its offers are "
+                "not this record's complete signed offer history"
+            )
+            outcome.lines.extend(note for note in states if source.name not in note)
+            return _finish(outcome, why, None, attempt, not_listed)
+        outcome.lines.append(
+            "its own signatures verified; no linked evidence record could be verified, so the earlier "
+            f"offers cannot be checked ({rounds_note})"
+        )
+        outcome.lines.extend(states)
+        return _unfinished(
+            outcome, "COULD NOT FINISH: the earlier offers cannot be checked", attempt, not_listed
+        )
+
+    if len({tuple(hashes) for _source, hashes, _attempt in histories}) > 1:
+        outcome.lines.append(
+            "the linked evidence records that verified give different offer histories: "
+            + ", ".join(source.name for source, _hashes, _attempt in histories)
+        )
+        outcome.lines.extend(states)
+        return _unfinished(
+            outcome, "COULD NOT FINISH: its evidence records disagree about the earlier offers", attempt, not_listed
+        )
+
+    source, history, history_attempt = histories[0]
     reason, _assessment, attempt, not_listed = _verify_with_keys(
         TYPE_TRANSACTION_RECORD, document, keys, history
     )
-
     unchecked = _unchecked_signatures(document, attempt, not_listed)
-    if (
-        history is None
-        and reason == REASON_OFFER_CHAIN_HASH_MISMATCH
-        and isinstance(final_round, int)
-        and final_round > 1
-    ):
-        # The chain is checked last, after both signatures.
-        rounds_note = (
-            f"this deal took {final_round} rounds and the record carries only the final offer; "
-            "add this session's evidence record to check the earlier offers"
-        )
-        if unchecked:
-            _finish(outcome, REASON_KEY_NOT_FOUND, _record_counts(None, unchecked), attempt, not_listed)
-            outcome.lines.insert(0, rounds_note)
-            outcome.lines[1:1] = unlinked
-            return outcome
-        outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: the earlier offers are not available"
-        outcome.lines.append(f"agreed terms and both signatures verified; {rounds_note}")
-        outcome.lines.extend(unlinked)
-        _finish(outcome, None, _counts(2, 0, 0), attempt, not_listed)
-        if outcome.status == EXIT_VERIFIED:  # _finish found nothing weaker
-            outcome.status = EXIT_UNFINISHED
-            outcome.headline = "COULD NOT FINISH: the earlier offers are not available"
-        return outcome
-
-    if history_line is None:
-        if isinstance(final_round, int) and final_round > 1:
-            history_line = (
-                f"offer history: not available; this deal took {final_round} rounds and the record "
-                "carries only the final offer"
+    outcome.lines.append(
+        f"offer history: {len(history)} offers, each signed by its sender, from the evidence record {source.name}"
+    )
+    # Offers in the history whose key came from a supplied copy: the record is
+    # never stronger than the weakest input it relied on.
+    history_fallback = []
+    for entry in source.document.get("acts", []):
+        did = entry.get("sender_did")
+        method = entry.get("sender_verification_method")
+        if entry.get("message_type") in ("offer", "counteroffer") and method in history_attempt.copied.get(did, set()):
+            history_fallback.append(
+                f"the round-{entry.get('act', {}).get('round_number')} {entry.get('message_type')} "
+                f"in the offer history was signed with {method}, which came from a supplied copy, "
+                f"{keys.supplied[did][1]} ({history_attempt.fallback[did]})"
             )
-        else:
-            history_line = "offer history: the final offer only (a one-round deal)"
-    outcome.lines.append(history_line)
     outcome.lines.extend(history_fallback)
-    outcome.lines.extend(unlinked)
+    for did, ids in history_attempt.conflicts.items():
+        for method_id in ids:
+            outcome.lines.append(
+                f"note: the supplied copy {keys.supplied[did][1]} disagrees with the party's site "
+                f"about key {method_id}; the site's key was used"
+            )
+    outcome.lines.extend(note for note in states if f" {source.name} " not in note)
     _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
-    if history_attempt is not None:
-        for did, where in history_attempt.sources.items():
-            if attempt.sources.get(did) != where:
-                outcome.lines.append(f"keys (offer history): {did} {where}")
+    for did, where in history_attempt.sources.items():
+        if attempt.sources.get(did) != where:
+            outcome.lines.append(f"keys (offer history): {did} {where}")
     if history_fallback and outcome.status == EXIT_VERIFIED:
         outcome.status = EXIT_UNFINISHED
         outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
+    return outcome
+
+
+def _unfinished(outcome: _Outcome, headline: str, attempt: _Attempt, not_listed) -> _Outcome:
+    """A record whose own checks passed but which cannot be finished: say so, keep its keys."""
+    _finish(outcome, None, _counts(2, 0, 0), attempt, not_listed)
+    if outcome.status == EXIT_VERIFIED:  # nothing weaker was found by _finish
+        outcome.status = EXIT_UNFINISHED
+        outcome.headline = headline
     return outcome
 
 
