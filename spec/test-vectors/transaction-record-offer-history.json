@@ -1,5 +1,5 @@
 {
-  "description": "A TransactionRecord's offer history, taken from its SessionEvidenceRecord (Sections 9.3, 9.5, 9A.2). transaction-record-basis.json's two-round session is replayed and this implementation produces both records; the evidence record's transaction_record_hash is the TransactionRecord's record_hash. history_cases give, for each evidence record, what offer_history_from_evidence / offerHistoryFromEvidence returns for the TransactionRecord with did_documents.current: the offer hashes in order, or null and a reason. record_cases give the verdict of verify_transaction_record_reason / verifySessionEvidenceRecordReason with the named DID documents and offer hashes; did_documents.rotated is the same documents with the producer's key renamed, so a signature names a key no document lists (KEY_NOT_FOUND). offer_chain_hash is checked after both signatures.",
+  "description": "A TransactionRecord's offer history, taken from its SessionEvidenceRecord (Sections 9.3, 9.5, 9A.2). transaction-record-basis.json's two-round session is replayed and this implementation produces both records; the evidence record's transaction_record_hash is the TransactionRecord's record_hash. history_cases give, for each evidence record, what offer_history_from_evidence / offerHistoryFromEvidence returns for the TransactionRecord with did_documents.current: the offer hashes in order, or null and a reason. record_cases give the verdict of verify_transaction_record_reason / verifySessionEvidenceRecordReason with the named DID documents and offer hashes; did_documents.rotated is the same documents with the producer's key renamed, so a signature names a key no document lists (KEY_NOT_FOUND). offer_chain_hash is checked after both signatures. did_documents.partial withholds the producer's DID document: a signature whose signer's document cannot be obtained is checked neither way, like one whose key is not listed, and a definite failure elsewhere is reported ahead of KEY_NOT_FOUND. A record_cases entry carrying record_document checks that record instead of the vector's own.",
   "did_documents": {
     "current": {
       "did:web:techcorp.example": {
@@ -106,6 +106,34 @@
         ],
         "assertionMethod": [
           "did:web:acme-corp.com#key-2027-01"
+        ]
+      }
+    },
+    "partial": {
+      "did:web:techcorp.example": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1",
+          "https://w3id.org/security/suites/jws-2020/v1"
+        ],
+        "id": "did:web:techcorp.example",
+        "verificationMethod": [
+          {
+            "id": "did:web:techcorp.example#key-1",
+            "type": "JsonWebKey2020",
+            "controller": "did:web:techcorp.example",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "VTRCSSp-es1I4SnQogKE2a01sYabWsd6_bNcSWeCJz0",
+              "y": "6OjmdVwUT57a22bfeNKHfE9ZM6mRk0xEz2JFtZl0Gvc"
+            }
+          }
+        ],
+        "authentication": [
+          "did:web:techcorp.example#key-1"
+        ],
+        "assertionMethod": [
+          "did:web:techcorp.example#key-1"
         ]
       }
     }
@@ -1077,6 +1105,271 @@
           "verification_method": "did:web:acme-corp.com#key-2026-01"
         }
       ]
+    },
+    {
+      "name": "evidence_signer_document_unavailable",
+      "description": "The producer's DID document is withheld: its counteroffer and seal are checked neither way, nothing else fails, so the record ends at KEY_NOT_FOUND.",
+      "record": "evidence_record",
+      "did_documents": "partial",
+      "offer_hashes": null,
+      "expected_reason": "KEY_NOT_FOUND",
+      "expected_unresolved_keys": [
+        {
+          "did": "did:web:acme-corp.com",
+          "verification_method": "did:web:acme-corp.com#key-2026-01"
+        },
+        {
+          "did": "did:web:acme-corp.com",
+          "verification_method": "did:web:acme-corp.com#key-2026-01"
+        }
+      ]
+    },
+    {
+      "name": "evidence_broken_act_and_signer_document_unavailable",
+      "description": "The other party's signed offer carries a broken signature, and the producer's document is withheld. The broken signature is a definite failure and is reported first.",
+      "record": "evidence_record",
+      "record_document": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "89c30b8d-978a-597e-9557-4f471c5fa124",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "producer": {
+          "did": "did:web:acme-corp.com",
+          "agent_id": "basis-seller-agent",
+          "verification_method": "did:web:acme-corp.com#key-2026-01"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "COMPLETED",
+          "reason": "acceptance",
+          "message_id": "basis-acc-1",
+          "timestamp": "2026-03-24T10:03:00Z"
+        },
+        "transaction_record_hash": "ijObY9oAD-eiu-SfniEFFZ1dZMMDvIuL1QphS8i2Xso",
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "basis-offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "basis-offer-1",
+              "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "basis-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD",
+                "basis": "gross",
+                "seat_count": 100
+              },
+              "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.EQwR_y7dTX6MCPxEBV1PLYFw8lmwl5SJTnogA1aGfmopOkyMO_72NiPGnpa7hxCSnnBtqt30jMixLlAfAAAAAA",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "Y15NkDEzylE6uIyyRxWLOudO3U_zj9VGLhQG9duzAX4",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.EQwR_y7dTX6MCPxEBV1PLYFw8lmwl5SJTnogA1aGfmopOkyMO_72NiPGnpa7hxCSnnBtqt30jMixLlAfAAAAAA",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "basis-counter-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "basis-counter-1",
+              "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+              "round_number": 2,
+              "sequence_number": 2,
+              "sender_did": "did:web:acme-corp.com",
+              "sender_agent_id": "basis-agent",
+              "sender_verification_method": "did:web:acme-corp.com#key-2026-01",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 10000000,
+                "currency": "USD",
+                "basis": "gross",
+                "seat_count": 100
+              },
+              "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw",
+              "in_reply_to": "basis-offer-1",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "5UWtGryWn5XdVXVc21jxXOiHVKPqZ5p9Ud5gD7Q3o_Y",
+            "sender_verification_method": "did:web:acme-corp.com#key-2026-01",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 3,
+            "round_number": 2,
+            "message_type": "acceptance",
+            "message_id": "basis-acc-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:03:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "acceptance",
+              "message_id": "basis-acc-1",
+              "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+              "in_reply_to": "basis-counter-1",
+              "round_number": 2,
+              "sequence_number": 3,
+              "accepted_offer_id": "basis-counter-1",
+              "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "basis-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:03:00Z",
+              "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA",
+              "protocol_version": "0.2"
+            },
+            "act_hash": "EVkhSlgM-e8cZPYRKqSokgWSA2ZLMPoFnxlU0HCwEhg",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "acceptance_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceMpU3IA",
+            "attribution": "verified_signature"
+          }
+        ],
+        "act_chain_hash": "57dKKmoxke7hTHohAzdOi9q0wcTktavqO_bTW3IjlTg",
+        "evidence_level": "bilateral",
+        "record_hash": "PitYxbFegpGX5vE2lx3fqP6cJPLQ8BZ10gNV_JQfgPw",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.UGl0WXhiRmVncEdYNXZFMmx4M2ZxUDZjSlBMUThCWjEwZ05WX0pRZmdQdw.r2a7SJQOBHTw2PABcgkNeHH7bdLEXB6godBBNx9n7mwu6yC0Pb-5j2eplLaoSQZeQzR1qAHML93ifzLDhFtQQw"
+      },
+      "did_documents": "partial",
+      "offer_hashes": null,
+      "expected_reason": "ACT_INVALID",
+      "expected_unresolved_keys": [
+        {
+          "did": "did:web:acme-corp.com",
+          "verification_method": "did:web:acme-corp.com#key-2026-01"
+        }
+      ]
+    },
+    {
+      "name": "record_signer_document_unavailable",
+      "description": "The final offer's signer's DID document is withheld; the acceptance verifies, so the record ends at KEY_NOT_FOUND.",
+      "record": "transaction_record",
+      "did_documents": "partial",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+        "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk"
+      ],
+      "expected_reason": "KEY_NOT_FOUND"
+    },
+    {
+      "name": "record_broken_acceptance_and_signer_document_unavailable",
+      "description": "The acceptance's signature is broken and the final offer's signer's document is withheld. The broken signature is reported first.",
+      "record": "transaction_record",
+      "record_document": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:03:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 10000000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 2,
+          "total_messages": 3,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:03:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:techcorp.example"
+        },
+        "final_offer": {
+          "message_id": "basis-counter-1",
+          "protocol_version": "0.2",
+          "round_number": 2,
+          "sequence_number": 2,
+          "message_type": "counteroffer",
+          "sender_did": "did:web:acme-corp.com",
+          "timestamp": "2026-03-24T10:02:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.VVloekd1OXhCcENJNF9iWHh3X0xENGVyYXBueVhGQkdpOExEYnFpTFhLaw.tu3tJoAXr-wFAqzAvv8Nf0oEU-JZk42e_2IC0tkLm336qdMh0-mYrR-lXO1Sawq_sG0As5CsUPFeFxcuMTKNyw"
+        },
+        "final_acceptance": {
+          "message_id": "basis-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:techcorp.example",
+          "round_number": 2,
+          "sequence_number": 3,
+          "timestamp": "2026-03-24T10:03:00Z",
+          "accepted_offer_id": "basis-counter-1",
+          "accepted_protocol_act_hash": "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.QkstTTNCdmY0aFNScDFOUVZxcFRTRmx1SXhkQkR1a1JQOWtHT01SNHRXRQ.AQzp7u5bpBtd6OtZlC58zzqgXLDhQ3Xj9i_MwgAMe4zl8DgKlHtpZO266WojfhPR7ea_YGu8__EdEqceAAAAAA"
+        },
+        "offer_chain_hash": "VHYNTEApaLwB0_fxOv6h89u9FSLe8ZKYBDeGRG2dK5c",
+        "record_hash": "-24yY45omGkB4E1aQ-LafS-5Q9gWPVTOSIqmmLHRf8I"
+      },
+      "did_documents": "partial",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+        "UYhzGu9xBpCI4_bXxw_LD4erapnyXFBGi8LDbqiLXKk"
+      ],
+      "expected_reason": "ACCEPTANCE_SIGNATURE_INVALID"
     }
   ]
 }

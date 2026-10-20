@@ -58,7 +58,8 @@ def test_every_reason_code_is_reachable():
     # A key the signer's document does not list needs other DID documents.
     observed |= {
         verify_session_evidence_record_reason(
-            HISTORY["evidence_record"], HISTORY["did_documents"][case["did_documents"]]
+            case.get("record_document") or HISTORY["evidence_record"],
+            HISTORY["did_documents"][case["did_documents"]],
         )
         for case in HISTORY["record_cases"]
         if case["record"] == "evidence_record"

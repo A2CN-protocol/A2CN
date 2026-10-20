@@ -139,10 +139,16 @@ def _headline(output: str) -> str:
     return output.splitlines()[1].strip()
 
 
+KEY_NOT_FOUND = "KEY_NOT_FOUND"
+
+
 def _expected_status(reason, missing):
-    if missing:
+    """A definite failure is refused even when a DID document was missing."""
+    if reason is not None and reason != KEY_NOT_FOUND:
+        return EXIT_REFUSED
+    if reason == KEY_NOT_FOUND or missing:
         return EXIT_UNFINISHED
-    return EXIT_VERIFIED if reason is None else EXIT_REFUSED
+    return EXIT_VERIFIED
 
 
 @pytest.mark.parametrize(
@@ -161,9 +167,26 @@ def test_every_vector_record_gets_the_librarys_verdict(item, tmp_path):
 
     status, output = _cli(args)
 
-    assert status == _expected_status(reason, missing), output
+    expected = _expected_status(reason, missing)
+    if (
+        kind == "transaction-record"
+        and not hashes
+        and reason == "OFFER_CHAIN_HASH_MISMATCH"
+        and document.get("final_offer", {}).get("round_number", 1) > 1
+    ):
+        # Without the earlier offers a multi-round record cannot be finished;
+        # the chain mismatch is expected, not a definite failure.
+        expected = EXIT_UNFINISHED
+    typed = kind == "transaction-record" and bool(hashes)
+    if typed and expected == EXIT_VERIFIED:
+        # Hashes typed on the command line are covered by no signature: they
+        # can match, but never make a clean pass.
+        expected = EXIT_UNFINISHED
+    assert status == expected, output
     first = _headline(output)
-    if status == EXIT_VERIFIED:
+    if typed and reason is None and not missing:
+        assert first == "COULD NOT FINISH: the earlier offers are not from signed evidence"
+    elif status == EXIT_VERIFIED:
         assert first == "VERIFIED"
     elif status == EXIT_REFUSED:
         assert first == f"REFUSED: {reason}"
@@ -189,7 +212,7 @@ def test_every_vector_act_gets_the_librarys_verdict(item, wire_version, tmp_path
 
     status, output = _cli(args)
 
-    if missing or reason == "WIRE_VERSION_UNSTATED":
+    if reason in ("WIRE_VERSION_UNSTATED", KEY_NOT_FOUND):
         assert status == EXIT_UNFINISHED, output
     elif reason is None:
         assert status == EXIT_VERIFIED, output
@@ -306,7 +329,7 @@ def test_bad_usage_exits_2(args, message, tmp_path):
 
 
 def test_python_dash_m_runs_the_verifier(tmp_path):
-    document, documents, hashes = _verified("transaction-record")
+    document, documents, hashes = _verified("evidence-record")
     record_file = tmp_path / "record.json"
     record_file.write_text(json.dumps(document))
     args = [sys.executable, "-m", "a2cn.verify", str(record_file)]

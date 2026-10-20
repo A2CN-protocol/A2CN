@@ -36,12 +36,11 @@ def test_the_history_is_taken_only_from_a_linked_verified_complete_record(case):
 @pytest.mark.parametrize("case", VECTOR["record_cases"], ids=lambda case: case["name"])
 def test_the_records_reach_the_stated_verdicts(case):
     documents = DIDS[case["did_documents"]]
+    record = case.get("record_document") or VECTOR[case["record"]]
     if case["record"] == "transaction_record":
-        reason = verify_transaction_record_reason(
-            VECTOR["transaction_record"], documents, case["offer_hashes"]
-        )
+        reason = verify_transaction_record_reason(record, documents, case["offer_hashes"])
     else:
-        assessment = assess_session_evidence_record(VECTOR["evidence_record"], documents)
+        assessment = assess_session_evidence_record(record, documents)
         reason = assessment["reason"]
         assert assessment["unresolved_keys"] == case.get("expected_unresolved_keys", [])
     assert reason == case["expected_reason"]
