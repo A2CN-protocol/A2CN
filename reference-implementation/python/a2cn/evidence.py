@@ -15,8 +15,10 @@ from datetime import datetime
 from fractions import Fraction
 from typing import Any
 
+from jwt.exceptions import InvalidSignatureError
+
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
-from a2cn.did import get_public_key, get_verification_method
+from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
 from a2cn.line_items import terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
@@ -182,6 +184,48 @@ _RFC3339_PATTERN = re.compile(
 _UNIX_EPOCH = datetime(1970, 1, 1)
 
 DidResolver = Mapping[str, dict] | Callable[[str], dict]
+
+# Why an evidence record failed (Section 9A.6). verify_session_evidence_record
+# returns a bool; verify_session_evidence_record_reason returns one of these, or
+# None when the record verifies. The reason names the first check that failed.
+EVIDENCE_REASON_MALFORMED_RECORD = "MALFORMED_RECORD"
+EVIDENCE_REASON_UNRECOGNIZED_RECORD_TYPE = "UNRECOGNIZED_RECORD_TYPE"
+EVIDENCE_REASON_UNRECOGNIZED_RECORD_VERSION = "UNRECOGNIZED_RECORD_VERSION"
+EVIDENCE_REASON_DECLINE_VOCABULARY_VERSION = "DECLINE_VOCABULARY_VERSION"
+EVIDENCE_REASON_EXTERNAL_COMMITMENT_VERSION = "EXTERNAL_COMMITMENT_VERSION"
+EVIDENCE_REASON_TERMINAL_OUTCOME_INVALID = "TERMINAL_OUTCOME_INVALID"
+EVIDENCE_REASON_GENERATED_AT_MISMATCH = "GENERATED_AT_MISMATCH"
+EVIDENCE_REASON_COMPLETION_WITNESS_INVALID = "COMPLETION_WITNESS_INVALID"
+EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED = "PRODUCER_METHOD_NOT_CONTROLLED"
+EVIDENCE_REASON_EVIDENCE_ID_MISMATCH = "EVIDENCE_ID_MISMATCH"
+EVIDENCE_REASON_ACTS_NOT_ORDERED = "ACTS_NOT_ORDERED"
+EVIDENCE_REASON_ACT_INVALID = "ACT_INVALID"
+EVIDENCE_REASON_MONEY_BASIS_INVALID = "MONEY_BASIS_INVALID"
+EVIDENCE_REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID"
+EVIDENCE_REASON_OBSERVED_RESPONDER_RULES = "OBSERVED_RESPONDER_RULES"
+EVIDENCE_REASON_EXTERNAL_COMMITMENT_RULES = "EXTERNAL_COMMITMENT_RULES"
+EVIDENCE_REASON_ACCEPTED_RESPONDER_SIGNED_ACT = "ACCEPTED_RESPONDER_SIGNED_ACT"
+EVIDENCE_REASON_EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING = "EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING"
+EVIDENCE_REASON_EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR = "EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR"
+EVIDENCE_REASON_BILATERAL_WITNESS_MISMATCH = "BILATERAL_WITNESS_MISMATCH"
+EVIDENCE_REASON_ACT_CHAIN_HASH_MISMATCH = "ACT_CHAIN_HASH_MISMATCH"
+EVIDENCE_REASON_EVIDENCE_LEVEL_MISMATCH = "EVIDENCE_LEVEL_MISMATCH"
+EVIDENCE_REASON_RECORD_HASH_MISMATCH = "RECORD_HASH_MISMATCH"
+EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID = "PRODUCER_SIGNATURE_INVALID"
+EVIDENCE_REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND"
+
+
+class _KeyNotFound(Exception):
+    """A signer's DID document does not list the key its signature names."""
+
+    def __init__(self, did: str, verification_method: str):
+        super().__init__(did, verification_method)
+        self.key = {"did": did, "verification_method": verification_method}
+
+
+def _refused(assessment: dict, reason: str) -> dict:
+    assessment["reason"] = reason
+    return assessment
 
 
 def generate_session_evidence_record(
@@ -429,6 +473,84 @@ def generate_session_evidence_record(
     return record
 
 
+# Why an evidence record cannot supply a TransactionRecord's offer history.
+# offer_history_from_evidence returns one of these beside a None history.
+HISTORY_REASON_NOT_LINKED = "EVIDENCE_RECORD_NOT_LINKED"
+HISTORY_REASON_EVIDENCE_NOT_VERIFIED = "EVIDENCE_RECORD_NOT_VERIFIED"
+HISTORY_REASON_UNSIGNED_OFFER = "OFFER_HISTORY_UNSIGNED"
+HISTORY_REASON_ROUNDS = "OFFER_HISTORY_ROUNDS"
+HISTORY_REASON_FINAL_OFFER = "OFFER_HISTORY_FINAL_OFFER_MISMATCH"
+
+
+def offer_history_from_evidence(
+    transaction_record: dict,
+    evidence_record: dict,
+    did_resolver: DidResolver,
+) -> tuple[list[str] | None, str | None]:
+    """A TransactionRecord's offer hashes, in order, taken from its evidence record.
+
+    ``offer_chain_hash`` (Section 9.3) is covered by neither signature, so a
+    verifier that was not a session party cannot check it against a history
+    the record's presenter types in. The session's evidence record holds every
+    offer as a signed act and names the TransactionRecord by
+    ``transaction_record_hash``. This returns ``(hashes, None)`` when:
+
+    * the evidence record's ``transaction_record_hash`` is the record's
+      ``record_hash`` (otherwise HISTORY_REASON_NOT_LINKED);
+    * the evidence record verifies (Section 9A.6; otherwise
+      HISTORY_REASON_EVIDENCE_NOT_VERIFIED);
+    * every offer and counteroffer in it is a verified signed act (otherwise
+      HISTORY_REASON_UNSIGNED_OFFER);
+    * their signed ``round_number`` runs 1..N with no gap, N being the final
+      offer's ``round_number`` (otherwise HISTORY_REASON_ROUNDS);
+    * the last is the record's final offer (otherwise HISTORY_REASON_FINAL_OFFER).
+
+    Otherwise it returns ``(None, reason)``. Pass the hashes to
+    ``verify_transaction_record_reason`` as ``offer_hashes``.
+    """
+    try:
+        final_offer = transaction_record["final_offer"]
+        record_hash = transaction_record["record_hash"]
+        if not (
+            isinstance(record_hash, str)
+            and record_hash
+            and evidence_record.get("transaction_record_hash") == record_hash
+        ):
+            return None, HISTORY_REASON_NOT_LINKED
+        if assess_session_evidence_record(evidence_record, did_resolver)["reason"] is not None:
+            return None, HISTORY_REASON_EVIDENCE_NOT_VERIFIED
+        offers = [
+            entry
+            for entry in evidence_record["acts"]
+            if entry.get("message_type") in _NEGOTIATION_MESSAGE_TYPES
+        ]
+        if not offers or any(entry.get("attribution") != ATTRIBUTION_VERIFIED for entry in offers):
+            return None, HISTORY_REASON_UNSIGNED_OFFER
+        rounds = [entry["act"].get("round_number") for entry in offers]
+        final_round = final_offer.get("round_number")
+        if not (
+            _is_act_integer(final_round)
+            and all(_is_act_integer(value) for value in rounds)
+            and [int(value) for value in rounds] == list(range(1, int(final_round) + 1))
+        ):
+            return None, HISTORY_REASON_ROUNDS
+        hashes = [entry["act"].get("protocol_act_hash") for entry in offers]
+        if hashes[-1] != final_offer.get("protocol_act_hash"):
+            return None, HISTORY_REASON_FINAL_OFFER
+        return hashes, None
+    except Exception:
+        return None, HISTORY_REASON_EVIDENCE_NOT_VERIFIED
+
+
+def verify_session_evidence_record_reason(record: dict, did_resolver: DidResolver) -> str | None:
+    """Why a record does not verify (Section 9A.6), or None when it does.
+
+    The same arguments as ``verify_session_evidence_record``, which is this
+    function's boolean. The reason is one of the EVIDENCE_REASON_* constants.
+    """
+    return assess_session_evidence_record(record, did_resolver)["reason"]
+
+
 def verify_session_evidence_record(record: dict, did_resolver: DidResolver) -> bool:
     """Return true when the record seal, hashes, and every claimed signature verify.
 
@@ -439,9 +561,21 @@ def verify_session_evidence_record(record: dict, did_resolver: DidResolver) -> b
 
 
 def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> dict:
-    """Return verification status and signed/unsigned act counts."""
+    """Return verification status, signed/unsigned act counts and the reason.
+
+    ``reason`` is None for a record that verifies, and otherwise one of the
+    EVIDENCE_REASON_* constants, naming the first check the record failed.
+
+    A signature whose key the signer's DID document does not list cannot be
+    checked either way. Such an act is not counted as verified or invalid, its
+    signer and key are listed in ``unresolved_keys``, and the record's other
+    checks still run: a record that fails one of them is refused for it. Only a
+    record that passes everything else ends at EVIDENCE_REASON_KEY_NOT_FOUND.
+    """
     assessment = {
         "valid": False,
+        "reason": None,
+        "unresolved_keys": [],
         "evidence_level": record.get("evidence_level"),
         "verified_acts": 0,
         "unsigned_acts": 0,
@@ -450,32 +584,32 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
 
     try:
         if not _evidence_record_shape_valid(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_MALFORMED_RECORD)
         if record.get("record_type") != SESSION_EVIDENCE_RECORD_TYPE:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_UNRECOGNIZED_RECORD_TYPE)
         if record.get("record_version") not in RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_UNRECOGNIZED_RECORD_VERSION)
         if not _decline_vocabulary_requires_0_4(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_DECLINE_VOCABULARY_VERSION)
         if not _external_commitment_matches_version_0_3(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_VERSION)
 
         terminal = record["terminal"]
         outcome = terminal["outcome"]
         if outcome not in _EVIDENCE_TERMINAL_OUTCOMES:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_TERMINAL_OUTCOME_INVALID)
         if record["generated_at"] != terminal["timestamp"]:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_GENERATED_AT_MISMATCH)
         _timestamp_order_key(record["generated_at"])
         _timestamp_order_key(terminal["timestamp"])
         if not _completion_witness_holds(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_COMPLETION_WITNESS_INVALID)
 
         producer = record["producer"]
         producer_did = producer["did"]
         producer_verification_method = producer["verification_method"]
         if not _verification_method_controlled_by(producer_verification_method, producer_did):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED)
 
         expected_evidence_id = str(
             uuid.uuid5(
@@ -484,19 +618,26 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             )
         )
         if record.get("evidence_id") != expected_evidence_id:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EVIDENCE_ID_MISMATCH)
 
         acts = record["acts"]
         if not isinstance(acts, list) or not _evidence_acts_are_ordered(acts):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_ACTS_NOT_ORDERED)
 
         computed_act_hashes: list[str] = []
         for entry in acts:
-            act_valid, attribution = _verify_evidence_act(
-                entry,
-                session_id=record["session_id"],
-                did_resolver=did_resolver,
-            )
+            try:
+                act_valid, attribution = _verify_evidence_act(
+                    entry,
+                    session_id=record["session_id"],
+                    did_resolver=did_resolver,
+                )
+            except _KeyNotFound as missing:
+                # Its hash and envelope were checked before its signature, so
+                # it still takes its place in the chain.
+                assessment["unresolved_keys"].append(missing.key)
+                computed_act_hashes.append(entry["act_hash"])
+                continue
             if attribution == ATTRIBUTION_VERIFIED:
                 if act_valid:
                     assessment["verified_acts"] += 1
@@ -514,25 +655,25 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             computed_act_hashes.append(entry["act_hash"])
 
         if assessment["invalid_acts"]:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_ACT_INVALID)
         if not _money_basis_claims_verify(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_MONEY_BASIS_INVALID)
         if not _recorded_line_items_hold(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_LINE_ITEMS_INVALID)
         if not _observed_responder_rules_hold(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_OBSERVED_RESPONDER_RULES)
         if not _external_commitment_rules_hold(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_RULES)
         if not _no_acceptance_of_responder_signed_act(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_ACCEPTED_RESPONDER_SIGNED_ACT)
         if not _external_commitment_producer_act_present(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING)
         if not _external_commitment_sealed_by_initiator(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR)
         if not _bilateral_witness_matches_responder(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_BILATERAL_WITNESS_MISMATCH)
         if record.get("act_chain_hash") != hash_bytes(canonicalize(computed_act_hashes)):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_ACT_CHAIN_HASH_MISMATCH)
 
         expected_level = _classify_evidence_level(
             acts,
@@ -541,27 +682,35 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
             external_commitment="external_commitment_reference" in record,
         )
         if record.get("evidence_level") != expected_level:
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_EVIDENCE_LEVEL_MISMATCH)
 
         if not _evidence_record_hash_matches(record):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_RECORD_HASH_MISMATCH)
 
         producer_signature = record.get("producer_signature")
         if not isinstance(producer_signature, str) or not producer_signature:
-            return assessment
-        if not _verify_signature(
-            did_resolver,
-            did=producer_did,
-            verification_method=producer_verification_method,
-            signature=producer_signature,
-            expected_payload=record["record_hash"],
-        ):
-            return assessment
+            return _refused(assessment, EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID)
+        try:
+            producer_seal_verifies = _verify_signature(
+                did_resolver,
+                did=producer_did,
+                verification_method=producer_verification_method,
+                signature=producer_signature,
+                expected_payload=record["record_hash"],
+            )
+        except _KeyNotFound as missing:
+            assessment["unresolved_keys"].append(missing.key)
+            producer_seal_verifies = True  # not refused: it could not be checked
+        if not producer_seal_verifies:
+            return _refused(assessment, EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID)
+        if assessment["unresolved_keys"]:
+            return _refused(assessment, EVIDENCE_REASON_KEY_NOT_FOUND)
 
         assessment["valid"] = True
         return assessment
     except Exception:
-        return assessment
+        # The last resort: a record whose shape stopped us reaching a verdict.
+        return _refused(assessment, EVIDENCE_REASON_MALFORMED_RECORD)
 
 
 def _party_metadata(
@@ -1949,6 +2098,8 @@ def _verify_evidence_act(
         ):
             return False, attribution
         return True, attribution
+    except _KeyNotFound:
+        raise
     except Exception:
         return False, attribution
 
@@ -2018,9 +2169,18 @@ def _verify_signature(
     expected_payload: str,
 ) -> bool:
     did_document = _resolve_did_document(did_resolver, did)
-    vm = get_verification_method(did_document, verification_method)
+    try:
+        vm = get_verification_method(did_document, verification_method)
+    except VerificationMethodNotFoundError:
+        raise _KeyNotFound(did, verification_method) from None
     public_key = get_public_key(vm)
-    return verify_jws(signature, public_key) == expected_payload
+    # verify_jws raises on bad signature bytes. That is this check failing, not
+    # the record being unreadable, so the caller reports a signature reason. An
+    # unresolvable DID still raises.
+    try:
+        return verify_jws(signature, public_key) == expected_payload
+    except InvalidSignatureError:
+        return False
 
 
 def _resolve_did_document(did_resolver: DidResolver, did: str) -> dict:

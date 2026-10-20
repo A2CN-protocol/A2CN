@@ -347,6 +347,8 @@ test("external unsigned counteroffer produces valid mixed evidence", () => {
 
   expect(assessment).toEqual({
     valid: true,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: "mixed",
     verified_acts: 1,
     unsigned_acts: 1,
@@ -967,6 +969,8 @@ test("observed_party responder with unsigned acts is valid unilateral evidence",
   expect((evidence.acts as Dict[])[1].attribution).toBe("unsigned_observation");
   expect(assessSessionEvidenceRecord(evidence, didDocuments)).toEqual({
     valid: true,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: "unilateral",
     verified_acts: 1,
     unsigned_acts: 1,
@@ -1763,6 +1767,8 @@ test("an external-channel COMPLETED record is valid", () => {
   expect(hasKey((evidence.parties as Dict).responder, "did")).toBe(false);
   expect(assessSessionEvidenceRecord(evidence, didDocuments)).toEqual({
     valid: true,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: "unilateral",
     verified_acts: 1,
     unsigned_acts: 1,
@@ -2657,6 +2663,8 @@ test("the counterparty act of a mandate-only record stays unsigned", () => {
   });
   expect(assessSessionEvidenceRecord(record, didDocuments)).toStrictEqual({
     valid: true,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: "mixed",
     verified_acts: 1,
     unsigned_acts: 1,
@@ -2973,6 +2981,8 @@ test("a completion whose counterparty signed a counteroffer verifies as mixed", 
   expect(signed.evidence_level).toBe("mixed");
   expect(assessSessionEvidenceRecord(signed, didDocuments)).toStrictEqual({
     valid: true,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: "mixed",
     verified_acts: 2,
     unsigned_acts: 1,
@@ -3256,6 +3266,8 @@ test("a completion carrying a third-party signature is refused", () => {
   expect(signed.evidence_level).toBe("mixed");
   expect(assessSessionEvidenceRecord(signed, didDocuments)).toStrictEqual({
     valid: false,
+    reason: "EXTERNAL_COMMITMENT_RULES",
+    unresolved_keys: [],
     evidence_level: "mixed",
     verified_acts: 2,
     unsigned_acts: 1,

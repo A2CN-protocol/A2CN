@@ -17,7 +17,7 @@ import {
   verifyJws,
   InvalidSignatureError,
 } from "./crypto.js";
-import { getPublicKey, getVerificationMethod } from "./did.js";
+import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
@@ -97,6 +97,7 @@ export const REASON_ACT_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE";
 export const REASON_BASIS_MISMATCH = "BASIS_MISMATCH";
 export const REASON_CURRENCY_MISMATCH = "CURRENCY_MISMATCH";
 export const REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID";
+export const REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND";
 export const REASON_ACCEPTED_HASH_MISMATCH = "ACCEPTED_HASH_MISMATCH";
 export const REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH";
 export const REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID";
@@ -546,11 +547,6 @@ export function verifyTransactionRecordReason(
       return REASON_ACCEPTED_HASH_MISMATCH;
     }
 
-    const chainHashes = offerHashes !== null ? offerHashes : [offerHash];
-    if (record.offer_chain_hash !== computeOfferChainHash(chainHashes)) {
-      return REASON_OFFER_CHAIN_HASH_MISMATCH;
-    }
-
     if (
       !verifyRecordSignature(didResolver, record, {
         did: finalOffer.sender_did as string,
@@ -575,9 +571,30 @@ export function verifyTransactionRecordReason(
       return REASON_ACCEPTANCE_SIGNATURE_INVALID;
     }
 
+    // Checked last, so a mismatch here means everything else verified.
+    // offer_chain_hash is covered by neither signature: the earlier offers must
+    // come from somewhere trustworthy (offerHistoryFromEvidence).
+    const chainHashes = offerHashes !== null ? offerHashes : [offerHash];
+    if (record.offer_chain_hash !== computeOfferChainHash(chainHashes)) {
+      return REASON_OFFER_CHAIN_HASH_MISMATCH;
+    }
+
     return null;
-  } catch {
+  } catch (exc) {
+    if (exc instanceof KeyNotFound) {
+      return REASON_KEY_NOT_FOUND;
+    }
     return REASON_MALFORMED_RECORD;
+  }
+}
+
+/** The signer's DID document does not list the key the signature names. */
+class KeyNotFound extends Error {
+  constructor(
+    readonly did: string,
+    readonly verificationMethod: string,
+  ) {
+    super(`${did} does not list ${verificationMethod}`);
   }
 }
 
@@ -621,13 +638,20 @@ function verifyRecordSignature(
   }
 
   const didDocument = resolveDidDocument(didResolver, did);
-  const vm = getVerificationMethod(didDocument, verificationMethod);
+  let vm;
+  try {
+    vm = getVerificationMethod(didDocument, verificationMethod);
+  } catch (exc) {
+    if (exc instanceof VerificationMethodNotFoundError) {
+      throw new KeyNotFound(did, verificationMethod);
+    }
+    throw exc;
+  }
   const publicKey = getPublicKey(vm);
   // verifyJws throws on bad signature bytes. That is this check failing, not
   // the record being unreadable, so it is caught here and the caller reports
-  // the signature reason. An unresolvable DID or a missing verification method
-  // is a different thing and still reaches the outer handler as a malformed
-  // record.
+  // the signature reason. An unresolvable DID is a different thing and still
+  // reaches the outer handler as a malformed record.
   let signedPayload: string;
   try {
     signedPayload = verifyJws(signature, publicKey);

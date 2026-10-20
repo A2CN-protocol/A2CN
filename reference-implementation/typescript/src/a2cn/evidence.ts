@@ -13,11 +13,12 @@ import {
   canonicalize,
   hashBytes,
   hashObject,
+  InvalidSignatureError,
   signJws,
   verifyJws,
   type SigningPrivateKey,
 } from "./crypto.js";
-import { getPublicKey, getVerificationMethod } from "./did.js";
+import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
 import { termsLineItemViolation } from "./line_items.js";
 import {
   A2CN_NAMESPACE,
@@ -240,8 +241,54 @@ export interface GenerateSessionEvidenceOptions {
   externalCommitmentReference?: Dict | null;
 }
 
+// Why an evidence record failed (Section 9A.6). verifySessionEvidenceRecord
+// returns a boolean; verifySessionEvidenceRecordReason returns one of these, or
+// null when the record verifies. The reason names the first check that failed.
+export const EVIDENCE_REASON_MALFORMED_RECORD = "MALFORMED_RECORD";
+export const EVIDENCE_REASON_UNRECOGNIZED_RECORD_TYPE = "UNRECOGNIZED_RECORD_TYPE";
+export const EVIDENCE_REASON_UNRECOGNIZED_RECORD_VERSION = "UNRECOGNIZED_RECORD_VERSION";
+export const EVIDENCE_REASON_DECLINE_VOCABULARY_VERSION = "DECLINE_VOCABULARY_VERSION";
+export const EVIDENCE_REASON_EXTERNAL_COMMITMENT_VERSION = "EXTERNAL_COMMITMENT_VERSION";
+export const EVIDENCE_REASON_TERMINAL_OUTCOME_INVALID = "TERMINAL_OUTCOME_INVALID";
+export const EVIDENCE_REASON_GENERATED_AT_MISMATCH = "GENERATED_AT_MISMATCH";
+export const EVIDENCE_REASON_COMPLETION_WITNESS_INVALID = "COMPLETION_WITNESS_INVALID";
+export const EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED = "PRODUCER_METHOD_NOT_CONTROLLED";
+export const EVIDENCE_REASON_EVIDENCE_ID_MISMATCH = "EVIDENCE_ID_MISMATCH";
+export const EVIDENCE_REASON_ACTS_NOT_ORDERED = "ACTS_NOT_ORDERED";
+export const EVIDENCE_REASON_ACT_INVALID = "ACT_INVALID";
+export const EVIDENCE_REASON_MONEY_BASIS_INVALID = "MONEY_BASIS_INVALID";
+export const EVIDENCE_REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID";
+export const EVIDENCE_REASON_OBSERVED_RESPONDER_RULES = "OBSERVED_RESPONDER_RULES";
+export const EVIDENCE_REASON_EXTERNAL_COMMITMENT_RULES = "EXTERNAL_COMMITMENT_RULES";
+export const EVIDENCE_REASON_ACCEPTED_RESPONDER_SIGNED_ACT = "ACCEPTED_RESPONDER_SIGNED_ACT";
+export const EVIDENCE_REASON_EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING = "EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING";
+export const EVIDENCE_REASON_EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR = "EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR";
+export const EVIDENCE_REASON_BILATERAL_WITNESS_MISMATCH = "BILATERAL_WITNESS_MISMATCH";
+export const EVIDENCE_REASON_ACT_CHAIN_HASH_MISMATCH = "ACT_CHAIN_HASH_MISMATCH";
+export const EVIDENCE_REASON_EVIDENCE_LEVEL_MISMATCH = "EVIDENCE_LEVEL_MISMATCH";
+export const EVIDENCE_REASON_RECORD_HASH_MISMATCH = "RECORD_HASH_MISMATCH";
+export const EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID = "PRODUCER_SIGNATURE_INVALID";
+export const EVIDENCE_REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND";
+
+/** A signer's DID document does not list the key its signature names. */
+class KeyNotFound extends Error {
+  readonly key: { did: string; verification_method: string };
+
+  constructor(did: string, verificationMethod: string) {
+    super(`${did} does not list ${verificationMethod}`);
+    this.key = { did, verification_method: verificationMethod };
+  }
+}
+
+function refused(assessment: EvidenceAssessment, reason: string): EvidenceAssessment {
+  assessment.reason = reason;
+  return assessment;
+}
+
 export interface EvidenceAssessment {
   valid: boolean;
+  reason: string | null;
+  unresolved_keys: Array<{ did: string; verification_method: string }>;
   evidence_level: unknown;
   verified_acts: number;
   unsigned_acts: number;
@@ -472,6 +519,91 @@ export function generateSessionEvidenceRecord(
   return record;
 }
 
+// Why an evidence record cannot supply a TransactionRecord's offer history.
+// offerHistoryFromEvidence returns one of these beside a null history.
+export const HISTORY_REASON_NOT_LINKED = "EVIDENCE_RECORD_NOT_LINKED";
+export const HISTORY_REASON_EVIDENCE_NOT_VERIFIED = "EVIDENCE_RECORD_NOT_VERIFIED";
+export const HISTORY_REASON_UNSIGNED_OFFER = "OFFER_HISTORY_UNSIGNED";
+export const HISTORY_REASON_ROUNDS = "OFFER_HISTORY_ROUNDS";
+export const HISTORY_REASON_FINAL_OFFER = "OFFER_HISTORY_FINAL_OFFER_MISMATCH";
+
+/**
+ * A TransactionRecord's offer hashes, in order, taken from its evidence record.
+ *
+ * offer_chain_hash (Section 9.3) is covered by neither signature, so a verifier
+ * that was not a session party cannot check it against a history the record's
+ * presenter types in. The session's evidence record holds every offer as a
+ * signed act and names the TransactionRecord by transaction_record_hash. This
+ * returns `{ history, reason: null }` when the evidence record is linked to the
+ * record, verifies, records every offer and counteroffer as a verified signed
+ * act, their signed round_number runs 1..N with no gap (N the final offer's
+ * round_number), and the last is the final offer. Otherwise it returns
+ * `{ history: null, reason }` with one of the HISTORY_REASON_* constants.
+ */
+export function offerHistoryFromEvidence(
+  transactionRecord: Dict,
+  evidenceRecord: Dict,
+  didResolver: DidResolver,
+): { history: string[] | null; reason: string | null } {
+  try {
+    const finalOffer = transactionRecord.final_offer as Dict;
+    const recordHash = transactionRecord.record_hash;
+    if (
+      !(
+        typeof recordHash === "string" &&
+        recordHash &&
+        evidenceRecord.transaction_record_hash === recordHash
+      )
+    ) {
+      return { history: null, reason: HISTORY_REASON_NOT_LINKED };
+    }
+    if (assessSessionEvidenceRecord(evidenceRecord, didResolver).reason !== null) {
+      return { history: null, reason: HISTORY_REASON_EVIDENCE_NOT_VERIFIED };
+    }
+    const offers = (evidenceRecord.acts as Dict[]).filter((entry) =>
+      NEGOTIATION_MESSAGE_TYPES.includes(entry.message_type as string),
+    );
+    if (
+      offers.length === 0 ||
+      offers.some((entry) => entry.attribution !== EvidenceAttribution.VERIFIED)
+    ) {
+      return { history: null, reason: HISTORY_REASON_UNSIGNED_OFFER };
+    }
+    const rounds = offers.map((entry) => (entry.act as Dict).round_number);
+    const finalRound = finalOffer.round_number;
+    if (
+      !(
+        isActInteger(finalRound) &&
+        rounds.every((value) => isActInteger(value)) &&
+        rounds.length === (finalRound as number) &&
+        rounds.every((value, index) => (value as number) === index + 1)
+      )
+    ) {
+      return { history: null, reason: HISTORY_REASON_ROUNDS };
+    }
+    const hashes = offers.map((entry) => (entry.act as Dict).protocol_act_hash as string);
+    if (hashes[hashes.length - 1] !== finalOffer.protocol_act_hash) {
+      return { history: null, reason: HISTORY_REASON_FINAL_OFFER };
+    }
+    return { history: hashes, reason: null };
+  } catch {
+    return { history: null, reason: HISTORY_REASON_EVIDENCE_NOT_VERIFIED };
+  }
+}
+
+/**
+ * Why a record does not verify (Section 9A.6), or null when it does.
+ *
+ * The same arguments as `verifySessionEvidenceRecord`, which is this function's
+ * boolean. The reason is one of the EVIDENCE_REASON_* constants.
+ */
+export function verifySessionEvidenceRecordReason(
+  record: Dict,
+  didResolver: DidResolver,
+): string | null {
+  return assessSessionEvidenceRecord(record, didResolver).reason;
+}
+
 /**
  * Return true when the record seal, hashes, and every claimed signature verify.
  * A true result does not mean every named party signed every act.
@@ -480,13 +612,26 @@ export function verifySessionEvidenceRecord(record: Dict, didResolver: DidResolv
   return assessSessionEvidenceRecord(record, didResolver).valid;
 }
 
-/** Return verification status and signed/unsigned act counts. */
+/**
+ * Return verification status, signed/unsigned act counts and the reason.
+ *
+ * `reason` is null for a record that verifies, and otherwise one of the
+ * EVIDENCE_REASON_* constants, naming the first check the record failed.
+ *
+ * A signature whose key the signer's DID document does not list cannot be
+ * checked either way. Such an act is not counted as verified or invalid, its
+ * signer and key are listed in `unresolved_keys`, and the record's other checks
+ * still run: a record that fails one of them is refused for it. Only a record
+ * that passes everything else ends at EVIDENCE_REASON_KEY_NOT_FOUND.
+ */
 export function assessSessionEvidenceRecord(
   record: Dict,
   didResolver: DidResolver,
 ): EvidenceAssessment {
   const assessment: EvidenceAssessment = {
     valid: false,
+    reason: null,
+    unresolved_keys: [],
     evidence_level: record.evidence_level,
     verified_acts: 0,
     unsigned_acts: 0,
@@ -495,40 +640,40 @@ export function assessSessionEvidenceRecord(
 
   try {
     if (!evidenceRecordShapeValid(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_MALFORMED_RECORD);
     }
     if (record.record_type !== SESSION_EVIDENCE_RECORD_TYPE) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_UNRECOGNIZED_RECORD_TYPE);
     }
     if (!RECOGNIZED_SESSION_EVIDENCE_RECORD_VERSIONS.includes(record.record_version as string)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_UNRECOGNIZED_RECORD_VERSION);
     }
     if (!declineVocabularyRequires04(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_DECLINE_VOCABULARY_VERSION);
     }
     if (!externalCommitmentMatchesVersion03(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_VERSION);
     }
 
     const terminal = record.terminal as Dict;
     const outcome = terminal.outcome as string;
     if (!EVIDENCE_TERMINAL_OUTCOMES.has(outcome)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_TERMINAL_OUTCOME_INVALID);
     }
     if (record.generated_at !== terminal.timestamp) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_GENERATED_AT_MISMATCH);
     }
     timestampOrderKey(record.generated_at);
     timestampOrderKey(terminal.timestamp);
     if (!completionWitnessHolds(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_COMPLETION_WITNESS_INVALID);
     }
 
     const producer = record.producer as Dict;
     const producerDid = producer.did as string;
     const producerVerificationMethod = producer.verification_method as string;
     if (!verificationMethodControlledBy(producerVerificationMethod, producerDid)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED);
     }
 
     const expectedEvidenceId = uuidv5(
@@ -536,21 +681,30 @@ export function assessSessionEvidenceRecord(
       A2CN_NAMESPACE,
     );
     if (record.evidence_id !== expectedEvidenceId) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EVIDENCE_ID_MISMATCH);
     }
 
     const acts = record.acts as Dict[];
     if (!Array.isArray(acts) || !evidenceActsAreOrdered(acts)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_ACTS_NOT_ORDERED);
     }
 
     const computedActHashes: string[] = [];
     for (const entry of acts) {
-      const { valid, attribution } = verifyEvidenceAct(
-        entry,
-        record.session_id as string,
-        didResolver,
-      );
+      let outcome: { valid: boolean; attribution: unknown };
+      try {
+        outcome = verifyEvidenceAct(entry, record.session_id as string, didResolver);
+      } catch (exc) {
+        if (!(exc instanceof KeyNotFound)) {
+          throw exc;
+        }
+        // Its hash and envelope were checked before its signature, so it still
+        // takes its place in the chain.
+        assessment.unresolved_keys.push(exc.key);
+        computedActHashes.push(entry.act_hash as string);
+        continue;
+      }
+      const { valid, attribution } = outcome;
       if (attribution === EvidenceAttribution.VERIFIED) {
         if (valid) {
           assessment.verified_acts += 1;
@@ -572,34 +726,34 @@ export function assessSessionEvidenceRecord(
     }
 
     if (assessment.invalid_acts > 0) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_ACT_INVALID);
     }
     if (!moneyBasisClaimsVerify(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_MONEY_BASIS_INVALID);
     }
     if (!recordedLineItemsHold(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_LINE_ITEMS_INVALID);
     }
     if (!observedResponderRulesHold(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_OBSERVED_RESPONDER_RULES);
     }
     if (!externalCommitmentRulesHold(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_RULES);
     }
     if (!noAcceptanceOfResponderSignedAct(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_ACCEPTED_RESPONDER_SIGNED_ACT);
     }
     if (!externalCommitmentProducerActPresent(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_PRODUCER_ACT_MISSING);
     }
     if (!externalCommitmentSealedByInitiator(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EXTERNAL_COMMITMENT_NOT_SEALED_BY_INITIATOR);
     }
     if (!bilateralWitnessMatchesResponder(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_BILATERAL_WITNESS_MISMATCH);
     }
     if (record.act_chain_hash !== hashBytes(canonicalize(computedActHashes))) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_ACT_CHAIN_HASH_MISMATCH);
     }
 
     const expectedLevel = classifyEvidenceLevel(
@@ -609,31 +763,43 @@ export function assessSessionEvidenceRecord(
       hasOwn(record, "external_commitment_reference"),
     );
     if (record.evidence_level !== expectedLevel) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_EVIDENCE_LEVEL_MISMATCH);
     }
     if (!evidenceRecordHashMatches(record)) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_RECORD_HASH_MISMATCH);
     }
 
     const producerSignature = record.producer_signature;
     if (typeof producerSignature !== "string" || !producerSignature) {
-      return assessment;
+      return refused(assessment, EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID);
     }
-    if (
-      !verifySignature(didResolver, {
+    let producerSealVerifies: boolean;
+    try {
+      producerSealVerifies = verifySignature(didResolver, {
         did: producerDid,
         verificationMethod: producerVerificationMethod,
         signature: producerSignature,
         expectedPayload: record.record_hash as string,
-      })
-    ) {
-      return assessment;
+      });
+    } catch (exc) {
+      if (!(exc instanceof KeyNotFound)) {
+        throw exc;
+      }
+      assessment.unresolved_keys.push(exc.key);
+      producerSealVerifies = true; // not refused: it could not be checked
+    }
+    if (!producerSealVerifies) {
+      return refused(assessment, EVIDENCE_REASON_PRODUCER_SIGNATURE_INVALID);
+    }
+    if (assessment.unresolved_keys.length > 0) {
+      return refused(assessment, EVIDENCE_REASON_KEY_NOT_FOUND);
     }
 
     assessment.valid = true;
     return assessment;
   } catch {
-    return assessment;
+    // The last resort: a record whose shape stopped us reaching a verdict.
+    return refused(assessment, EVIDENCE_REASON_MALFORMED_RECORD);
   }
 }
 
@@ -2302,7 +2468,10 @@ function verifyEvidenceAct(
       return { valid: false, attribution };
     }
     return { valid: true, attribution };
-  } catch {
+  } catch (exc) {
+    if (exc instanceof KeyNotFound) {
+      throw exc;
+    }
     return { valid: false, attribution };
   }
 }
@@ -2399,9 +2568,27 @@ function verifySignature(
   },
 ): boolean {
   const didDocument = resolveDidDocument(didResolver, options.did);
-  const vm = getVerificationMethod(didDocument, options.verificationMethod);
+  let vm;
+  try {
+    vm = getVerificationMethod(didDocument, options.verificationMethod);
+  } catch (exc) {
+    if (exc instanceof VerificationMethodNotFoundError) {
+      throw new KeyNotFound(options.did, options.verificationMethod);
+    }
+    throw exc;
+  }
   const publicKey = getPublicKey(vm);
-  return verifyJws(options.signature, publicKey) === options.expectedPayload;
+  // verifyJws throws on bad signature bytes. That is this check failing, not
+  // the record being unreadable, so the caller reports a signature reason. An
+  // unresolvable DID still throws.
+  try {
+    return verifyJws(options.signature, publicKey) === options.expectedPayload;
+  } catch (exc) {
+    if (exc instanceof InvalidSignatureError) {
+      return false;
+    }
+    throw exc;
+  }
 }
 
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {

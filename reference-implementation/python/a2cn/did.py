@@ -75,6 +75,20 @@ def parse_did_document(body: bytes):
     return json.loads(body.decode("utf-8-sig"), parse_constant=refuse)
 
 
+class VerificationMethodNotFoundError(KeyError):
+    """The DID document does not list the verification method asked for.
+
+    A KeyError, so existing callers keep working; verifiers catch it to tell a
+    key the document does not list (rotated, or never published) from a
+    signature that is wrong.
+    """
+
+
+def did_web_document_url(did: str) -> str:
+    """The HTTPS URL a did:web DID's document is published at."""
+    return _did_web_to_url(did)
+
+
 def _did_web_to_url(did: str) -> str:
     """Convert a did:web DID to the corresponding HTTPS URL."""
     if not did.startswith("did:web:"):
@@ -109,7 +123,7 @@ def get_verification_method(
     authentication signatures, while excluding keyAgreement-only keys.
 
     Raises:
-        KeyError: if the method is not found
+        VerificationMethodNotFoundError (a KeyError): if the method is not found
     """
     verification_methods = {
         method.get("id"): method
@@ -127,7 +141,7 @@ def get_verification_method(
                     return verification_methods[method_id]
                 break
 
-    raise KeyError(f"Verification method {method_id!r} not found in DID document")
+    raise VerificationMethodNotFoundError(f"Verification method {method_id!r} not found in DID document")
 
 
 def get_public_key(verification_method: dict) -> SigningPublicKey:
