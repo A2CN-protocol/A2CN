@@ -20,6 +20,22 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Changed
+
+- **The MCP server's dependencies are an optional extra.** `mcp` is no longer a
+  core dependency of the Python package: `pip install a2cn` installs the
+  protocol library without it, and `pip install -e '.[mcp]'` adds what
+  `mcp_server.py` needs. The `dev` extra includes it. Run without the extra,
+  `mcp_server.py` exits with an install hint, and its tests are skipped. The
+  extra holds pydantic below 2.14, because `mcp` 1.12.4 does not import under
+  pydantic 2.14; a fresh install previously resolved pydantic 2.14 and the MCP
+  server failed to start. An installed `mcp` that fails to import now shows its
+  real error, not the install hint, and its tests fail rather than skip.
+- **`jsonschema` is a core dependency.** It used to arrive only because `mcp`
+  required it. `validate_fulfillment_attestation` now always checks the
+  attestation against its schema and raises when it does not conform; it no
+  longer returns without checking when `jsonschema` is missing.
+
 ## [0.3.1] — 2026-10-15
 
 ### Security

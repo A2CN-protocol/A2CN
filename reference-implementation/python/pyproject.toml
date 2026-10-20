@@ -13,11 +13,19 @@ dependencies = [
     "PyJWT==2.9.0",
     "cryptography==43.0.0",
     "jcs==0.2.1",
-    "mcp==1.12.4",
+    "jsonschema==4.26.0",
 ]
 
 [project.optional-dependencies]
+# The MCP server (mcp_server.py). pydantic is capped because mcp 1.12.4 imports a
+# private pydantic helper that 2.14 removed; the mcp releases that work with
+# pydantic 2.14 require httpx and PyJWT newer than the core pins above.
+mcp = [
+    "mcp==1.12.4",
+    "pydantic<2.14",
+]
 dev = [
+    "a2cn[mcp]",
     "pytest==8.3.0",
     "pytest-asyncio==0.24.0",
     "python-multipart==0.0.12",

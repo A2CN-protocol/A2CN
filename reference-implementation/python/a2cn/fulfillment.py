@@ -201,11 +201,14 @@ def build_fulfillment_attestation(
 
 
 def validate_fulfillment_attestation(attestation: dict[str, Any]) -> None:
-    """Validate against the Concordia schema when jsonschema is installed."""
-    try:
-        import jsonschema
-    except ImportError:
-        return
+    """Validate against the Concordia schema; raise if it does not conform.
+
+    jsonschema is a core dependency, so the check always runs. It used to be
+    skipped when jsonschema was missing, which turned a missing dependency into
+    a silent pass.
+    """
+    import jsonschema
+
     jsonschema.validate(attestation, FULFILLMENT_ATTESTATION_SCHEMA)
 
 

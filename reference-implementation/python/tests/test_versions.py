@@ -123,9 +123,17 @@ def test_another_distribution_named_a2cn_is_not_reported(monkeypatch):
 def test_requirements_txt_restates_the_pyproject_dependencies():
     # requirements.txt lists the dependencies so it installs from any working
     # directory; pyproject.toml stays their single source, and this holds the
-    # two lists equal.
+    # two lists equal. The dev extra names a2cn's own extras (a2cn[mcp]), which
+    # requirements.txt states as the packages those extras install.
     project = tomllib.loads((PYTHON_ROOT / "pyproject.toml").read_text())["project"]
-    expected = project["dependencies"] + project["optional-dependencies"]["dev"]
+    extras = project["optional-dependencies"]
+    expected = list(project["dependencies"])
+    for requirement in extras["dev"]:
+        if requirement.startswith("a2cn["):
+            for extra in requirement[len("a2cn["):-1].split(","):
+                expected.extend(extras[extra.strip()])
+        else:
+            expected.append(requirement)
     lines = (PYTHON_ROOT / "requirements.txt").read_text().splitlines()
     listed = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
     assert sorted(listed) == sorted(expected)

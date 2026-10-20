@@ -42,7 +42,17 @@ import uuid
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError as exc:  # pragma: no cover - only when the mcp package is absent.
+    # Only a missing mcp package gets the install hint. Any other failure,
+    # including an installed mcp that cannot import, is raised as it is.
+    if exc.name != "mcp":
+        raise
+    raise SystemExit(
+        "The A2CN MCP server requires the optional MCP dependencies. "
+        "Install them with: pip install -e '.[mcp]'"
+    ) from None
 
 from a2cn.client import A2CNClient
 from a2cn.crypto import (

@@ -4,33 +4,42 @@ requires-python = ">=3.11"
 
 [[package]]
 name = "a2cn"
-version = "0.2.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jcs" },
-    { name = "mcp", specifier = "==1.12.4" },
+    { name = "jsonschema" },
     { name = "pyjwt" },
     { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
 dev = [
+    { name = "mcp" },
+    { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "python-multipart" },
     { name = "respx" },
 ]
+mcp = [
+    { name = "mcp" },
+    { name = "pydantic" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "a2cn", extras = ["mcp"], marker = "extra == 'dev'" },
     { name = "cryptography", specifier = "==43.0.0" },
     { name = "fastapi", specifier = "==0.115.0" },
     { name = "httpx", specifier = "==0.27.0" },
     { name = "jcs", specifier = "==0.2.1" },
-    { name = "mcp", specifier = "==1.12.4" },
+    { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = "==1.12.4" },
+    { name = "pydantic", marker = "extra == 'mcp'", specifier = "<2.14" },
     { name = "pyjwt", specifier = "==2.9.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==8.3.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "==0.24.0" },
@@ -38,7 +47,7 @@ requires-dist = [
     { name = "respx", marker = "extra == 'dev'", specifier = "==0.21.1" },
     { name = "uvicorn", specifier = "==0.32.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["mcp", "dev"]
 
 [[package]]
 name = "annotated-types"
