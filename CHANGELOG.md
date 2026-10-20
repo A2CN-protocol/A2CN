@@ -41,7 +41,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
   party's site no longer lists; keys the site lists always come from the site,
   and a copy that disagrees with the site about one is noted. A record verified
   against a supplied key anywhere among the inputs it relied on, its offer
-  history included, is "could not finish", never a clean pass. Exit status: 0 verified, 1 refused,
+  history included, is "could not finish", never a clean pass, and so is a
+  TransactionRecord checked against offer hashes typed on the command line,
+  which no signature covers (a typed history that does not match is refused). Exit status: 0 verified, 1 refused,
   3 could not finish, 2 bad usage.
 - **`offer_history_from_evidence` / `offerHistoryFromEvidence`.** A
   TransactionRecord's `offer_chain_hash` is covered by neither signature, so a

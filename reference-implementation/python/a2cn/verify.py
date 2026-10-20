@@ -559,7 +559,18 @@ def verify_transaction_record(
             f"offer history: {len(history)} hashes typed on the command line; not covered by any signature"
         )
         unchecked = _unchecked_signatures(document, attempt, not_listed)
-        return _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+        _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+        if outcome.status == EXIT_VERIFIED:
+            # Typed hashes are an unsigned input: they can match, never prove.
+            # A history that does not match is still refused, above.
+            outcome.status = EXIT_UNFINISHED
+            outcome.headline = "COULD NOT FINISH: the earlier offers are not from signed evidence"
+            outcome.lines.insert(
+                1,
+                "agreed terms and both signatures verified; the earlier offers were taken from the "
+                "command line, not from signed evidence",
+            )
+        return outcome
 
     # 1. The record's own checks, before any evidence record is consulted.
     reason, _assessment, attempt, not_listed = _verify_with_keys(TYPE_TRANSACTION_RECORD, document, keys)

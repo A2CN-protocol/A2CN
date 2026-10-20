@@ -177,9 +177,16 @@ def test_every_vector_record_gets_the_librarys_verdict(item, tmp_path):
         # Without the earlier offers a multi-round record cannot be finished;
         # the chain mismatch is expected, not a definite failure.
         expected = EXIT_UNFINISHED
+    typed = kind == "transaction-record" and bool(hashes)
+    if typed and expected == EXIT_VERIFIED:
+        # Hashes typed on the command line are covered by no signature: they
+        # can match, but never make a clean pass.
+        expected = EXIT_UNFINISHED
     assert status == expected, output
     first = _headline(output)
-    if status == EXIT_VERIFIED:
+    if typed and reason is None and not missing:
+        assert first == "COULD NOT FINISH: the earlier offers are not from signed evidence"
+    elif status == EXIT_VERIFIED:
         assert first == "VERIFIED"
     elif status == EXIT_REFUSED:
         assert first == f"REFUSED: {reason}"
@@ -322,7 +329,7 @@ def test_bad_usage_exits_2(args, message, tmp_path):
 
 
 def test_python_dash_m_runs_the_verifier(tmp_path):
-    document, documents, hashes = _verified("transaction-record")
+    document, documents, hashes = _verified("evidence-record")
     record_file = tmp_path / "record.json"
     record_file.write_text(json.dumps(document))
     args = [sys.executable, "-m", "a2cn.verify", str(record_file)]
