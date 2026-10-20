@@ -20,6 +20,26 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Added
+
+- **`a2cn-verify`, a command-line verifier.** `pip install a2cn` installs it
+  (also `python -m a2cn.verify`). It checks a TransactionRecord, a
+  SessionEvidenceRecord or one signed act with the library's own verification,
+  and prints the verdict and reason, the act counts, any extension block as
+  present, sealed and not interpreted, the record version judged and the
+  verifier version. DID documents are read from files; nothing is fetched
+  without `--resolve`, which uses the bounded did:web resolver. Exit status: 0
+  verified, 1 refused, 2 bad usage, 3 could not finish.
+- **`verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.**
+  A refused SessionEvidenceRecord now names the first check it failed, as a
+  TransactionRecord already did, with the same reason in both implementations;
+  `assess_session_evidence_record` reports it as `reason`. A shared test vector
+  reaches every reason. A producer seal that does not verify is now reported as
+  `PRODUCER_SIGNATURE_INVALID` rather than as a malformed record.
+- **`verify_signed_act_reason` (Python).** Checks one signed act on its own:
+  the Section 7.3.1 rebuild, the signing method under the sender's DID, and the
+  signature, plus an offer's stated `protocol_act_hash`.
+
 ### Changed
 
 - **The MCP server's dependencies are an optional extra.** `mcp` is no longer a

@@ -339,6 +339,7 @@ def test_external_unsigned_counteroffer_produces_valid_mixed_evidence():
 
     assert assessment == {
         "valid": True,
+        "reason": None,
         "evidence_level": "mixed",
         "verified_acts": 1,
         "unsigned_acts": 1,
@@ -961,6 +962,7 @@ def test_observed_party_responder_with_unsigned_acts_is_valid_unilateral():
     assert evidence["acts"][1]["attribution"] == "unsigned_observation"
     assert assess_session_evidence_record(evidence, did_documents) == {
         "valid": True,
+        "reason": None,
         "evidence_level": "unilateral",
         "verified_acts": 1,
         "unsigned_acts": 1,
@@ -1852,6 +1854,7 @@ def test_an_external_channel_completed_record_is_valid():
     assert "did" not in evidence["parties"]["responder"]
     assert assess_session_evidence_record(evidence, did_documents) == {
         "valid": True,
+        "reason": None,
         "evidence_level": "unilateral",
         "verified_acts": 1,
         "unsigned_acts": 1,

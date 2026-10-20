@@ -16,6 +16,9 @@ dependencies = [
     "jsonschema==4.26.0",
 ]
 
+[project.scripts]
+a2cn-verify = "a2cn.verify:main"
+
 [project.optional-dependencies]
 # The MCP server (mcp_server.py). pydantic is capped because mcp 1.12.4 imports a
 # private pydantic helper that 2.14 removed; the mcp releases that work with

@@ -279,6 +279,27 @@ client.process_incoming(response)
 
 ---
 
+## Verify a record
+
+`pip install a2cn` installs `a2cn-verify`, which checks a TransactionRecord, a
+SessionEvidenceRecord or a single signed act with the library's own
+verification, offline:
+
+```bash
+a2cn-verify record.json --did-dir dids/          # or: python -m a2cn.verify record.json ...
+```
+
+It prints `VERIFIED` or `REFUSED:` with the reason, the signed and unsigned act
+counts, any extension block (present, sealed, not interpreted), the record
+version judged and the verifier version. DID documents come from files
+(`--did-doc DID=FILE`, `--did-dir DIR`); nothing is fetched unless you pass
+`--resolve`, which uses the bounded did:web resolver. A TransactionRecord from a
+session of more than one round needs its offer hashes, in order
+(`--offer-hash`). Exit status: 0 verified, 1 refused, 2 bad usage, 3 could not
+finish (for example, a DID document the check needed was not supplied).
+
+---
+
 ## Running the tests
 
 ```bash

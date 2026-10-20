@@ -277,6 +277,15 @@ unsigned observed counteroffer at another price, verify. Verified with the
 vector's `did_documents`, each record must reach the stated verdict in both
 suites.
 
+`session-evidence-record-reasons.json` covers why a SessionEvidenceRecord does
+not verify (Section 9A.6). Each case is one complete, sealed record that fails
+exactly one check: built by the generator from a test session, edited as the
+case says, and resealed with the producer's test-only key. Verified with the
+`did_documents` of the base the case names, it must be refused, and both
+suites must give its `expected_reason` from
+`verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.
+Together the cases reach every reason code a verifier can return.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its
