@@ -361,7 +361,7 @@ def test_every_reason_code_is_reachable():
     # A key the signer's document does not list needs other DID documents.
     observed |= {
         verify_transaction_record_reason(
-            HISTORY["transaction_record"],
+            case.get("record_document") or HISTORY["transaction_record"],
             HISTORY["did_documents"][case["did_documents"]],
             case["offer_hashes"],
         )

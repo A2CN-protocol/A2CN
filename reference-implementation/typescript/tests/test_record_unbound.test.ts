@@ -364,7 +364,7 @@ test("every reason code is reachable", () => {
     if (c.record === "transaction_record" && c.expected_reason !== null) {
       observed.add(
         verifyTransactionRecordReason(
-          history.transaction_record as Dict,
+          (c.record_document ?? history.transaction_record) as Dict,
           (history.did_documents as Record<string, Record<string, Dict>>)[c.did_documents as string],
           c.offer_hashes as string[] | null,
         ),

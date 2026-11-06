@@ -249,7 +249,8 @@ class _Keys:
                 try:
                     self._live[did] = (_fetch_did_web(did), url)
                 except Exception as exc:  # noqa: BLE001 - reported, never a pass
-                    self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {exc}")
+                    first_line = str(exc).splitlines()[0] if str(exc) else ""
+                    self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {first_line}")
         return self._live[did]
 
 
@@ -258,11 +259,17 @@ class _Attempt:
 
     def __init__(self, keys: _Keys, use_supplied: frozenset[str] = frozenset()):
         self.keys = keys
+        # DIDs whose live document lacks a signing key: a supplied copy may add
+        # the keys the party's site no longer lists, and nothing else.
         self.use_supplied = use_supplied
         self.used: dict[str, dict] = {}
         self.sources: dict[str, str] = {}
         self.fallback: dict[str, str] = {}
         self.missing: dict[str, str] = {}
+        # Key ids taken from a supplied copy, per DID, and ids the copy lists
+        # with different material from the party's site (the site's key wins).
+        self.copied: dict[str, set[str]] = {}
+        self.conflicts: dict[str, list[str]] = {}
 
     def __call__(self, did: str) -> dict:
         if did in self.used:
@@ -277,18 +284,28 @@ class _Attempt:
             return self._use(
                 did, supplied[0], f"from {supplied[1]} (offline: not checked against the party's site)"
             )
-        if did in self.use_supplied and supplied is not None:
+        document, where = self.keys.live(did)
+        if document is not None and did in self.use_supplied and supplied is not None:
+            merged, copied, conflicts = _merge_keys(document, supplied[0])
+            if conflicts:
+                self.conflicts[did] = conflicts
+            if not copied:
+                return self._use(did, document, f"from {where}")
+            self.copied[did] = set(copied)
             self.fallback[did] = "the party's site does not list the signing key now"
+            listed = ", ".join(sorted(copied))
             return self._use(
                 did,
-                supplied[0],
-                f"from a supplied copy, {supplied[1]}; the party's site does not list the signing key now",
+                merged,
+                f"from {where}, with {listed} from a supplied copy, {supplied[1]}; "
+                "the party's site does not list it now",
             )
-        document, where = self.keys.live(did)
         if document is not None:
             return self._use(did, document, f"from {where}")
         if supplied is not None:
+            # The live fetch failed outright: the copy is the only source.
             self.fallback[did] = where
+            self.copied[did] = set(_methods(supplied[0]))
             return self._use(did, supplied[0], f"from a supplied copy, {supplied[1]}; {where}")
         self.missing[did] = where
         raise KeyError(did)
@@ -297,6 +314,55 @@ class _Attempt:
         self.used[did] = document
         self.sources[did] = source
         return document
+
+
+_RELATIONSHIPS = ("assertionMethod", "authentication")
+
+
+def _methods(document: dict) -> dict[str, dict]:
+    """Every verification method a DID document lists, by id, embedded ones included."""
+    methods: dict[str, dict] = {}
+    for method in document.get("verificationMethod", []) or []:
+        if isinstance(method, dict) and isinstance(method.get("id"), str):
+            methods[method["id"]] = method
+    for relationship in _RELATIONSHIPS:
+        for method in document.get(relationship, []) or []:
+            if isinstance(method, dict) and isinstance(method.get("id"), str):
+                methods.setdefault(method["id"], method)
+    return methods
+
+
+def _merge_keys(live: dict, copy_document: dict) -> tuple[dict, list[str], list[str]]:
+    """The live document, plus the keys a supplied copy lists that the site no longer does.
+
+    Keys the party's site lists always come from the site. Returns the merged
+    document, the key ids taken from the copy, and the ids the copy lists with
+    different material from the site (the site's key is kept).
+    """
+    live_methods = _methods(live)
+    copy_methods = _methods(copy_document)
+    conflicts = sorted(
+        method_id
+        for method_id, method in copy_methods.items()
+        if method_id in live_methods
+        and method.get("publicKeyJwk") != live_methods[method_id].get("publicKeyJwk")
+    )
+    copied = sorted(set(copy_methods) - set(live_methods))
+    if not copied:
+        return live, [], conflicts
+    merged = json.loads(json.dumps(live))
+    merged.setdefault("verificationMethod", [])
+    for method_id in copied:
+        method = {key: value for key, value in copy_methods[method_id].items()}
+        merged["verificationMethod"].append(method)
+        for relationship in _RELATIONSHIPS:
+            authorized = any(
+                entry == method_id or (isinstance(entry, dict) and entry.get("id") == method_id)
+                for entry in copy_document.get(relationship, []) or []
+            )
+            if authorized:
+                merged.setdefault(relationship, []).append(method_id)
+    return merged, copied, conflicts
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +421,17 @@ def _lists(document: dict, verification_method: str) -> bool:
 
 
 def _keys_not_listed(kind, document, attempt: _Attempt, assessment) -> list[tuple[str, str]]:
+    """Keys a signature names that the DID document used does not list.
+
+    A signer whose document could not be obtained at all is in attempt.missing
+    and reported as such, not here.
+    """
     if assessment is not None:
-        pairs = [(key["did"], key["verification_method"]) for key in assessment["unresolved_keys"]]
+        pairs = [
+            (key["did"], key["verification_method"])
+            for key in assessment["unresolved_keys"]
+            if key["did"] not in attempt.missing
+        ]
     else:
         pairs = []
         for did, vm in _signers(kind, document):
@@ -382,7 +457,11 @@ def _verify_with_keys(kind, document, keys: _Keys, history=None, wire_version=No
     attempt = _Attempt(keys)
     reason, assessment = _run_library(kind, document, attempt, history, wire_version)
     not_listed: list[tuple[str, str]] = []
-    if reason in KEY_NOT_FOUND_REASONS and not attempt.missing:
+    # A TransactionRecord checks its offer chain after both signatures, so a
+    # chain mismatch can sit beside a key that was not available.
+    if reason in KEY_NOT_FOUND_REASONS or (
+        kind == TYPE_TRANSACTION_RECORD and reason == REASON_OFFER_CHAIN_HASH_MISMATCH
+    ):
         not_listed = _keys_not_listed(kind, document, attempt, assessment)
         retry = frozenset(
             did
@@ -392,35 +471,50 @@ def _verify_with_keys(kind, document, keys: _Keys, history=None, wire_version=No
         if retry:
             attempt = _Attempt(keys, use_supplied=retry)
             reason, assessment = _run_library(kind, document, attempt, history, wire_version)
-            not_listed = (
-                _keys_not_listed(kind, document, attempt, assessment)
-                if reason in KEY_NOT_FOUND_REASONS
-                else []
-            )
+            not_listed = _keys_not_listed(kind, document, attempt, assessment)
     return reason, assessment, attempt, not_listed
 
 
 def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, not_listed) -> _Outcome:
-    """Turn a library reason into the record's verdict, and say where its keys came from."""
-    if attempt.missing:
+    """Turn a library reason into the record's verdict, and say where its keys came from.
+
+    A definite failure is REFUSED even when some DID documents were missing:
+    the library checks everything it can and reports a failure ahead of a key
+    it could not find, so the missing documents are listed as notes. COULD NOT
+    FINISH is only for a key that was not available, or for a record that
+    verified only against a supplied copy.
+    """
+    if reason is not None and reason not in KEY_NOT_FOUND_REASONS:
+        outcome.status = EXIT_REFUSED
+        outcome.headline = f"REFUSED: {reason}"
+        for did, why in attempt.missing.items():
+            outcome.lines.append(f"note: no DID document for {did} ({why}); its signatures were not checked")
+        for did, vm in not_listed:
+            outcome.lines.append(f"note: {did} doesn't list key {vm}; that signature was not checked")
+    elif reason in KEY_NOT_FOUND_REASONS or attempt.missing:
         outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: a DID document the check needed is not available"
+        if attempt.missing and not not_listed:
+            outcome.headline = "COULD NOT FINISH: a DID document the check needed is not available"
+        elif not_listed and not attempt.missing:
+            outcome.headline = "COULD NOT FINISH: a signature names a key no available DID document lists"
+        else:
+            outcome.headline = "COULD NOT FINISH: keys the check needed are not available"
         for did, why in attempt.missing.items():
             outcome.lines.append(f"no DID document for {did}: {why}")
-        counts = None
-    elif reason in KEY_NOT_FOUND_REASONS:
-        outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: a signature names a key no available DID document lists"
         for did, vm in not_listed:
             outcome.lines.append(
                 f"{did} doesn't list key {vm} (rotated?); supply the DID document as it was at signing time"
             )
-    elif reason is not None:
-        outcome.status = EXIT_REFUSED
-        outcome.headline = f"REFUSED: {reason}"
     elif attempt.fallback:
         outcome.status = EXIT_UNFINISHED
         outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
+    for did, ids in attempt.conflicts.items():
+        copy_name = attempt.keys.supplied[did][1]
+        for method_id in ids:
+            outcome.lines.append(
+                f"note: the supplied copy {copy_name} disagrees with the party's site about key "
+                f"{method_id}; the site's key was used"
+            )
     if counts:
         outcome.lines.append(f"acts: {counts}")
     for did, source in attempt.sources.items():
@@ -431,105 +525,205 @@ def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, no
 def verify_transaction_record(
     item: _Input, evidence: list[_Input], verdicts: dict[str, _Outcome], keys: _Keys, args
 ) -> _Outcome:
+    """A TransactionRecord's verdict: its own checks first, then its earlier offers.
+
+    The record's own checks decide everything except its offer chain, so a
+    definite failure is REFUSED whatever its evidence records say. Only a
+    record that passes them, except the chain, needs its earlier offers, and
+    those come only from a linked evidence record that verified.
+    """
     document = item.document
     outcome = _Outcome(item.name, f"TransactionRecord, record_version {document.get('record_version')!r}")
     final_offer = document.get("final_offer")
     final_round = final_offer.get("round_number") if isinstance(final_offer, dict) else None
-
-    history: list[str] | None = None
-    history_line: str | None = None
-    unlinked: list[str] = []
+    multi_round = isinstance(final_round, int) and not isinstance(final_round, bool) and final_round > 1
     linked = [e for e in evidence if e.document.get("transaction_record_hash") == document.get("record_hash")]
+    states = [
+        f"note: the evidence record {e.name} names this record; its own verdict: {verdicts[e.name].headline}"
+        for e in linked
+    ]
+    unlinked = [
+        f"the evidence record {e.name} names another TransactionRecord "
+        f"(transaction_record_hash {e.document.get('transaction_record_hash')!r}), "
+        "so it does not belong to this one"
+        for e in evidence
+        if e not in linked
+    ]
+
     if args.offer_hash:
         history = list(args.offer_hash)
-        history_line = (
+        reason, _assessment, attempt, not_listed = _verify_with_keys(
+            TYPE_TRANSACTION_RECORD, document, keys, history
+        )
+        outcome.lines.append(
             f"offer history: {len(history)} hashes typed on the command line; not covered by any signature"
         )
-    elif linked:
-        source = linked[0]
-        verdict = verdicts[source.name]
-        if verdict.status != EXIT_VERIFIED and not verdict.use_supplied:
+        unchecked = _unchecked_signatures(document, attempt, not_listed)
+        _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+        if outcome.status == EXIT_VERIFIED:
+            # Typed hashes are an unsigned input: they can match, never prove.
+            # A history that does not match is still refused, above.
             outcome.status = EXIT_UNFINISHED
-            state = "was refused" if verdict.status == EXIT_REFUSED else "could not be checked"
-            outcome.headline = f"COULD NOT FINISH: its evidence record {state}"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record but {state} (see its own "
-                "verdict), so the earlier offers cannot be checked"
+            outcome.headline = "COULD NOT FINISH: the earlier offers are not from signed evidence"
+            outcome.lines.insert(
+                1,
+                "agreed terms and both signatures verified; the earlier offers were taken from the "
+                "command line, not from signed evidence",
             )
-            return outcome
-        # The same DID documents the evidence record's own verdict used.
-        attempt = _Attempt(keys, use_supplied=verdict.use_supplied)
-        hashes, why = offer_history_from_evidence(document, source.document, attempt)
-        if attempt.missing or why == HISTORY_REASON_EVIDENCE_NOT_VERIFIED:
-            outcome.status = EXIT_UNFINISHED
-            outcome.headline = "COULD NOT FINISH: its evidence record could not be checked"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record but could not be checked, so "
-                "the earlier offers cannot be checked"
-            )
-            return outcome
-        if why is not None:
-            outcome.status = EXIT_REFUSED
-            outcome.headline = f"REFUSED: {why}"
-            outcome.lines.append(
-                f"the evidence record {source.name} names this record, but its offers are not this "
-                "record's complete signed offer history"
-            )
-            return outcome
-        history = hashes
-        history_line = (
-            f"offer history: {len(hashes)} offers, each signed by its sender, "
-            f"from the evidence record {source.name}"
-        )
-    else:
-        unlinked = [
-            f"the evidence record {e.name} names another TransactionRecord "
-            f"(transaction_record_hash {e.document.get('transaction_record_hash')!r}), "
-            "so it does not belong to this one"
-            for e in evidence
-        ]
+        return outcome
 
+    # 1. The record's own checks, before any evidence record is consulted.
+    reason, _assessment, attempt, not_listed = _verify_with_keys(TYPE_TRANSACTION_RECORD, document, keys)
+    unchecked = _unchecked_signatures(document, attempt, not_listed)
+    definite = reason not in (None, REASON_OFFER_CHAIN_HASH_MISMATCH, REASON_KEY_NOT_FOUND)
+    if definite or not multi_round:
+        if not multi_round:
+            outcome.lines.append("offer history: the final offer only (a one-round deal)")
+        else:
+            outcome.lines.append("offer history: not needed; the record was refused on its own checks")
+        outcome.lines.extend(states or unlinked)
+        return _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+
+    rounds_note = f"this deal took {final_round} rounds and the record carries only the final offer"
+    if unchecked:
+        _finish(outcome, REASON_KEY_NOT_FOUND, _record_counts(None, unchecked), attempt, not_listed)
+        outcome.lines[0:0] = [f"{rounds_note}; the earlier offers were not checked"] + (states or unlinked)
+        return outcome
+
+    # 2. Both signatures verified; the earlier offers come from a linked
+    # evidence record that verified (or verified only against a supplied copy).
+    if not linked:
+        outcome.lines.append(
+            f"agreed terms and both signatures verified; {rounds_note}; add this session's evidence "
+            "record to check the earlier offers"
+        )
+        outcome.lines.extend(unlinked)
+        return _unfinished(outcome, "COULD NOT FINISH: the earlier offers are not available", attempt, not_listed)
+
+    candidates = [
+        e for e in linked if verdicts[e.name].status == EXIT_VERIFIED or verdicts[e.name].use_supplied
+    ]
+    histories: list[tuple[_Input, list[str], _Attempt]] = []
+    contradictions: list[tuple[_Input, str]] = []
+    for source in candidates:
+        # The same DID documents the evidence record's own verdict used.
+        history_attempt = _Attempt(keys, use_supplied=verdicts[source.name].use_supplied)
+        hashes, why = offer_history_from_evidence(document, source.document, history_attempt)
+        if why is None and not history_attempt.missing:
+            histories.append((source, hashes, history_attempt))
+        elif why not in (None, HISTORY_REASON_EVIDENCE_NOT_VERIFIED) and not history_attempt.missing:
+            contradictions.append((source, why))
+
+    if not histories:
+        if contradictions:
+            source, why = contradictions[0]
+            outcome.lines.append(
+                f"the evidence record {source.name} names this record and verified, but its offers are "
+                "not this record's complete signed offer history"
+            )
+            outcome.lines.extend(note for note in states if source.name not in note)
+            return _finish(outcome, why, None, attempt, not_listed)
+        outcome.lines.append(
+            "its own signatures verified; no linked evidence record could be verified, so the earlier "
+            f"offers cannot be checked ({rounds_note})"
+        )
+        outcome.lines.extend(states)
+        return _unfinished(
+            outcome, "COULD NOT FINISH: the earlier offers cannot be checked", attempt, not_listed
+        )
+
+    if len({tuple(hashes) for _source, hashes, _attempt in histories}) > 1:
+        outcome.lines.append(
+            "the linked evidence records that verified give different offer histories: "
+            + ", ".join(source.name for source, _hashes, _attempt in histories)
+        )
+        outcome.lines.extend(states)
+        return _unfinished(
+            outcome, "COULD NOT FINISH: its evidence records disagree about the earlier offers", attempt, not_listed
+        )
+
+    source, history, history_attempt = histories[0]
     reason, _assessment, attempt, not_listed = _verify_with_keys(
         TYPE_TRANSACTION_RECORD, document, keys, history
     )
-
-    if (
-        history is None
-        and reason == REASON_OFFER_CHAIN_HASH_MISMATCH
-        and isinstance(final_round, int)
-        and final_round > 1
-    ):
-        # The chain is checked last, so everything else verified.
+    unchecked = _unchecked_signatures(document, attempt, not_listed)
+    outcome.lines.append(
+        f"offer history: {len(history)} offers, each signed by its sender, from the evidence record {source.name}"
+    )
+    # Offers in the history whose key came from a supplied copy: the record is
+    # never stronger than the weakest input it relied on.
+    history_fallback = []
+    for entry in source.document.get("acts", []):
+        did = entry.get("sender_did")
+        method = entry.get("sender_verification_method")
+        if entry.get("message_type") in ("offer", "counteroffer") and method in history_attempt.copied.get(did, set()):
+            history_fallback.append(
+                f"the round-{entry.get('act', {}).get('round_number')} {entry.get('message_type')} "
+                f"in the offer history was signed with {method}, which came from a supplied copy, "
+                f"{keys.supplied[did][1]} ({history_attempt.fallback[did]})"
+            )
+    outcome.lines.extend(history_fallback)
+    for did, ids in history_attempt.conflicts.items():
+        for method_id in ids:
+            outcome.lines.append(
+                f"note: the supplied copy {keys.supplied[did][1]} disagrees with the party's site "
+                f"about key {method_id}; the site's key was used"
+            )
+    outcome.lines.extend(note for note in states if f" {source.name} " not in note)
+    _finish(outcome, reason, _record_counts(reason, unchecked), attempt, not_listed)
+    for did, where in history_attempt.sources.items():
+        if attempt.sources.get(did) != where:
+            outcome.lines.append(f"keys (offer history): {did} {where}")
+    if history_fallback and outcome.status == EXIT_VERIFIED:
         outcome.status = EXIT_UNFINISHED
-        outcome.headline = "COULD NOT FINISH: the earlier offers are not available"
-        outcome.lines.append(
-            f"agreed terms and both signatures verified; this deal took {final_round} rounds and the "
-            "record carries only the final offer; add this session's evidence record to check the "
-            "earlier offers"
-        )
-        outcome.lines.extend(unlinked)
-        reason = None
-        counts = _counts(2, 0, 0)
-        if attempt.missing or attempt.fallback:
-            return _finish(outcome, None, counts, attempt, not_listed)
-        outcome.lines.append(f"acts: {counts}")
-        for did, source in attempt.sources.items():
-            outcome.lines.append(f"keys: {did} {source}")
-        return outcome
+        outcome.headline = "COULD NOT FINISH: verified only against a supplied DID document"
+    return outcome
 
-    outcome.lines.append(history_line or "offer history: the final offer only (a one-round deal)")
-    outcome.lines.extend(unlinked)
-    if reason in (None, REASON_OFFER_CHAIN_HASH_MISMATCH):
-        counts = _counts(2, 0, 0)
-    elif reason == REASON_OFFER_SIGNATURE_INVALID:
-        counts = _counts(0, 0, 1, "(the final offer)")
-    elif reason == REASON_ACCEPTANCE_SIGNATURE_INVALID:
-        counts = _counts(1, 0, 1, "(the acceptance)")
-    elif reason in KEY_NOT_FOUND_REASONS:
-        counts = None
-    else:
-        counts = "not reached: the record was refused before its signatures were checked"
-    return _finish(outcome, reason, counts, attempt, not_listed)
+
+def _unfinished(outcome: _Outcome, headline: str, attempt: _Attempt, not_listed) -> _Outcome:
+    """A record whose own checks passed but which cannot be finished: say so, keep its keys."""
+    _finish(outcome, None, _counts(2, 0, 0), attempt, not_listed)
+    if outcome.status == EXIT_VERIFIED:  # nothing weaker was found by _finish
+        outcome.status = EXIT_UNFINISHED
+        outcome.headline = headline
+    return outcome
+
+
+def _unchecked_signatures(document: dict, attempt: _Attempt, not_listed) -> set[str]:
+    """Which of a TransactionRecord's two signatures could not be checked."""
+    unavailable = set(attempt.missing) | {did for did, _vm in not_listed}
+    names = {"final_offer": "the final offer", "final_acceptance": "the acceptance"}
+    unchecked = set()
+    for act, name in names.items():
+        try:
+            if document[act].get("sender_did") in unavailable:
+                unchecked.add(name)
+        except Exception:  # noqa: BLE001
+            pass
+    return unchecked
+
+
+def _record_counts(reason, unchecked: set[str]) -> str:
+    """A TransactionRecord's two signed acts: verified, invalid, or not checked."""
+    if reason not in (
+        None,
+        REASON_OFFER_SIGNATURE_INVALID,
+        REASON_ACCEPTANCE_SIGNATURE_INVALID,
+        REASON_OFFER_CHAIN_HASH_MISMATCH,
+        REASON_KEY_NOT_FOUND,
+    ):
+        return "not reached: the record was refused before its signatures were checked"
+    invalid = {
+        REASON_OFFER_SIGNATURE_INVALID: "the final offer",
+        REASON_ACCEPTANCE_SIGNATURE_INVALID: "the acceptance",
+    }.get(reason)
+    verified = 2 - len(unchecked) - (1 if invalid else 0)
+    notes = []
+    if invalid:
+        notes.append(f"invalid: {invalid}")
+    if unchecked:
+        notes.append(f"not checked, key not available: {', '.join(sorted(unchecked))}")
+    return _counts(verified, 0, 1 if invalid else 0, f"({'; '.join(notes)})" if notes else "")
 
 
 def verify_evidence_record(item: _Input, keys: _Keys) -> _Outcome:
@@ -548,7 +742,7 @@ def verify_evidence_record(item: _Input, keys: _Keys) -> _Outcome:
             assessment["verified_acts"],
             assessment["unsigned_acts"],
             assessment["invalid_acts"],
-            f"({unchecked} signature{'' if unchecked == 1 else 's'} not checked: key not listed)"
+            f"({unchecked} signature{'' if unchecked == 1 else 's'} not checked: key not available)"
             if unchecked
             else "",
         )

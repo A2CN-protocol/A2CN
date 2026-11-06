@@ -295,7 +295,11 @@ evidence record: the offer hashes in order, or `null` and a reason (not linked,
 not verified, an unsigned offer, a missing round). `record_cases` give verdicts
 with the named DID documents and offer hashes; `did_documents.rotated` renames
 the producer's key, so a signature names a key no document lists
-(`KEY_NOT_FOUND`).
+(`KEY_NOT_FOUND`), and `did_documents.partial` withholds the producer's
+document, which is checked the same way. With `partial`, a record that also
+carries a broken signature is refused for that signature: a definite failure
+comes before `KEY_NOT_FOUND`. A case with `record_document` checks that record
+instead of the vector's own.
 
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states

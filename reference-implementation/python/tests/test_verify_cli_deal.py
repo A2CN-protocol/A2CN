@@ -170,9 +170,10 @@ def test_a_supplied_copy_used_for_a_key_the_site_no_longer_lists_cannot_be_a_cle
     assert status == EXIT_UNFINISHED, output
     assert "COULD NOT FINISH: verified only against a supplied DID document" in output
     assert (
-        f"keys: {ROTATED_KEY['did']} from a supplied copy, "
+        f"keys: {ROTATED_KEY['did']} from {did_web_document_url(ROTATED_KEY['did'])}, with "
+        f"{ROTATED_KEY['verification_method']} from a supplied copy, "
     ) in output
-    assert "the party's site does not list the signing key now" in output
+    assert "the party's site does not list it now" in output
 
 
 def test_a_failed_live_fetch_falls_back_to_a_supplied_copy_and_says_so(tmp_path):
@@ -205,7 +206,7 @@ def test_files_can_be_named_one_by_one(tmp_path):
     assert status == EXIT_VERIFIED, output
 
 
-def test_typed_offer_hashes_are_labelled_as_unsigned(tmp_path):
+def test_a_typed_history_that_matches_cannot_be_a_clean_pass(tmp_path):
     folder = _deal(tmp_path, transaction_record=TR)
     hashes = HISTORY_CASES["paired"]["expected_history"]
     args = [str(folder / "transaction_record.json")]
@@ -214,8 +215,27 @@ def test_typed_offer_hashes_are_labelled_as_unsigned(tmp_path):
     with _host(CURRENT):
         status, output = _cli(args)
 
-    assert status == EXIT_VERIFIED, output
+    assert status == EXIT_UNFINISHED, output
+    assert "COULD NOT FINISH: the earlier offers are not from signed evidence" in output
+    assert (
+        "agreed terms and both signatures verified; the earlier offers were taken from the command "
+        "line, not from signed evidence"
+    ) in output
     assert "typed on the command line; not covered by any signature" in output
+    assert "  VERIFIED" not in output
+
+
+def test_a_typed_history_that_does_not_match_is_refused(tmp_path):
+    folder = _deal(tmp_path, transaction_record=TR)
+    hashes = list(reversed(HISTORY_CASES["paired"]["expected_history"]))
+    args = [str(folder / "transaction_record.json")]
+    for offer_hash in hashes:
+        args += ["--offer-hash", offer_hash]
+    with _host(CURRENT):
+        status, output = _cli(args)
+
+    assert status == EXIT_REFUSED, output
+    assert "REFUSED: OFFER_CHAIN_HASH_MISMATCH" in output
 
 
 def test_offer_hash_is_documented_as_unsigned_in_help():

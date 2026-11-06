@@ -36,7 +36,6 @@ ACT_REASON_NOT_RECOMPUTABLE = "ACT_NOT_RECOMPUTABLE"
 ACT_REASON_HASH_MISMATCH = "PROTOCOL_ACT_HASH_MISMATCH"
 ACT_REASON_SIGNATURE_MISSING = "SIGNATURE_MISSING"
 ACT_REASON_METHOD_NOT_CONTROLLED = "VERIFICATION_METHOD_NOT_CONTROLLED"
-ACT_REASON_DID_UNRESOLVED = "DID_DOCUMENT_UNRESOLVED"
 ACT_REASON_KEY_NOT_FOUND = "KEY_NOT_FOUND"
 ACT_REASON_KEY_UNUSABLE = "VERIFICATION_METHOD_UNUSABLE"
 ACT_REASON_SIGNATURE_INVALID = "SIGNATURE_INVALID"
@@ -87,7 +86,9 @@ def verify_signed_act_reason(
             did_resolver(sender_did) if callable(did_resolver) else did_resolver[sender_did]
         )
     except Exception:
-        return ACT_REASON_DID_UNRESOLVED
+        # A DID document the resolver cannot supply is a key that is not
+        # available, exactly like one the document does not list.
+        return ACT_REASON_KEY_NOT_FOUND
     try:
         method = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:

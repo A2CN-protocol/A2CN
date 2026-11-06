@@ -503,37 +503,42 @@ def verify_transaction_record_reason(
         if accepted_hash != offer_hash:
             return REASON_ACCEPTED_HASH_MISMATCH
 
-        if not _verify_record_signature(
+        # Both signatures are checked even when one key is unavailable: a
+        # definite failure is reported ahead of a key that could not be found.
+        offer_verified = _verified_or_unresolved(
             did_resolver,
             record,
             did=final_offer["sender_did"],
             signature=final_offer["protocol_act_signature"],
             expected_payload=offer_hash,
-        ):
-            return REASON_OFFER_SIGNATURE_INVALID
-
+        )
         acceptance_act = _final_acceptance_act(record)
         if acceptance_act is None:
             return REASON_UNBOUND_RECORD_VERSION
-        if not _verify_record_signature(
+        acceptance_verified = _verified_or_unresolved(
             did_resolver,
             record,
             did=final_acceptance["sender_did"],
             signature=final_acceptance["acceptance_signature"],
             expected_payload=hash_object(acceptance_act),
-        ):
+        )
+        if offer_verified is False:
+            return REASON_OFFER_SIGNATURE_INVALID
+        if acceptance_verified is False:
             return REASON_ACCEPTANCE_SIGNATURE_INVALID
 
-        # Checked last, so a mismatch here means everything else verified.
         # offer_chain_hash is covered by neither signature: the earlier offers
         # must come from somewhere trustworthy (offer_history_from_evidence).
         chain_hashes = offer_hashes if offer_hashes is not None else [offer_hash]
         if record.get("offer_chain_hash") != _compute_offer_chain_hash(chain_hashes):
             return REASON_OFFER_CHAIN_HASH_MISMATCH
 
+        # Reported only when nothing else failed: a signature whose key no
+        # available DID document lists, or whose signer's document could not be
+        # obtained, was checked neither way.
+        if offer_verified is None or acceptance_verified is None:
+            return REASON_KEY_NOT_FOUND
         return None
-    except _KeyNotFound:
-        return REASON_KEY_NOT_FOUND
     except Exception:
         # The last resort: a record whose shape stopped us reaching a verdict at
         # all. A signature that simply does not verify is caught where it is
@@ -548,6 +553,14 @@ class _KeyNotFound(Exception):
         super().__init__(did, verification_method)
         self.did = did
         self.verification_method = verification_method
+
+
+def _verified_or_unresolved(did_resolver, record: dict, **signature) -> bool | None:
+    """True or False for a signature that was checked; None when its key is unavailable."""
+    try:
+        return _verify_record_signature(did_resolver, record, **signature)
+    except _KeyNotFound:
+        return None
 
 
 def _record_hash_matches(record: dict) -> bool:
@@ -571,7 +584,12 @@ def _verify_record_signature(
     if not verification_method or not signature:
         return False
 
-    did_document = _resolve_did_document(did_resolver, did)
+    try:
+        did_document = _resolve_did_document(did_resolver, did)
+    except Exception:
+        # A DID document the resolver cannot supply is a key that is not
+        # available, exactly like one the document does not list.
+        raise _KeyNotFound(did, verification_method) from None
     try:
         vm = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:
@@ -579,9 +597,8 @@ def _verify_record_signature(
     public_key = get_public_key(vm)
     # verify_jws raises on bad signature bytes. That is this check failing, not
     # the record being unreadable, so it is caught here and the caller reports
-    # the signature reason. An unresolvable DID or a missing verification method
-    # is a different thing and still reaches the outer handler as a malformed
-    # record.
+    # the signature reason. An unavailable DID document or key is raised as
+    # _KeyNotFound above: it was checked neither way.
     try:
         signed_payload = verify_jws(signature, public_key)
     except InvalidSignatureError:

@@ -33,11 +33,12 @@ for (const c of VECTOR.history_cases as Dict[]) {
 for (const c of VECTOR.record_cases as Dict[]) {
   test(`the records reach the stated verdicts: ${c.name}`, () => {
     const documents = DIDS[c.did_documents as string];
+    const record = (c.record_document ?? VECTOR[c.record as string]) as Dict;
     let reason: string | null;
     if (c.record === "transaction_record") {
-      reason = verifyTransactionRecordReason(TR, documents, c.offer_hashes as string[] | null);
+      reason = verifyTransactionRecordReason(record, documents, c.offer_hashes as string[] | null);
     } else {
-      const assessment = assessSessionEvidenceRecord(VECTOR.evidence_record as Dict, documents);
+      const assessment = assessSessionEvidenceRecord(record, documents);
       reason = assessment.reason;
       expect(assessment.unresolved_keys).toEqual(c.expected_unresolved_keys ?? []);
     }
