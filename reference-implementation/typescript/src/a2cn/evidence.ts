@@ -19,7 +19,7 @@ import {
   type SigningPrivateKey,
 } from "./crypto.js";
 import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
-import { termsLineItemViolation } from "./line_items.js";
+import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import {
   A2CN_NAMESPACE,
   generateTransactionRecord,
@@ -256,6 +256,8 @@ export const EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED = "PRODUCER_METHOD_N
 export const EVIDENCE_REASON_EVIDENCE_ID_MISMATCH = "EVIDENCE_ID_MISMATCH";
 export const EVIDENCE_REASON_ACTS_NOT_ORDERED = "ACTS_NOT_ORDERED";
 export const EVIDENCE_REASON_ACT_INVALID = "ACT_INVALID";
+export const EVIDENCE_REASON_MONEY_BASIS_CURRENCY_UNSUPPORTED = "MONEY_BASIS_CURRENCY_UNSUPPORTED";
+export const EVIDENCE_REASON_MONEY_BASIS_EXPONENT_MISMATCH = "MONEY_BASIS_EXPONENT_MISMATCH";
 export const EVIDENCE_REASON_MONEY_BASIS_INVALID = "MONEY_BASIS_INVALID";
 export const EVIDENCE_REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID";
 export const EVIDENCE_REASON_OBSERVED_RESPONDER_RULES = "OBSERVED_RESPONDER_RULES";
@@ -423,6 +425,13 @@ export function generateSessionEvidenceRecord(
   // Refuse to seal a claim the verifier would reject. The generator and the
   // verifier run the same rules so a producer cannot emit a record that only
   // fails once it is somebody else's problem.
+  const units = moneyBasisUnitsReason(record);
+  if (units !== null) {
+    throw new Error(
+      "money_basis must state its amounts in a currency whose minor-unit exponent " +
+        `this build can establish to be 2, with minor_unit_exponent 2 (Section 9A.9): ${units}`,
+    );
+  }
   if (!moneyBasisClaimsVerify(record)) {
     throw new Error(
       "money_basis does not recompute to the claimed and signed totals, " +
@@ -727,6 +736,10 @@ export function assessSessionEvidenceRecord(
 
     if (assessment.invalid_acts > 0) {
       return refused(assessment, EVIDENCE_REASON_ACT_INVALID);
+    }
+    const units = moneyBasisUnitsReason(record);
+    if (units !== null) {
+      return refused(assessment, units);
     }
     if (!moneyBasisClaimsVerify(record)) {
       return refused(assessment, EVIDENCE_REASON_MONEY_BASIS_INVALID);
@@ -1985,6 +1998,51 @@ function recordedLineItemsHold(record: Dict): boolean {
     }
   }
   return true;
+}
+
+/**
+ * The one minor-unit exponent a money_basis may state (Section 9A.9): the
+ * exponent of every currency sessionCurrencyIsSupported admits.
+ */
+export const MONEY_BASIS_MINOR_UNIT_EXPONENT = 2;
+
+/**
+ * Section 9A.9: every money_basis states its money in minor units of 2.
+ *
+ * The same condition Section 9.5 step 9 holds a TransactionRecord to: the
+ * currency must be one whose minor-unit exponent this build can establish to be
+ * 2, and minor_unit_exponent must be 2. Without it a sealed act carrying
+ * total_value 9500000 USD would verify at exponent 0, 2, 3 or 4, reading the
+ * same signed integer as $9,500,000 or as $950. A security check, so it applies
+ * at every record_version. The currency is checked first.
+ */
+function moneyBasisUnitsReason(record: Dict): string | null {
+  const bases: unknown[] = [];
+  const acts = record.acts;
+  if (Array.isArray(acts)) {
+    for (const entry of acts) {
+      if (typeof entry === "object" && entry !== null && hasOwn(entry as Dict, "money_basis")) {
+        bases.push((entry as Dict).money_basis);
+      }
+    }
+  }
+  const terminal = record.terminal;
+  if (typeof terminal === "object" && terminal !== null && hasOwn(terminal as Dict, "money_basis")) {
+    bases.push((terminal as Dict).money_basis);
+  }
+  for (const moneyBasis of bases) {
+    if (typeof moneyBasis !== "object" || moneyBasis === null || Array.isArray(moneyBasis)) {
+      continue; // its shape is refused by the money_basis check
+    }
+    const basis = moneyBasis as Dict;
+    if (!sessionCurrencyIsSupported(basis.currency)) {
+      return EVIDENCE_REASON_MONEY_BASIS_CURRENCY_UNSUPPORTED;
+    }
+    if (basis.minor_unit_exponent !== MONEY_BASIS_MINOR_UNIT_EXPONENT) {
+      return EVIDENCE_REASON_MONEY_BASIS_EXPONENT_MISMATCH;
+    }
+  }
+  return null;
 }
 
 function moneyBasisClaimsVerify(record: Dict): boolean {

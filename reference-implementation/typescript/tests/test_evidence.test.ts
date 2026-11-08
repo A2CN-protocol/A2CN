@@ -4710,3 +4710,42 @@ test.each(["0.3", "0.4", "0.5"])(
     expect(verifySessionEvidenceRecord(relabelledRecord, didDocuments)).toBe(true);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Section 9A.9: a money_basis states its money in minor units of 2
+// ---------------------------------------------------------------------------
+
+const REASONS_VECTOR = JSON.parse(
+  readFileSync(join(SPEC_DIR, "test-vectors", "session-evidence-record-reasons.json"), "utf-8"),
+) as Dict;
+
+test("the stored exponent 2 control verifies", () => {
+  const control = (REASONS_VECTOR.controls as Dict[]).find((c) => c.name === "money_basis_exponent_2") as Dict;
+  const didDocuments = (REASONS_VECTOR.did_documents as Record<string, Record<string, Dict>>)[
+    control.base as string
+  ];
+  expect(verifySessionEvidenceRecord(control.record as Dict, didDocuments)).toBe(true);
+});
+
+test("exponent 2 in a supported currency still verifies", () => {
+  const [record, didDocuments] = pricedRecord();
+  expect(MONEY_BASIS.currency).toBe("USD");
+  expect(MONEY_BASIS.minor_unit_exponent).toBe(2);
+  expect(verifySessionEvidenceRecord(record, didDocuments)).toBe(true);
+});
+
+for (const [name, changes] of [
+  ["exponent 0", { minor_unit_exponent: 0, raw_amounts: ["9500000"] }],
+  ["exponent 3", { minor_unit_exponent: 3, raw_amounts: ["9500.000"] }],
+  ["exponent 4", { minor_unit_exponent: 4, raw_amounts: ["950.0000"] }],
+  ["CHF", { currency: "CHF" }],
+] as const) {
+  test(`the generator refuses to seal another unit: ${name}`, () => {
+    const [manager, session] = makeSession();
+    manager.processMessage(session, makeOffer(session.session_id));
+    markTimedOut(session);
+    expect(() =>
+      generateEvidence(session, [observedQuote({ moneyBasis: { ...MONEY_BASIS, ...changes } })]),
+    ).toThrow("minor_unit_exponent 2");
+  });
+}

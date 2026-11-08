@@ -1,5 +1,5 @@
 {
-  "description": "Section 9A.6: why a SessionEvidenceRecord does not verify. Each case is one complete, sealed record that fails exactly one check, built by this implementation's generator from a test session, edited as the case says, and resealed with the producer's test-only key. Verify it with the did_documents of the base it names; both implementations must refuse it and give expected_reason as verify_session_evidence_record_reason / verifySessionEvidenceRecordReason. Together the cases reach every reason code a verifier can return.",
+  "description": "Section 9A.6: why a SessionEvidenceRecord does not verify. Each case is one complete, sealed record that fails exactly one check, built by this implementation's generator from a test session, edited as the case says, and resealed with the producer's test-only key. Verify it with the did_documents of the base it names; both implementations must refuse it and give expected_reason as verify_session_evidence_record_reason / verifySessionEvidenceRecordReason. Together the cases reach every reason code a verifier can return. controls holds records that verify: the money_basis_units base, at minor_unit_exponent 2.",
   "did_documents": {
     "priced": {
       "did:web:techcorp.example": {
@@ -226,6 +226,60 @@
               "crv": "P-256",
               "x": "9qr8CtYCVNzUG7u8KEvzFYzkONnMPDbS-pxcPCkZ5LQ",
               "y": "9mZrz0UvDPP8rRO8jRwVDy6hh2o0FReFVuAy8D6_vc0"
+            }
+          }
+        ],
+        "authentication": [
+          "did:web:acme-corp.com#key-2026-01"
+        ],
+        "assertionMethod": [
+          "did:web:acme-corp.com#key-2026-01"
+        ]
+      }
+    },
+    "money_basis_units": {
+      "did:web:techcorp.example": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1",
+          "https://w3id.org/security/suites/jws-2020/v1"
+        ],
+        "id": "did:web:techcorp.example",
+        "verificationMethod": [
+          {
+            "id": "did:web:techcorp.example#key-1",
+            "type": "JsonWebKey2020",
+            "controller": "did:web:techcorp.example",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "L4GhTtpzUnSMN0ubZ-ewEe8kqyJ6lDa5e4mTwP5fM9Q",
+              "y": "bDTPCQ8uUDk-jqwtmoF1MwAOSxfeLu3FztUbY-2VKZA"
+            }
+          }
+        ],
+        "authentication": [
+          "did:web:techcorp.example#key-1"
+        ],
+        "assertionMethod": [
+          "did:web:techcorp.example#key-1"
+        ]
+      },
+      "did:web:acme-corp.com": {
+        "@context": [
+          "https://www.w3.org/ns/did/v1",
+          "https://w3id.org/security/suites/jws-2020/v1"
+        ],
+        "id": "did:web:acme-corp.com",
+        "verificationMethod": [
+          {
+            "id": "did:web:acme-corp.com#key-2026-01",
+            "type": "JsonWebKey2020",
+            "controller": "did:web:acme-corp.com",
+            "publicKeyJwk": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "vVMtKoAn8DjGnT5mMA7Vt0Tw4LpPr79-newbI4KRwz8",
+              "y": "Zsc3hV5JRS3qiVJ8dRu9ZiKY9XH-dKSY6fOJp0h2WGI"
             }
           }
         ],
@@ -3042,6 +3096,697 @@
         "evidence_level": "mixed",
         "record_hash": "TcxntLgmHtfw_cY5sxJSQ1meJZpLHTqTkNoNI_s2iY4",
         "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.VGN4bnRMZ21IdGZ3X2NZNXN4SlNRMW1lSlpwTEhUcVRrTm9OSV9zMmlZNA.qEOSKwEinbYLMRu4ehbrFMz_1UBBO3d9UhU3V39QI7mryiSOywolp_6scT5yrKu0EyYaNluqUSka9IPHAAAAAA"
+      }
+    },
+    {
+      "name": "money_basis_exponent_0",
+      "description": "A money_basis restating total_value 9500000 USD at minor_unit_exponent 0 ($9,500,000). The raw amounts recompute, but USD minor units are cents.",
+      "base": "money_basis_units",
+      "expected_reason": "MONEY_BASIS_EXPONENT_MISMATCH",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "9500000"
+              ],
+              "currency": "USD",
+              "minor_unit_exponent": 0,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "3XLpSqewFNpq8nVF6PKgmRSp3hDAaEnGJs-kBHqDlCA",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.M1hMcFNxZXdGTnBxOG5WRjZQS2dtUlNwM2hEQWFFbkdKcy1rQkhxRGxDQQ.SVoSY5gFONAH5VoKtDN_13dE65XI6CuVqtw8fBuzGLaYEW5mMkSBPaPOEf9zrDCTgHBASLigXtQdkBUHIhQFbA"
+      }
+    },
+    {
+      "name": "money_basis_exponent_3",
+      "description": "The same total at minor_unit_exponent 3 ($9,500.000).",
+      "base": "money_basis_units",
+      "expected_reason": "MONEY_BASIS_EXPONENT_MISMATCH",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "9500.000"
+              ],
+              "currency": "USD",
+              "minor_unit_exponent": 3,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "zx0w5tyPXrZomduJNsB5Qoc7xZGRhHkTCo3YeNb14YI",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.engwdzV0eVBYclpvbWR1Sk5zQjVRb2M3eFpHUmhIa1RDbzNZZU5iMTRZSQ.wUJtYD-Oj4Tt-NGsp3p5wiqRQk8byKOBfatcZM7CsuUUB0gwbPUczquhnQNHEotubkAbYuAgVCyNj-n2Esj8Mg"
+      }
+    },
+    {
+      "name": "money_basis_exponent_4",
+      "description": "The same total at minor_unit_exponent 4 ($950.0000).",
+      "base": "money_basis_units",
+      "expected_reason": "MONEY_BASIS_EXPONENT_MISMATCH",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "950.0000"
+              ],
+              "currency": "USD",
+              "minor_unit_exponent": 4,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "L_3BT-tc1UIdBaM7X0wcdMAGA7A-rW2ODT-NEPjsbFg",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.TF8zQlQtdGMxVUlkQmFNN1gwd2NkTUFHQTdBLXJXMk9EVC1ORVBqc2JGZw.I8nE5cGk3GBuOtXv2Hr0VQlvn6_19WTduRb_75ohyThJU1tTdMaWAYSWfWiHfiei7pNe8EyBL0LGCMbwj-BI0Q"
+      }
+    },
+    {
+      "name": "money_basis_currency_unsupported",
+      "description": "A money_basis in CHF, a currency whose minor-unit exponent this build does not establish; refused before its arithmetic or its binding to the act is read.",
+      "base": "money_basis_units",
+      "expected_reason": "MONEY_BASIS_CURRENCY_UNSUPPORTED",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "70000.00",
+                "25000.00"
+              ],
+              "currency": "CHF",
+              "minor_unit_exponent": 2,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "rCUU7M5IGCfmtUiHbr46S3pVR0ixdcZWSlSmD3g9LqQ",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.ckNVVTdNNUlHQ2ZtdFVpSGJyNDZTM3BWUjBpeGRjWldTbFNtRDNnOUxxUQ.x1TleeSwttqmgc3K64Qz3sXcfBXPqcz68nVj4urGjSsYnSrA3EURjijku-oLy5DSJs5i41dPaWLjraMun1TWCA"
+      }
+    },
+    {
+      "name": "terminal_money_basis_exponent_0",
+      "description": "A terminal money_basis at minor_unit_exponent 0: the rule applies there too.",
+      "base": "money_basis_units",
+      "expected_reason": "MONEY_BASIS_EXPONENT_MISMATCH",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z",
+          "money_basis": {
+            "raw_amounts": [
+              "9500000"
+            ],
+            "currency": "USD",
+            "minor_unit_exponent": 0,
+            "basis": "net",
+            "normalized_total_minor": 9500000
+          }
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "70000.00",
+                "25000.00"
+              ],
+              "currency": "USD",
+              "minor_unit_exponent": 2,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "LVdKudWkkUVjis74_EU3gaTo8FE_xvj5aeye3L4Gt9s",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.TFZkS3VkV2trVVZqaXM3NF9FVTNnYVRvOEZFX3h2ajVhZXllM0w0R3Q5cw.Pa1XYe7v0WfkvigBoTu6dhV7Vi8mGs9gtT80zNzslu_CX4t2DZqgO6ROkyrxxREn9Fmq7JmAYJ1T82d5-OIuyw"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "name": "money_basis_exponent_2",
+      "description": "The money_basis_units base itself: total_value 9500000 USD at minor_unit_exponent 2. It verifies.",
+      "base": "money_basis_units",
+      "record": {
+        "record_type": "a2cn_session_evidence_record",
+        "record_version": "0.5",
+        "evidence_id": "b7fb694a-16e0-5488-bce9-b594d051faa3",
+        "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+        "generated_at": "2026-03-24T10:10:00Z",
+        "producer": {
+          "did": "did:web:techcorp.example",
+          "agent_id": "buyer-agent",
+          "verification_method": "did:web:techcorp.example#key-1"
+        },
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp",
+            "did": "did:web:techcorp.example",
+            "agent_id": "buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "terminal": {
+          "outcome": "TIMED_OUT",
+          "reason": "session_timeout",
+          "message_id": null,
+          "timestamp": "2026-03-24T10:10:00Z"
+        },
+        "transaction_record_hash": null,
+        "acts": [
+          {
+            "sequence_number": 1,
+            "round_number": 1,
+            "message_type": "offer",
+            "message_id": "offer-1",
+            "sender_did": "did:web:techcorp.example",
+            "timestamp": "2026-03-24T10:01:00Z",
+            "source_protocol": "a2cn",
+            "act": {
+              "message_type": "offer",
+              "message_id": "offer-1",
+              "session_id": "da3bf1d1-15d7-49aa-96bf-a5efb17742f5",
+              "round_number": 1,
+              "sequence_number": 1,
+              "sender_did": "did:web:techcorp.example",
+              "sender_agent_id": "buyer-agent",
+              "sender_verification_method": "did:web:techcorp.example#key-1",
+              "timestamp": "2026-03-24T10:01:00Z",
+              "expires_at": "2030-01-01T00:00:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_act_hash": "8DLnaTjw9OlsP3okhvbQz-_KyL1ucl2NrkIK5eWp6a0",
+              "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+              "protocol_version": "0.3"
+            },
+            "act_hash": "SDPWlENAiS7kWGwFLqAQuz3U6UUyBq10PIIcNfbKtAM",
+            "sender_verification_method": "did:web:techcorp.example#key-1",
+            "signature_type": "protocol_act_signature",
+            "signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.OERMbmFUanc5T2xzUDNva2h2YlF6LV9LeUwxdWNsMk5ya0lLNWVXcDZhMA.2yC2b2_siXT4Dt-lY2_qh6Nt5FNzcof7YzzbmdMKf3LbK5mO7bMiM68qaT_JAf9GopOTW_SKISd70VnrN23fOg",
+            "attribution": "verified_signature"
+          },
+          {
+            "sequence_number": 2,
+            "round_number": 2,
+            "message_type": "counteroffer",
+            "message_id": "portal-quote-1",
+            "sender_did": "did:web:acme-corp.com",
+            "timestamp": "2026-03-24T10:02:00Z",
+            "source_protocol": "supplier_portal",
+            "act": {
+              "message_type": "counteroffer",
+              "message_id": "portal-quote-1",
+              "timestamp": "2026-03-24T10:02:00Z",
+              "terms": {
+                "total_value": 9500000,
+                "currency": "USD"
+              },
+              "protocol_version": "0.3"
+            },
+            "act_hash": "4dpQu6tOQrwH86HNcfEdwjd_88x_DAmWGCZckvSbP1g",
+            "sender_verification_method": null,
+            "signature_type": null,
+            "signature": null,
+            "attribution": "unsigned_observation",
+            "money_basis": {
+              "raw_amounts": [
+                "70000.00",
+                "25000.00"
+              ],
+              "currency": "USD",
+              "minor_unit_exponent": 2,
+              "basis": "net",
+              "normalized_total_minor": 9500000
+            }
+          }
+        ],
+        "act_chain_hash": "X215plj9ZPVjoYwhOFEeBwdOoGBEiygdjN6sHuQvJWI",
+        "evidence_level": "mixed",
+        "record_hash": "QXB1usTy94GwoqpCzerbBC6OClTPzeoLiFBFG5DjkT8",
+        "producer_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6dGVjaGNvcnAuZXhhbXBsZSNrZXktMSJ9.UVhCMXVzVHk5NEd3b3FwQ3plcmJCQzZPQ2xUUHplb0xpRkJGRzVEamtUOA.niZNrVi8p_68w_MqL2z5noDF3q_hJce0PIHfo1jjJ3fb_WYAzNF9xyzSsj3DkjQmvuWjupOjodOQBD9UEx6oZQ"
       }
     }
   ]

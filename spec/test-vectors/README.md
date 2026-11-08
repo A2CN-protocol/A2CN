@@ -284,7 +284,10 @@ case says, and resealed with the producer's test-only key. Verified with the
 `did_documents` of the base the case names, it must be refused, and both
 suites must give its `expected_reason` from
 `verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.
-Together the cases reach every reason code a verifier can return.
+Together the cases reach every reason code a verifier can return. The
+`money_basis_units` base restates one act's `total_value` of 9500000 USD at
+`minor_unit_exponent` 0, 3 and 4, and in CHF, each refused under Section 9A.9;
+`controls` holds that base at exponent 2, which verifies.
 
 `transaction-record-offer-history.json` covers taking a TransactionRecord's
 offer history from its SessionEvidenceRecord. `transaction-record-basis.json`'s
