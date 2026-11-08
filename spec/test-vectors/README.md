@@ -286,8 +286,10 @@ suites must give its `expected_reason` from
 `verify_session_evidence_record_reason` / `verifySessionEvidenceRecordReason`.
 Together the cases reach every reason code a verifier can return. The
 `money_basis_units` base restates one act's `total_value` of 9500000 USD at
-`minor_unit_exponent` 0, 3 and 4, and in CHF, each refused under Section 9A.9;
-`controls` holds that base at exponent 2, which verifies.
+`minor_unit_exponent` 0, 3, 4 and 2.5, and in CHF, each refused under Section
+9A.9; `controls` holds that base at exponent 2, and the same sealed record with
+`minor_unit_exponent` written `2.0` and `normalized_total_minor` written
+`9500000.0` (integers by value, not by spelling), both of which verify.
 
 `transaction-record-offer-history.json` covers taking a TransactionRecord's
 offer history from its SessionEvidenceRecord. `transaction-record-basis.json`'s

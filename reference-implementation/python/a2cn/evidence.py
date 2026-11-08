@@ -8,6 +8,7 @@ unsigned observations without changing TransactionRecord or AuditLog semantics.
 from __future__ import annotations
 
 import copy
+import math
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -1615,6 +1616,17 @@ def _decimal_to_minor(amount: Any, exponent: int) -> int | None:
     return -value if match.group(1) == "-" else value
 
 
+def _integral_value(value: Any) -> int | None:
+    """``value`` as an integer when it is one by value (2 or 2.0), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
+
+
 def _money_basis_recomputes(
     money_basis: Any,
     *,
@@ -1636,13 +1648,16 @@ def _money_basis_recomputes(
         return False
     if currency != expected_currency:
         return False
-    exponent = money_basis["minor_unit_exponent"]
-    if isinstance(exponent, bool) or not isinstance(exponent, int):
+    # Integers by value, not by spelling (Section 9.5 step 9): RFC 8785 seals
+    # 2.0 and 2 identically, and JavaScript cannot tell them apart once parsed,
+    # so a whole-number float is that integer and a fractional one is refused.
+    exponent = _integral_value(money_basis["minor_unit_exponent"])
+    if exponent is None:
         return False
     if not 0 <= exponent <= 4:
         return False
-    claimed = money_basis["normalized_total_minor"]
-    if isinstance(claimed, bool) or not isinstance(claimed, int):
+    claimed = _integral_value(money_basis["normalized_total_minor"])
+    if claimed is None:
         return False
     if abs(claimed) > _MAX_EXACT_INTEGER:
         return False

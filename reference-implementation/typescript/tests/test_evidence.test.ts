@@ -4719,13 +4719,15 @@ const REASONS_VECTOR = JSON.parse(
   readFileSync(join(SPEC_DIR, "test-vectors", "session-evidence-record-reasons.json"), "utf-8"),
 ) as Dict;
 
-test("the stored exponent 2 control verifies", () => {
-  const control = (REASONS_VECTOR.controls as Dict[]).find((c) => c.name === "money_basis_exponent_2") as Dict;
-  const didDocuments = (REASONS_VECTOR.did_documents as Record<string, Record<string, Dict>>)[
-    control.base as string
-  ];
-  expect(verifySessionEvidenceRecord(control.record as Dict, didDocuments)).toBe(true);
-});
+for (const control of REASONS_VECTOR.controls as Dict[]) {
+  test(`the stored control verifies: ${control.name}`, () => {
+    // Exponent 2, and the same record spelled 2.0 and 9500000.0: integers by value.
+    const didDocuments = (REASONS_VECTOR.did_documents as Record<string, Record<string, Dict>>)[
+      control.base as string
+    ];
+    expect(verifySessionEvidenceRecord(control.record as Dict, didDocuments)).toBe(true);
+  });
+}
 
 test("exponent 2 in a supported currency still verifies", () => {
   const [record, didDocuments] = pricedRecord();

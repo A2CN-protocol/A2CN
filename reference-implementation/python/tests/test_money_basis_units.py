@@ -44,6 +44,7 @@ def test_the_cases_cover_each_exponent_and_an_unsupported_currency():
         "money_basis_exponent_0",
         "money_basis_exponent_3",
         "money_basis_exponent_4",
+        "money_basis_exponent_2_5",
         "money_basis_currency_unsupported",
         "terminal_money_basis_exponent_0",
     } <= set(UNITS)
@@ -104,8 +105,20 @@ def test_the_cli_refuses_an_unsupported_currency(tmp_path):
 CONTROL = next(control for control in VECTOR["controls"] if control["name"] == "money_basis_exponent_2")
 
 
-def test_the_stored_exponent_2_control_verifies():
-    assert verify_session_evidence_record(CONTROL["record"], DIDS)
+@pytest.mark.parametrize("control", VECTOR["controls"], ids=lambda control: control["name"])
+def test_the_stored_controls_verify(control):
+    """Exponent 2, and the same record spelled 2.0 and 9500000.0: integers by value."""
+    assert verify_session_evidence_record_reason(
+        control["record"], VECTOR["did_documents"][control["base"]]
+    ) is None
+
+
+def test_the_float_control_is_spelled_with_floats():
+    text = (
+        Path(__file__).parents[3] / "spec" / "test-vectors" / "session-evidence-record-reasons.json"
+    ).read_text()
+    assert '"minor_unit_exponent": 2.0' in text
+    assert '"normalized_total_minor": 9500000.0' in text
 
 
 def test_the_cli_verifies_exponent_2(tmp_path):
