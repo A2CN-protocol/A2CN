@@ -99,6 +99,13 @@ This project is pre-1.0: the minor version moves for substantive additions.
   attestation against its schema and raises when it does not conform; it no
   longer returns without checking when `jsonschema` is missing.
 
+### Fixed
+
+- Python reads an evidence record money basis's `minor_unit_exponent` and
+  `normalized_total_minor` by value, as TypeScript does: a whole-number float
+  such as `2.0` is that integer, where Python refused it before; a fractional
+  value is still refused.
+
 ## [0.3.1] — 2026-10-15
 
 ### Security
