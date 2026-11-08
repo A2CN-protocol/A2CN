@@ -2973,11 +2973,25 @@ and `raw_amounts` is absent or empty, a verifier MUST reject the record. An
 unverifiable claim must never read as a verified one, and the zero total is
 exactly the case where an empty sum would otherwise appear to agree.
 
-A2CN maintains no currency exponent registry. `minor_unit_exponent` is a producer
-assertion checked for arithmetic consistency, not for correctness against the
-currency it names. `normalized_total_minor` and every act total it is compared
-against are bounded to the exact-integer range shared by both reference
-implementations, so the recompute cannot differ between them.
+**The exponent is bound to the currency.** A `money_basis` states its money in
+minor units exactly as a TransactionRecord's agreed terms do (Section 9.5
+step 9): its `currency` MUST be one whose minor-unit exponent the verifier can
+establish to be 2 (Section 7.2), and its `minor_unit_exponent` MUST be 2. A
+verifier MUST reject a record carrying any other `money_basis`, on an act or on
+the terminal, and a producer MUST NOT seal one. The arithmetic above cannot
+catch this on its own: one signed `terms.total_value` of `9500000` in USD
+recomputes exactly at exponent 0 ($9,500,000), 2 ($95,000.00), 3 ($9,500.000)
+and 4 ($950.0000), and only one of those is what was signed. The rule applies
+at every `record_version`. A2CN still maintains no currency exponent registry:
+a currency whose exponent the verifier cannot establish is refused, never
+assumed. The published schemas for `record_version` `"0.2"` to `"0.5"` describe
+`minor_unit_exponent` as a producer assertion checked only for arithmetic
+consistency; that description is superseded by this section, and the schema
+files are not rewritten (Section 17).
+
+`normalized_total_minor` and every act total it is compared against are bounded
+to the exact-integer range shared by both reference implementations, so the
+recompute cannot differ between them.
 
 ### 9A.10 The `HALTED_BY_CONTROLS` Terminal Outcome
 

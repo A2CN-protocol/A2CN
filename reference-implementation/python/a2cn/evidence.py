@@ -8,6 +8,7 @@ unsigned observations without changing TransactionRecord or AuditLog semantics.
 from __future__ import annotations
 
 import copy
+import math
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -19,7 +20,7 @@ from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
 from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
-from a2cn.line_items import terms_line_item_violation
+from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
     RECORD_ENTRY_WRAPPER_FIELDS,
@@ -200,6 +201,8 @@ EVIDENCE_REASON_PRODUCER_METHOD_NOT_CONTROLLED = "PRODUCER_METHOD_NOT_CONTROLLED
 EVIDENCE_REASON_EVIDENCE_ID_MISMATCH = "EVIDENCE_ID_MISMATCH"
 EVIDENCE_REASON_ACTS_NOT_ORDERED = "ACTS_NOT_ORDERED"
 EVIDENCE_REASON_ACT_INVALID = "ACT_INVALID"
+EVIDENCE_REASON_MONEY_BASIS_CURRENCY_UNSUPPORTED = "MONEY_BASIS_CURRENCY_UNSUPPORTED"
+EVIDENCE_REASON_MONEY_BASIS_EXPONENT_MISMATCH = "MONEY_BASIS_EXPONENT_MISMATCH"
 EVIDENCE_REASON_MONEY_BASIS_INVALID = "MONEY_BASIS_INVALID"
 EVIDENCE_REASON_LINE_ITEMS_INVALID = "LINE_ITEMS_INVALID"
 EVIDENCE_REASON_OBSERVED_RESPONDER_RULES = "OBSERVED_RESPONDER_RULES"
@@ -381,6 +384,12 @@ def generate_session_evidence_record(
     # Refuse to seal a claim the verifier would reject. The generator and the
     # verifier run the same rules so a producer cannot emit a record that only
     # fails once it is somebody else's problem.
+    units = _money_basis_units_reason(record)
+    if units is not None:
+        raise ValueError(
+            "money_basis must state its amounts in a currency whose minor-unit exponent "
+            f"this build can establish to be 2, with minor_unit_exponent 2 (Section 9A.9): {units}"
+        )
     if not _money_basis_claims_verify(record):
         raise ValueError(
             "money_basis does not recompute to the claimed and signed totals, "
@@ -656,6 +665,9 @@ def assess_session_evidence_record(record: dict, did_resolver: DidResolver) -> d
 
         if assessment["invalid_acts"]:
             return _refused(assessment, EVIDENCE_REASON_ACT_INVALID)
+        units = _money_basis_units_reason(record)
+        if units is not None:
+            return _refused(assessment, units)
         if not _money_basis_claims_verify(record):
             return _refused(assessment, EVIDENCE_REASON_MONEY_BASIS_INVALID)
         if not _recorded_line_items_hold(record):
@@ -1604,6 +1616,17 @@ def _decimal_to_minor(amount: Any, exponent: int) -> int | None:
     return -value if match.group(1) == "-" else value
 
 
+def _integral_value(value: Any) -> int | None:
+    """``value`` as an integer when it is one by value (2 or 2.0), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
+
+
 def _money_basis_recomputes(
     money_basis: Any,
     *,
@@ -1625,13 +1648,16 @@ def _money_basis_recomputes(
         return False
     if currency != expected_currency:
         return False
-    exponent = money_basis["minor_unit_exponent"]
-    if isinstance(exponent, bool) or not isinstance(exponent, int):
+    # Integers by value, not by spelling (Section 9.5 step 9): RFC 8785 seals
+    # 2.0 and 2 identically, and JavaScript cannot tell them apart once parsed,
+    # so a whole-number float is that integer and a fractional one is refused.
+    exponent = _integral_value(money_basis["minor_unit_exponent"])
+    if exponent is None:
         return False
     if not 0 <= exponent <= 4:
         return False
-    claimed = money_basis["normalized_total_minor"]
-    if isinstance(claimed, bool) or not isinstance(claimed, int):
+    claimed = _integral_value(money_basis["normalized_total_minor"])
+    if claimed is None:
         return False
     if abs(claimed) > _MAX_EXACT_INTEGER:
         return False
@@ -1720,6 +1746,45 @@ def _recorded_line_items_hold(record: dict) -> bool:
             if terms_line_item_violation(act["terms"], hazards_only=hazards_only) is not None:
                 return False
     return True
+
+
+#: The one minor-unit exponent a money_basis may state (Section 9A.9): the
+#: exponent of every currency session_currency_is_supported admits.
+MONEY_BASIS_MINOR_UNIT_EXPONENT = 2
+
+
+def _money_basis_units_reason(record: dict) -> str | None:
+    """Section 9A.9: every money_basis states its money in minor units of 2.
+
+    The same condition Section 9.5 step 9 holds a TransactionRecord to: the
+    currency must be one whose minor-unit exponent this build can establish to
+    be 2, and minor_unit_exponent must be 2. Without it a sealed act carrying
+    total_value 9500000 USD would verify at exponent 0, 2, 3 or 4, reading the
+    same signed integer as $9,500,000 or as $950. A security check, so it
+    applies at every record_version. The currency is checked first.
+    """
+    acts = record.get("acts")
+    bases = [
+        entry["money_basis"]
+        for entry in acts
+        if isinstance(entry, dict) and "money_basis" in entry
+    ] if isinstance(acts, list) else []
+    terminal = record.get("terminal")
+    if isinstance(terminal, dict) and "money_basis" in terminal:
+        bases.append(terminal["money_basis"])
+    for money_basis in bases:
+        if not isinstance(money_basis, dict):
+            continue  # its shape is refused by the money_basis check
+        if not session_currency_is_supported(money_basis.get("currency")):
+            return EVIDENCE_REASON_MONEY_BASIS_CURRENCY_UNSUPPORTED
+        exponent = money_basis.get("minor_unit_exponent")
+        if (
+            isinstance(exponent, bool)
+            or not isinstance(exponent, (int, float))
+            or exponent != MONEY_BASIS_MINOR_UNIT_EXPONENT
+        ):
+            return EVIDENCE_REASON_MONEY_BASIS_EXPONENT_MISMATCH
+    return None
 
 
 def _money_basis_claims_verify(record: dict) -> bool:
