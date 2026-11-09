@@ -119,6 +119,11 @@ export interface ServerContext {
    * sets it.
    */
   allowPrivateHosts: boolean;
+  /**
+   * Invitation deliveries still running. Delivery starts after the response
+   * has been sent; tests await these to see it finish.
+   */
+  pendingDeliveries: Set<Promise<void>>;
   configureResponder(config: ResponderConfig, sessionStore?: SessionStore | null): void;
   registerDidDocument(did: string, didDocument: Dict): void;
   deliverWebhook(
@@ -161,6 +166,7 @@ export function createServerContext(): ServerContext {
     allowPrivateHosts: ["1", "true", "yes"].includes(
       (process.env.A2CN_ALLOW_PRIVATE_HOSTS ?? "").trim().toLowerCase(),
     ),
+    pendingDeliveries: new Set(),
 
     /** Set responder identity info (DID, agent info, mandate, private key, etc.). */
     configureResponder(config: ResponderConfig, sessionStore: SessionStore | null = null): void {
@@ -1454,7 +1460,8 @@ function installRoutes(ctx: ServerContext): void {
   /**
    * Create and sign an outbound SessionInvitation.
    * The caller delivers it via their chosen channel.
-   * If recipient_endpoint is provided, also POSTs it directly.
+   * If recipient_endpoint is provided, also POSTs it directly, after the
+   * response has been sent.
    */
   app.post("/invitations/create", async (request, reply) => {
     await verifyJwtAuth(ctx, request);
@@ -1483,11 +1490,17 @@ function installRoutes(ctx: ServerContext): void {
 
     const invitationDict = invitation.toDict();
 
-    // Optionally deliver directly to recipient. The response is the same
-    // whether delivery succeeds, fails or is refused.
+    // Optionally deliver directly to recipient, once the response has been
+    // sent: the response and its timing are the same whether delivery
+    // succeeds, fails or is refused.
     const recipientEndpoint = body.recipient_endpoint;
     if (recipientEndpoint) {
-      await deliverInvitation(ctx, recipientEndpoint, invitationDict);
+      reply.raw.once("finish", () => {
+        const delivery: Promise<void> = deliverInvitation(ctx, recipientEndpoint, invitationDict)
+          .catch((exc: unknown) => console.warn(`Invitation not delivered: ${String(exc)}`))
+          .finally(() => ctx.pendingDeliveries.delete(delivery));
+        ctx.pendingDeliveries.add(delivery);
+      });
     }
 
     return sendA2cn(reply, invitationDict, 201);
@@ -1672,8 +1685,9 @@ function installRoutes(ctx: ServerContext): void {
  * to a checked address, with no proxy and no redirect followed (redirect
  * "manual": a 3xx is logged like any other non-2xx response).
  * ctx.allowPrivateHosts lifts the address checks. A refused or failed
- * delivery is logged and never thrown: the caller's response must not tell a
- * private address from an unreachable one.
+ * delivery is logged and never thrown. It runs after the response has been
+ * sent, so neither the response nor its timing tells a private address from
+ * an unreachable one.
  */
 async function deliverInvitation(ctx: ServerContext, recipientEndpoint: unknown, invitation: Dict): Promise<void> {
   const endpoint = JSON.stringify(recipientEndpoint);

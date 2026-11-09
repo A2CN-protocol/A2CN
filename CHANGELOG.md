@@ -61,6 +61,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
   and the reason, and the invitation is still created and returned `201`
   exactly as before: the response does not say whether delivery was refused,
   failed or succeeded, so it cannot tell a caller which addresses are private.
+  Delivery starts only after the response has been sent, so neither the
+  response nor its timing depends on it.
   For local development only, `A2CN_ALLOW_PRIVATE_HOSTS=1` lets the servers
   deliver to loopback and private hosts; it is the same setting as for did:web
   fetches, renamed from a did:web-only name before release, and covers both

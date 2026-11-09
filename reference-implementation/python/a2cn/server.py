@@ -34,7 +34,7 @@ from typing import Any
 
 import httpx
 import jwt as pyjwt
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError, _now
@@ -1035,7 +1035,8 @@ async def create_invitation_endpoint(request: Request,
     """
     Create and sign an outbound SessionInvitation.
     The caller delivers it via their chosen channel.
-    If recipient_endpoint is provided, also POSTs it directly.
+    If recipient_endpoint is provided, also POSTs it directly, after the
+    response has been sent.
     """
     body = await _parse_body(request)
     cfg = _responder_config
@@ -1061,13 +1062,15 @@ async def create_invitation_endpoint(request: Request,
 
     invitation_dict = invitation.to_dict()
 
-    # Optionally deliver directly to recipient. The response is the same
-    # whether delivery succeeds, fails or is refused.
+    # Optionally deliver directly to recipient, once the response has been
+    # sent: the response and its timing are the same whether delivery
+    # succeeds, fails or is refused.
+    response = a2cn_response(invitation_dict, 201)
     recipient_endpoint = body.get("recipient_endpoint")
     if recipient_endpoint:
-        await _deliver_invitation(recipient_endpoint, invitation_dict)
-
-    return a2cn_response(invitation_dict, 201)
+        response.background = BackgroundTasks()
+        response.background.add_task(_deliver_invitation, recipient_endpoint, invitation_dict)
+    return response
 
 
 async def _deliver_invitation(recipient_endpoint: object, invitation: dict) -> None:
@@ -1078,8 +1081,9 @@ async def _deliver_invitation(recipient_endpoint: object, invitation: dict) -> N
     address, and resolves only to public unicast addresses; the connection goes
     to a checked address, with no proxy and no redirect followed.
     ALLOW_PRIVATE_HOSTS lifts the address checks. A refused or failed delivery
-    is logged and never raised: the caller's response must not tell a private
-    address from an unreachable one.
+    is logged and never raised. It runs after the response has been sent, so
+    neither the response nor its timing tells a private address from an
+    unreachable one.
     """
     try:
         if not isinstance(recipient_endpoint, str):

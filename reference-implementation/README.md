@@ -244,8 +244,9 @@ Interactive API docs at `http://localhost:8000/docs`.
 The server fetches did:web documents (a token's issuer, an approver, an inviter)
 only from public hosts, and delivers an invitation to a `recipient_endpoint`
 (`POST /invitations/create`) only to a public host whose name is not written as
-an IP address, following no redirect. A refused or failed delivery is logged and
-the invitation is still returned. To run parties on loopback or a private
+an IP address, following no redirect. Delivery starts after the response has been
+sent; a refused or failed delivery is logged and the invitation is still
+returned. To run parties on loopback or a private
 network during development, set `A2CN_ALLOW_PRIVATE_HOSTS=1` (the TypeScript
 server reads the same variable, or set `allowPrivateHosts` on its context). Never
 set it on a deployed server: it lets a caller make the server send requests to

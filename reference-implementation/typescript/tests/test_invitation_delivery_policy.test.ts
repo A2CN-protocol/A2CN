@@ -91,8 +91,11 @@ function log(): string {
   return warn.mock.calls.flat().map(String).join("\n");
 }
 
-/** A server whose public fetch has mocked DNS and connection; read `lookups` and `connects`. */
-function server(unreachable: string[] = []) {
+/**
+ * A server whose public fetch has mocked DNS and connection; read `lookups` and
+ * `connects`. A lookup waits for `gate`, if one is given.
+ */
+function server(unreachable: string[] = [], gate?: Promise<void>) {
   const dns: Record<string, string[]> = {
     [RECIPIENT_HOST]: [PUBLIC],
     [PRIVATE_HOST]: [PRIVATE_ADDRESS],
@@ -104,6 +107,7 @@ function server(unreachable: string[] = []) {
   const connects: Array<{ hostname: string; servername?: string }> = [];
   const lookup = async (hostname: string) => {
     lookups.push(hostname);
+    await gate;
     if (!(hostname in dns)) {
       throw new Error(`no such host ${hostname}`);
     }
@@ -131,7 +135,14 @@ function server(unreachable: string[] = []) {
   return { fixture, lookups, connects, webhookFetch };
 }
 
+/** Create an invitation, then wait for any delivery it started, which runs after the response. */
 async function create(fixture: ServerFixture, recipientEndpoint?: unknown) {
+  const response = await post(fixture, recipientEndpoint);
+  await Promise.all(fixture.ctx.pendingDeliveries);
+  return response;
+}
+
+function post(fixture: ServerFixture, recipientEndpoint?: unknown) {
   const json: Dict = { proposed_deal_type: "saas_renewal" };
   if (recipientEndpoint !== undefined) {
     json.recipient_endpoint = recipientEndpoint;
@@ -291,4 +302,45 @@ test("the server setting is read from the environment", () => {
       process.env.A2CN_ALLOW_PRIVATE_HOSTS = saved;
     }
   }
+});
+
+// --- Delivery starts after the response ---------------------------------------
+
+test("the response is sent before delivery finishes", async () => {
+  // The 201 goes out while the delivery's lookup is still held open, so the
+  // response and its timing do not depend on the delivery.
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const s = server([], gate);
+  const pending = post(s.fixture, RECIPIENT);
+  let timer: NodeJS.Timeout | undefined;
+  // Bounds only the failure: a delivery awaited before responding holds the 201 until the gate opens.
+  const timedOut = new Promise<"timed out">((resolve) => {
+    timer = setTimeout(() => resolve("timed out"), 2000);
+  });
+  let body: Dict;
+  try {
+    const r = await Promise.race([pending, timedOut]);
+    expect(r).not.toBe("timed out");
+    if (r === "timed out") {
+      return;
+    }
+    expect(r.statusCode).toBe(201);
+    body = r.json();
+    expect(seen).toEqual([]); // nothing delivered yet
+    expect(s.fixture.ctx.pendingDeliveries.size).toBe(1);
+  } finally {
+    clearTimeout(timer);
+    release();
+    await pending;
+    await Promise.all(s.fixture.ctx.pendingDeliveries);
+  }
+  // Released, the delivery completes after the response.
+  expect(s.fixture.ctx.pendingDeliveries.size).toBe(0);
+  expect(s.lookups).toEqual([RECIPIENT_HOST]);
+  expect(s.connects.map((entry) => entry.hostname)).toEqual([PUBLIC]);
+  expect(seen.map((request) => `${request.method} ${request.url}`)).toEqual(["POST /a2cn/invitations"]);
+  expect(JSON.parse(seen[0].body)).toEqual(body);
 });

@@ -10,6 +10,7 @@ these tests never touch the network. The TypeScript suite has the same cases.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import logging
@@ -273,3 +274,75 @@ def test_the_server_setting_is_read_from_the_environment(monkeypatch):
     assert importlib.reload(server_module).ALLOW_PRIVATE_HOSTS is True
     monkeypatch.delenv("A2CN_ALLOW_PRIVATE_HOSTS")
     importlib.reload(server_module)
+
+
+# --- Delivery starts after the response ---------------------------------------
+
+
+async def test_the_response_is_sent_before_delivery_finishes(test_client, network, monkeypatch, initiator_keypair):
+    """The 201 goes out while the delivery's lookup is still held open, so the
+    response and its timing do not depend on the delivery. This drives the ASGI
+    app directly: httpx's ASGITransport returns only once the app, background
+    tasks included, has finished, which is how the other tests here see a
+    delivery complete."""
+    import a2cn.server as server_module
+    from a2cn.crypto import create_jwt
+    from tests.conftest import INITIATOR_DID, SERVER_DID
+
+    gate = asyncio.Event()
+
+    async def held_lookup(host, port):
+        network.lookups.append(host)
+        await gate.wait()
+        return list(network.dns[host])
+
+    monkeypatch.setattr(did_module, "_lookup", held_lookup)
+
+    token = create_jwt(INITIATOR_DID, SERVER_DID, initiator_keypair[0], kid=f"{INITIATOR_DID}#key-1", exp_seconds=60)
+    body = json.dumps({"proposed_deal_type": "saas_renewal", "recipient_endpoint": RECIPIENT}).encode()
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+        "scheme": "http", "path": "/invitations/create", "raw_path": b"/invitations/create",
+        "query_string": b"", "root_path": "", "client": ("127.0.0.1", 50000), "server": ("test", 80),
+        "headers": [
+            (b"host", b"test"),
+            (b"content-type", b"application/a2cn+json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"authorization", f"Bearer {token}".encode()),
+        ],
+    }
+    requested = False
+    finished = asyncio.Event()
+    response_sent = asyncio.Event()
+    messages: list[dict] = []
+
+    async def receive():
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await finished.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        messages.append(message)
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            response_sent.set()
+
+    app = asyncio.create_task(server_module.app(scope, receive, send))
+    try:
+        # Bounds only the failure: a delivery awaited before responding holds the 201 until the gate opens.
+        await asyncio.wait_for(response_sent.wait(), timeout=5)
+        assert messages[0]["status"] == 201
+        response = json.loads(b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body"))
+        assert not app.done()
+        assert network.sent == bytearray()  # nothing delivered yet
+    finally:
+        gate.set()
+        finished.set()
+        await asyncio.wait_for(app, timeout=5)
+    # Released, the delivery completes after the response.
+    assert network.lookups == [RECIPIENT_HOST]
+    assert network.connects == [PUBLIC]
+    assert network.requests() == ["POST /a2cn/invitations HTTP/1.1"]
+    assert network.body() == response

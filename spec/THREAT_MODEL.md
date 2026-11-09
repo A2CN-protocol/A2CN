@@ -47,8 +47,9 @@ standard, and it has **not** undergone an external security audit.
   token, so the caller chooses the host. Delivery follows the same address policy as did:web
   resolution: the host must be a name whose addresses are all public unicast, the connection goes
   only to a checked address, no redirect is followed, and no proxy is used. A refused or failed
-  delivery is logged and the invitation is still returned unchanged, so the response does not tell
-  the caller which addresses are private. The same development-only setting turns it off
+  delivery is logged and the invitation is still returned unchanged, and delivery starts only after
+  the response has been sent, so neither the response nor its timing tells the caller which
+  addresses are private. The same development-only setting turns it off
   (`A2CN_ALLOW_PRIVATE_HOSTS`).
 - **Mandate-cap bypass (within implemented checks).** The commitment ceiling is enforced before an
   act binds (§13.5), and an act that crosses the mandate's human-approval threshold is held in
