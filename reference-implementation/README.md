@@ -3,7 +3,7 @@
 **The canonical Python implementation of the A2CN protocol.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-2340%20passing-brightgreen.svg)](python/tests/)
+[![Tests](https://img.shields.io/badge/Tests-2709%20passing-brightgreen.svg)](python/tests/)
 [![Spec](https://img.shields.io/badge/Spec-v0.2.0-green.svg)](../spec/a2cn-spec-v0.2.0.md)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
@@ -281,8 +281,10 @@ client.process_incoming(response)
 
 ## Verify a record
 
-`pip install a2cn` installs `a2cn-verify`. Put a deal's TransactionRecord and
-its session's evidence record in one folder, and point the verifier at it:
+Installing the Python package installs `a2cn-verify`: from a source checkout,
+`pip install ./reference-implementation/python`, and `pip install a2cn` once the
+first PyPI release is out. Put a deal's TransactionRecord and its session's
+evidence record in one folder, and point the verifier at it:
 
 ```bash
 a2cn-verify deal/                 # or: python -m a2cn.verify deal/
@@ -326,7 +328,7 @@ tests/test_session.py::test_session_timeout               PASSED
 tests/conformance/test_conformance.py::CONF-001           PASSED
 tests/conformance/test_conformance.py::CONF-002           PASSED
 ...
-2340 passed
+2709 passed
 ```
 
 ### Conformance tests
