@@ -406,7 +406,7 @@ jcs>=0.2.1,<0.4           # RFC 8785 JSON Canonicalization Scheme
 jsonschema>=4.26          # Schema validation (fulfillment attestations)
 mcp>=1.30,<2              # MCP server and tool registration (the mcp extra)
 pytest>=9.0.3             # Test runner
-pytest-asyncio>=1.0       # Async test support
+pytest-asyncio>=1.3       # Async test support
 respx>=0.22               # httpx mocking in tests
 python-multipart>=0.0.31  # Form parsing in tests
 ```
