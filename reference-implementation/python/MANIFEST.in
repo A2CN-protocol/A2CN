@@ -1,0 +1,6 @@
+# The sdist carries the package, its metadata and the licence. The tests read
+# the spec's vectors and schemas from the rest of the repository, so they run
+# only from a checkout; README.md is the repository's page, with relative links,
+# and PyPI shows README.pypi.md.
+prune tests
+exclude README.md

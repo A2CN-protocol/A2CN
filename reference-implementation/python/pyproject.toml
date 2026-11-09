@@ -1,11 +1,31 @@
 [build-system]
-requires = ["setuptools>=68"]
+# setuptools 77 is the first to accept a PEP 639 licence expression in
+# project.license and project.license-files; 76.1 rejects them.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "a2cn"
 version = "0.3.2"
+description = "Reference implementation of A2CN, the open protocol for agent-to-agent B2B commercial negotiation"
+readme = "README.pypi.md"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["a2cn", "agents", "negotiation", "b2b", "procurement", "protocol", "did", "signatures"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Libraries",
+]
 # Ranges, not pins: each floor is at or above the release that fixes its known
 # advisories, and uv.lock holds the exact versions the tests run against.
 # starlette is stated directly so its floor holds whatever fastapi allows. jcs
@@ -23,6 +43,13 @@ dependencies = [
     "jcs>=0.2.1,<0.4",
     "jsonschema>=4.26",
 ]
+
+[project.urls]
+Homepage = "https://a2cn.io"
+Source = "https://github.com/A2CN-protocol/A2CN"
+Issues = "https://github.com/A2CN-protocol/A2CN/issues"
+Changelog = "https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md"
+"Security policy" = "https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md"
 
 [project.scripts]
 a2cn-verify = "a2cn.verify:main"
