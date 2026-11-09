@@ -9,7 +9,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 
 | Axis | Current |
 |------|---------|
-| Release | `0.3.1` |
+| Release | `0.3.2` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
 | `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.5` for every record, with `0.1`, `0.2`, `0.3` and `0.4` still accepted |
 
@@ -19,6 +19,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+## [0.3.2] — 2026-11-08
 
 ### Security
 
@@ -35,8 +37,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ### Added
 
-- **`a2cn-verify`, a command-line verifier.** `pip install a2cn` installs it
-  (also `python -m a2cn.verify`). Given files or a folder (`a2cn-verify deal/`)
+- **`a2cn-verify`, a command-line verifier.** Installing the Python package
+  installs it: from a source checkout, `pip install ./reference-implementation/python`;
+  `pip install a2cn` once the first PyPI release is out (also `python -m a2cn.verify`). Given files or a folder (`a2cn-verify deal/`)
   it checks every TransactionRecord, SessionEvidenceRecord and signed act among
   them with the library's own verification, and prints each verdict and reason,
   the act counts, where the offer history and each key came from, any extension
@@ -86,8 +89,9 @@ This project is pre-1.0: the minor version moves for substantive additions.
   signatures, so `OFFER_CHAIN_HASH_MISMATCH` now means everything else
   verified. No committed vector's expected reason changes.
 - **The MCP server's dependencies are an optional extra.** `mcp` is no longer a
-  core dependency of the Python package: `pip install a2cn` installs the
-  protocol library without it, and `pip install -e '.[mcp]'` adds what
+  core dependency of the Python package: installing the package (from a source
+  checkout, `pip install ./reference-implementation/python`; `pip install a2cn`
+  once the first PyPI release is out) installs the protocol library without it, and `pip install -e '.[mcp]'` adds what
   `mcp_server.py` needs. The `dev` extra includes it. Run without the extra,
   `mcp_server.py` exits with an install hint, and its tests are skipped. The
   extra holds pydantic below 2.14, because `mcp` 1.12.4 does not import under
