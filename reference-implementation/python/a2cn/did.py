@@ -68,13 +68,15 @@ async def resolve_did_web(
         if allow_private_hosts:
             async with httpx.AsyncClient() as c:
                 return await _fetch_did_document(c, url)
-        async with _public_address_client() as c:
+        async with public_address_client() as c:
             return await _fetch_did_document(c, url)
 
 
 class DidWebHostRefused(ValueError):
-    """The did:web address policy refuses this host: an IP address, or a name
-    with an address that is not public unicast."""
+    """The address policy refuses this host: an IP address, or a name with an
+    address that is not public unicast. The policy covers every request to a
+    host a caller names: did:web resolution, and the reference server's
+    invitation delivery."""
 
 
 # Addresses a did:web document is never fetched from. IPv6 outside 2000::/3 is
@@ -165,10 +167,10 @@ async def _public_addresses(host: str, port: int) -> list[str]:
     """One lookup; every address, in order, if every one is public unicast."""
     addresses = await _lookup(host, port)
     if not addresses:
-        raise DidWebHostRefused(f"did:web host {host} has no address")
+        raise DidWebHostRefused(f"host {host} has no address")
     for address in addresses:
         if not is_public_unicast(address):
-            raise DidWebHostRefused(f"did:web host {host} resolves to a non-public address, {address}")
+            raise DidWebHostRefused(f"host {host} resolves to a non-public address, {address}")
     return addresses
 
 
@@ -200,7 +202,7 @@ class _PublicAddressBackend(httpcore.AsyncNetworkBackend):
         raise failure
 
     async def connect_unix_socket(self, path, timeout=None, socket_options=None):
-        raise DidWebHostRefused("did:web documents are not fetched over a Unix socket")
+        raise DidWebHostRefused("the address policy does not connect over a Unix socket")
 
     async def sleep(self, seconds: float) -> None:
         await self._inner.sleep(seconds)
@@ -216,9 +218,33 @@ class _PublicAddressTransport(httpx.AsyncHTTPTransport):
         )
 
 
-def _public_address_client() -> httpx.AsyncClient:
-    # trust_env=False: a proxy from the environment would make its own lookup.
-    return httpx.AsyncClient(transport=_PublicAddressTransport(), trust_env=False)
+def public_address_client(**options) -> httpx.AsyncClient:
+    """An HTTP client that connects only through the address policy: each
+    connection looks the host up once, refuses it (DidWebHostRefused) unless
+    every address is public unicast, and connects only to the checked
+    addresses. It uses no proxy from the environment, because a proxy makes its
+    own lookup. ``options`` go to httpx.AsyncClient (a timeout, say)."""
+    return httpx.AsyncClient(transport=_PublicAddressTransport(), trust_env=False, **options)
+
+
+def check_url_host(url: str, *, allow_private_hosts: bool = False) -> str:
+    """The host an http or https URL names, checked before any lookup.
+
+    Raises:
+        DidWebHostRefused (a ValueError): if the host is written as an IP
+            address (any form ``_is_ip_literal`` reads as one), unless
+            ``allow_private_hosts``
+        ValueError: if the URL is not an http or https URL with a host
+    """
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, TypeError) as exc:
+        raise ValueError("not an http or https URL") from exc
+    if parsed.scheme not in ("http", "https") or not parsed.host:
+        raise ValueError("not an http or https URL")
+    if not allow_private_hosts and _is_ip_literal(parsed.host):
+        raise DidWebHostRefused(f"host {parsed.host} is written as an IP address; it must be a name")
+    return parsed.host
 
 
 async def _fetch_did_document(client: httpx.AsyncClient, url: str):

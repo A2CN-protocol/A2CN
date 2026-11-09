@@ -238,7 +238,7 @@ function expectNothingAboutTheFetch(text: string, ...extra: string[]) {
 test("the 401 names neither the host nor the error", async () => {
   const fixture = freshServer();
   const net = network({ [PRIVATE_HOST]: [PRIVATE_ADDRESS] });
-  fixture.ctx.didFetchFn = net.fetchFn;
+  fixture.ctx.publicFetchFn = net.fetchFn;
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     const r = await fixture.rawClient.get("/sessions/any", {
@@ -258,7 +258,7 @@ test("the 401 names neither the host nor the error", async () => {
 
 test("the 401 does not echo a fetch error", async () => {
   const fixture = freshServer();
-  fixture.ctx.didFetchFn = (async () => {
+  fixture.ctx.publicFetchFn = (async () => {
     throw new Error("connection refused by the-secret-detail");
   }) as unknown as FetchLike;
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -276,7 +276,7 @@ test("the 401 does not echo a fetch error", async () => {
 test("the 401 does not echo the fetched document", async () => {
   // The fetched document has no usable key: the reason names its contents, so it stays out.
   const fixture = freshServer();
-  fixture.ctx.didFetchFn = network({ [HOST]: [PUBLIC] }).fetchFn;
+  fixture.ctx.publicFetchFn = network({ [HOST]: [PUBLIC] }).fetchFn;
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     const r = await fixture.rawClient.get("/sessions/any", {
@@ -291,7 +291,7 @@ test("the 401 does not echo the fetched document", async () => {
 });
 
 test("the server's own resolver refuses a private host", async () => {
-  // No didFetchFn: the server uses the resolver's own fetch and the real lookup of localhost.
+  // No publicFetchFn: the server uses the resolver's own fetch and the real lookup of localhost.
   const fixture = freshServer();
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
@@ -309,7 +309,7 @@ test("the server's own resolver refuses a private host", async () => {
 test("an invitation from a private host is never fetched", async () => {
   const fixture = freshServer();
   const net = network({ [PRIVATE_HOST]: [PRIVATE_ADDRESS] });
-  fixture.ctx.didFetchFn = net.fetchFn;
+  fixture.ctx.publicFetchFn = net.fetchFn;
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     const r = await fixture.rawClient.post("/invitations", {
@@ -334,8 +334,8 @@ test("the server setting allows a private host", async () => {
   const fixture = freshServer();
   const { privateKey, publicKey } = generateEd25519Keypair();
   const issuer = "did:web:127.0.0.1";
-  fixture.ctx.allowPrivateDidHosts = true;
-  fixture.ctx.didFetchFn = (async () =>
+  fixture.ctx.allowPrivateHosts = true;
+  fixture.ctx.publicFetchFn = (async () =>
     new Response(JSON.stringify(makeDidDocument(issuer, "key-1", publicKeyToJwk(publicKey))), {
       status: 200,
     })) as unknown as FetchLike;
@@ -347,17 +347,17 @@ test("the server setting allows a private host", async () => {
 });
 
 test("the server setting is off by default", () => {
-  const saved = process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS;
+  const saved = process.env.A2CN_ALLOW_PRIVATE_HOSTS;
   try {
-    delete process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS;
-    expect(createServerContext().allowPrivateDidHosts).toBe(false);
-    process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS = "1";
-    expect(createServerContext().allowPrivateDidHosts).toBe(true);
+    delete process.env.A2CN_ALLOW_PRIVATE_HOSTS;
+    expect(createServerContext().allowPrivateHosts).toBe(false);
+    process.env.A2CN_ALLOW_PRIVATE_HOSTS = "1";
+    expect(createServerContext().allowPrivateHosts).toBe(true);
   } finally {
     if (saved === undefined) {
-      delete process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS;
+      delete process.env.A2CN_ALLOW_PRIVATE_HOSTS;
     } else {
-      process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS = saved;
+      process.env.A2CN_ALLOW_PRIVATE_HOSTS = saved;
     }
   }
 });

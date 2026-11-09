@@ -242,13 +242,17 @@ uvicorn a2cn.server:app --reload --port 8000
 Interactive API docs at `http://localhost:8000/docs`.
 
 The server fetches did:web documents (a token's issuer, an approver, an inviter)
-only from public hosts. To run parties on loopback or a private network during
-development, set `A2CN_ALLOW_PRIVATE_DID_HOSTS=1` (the TypeScript server reads the
-same variable, or set `allowPrivateDidHosts` on its context). Never set it on a
-deployed server: it lets a caller with no credentials make the server fetch from
-its own network. did:web fetches use no HTTP(S) proxy, because a proxy makes its
-own lookup: a server that reaches the internet only through a proxy can't fetch
-did:web documents, and should pre-register them instead.
+only from public hosts, and delivers an invitation to a `recipient_endpoint`
+(`POST /invitations/create`) only to a public host whose name is not written as
+an IP address, following no redirect. A refused or failed delivery is logged and
+the invitation is still returned. To run parties on loopback or a private
+network during development, set `A2CN_ALLOW_PRIVATE_HOSTS=1` (the TypeScript
+server reads the same variable, or set `allowPrivateHosts` on its context). Never
+set it on a deployed server: it lets a caller make the server send requests to
+its own network. did:web fetches and invitation delivery use no HTTP(S) proxy,
+because a proxy makes its own lookup: a server that reaches the internet only
+through a proxy can't fetch did:web documents, and should pre-register them
+instead.
 
 ### `a2cn/client.py` — Initiator
 
