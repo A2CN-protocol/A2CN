@@ -2,28 +2,76 @@
   "name": "a2cn",
   "version": "0.3.2",
   "description": "A2CN (Agent-to-Agent Contract Negotiation) TypeScript reference implementation",
+  "keywords": [
+    "a2cn",
+    "agents",
+    "negotiation",
+    "b2b",
+    "procurement",
+    "protocol",
+    "did",
+    "signatures"
+  ],
+  "homepage": "https://a2cn.io",
+  "bugs": {
+    "url": "https://github.com/A2CN-protocol/A2CN/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A2CN-protocol/A2CN.git",
+    "directory": "reference-implementation/typescript"
+  },
+  "license": "Apache-2.0",
   "type": "module",
-  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20.18.1"
   },
   "scripts": {
+    "clean": "node -e \"import('node:fs').then((fs) => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
     "canonicalize": "^2.1.0",
     "fastify": "^5.12.8",
     "jose": "^6.0.0",
     "undici": "^7.30.2",
-    "uuid": "^11.0.0",
+    "uuid": "^11.0.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
   },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "zod": "^4.6.7"
   }
 }
