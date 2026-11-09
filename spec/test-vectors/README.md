@@ -535,3 +535,11 @@ conditions are consulted. Only a full-party responder reaches them.
 `session_evidence_record_0_2_schema_sha256` pins
 `session-evidence-record-0.2.schema.json`, beside which the `"0.3"` schema is
 published and which is not rewritten (Section 17).
+
+`did-web-address-policy.json` is the did:web address policy, read by both
+suites. Every address in `refused_addresses` must be refused and every address
+in `public_addresses` allowed; the public ones include the addresses just
+outside each refused range, so the two implementations' range tables cannot
+drift apart. `ip_literal_hosts` are did:web DIDs whose host is written as an IP
+address, in each form a resolver reads as one, which are refused before any
+lookup.

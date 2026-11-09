@@ -1,7 +1,7 @@
 /** Tests for a2cn/server — Fastify endpoints. */
 
 import { randomUUID, type KeyObject } from "node:crypto";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   createJwt,
@@ -17,7 +17,7 @@ import {
   b64urlDecode,
 } from "../src/a2cn/crypto.js";
 import { createServerContext } from "../src/a2cn/server.js";
-import { DID_RESOLUTION_TIMEOUT_MS, resolveDidWeb } from "../src/a2cn/did.js";
+import { DID_RESOLUTION_TIMEOUT_MS, publicAddressFetch, resolveDidWeb } from "../src/a2cn/did.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import {
   INITIATOR_DID,
@@ -814,7 +814,7 @@ function serveDidDocuments(
   documents: Record<string, Dict>,
 ): { calls: string[] } {
   const calls: string[] = [];
-  ctx.fetchFn = (async (url: string | URL | Request) => {
+  ctx.didFetchFn = (async (url: string | URL | Request) => {
     const target = String(url);
     calls.push(target);
     const document = documents[target];
@@ -926,13 +926,46 @@ for (const [label, body] of [
   });
 }
 
+test("an approver on a private host is never fetched", async () => {
+  // The receipt names the approver the caller's own mandate lists, and nothing the fetch found.
+  const fixture = freshServer();
+  const privateDid = "did:web:internal-only.example";
+  const lookups: string[] = [];
+  const connects: string[] = [];
+  fixture.ctx.didFetchFn = publicAddressFetch({
+    lookup: async (hostname) => {
+      lookups.push(hostname);
+      return ["10.20.30.40"];
+    },
+    connect: (opts, callback) => {
+      connects.push(opts.hostname);
+      callback(new Error("never connected"), null);
+    },
+  });
+  const { privateKey: key } = generateEd25519Keypair();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const { client, sessionId, offer, mandate } = await pausedOverHttp(fixture, [privateDid]);
+    const r = await postReceipt(client, sessionId, httpReceipt(sessionId, offer, mandate, privateDid), key);
+    expect(r.statusCode).toBe(400);
+    expect((r.json().error as Dict).code).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+    for (const leaked of ["10.20.30.40", "non-public", "resolves", "Refused"]) {
+      expect(r.body).not.toContain(leaked);
+    }
+    expect(lookups).toEqual(["internal-only.example"]);
+    expect(connects).toEqual([]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
 test("did web resolution follows no redirects and has a timeout", async () => {
   // Both implementations follow no redirects when resolving an approver; the
   // TypeScript one asks fetch to refuse them and to give up after a timeout.
   const fixture = freshServer();
   const { privateKey: key, publicKey } = generateEd25519Keypair();
   const seen: Array<RequestInit | undefined> = [];
-  fixture.ctx.fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+  fixture.ctx.didFetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     seen.push(init);
     return String(url) === DYNAMIC_APPROVER_URL
       ? new Response(JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey))), {
@@ -982,7 +1015,7 @@ for (const variant of ["utf8_bom", "utf16", "nan_literal", "too_large"]) {
     const fixture = freshServer();
     const { privateKey: key, publicKey } = generateEd25519Keypair();
     const [body, expected] = documentBytesVariants(publicKey)[variant];
-    fixture.ctx.fetchFn = (async (url: string | URL | Request) =>
+    fixture.ctx.didFetchFn = (async (url: string | URL | Request) =>
       String(url) === DYNAMIC_APPROVER_URL
         ? new Response(body, { status: 200 })
         : new Response("not found", { status: 404 })) as typeof fetch;
