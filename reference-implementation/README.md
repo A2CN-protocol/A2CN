@@ -395,18 +395,24 @@ python/
 ## Dependencies
 
 ```
-fastapi==0.115.0       # Async HTTP server
-uvicorn==0.32.0        # ASGI server
-httpx==0.27.0          # Async HTTP client
-PyJWT==2.9.0           # JWT/JWS signing (ES256)
-cryptography==43.0.0   # P-256 key generation and operations
-jcs==0.2.1             # RFC 8785 JSON Canonicalization Scheme
-jsonschema==4.26.0     # Schema validation (fulfillment attestations)
-mcp==1.12.4            # MCP server and tool registration (the mcp extra)
-pydantic<2.14          # held below 2.14 for mcp 1.12.4 (the mcp extra)
-pytest==8.3.0          # Test runner
-pytest-asyncio==0.24.0 # Async test support
+fastapi>=0.133.0          # Async HTTP server
+starlette>=1.3.1          # fastapi's ASGI toolkit, floored directly
+uvicorn>=0.32             # ASGI server
+httpx>=0.27,<0.29         # Async HTTP client
+httpcore>=1.0.9,<2        # httpx's transport, used directly by the did:web fetch
+PyJWT>=2.15.0             # JWT/JWS signing (ES256)
+cryptography>=50.0.0      # P-256 key generation and operations
+jcs>=0.2.1,<0.4           # RFC 8785 JSON Canonicalization Scheme
+jsonschema>=4.26          # Schema validation (fulfillment attestations)
+mcp>=1.30,<2              # MCP server and tool registration (the mcp extra)
+pytest>=9.0.3             # Test runner
+pytest-asyncio>=1.3       # Async test support
+respx>=0.22               # httpx mocking in tests
+python-multipart>=0.0.31  # Form parsing in tests
 ```
+
+These are ranges; `uv.lock` holds the exact versions the test suite runs
+against (`uv run --frozen --extra dev python -m pytest`).
 
 Install the core runtime with `pip install -e .`, add MCP server support with
 `pip install -e '.[mcp]'`, or install everything the tests need with

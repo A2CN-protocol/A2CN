@@ -119,6 +119,9 @@ behavior parity with the reference.
 
 ## 6. How to run
 
+The package runs on Node.js 20.18.1 or later, but the test runner (vitest 5)
+needs Node.js 22.12 or later, so run the tests on Node.js 22.12+.
+
 ```bash
 cd reference-implementation/typescript
 npm install

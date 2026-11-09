@@ -367,7 +367,7 @@ class TestNueFetchCustomerSubscriptions:
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="NUE_API_KEY"):
                 import asyncio
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     NueEventParser.fetch_customer_subscriptions("cust-001")
                 )
 

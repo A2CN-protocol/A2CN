@@ -270,7 +270,7 @@ class TestDealHubMandateBounds:
     def test_simulate_raises_on_empty_playbook_id(self):
         with pytest.raises(ValueError, match="playbook_id is required"):
             import asyncio
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 DealHubEventParser.simulate_quote_for_mandate_bounds(
                     playbook_id="",
                     answers={},
@@ -283,7 +283,7 @@ class TestDealHubMandateBounds:
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="DEALHUB_AUTH_TOKEN"):
                 import asyncio
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     DealHubEventParser.simulate_quote_for_mandate_bounds(
                         playbook_id="pb-001",
                         answers={},
@@ -354,7 +354,7 @@ class TestDealHubFetchQuoteDetails:
         with patch.dict(os.environ, env, clear=True):
             with pytest.raises(ValueError, match="DEALHUB_AUTH_TOKEN"):
                 import asyncio
-                asyncio.get_event_loop().run_until_complete(
+                asyncio.run(
                     DealHubEventParser.fetch_quote_details("dh-q-001")
                 )
 

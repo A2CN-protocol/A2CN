@@ -70,6 +70,14 @@ This project is pre-1.0: the minor version moves for substantive additions.
   The TypeScript server's `fetchFn` is now for webhooks only; did:web fetches
   and invitation delivery use `publicFetchFn`.
 
+### Changed
+
+- **Dependency floors are raised past known advisories**, in both reference
+  implementations. Python's dependencies are now version ranges rather than
+  exact pins; `uv.lock` holds the exact versions the tests run against.
+- **The TypeScript tests need Node.js 22.12 or later**, because of the newer
+  test runner. The package itself still runs on Node.js 20.18.1 or later.
+
 ## [0.3.2] — 2026-11-08
 
 ### Security
