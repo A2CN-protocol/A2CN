@@ -43,10 +43,32 @@ This project is pre-1.0: the minor version moves for substantive additions.
   be verified", and the detail goes to the server log. Error codes are
   unchanged. For local development only, the opt-in is the resolver's
   `allow_private_hosts` / `allowPrivateHosts`, the servers'
-  `A2CN_ALLOW_PRIVATE_DID_HOSTS=1`, and `a2cn-verify --allow-private-did-hosts`.
-  The TypeScript server takes a separate `didFetchFn` for did:web fetches, and
+  `A2CN_ALLOW_PRIVATE_HOSTS=1`, and `a2cn-verify --allow-private-did-hosts`.
+  The TypeScript server takes a separate `publicFetchFn` for did:web fetches, and
   the TypeScript package now depends on `undici` and needs Node.js 20.18.1 or
   later.
+- **Invitation delivery goes only to public hosts.** `POST /invitations/create`
+  with a `recipient_endpoint` makes a server POST the invitation to
+  `<recipient_endpoint>/invitations`. Any caller with a did:web DID can get a
+  bearer token, so a caller could make the server send requests to hosts on its
+  own network. Delivery now goes through the same address policy as did:web
+  fetches: the endpoint must be an `http` or `https` URL whose host is a name;
+  a host written as an IP address is refused before any lookup, and so is a
+  name unless every address it resolves to is public unicast. The connection
+  goes only to a checked address, no redirect is followed, and, like did:web
+  fetches, delivery uses no HTTP(S) proxy. The whole delivery must finish
+  within 10 seconds. A refused or failed delivery is logged with the endpoint
+  and the reason, and the invitation is still created and returned `201`
+  exactly as before: the response does not say whether delivery was refused,
+  failed or succeeded, so it cannot tell a caller which addresses are private.
+  Delivery starts only after the response has been sent, so neither the
+  response nor its timing depends on it.
+  For local development only, `A2CN_ALLOW_PRIVATE_HOSTS=1` lets the servers
+  deliver to loopback and private hosts; it is the same setting as for did:web
+  fetches, renamed from a did:web-only name before release, and covers both
+  (the TypeScript context field is `allowPrivateHosts`).
+  The TypeScript server's `fetchFn` is now for webhooks only; did:web fetches
+  and invitation delivery use `publicFetchFn`.
 
 ## [0.3.2] — 2026-11-08
 

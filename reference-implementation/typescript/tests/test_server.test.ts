@@ -814,7 +814,7 @@ function serveDidDocuments(
   documents: Record<string, Dict>,
 ): { calls: string[] } {
   const calls: string[] = [];
-  ctx.didFetchFn = (async (url: string | URL | Request) => {
+  ctx.publicFetchFn = (async (url: string | URL | Request) => {
     const target = String(url);
     calls.push(target);
     const document = documents[target];
@@ -932,7 +932,7 @@ test("an approver on a private host is never fetched", async () => {
   const privateDid = "did:web:internal-only.example";
   const lookups: string[] = [];
   const connects: string[] = [];
-  fixture.ctx.didFetchFn = publicAddressFetch({
+  fixture.ctx.publicFetchFn = publicAddressFetch({
     lookup: async (hostname) => {
       lookups.push(hostname);
       return ["10.20.30.40"];
@@ -965,7 +965,7 @@ test("did web resolution follows no redirects and has a timeout", async () => {
   const fixture = freshServer();
   const { privateKey: key, publicKey } = generateEd25519Keypair();
   const seen: Array<RequestInit | undefined> = [];
-  fixture.ctx.didFetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+  fixture.ctx.publicFetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
     seen.push(init);
     return String(url) === DYNAMIC_APPROVER_URL
       ? new Response(JSON.stringify(makeDidDocument(DYNAMIC_APPROVER_DID, "key-1", publicKeyToJwk(publicKey))), {
@@ -1015,7 +1015,7 @@ for (const variant of ["utf8_bom", "utf16", "nan_literal", "too_large"]) {
     const fixture = freshServer();
     const { privateKey: key, publicKey } = generateEd25519Keypair();
     const [body, expected] = documentBytesVariants(publicKey)[variant];
-    fixture.ctx.didFetchFn = (async (url: string | URL | Request) =>
+    fixture.ctx.publicFetchFn = (async (url: string | URL | Request) =>
       String(url) === DYNAMIC_APPROVER_URL
         ? new Response(body, { status: 200 })
         : new Response("not found", { status: 404 })) as typeof fetch;

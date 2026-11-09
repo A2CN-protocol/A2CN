@@ -58,7 +58,14 @@ import {
   verifyInvitationSignature,
   createPublicKeyFromPrivate,
 } from "./crypto.js";
-import { resolveDidWeb, getVerificationMethod, getPublicKey, type FetchLike } from "./did.js";
+import {
+  checkUrlHost,
+  getPublicKey,
+  getVerificationMethod,
+  publicAddressFetch,
+  resolveDidWeb,
+  type FetchLike,
+} from "./did.js";
 import { InMemorySessionStore, type SessionStore } from "./session_store.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
@@ -68,6 +75,9 @@ export const A2CN_CONTENT_TYPE = "application/a2cn+json";
  * to the server log, never to the caller: it can carry a fetch error.
  */
 export const TOKEN_NOT_VERIFIED = "The bearer token could not be verified";
+
+/** The whole invitation delivery, connection attempts included. */
+export const INVITATION_DELIVERY_TIMEOUT_MS = 10_000;
 
 export interface ResponderConfig {
   agent_info?: Dict;
@@ -91,19 +101,29 @@ export interface ServerContext {
   jtiStore: Map<string, number>;
   /** Pre-registered DID documents: did → did_document dict. */
   didDocOverride: Record<string, Dict>;
-  /** Injectable fetch for webhook and invitation delivery. */
+  /**
+   * Injectable fetch for webhook delivery only: a webhook URL is the
+   * operator's own configuration.
+   */
   fetchFn: typeof fetch;
   /**
-   * Injectable fetch for did:web resolution; null uses the resolver's own,
-   * which connects only to public addresses.
+   * Injectable fetch for requests to hosts a caller names: did:web resolution
+   * and invitation delivery. null uses the public-address fetch, which
+   * connects only to public addresses.
    */
-  didFetchFn: FetchLike | null;
+  publicFetchFn: FetchLike | null;
   /**
-   * Fetch did:web documents from loopback and private hosts too, for local
-   * development and tests only: it lets a caller with no credentials make this
-   * server fetch from its own network. A2CN_ALLOW_PRIVATE_DID_HOSTS=1 sets it.
+   * Allow loopback and private hosts for did:web resolution and invitation
+   * delivery too, for local development and tests only: it lets a caller make
+   * this server send requests to its own network. A2CN_ALLOW_PRIVATE_HOSTS=1
+   * sets it.
    */
-  allowPrivateDidHosts: boolean;
+  allowPrivateHosts: boolean;
+  /**
+   * Invitation deliveries still running. Delivery starts after the response
+   * has been sent; tests await these to see it finish.
+   */
+  pendingDeliveries: Set<Promise<void>>;
   configureResponder(config: ResponderConfig, sessionStore?: SessionStore | null): void;
   registerDidDocument(did: string, didDocument: Dict): void;
   deliverWebhook(
@@ -142,10 +162,11 @@ export function createServerContext(): ServerContext {
     jtiStore: new Map(),
     didDocOverride: {},
     fetchFn: fetch,
-    didFetchFn: null,
-    allowPrivateDidHosts: ["1", "true", "yes"].includes(
-      (process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS ?? "").trim().toLowerCase(),
+    publicFetchFn: null,
+    allowPrivateHosts: ["1", "true", "yes"].includes(
+      (process.env.A2CN_ALLOW_PRIVATE_HOSTS ?? "").trim().toLowerCase(),
     ),
+    pendingDeliveries: new Set(),
 
     /** Set responder identity info (DID, agent info, mandate, private key, etc.). */
     configureResponder(config: ResponderConfig, sessionStore: SessionStore | null = null): void {
@@ -426,8 +447,8 @@ async function verifyJwtAuth(ctx: ServerContext, request: FastifyRequest): Promi
       didDoc = ctx.didDocOverride[iss];
     } else {
       try {
-        didDoc = await resolveDidWeb(iss, ctx.didFetchFn ?? undefined, undefined, {
-          allowPrivateHosts: ctx.allowPrivateDidHosts,
+        didDoc = await resolveDidWeb(iss, ctx.publicFetchFn ?? undefined, undefined, {
+          allowPrivateHosts: ctx.allowPrivateHosts,
         });
         ctx.manager.registerDidDocument(iss, didDoc);
       } catch (exc) {
@@ -870,8 +891,8 @@ function installRoutes(ctx: ServerContext): void {
       return null;
     }
     try {
-      return (await resolveDidWeb(approverDid, ctx.didFetchFn ?? undefined, undefined, {
-        allowPrivateHosts: ctx.allowPrivateDidHosts,
+      return (await resolveDidWeb(approverDid, ctx.publicFetchFn ?? undefined, undefined, {
+        allowPrivateHosts: ctx.allowPrivateHosts,
       })) as Dict;
     } catch (exc) {
       console.warn(`Could not resolve approver DID ${JSON.stringify(approverDid)}: ${exc}`);
@@ -1439,7 +1460,8 @@ function installRoutes(ctx: ServerContext): void {
   /**
    * Create and sign an outbound SessionInvitation.
    * The caller delivers it via their chosen channel.
-   * If recipient_endpoint is provided, also POSTs it directly.
+   * If recipient_endpoint is provided, also POSTs it directly, after the
+   * response has been sent.
    */
   app.post("/invitations/create", async (request, reply) => {
     await verifyJwtAuth(ctx, request);
@@ -1468,19 +1490,17 @@ function installRoutes(ctx: ServerContext): void {
 
     const invitationDict = invitation.toDict();
 
-    // Optionally deliver directly to recipient
-    const recipientEndpoint = body.recipient_endpoint as string | undefined;
+    // Optionally deliver directly to recipient, once the response has been
+    // sent: the response and its timing are the same whether delivery
+    // succeeds, fails or is refused.
+    const recipientEndpoint = body.recipient_endpoint;
     if (recipientEndpoint) {
-      try {
-        await ctx.fetchFn(`${recipientEndpoint}/invitations`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(invitationDict),
-          signal: AbortSignal.timeout(10_000),
-        });
-      } catch (exc) {
-        console.warn(`Failed to deliver invitation to ${recipientEndpoint}: ${exc}`);
-      }
+      reply.raw.once("finish", () => {
+        const delivery: Promise<void> = deliverInvitation(ctx, recipientEndpoint, invitationDict)
+          .catch((exc: unknown) => console.warn(`Invitation not delivered: ${String(exc)}`))
+          .finally(() => ctx.pendingDeliveries.delete(delivery));
+        ctx.pendingDeliveries.add(delivery);
+      });
     }
 
     return sendA2cn(reply, invitationDict, 201);
@@ -1531,8 +1551,8 @@ function installRoutes(ctx: ServerContext): void {
       didDoc = ctx.didDocOverride[inviterDid];
     } else {
       try {
-        didDoc = await resolveDidWeb(inviterDid, ctx.didFetchFn ?? undefined, undefined, {
-          allowPrivateHosts: ctx.allowPrivateDidHosts,
+        didDoc = await resolveDidWeb(inviterDid, ctx.publicFetchFn ?? undefined, undefined, {
+          allowPrivateHosts: ctx.allowPrivateHosts,
         });
       } catch (exc) {
         console.warn(`Could not resolve inviter DID ${JSON.stringify(inviterDid)}: ${exc}`);
@@ -1655,6 +1675,49 @@ function installRoutes(ctx: ServerContext): void {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * POST an invitation to `<recipientEndpoint>/invitations`.
+ *
+ * The endpoint is a host the caller names, so the request goes through the
+ * address policy: an http or https URL whose host is a name, not an IP
+ * address, and resolves only to public unicast addresses; the connection goes
+ * to a checked address, with no proxy and no redirect followed (redirect
+ * "manual": a 3xx is logged like any other non-2xx response).
+ * ctx.allowPrivateHosts lifts the address checks. A refused or failed
+ * delivery is logged and never thrown. It runs after the response has been
+ * sent, so neither the response nor its timing tells a private address from
+ * an unreachable one.
+ */
+async function deliverInvitation(ctx: ServerContext, recipientEndpoint: unknown, invitation: Dict): Promise<void> {
+  const endpoint = JSON.stringify(recipientEndpoint);
+  let status: number;
+  try {
+    if (typeof recipientEndpoint !== "string") {
+      throw new Error("not an http or https URL");
+    }
+    const url = `${recipientEndpoint}/invitations`;
+    checkUrlHost(url, { allowPrivateHosts: ctx.allowPrivateHosts });
+    const doFetch = ctx.publicFetchFn ?? (ctx.allowPrivateHosts ? (fetch as FetchLike) : publicAddressFetch());
+    const response = await doFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(invitation),
+      redirect: "manual",
+      signal: AbortSignal.timeout(INVITATION_DELIVERY_TIMEOUT_MS),
+    });
+    await response.body?.cancel();
+    status = response.status;
+  } catch (exc) {
+    // fetch reports a refused connection as "fetch failed"; the refusal is the cause.
+    const reason = exc instanceof Error && exc.cause instanceof Error ? exc.cause : exc;
+    console.warn(`Invitation not delivered to ${endpoint}: ${String(reason)}`);
+    return;
+  }
+  if (status < 200 || status >= 300) {
+    console.warn(`Invitation delivery to ${endpoint} returned HTTP ${status}`);
+  }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -318,7 +318,7 @@ async def test_the_server_setting_allows_a_private_host(raw_test_client, network
 
     key, public = generate_ed25519_keypair()
     issuer = "did:web:127.0.0.1"
-    monkeypatch.setattr(server_module, "ALLOW_PRIVATE_DID_HOSTS", True)
+    monkeypatch.setattr(server_module, "ALLOW_PRIVATE_HOSTS", True)
     token = create_jwt(issuer, SERVER_DID, key, kid=f"{issuer}#key-1", exp_seconds=60)
     with respx.mock(assert_all_called=True) as mock:
         mock.get("https://127.0.0.1/.well-known/did.json").mock(
@@ -333,11 +333,11 @@ def test_the_server_setting_is_off_by_default(monkeypatch):
 
     import a2cn.server as server_module
 
-    monkeypatch.delenv("A2CN_ALLOW_PRIVATE_DID_HOSTS", raising=False)
-    assert importlib.reload(server_module).ALLOW_PRIVATE_DID_HOSTS is False
-    monkeypatch.setenv("A2CN_ALLOW_PRIVATE_DID_HOSTS", "1")
-    assert importlib.reload(server_module).ALLOW_PRIVATE_DID_HOSTS is True
-    monkeypatch.delenv("A2CN_ALLOW_PRIVATE_DID_HOSTS")
+    monkeypatch.delenv("A2CN_ALLOW_PRIVATE_HOSTS", raising=False)
+    assert importlib.reload(server_module).ALLOW_PRIVATE_HOSTS is False
+    monkeypatch.setenv("A2CN_ALLOW_PRIVATE_HOSTS", "1")
+    assert importlib.reload(server_module).ALLOW_PRIVATE_HOSTS is True
+    monkeypatch.delenv("A2CN_ALLOW_PRIVATE_HOSTS")
     importlib.reload(server_module)
 
 

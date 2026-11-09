@@ -41,7 +41,16 @@ standard, and it has **not** undergone an external security audit.
   second lookup, and TLS still verifies the host name; it uses no proxy, which would make its own
   lookup. No response carries a resolver or fetch error. The rule covers every
   did:web fetch: a token's issuer, an approver, an inviter, and `a2cn-verify`. It can be turned off
-  for local development only (`A2CN_ALLOW_PRIVATE_DID_HOSTS`, `--allow-private-did-hosts`).
+  for local development only (`A2CN_ALLOW_PRIVATE_HOSTS`, `--allow-private-did-hosts`).
+- **Reaching a server's own network through invitation delivery.** A reference server delivers an
+  invitation to the `recipient_endpoint` its caller names, and any did:web DID can get a bearer
+  token, so the caller chooses the host. Delivery follows the same address policy as did:web
+  resolution: the host must be a name whose addresses are all public unicast, the connection goes
+  only to a checked address, no redirect is followed, and no proxy is used. A refused or failed
+  delivery is logged and the invitation is still returned unchanged, and delivery starts only after
+  the response has been sent, so neither the response nor its timing tells the caller which
+  addresses are private. The same development-only setting turns it off
+  (`A2CN_ALLOW_PRIVATE_HOSTS`).
 - **Mandate-cap bypass (within implemented checks).** The commitment ceiling is enforced before an
   act binds (§13.5), and an act that crosses the mandate's human-approval threshold is held in
   `AWAITING_HUMAN_APPROVAL` rather than sent (§8.2–§8.4). The hold is released only by an

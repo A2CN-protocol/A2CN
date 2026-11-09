@@ -34,7 +34,7 @@ from typing import Any
 
 import httpx
 import jwt as pyjwt
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from a2cn.session import Session, SessionManager, SessionState, A2CNError, _now
@@ -59,7 +59,13 @@ from a2cn.crypto import (
     verify_jwt,
     verify_invitation_signature,
 )
-from a2cn.did import resolve_did_web, get_verification_method, get_public_key
+from a2cn.did import (
+    check_url_host,
+    get_public_key,
+    get_verification_method,
+    public_address_client,
+    resolve_did_web,
+)
 from a2cn.session_store import InMemorySessionStore, SessionStore
 
 logger = logging.getLogger(__name__)
@@ -218,13 +224,17 @@ async def content_type_middleware(request: Request, call_next) -> Response:
 # or by setting server_module.SERVER_DID directly in tests.
 SERVER_DID: str = os.environ.get("A2CN_SERVER_DID", "did:web:localhost")
 
-# did:web documents are fetched only from public hosts (a2cn.did). Set
-# A2CN_ALLOW_PRIVATE_DID_HOSTS=1 to fetch from loopback and private hosts too,
-# for local development and tests only: it lets a caller with no credentials
-# make this server fetch from its own network.
-ALLOW_PRIVATE_DID_HOSTS: bool = os.environ.get("A2CN_ALLOW_PRIVATE_DID_HOSTS", "").strip().lower() in (
+# Requests to a host a caller names (did:web resolution, invitation delivery)
+# go only to public hosts, through the address policy in a2cn.did. Set
+# A2CN_ALLOW_PRIVATE_HOSTS=1 to allow loopback and private hosts too, for local
+# development and tests only: it lets a caller make this server send requests
+# to its own network.
+ALLOW_PRIVATE_HOSTS: bool = os.environ.get("A2CN_ALLOW_PRIVATE_HOSTS", "").strip().lower() in (
     "1", "true", "yes",
 )
+
+# The whole invitation delivery, connection attempts included.
+INVITATION_DELIVERY_TIMEOUT_SECONDS = 10.0
 
 # The 401 for a token whose issuer's key cannot be established. The cause goes
 # to the server log, never to the caller: it can carry a fetch error.
@@ -286,7 +296,7 @@ async def verify_jwt_auth(request: Request) -> dict:
             did_doc = _did_doc_override[iss]
         else:
             try:
-                did_doc = await resolve_did_web(iss, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
+                did_doc = await resolve_did_web(iss, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
                 manager.register_did_document(iss, did_doc)
             except Exception as exc:
                 logger.warning("Could not resolve issuer DID %r: %s: %s", iss, type(exc).__name__, exc)
@@ -554,7 +564,7 @@ async def _resolve_approver_did_document(approver: str) -> dict | None:
     if not approver_did.startswith("did:web:"):
         return None
     try:
-        return await resolve_did_web(approver_did, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
+        return await resolve_did_web(approver_did, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
     except Exception as exc:
         logger.warning("Could not resolve approver DID %r: %s: %s", approver_did, type(exc).__name__, exc)
         return None
@@ -1025,7 +1035,8 @@ async def create_invitation_endpoint(request: Request,
     """
     Create and sign an outbound SessionInvitation.
     The caller delivers it via their chosen channel.
-    If recipient_endpoint is provided, also POSTs it directly.
+    If recipient_endpoint is provided, also POSTs it directly, after the
+    response has been sent.
     """
     body = await _parse_body(request)
     cfg = _responder_config
@@ -1051,16 +1062,51 @@ async def create_invitation_endpoint(request: Request,
 
     invitation_dict = invitation.to_dict()
 
-    # Optionally deliver directly to recipient
+    # Optionally deliver directly to recipient, once the response has been
+    # sent: the response and its timing are the same whether delivery
+    # succeeds, fails or is refused.
+    response = a2cn_response(invitation_dict, 201)
     recipient_endpoint = body.get("recipient_endpoint")
     if recipient_endpoint:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                await http.post(f"{recipient_endpoint}/invitations", json=invitation_dict)
-        except Exception as exc:
-            logger.warning("Failed to deliver invitation to %s: %s", recipient_endpoint, exc)
+        response.background = BackgroundTasks()
+        response.background.add_task(_deliver_invitation, recipient_endpoint, invitation_dict)
+    return response
 
-    return a2cn_response(invitation_dict, 201)
+
+async def _deliver_invitation(recipient_endpoint: object, invitation: dict) -> None:
+    """POST an invitation to ``<recipient_endpoint>/invitations``.
+
+    The endpoint is a host the caller names, so the request goes through the
+    address policy: an http or https URL whose host is a name, not an IP
+    address, and resolves only to public unicast addresses; the connection goes
+    to a checked address, with no proxy and no redirect followed.
+    ALLOW_PRIVATE_HOSTS lifts the address checks. A refused or failed delivery
+    is logged and never raised. It runs after the response has been sent, so
+    neither the response nor its timing tells a private address from an
+    unreachable one.
+    """
+    try:
+        if not isinstance(recipient_endpoint, str):
+            raise ValueError("not an http or https URL")
+        url = f"{recipient_endpoint}/invitations"
+        check_url_host(url, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
+        client = (
+            httpx.AsyncClient(timeout=INVITATION_DELIVERY_TIMEOUT_SECONDS)
+            if ALLOW_PRIVATE_HOSTS
+            else public_address_client(timeout=INVITATION_DELIVERY_TIMEOUT_SECONDS)
+        )
+        async with asyncio.timeout(INVITATION_DELIVERY_TIMEOUT_SECONDS):
+            async with client as http:
+                response = await http.post(url, json=invitation, follow_redirects=False)
+    except Exception as exc:
+        logger.warning(
+            "Invitation not delivered to %r: %s: %s", recipient_endpoint, type(exc).__name__, exc
+        )
+        return
+    if not response.is_success:
+        logger.warning(
+            "Invitation delivery to %r returned HTTP %d", recipient_endpoint, response.status_code
+        )
 
 
 @app.post("/invitations")
@@ -1093,7 +1139,7 @@ async def receive_invitation(request: Request) -> Response:
         did_doc = _did_doc_override[inviter_did]
     else:
         try:
-            did_doc = await resolve_did_web(inviter_did, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
+            did_doc = await resolve_did_web(inviter_did, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
         except httpx.HTTPStatusError as exc:
             logger.warning("Could not resolve inviter DID %r: %s", inviter_did, exc)
             if exc.response.status_code == 404:

@@ -17,6 +17,8 @@ import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
 export type FetchLike = (
   url: string,
   init?: {
+    method?: string;
+    body?: string;
     redirect?: "error" | "follow" | "manual";
     signal?: AbortSignal;
     headers?: Record<string, string>;
@@ -124,8 +126,10 @@ export async function resolveDidWeb(
 }
 
 /**
- * The did:web address policy refuses this host: an IP address, or a name with
- * an address that is not public unicast.
+ * The address policy refuses this host: an IP address, or a name with an
+ * address that is not public unicast. The policy covers every request to a
+ * host a caller names: did:web resolution, and the reference server's
+ * invitation delivery.
  */
 export class DidWebHostRefused extends Error {
   constructor(message: string) {
@@ -252,6 +256,32 @@ function isIpLiteral(host: string): boolean {
   }
 }
 
+/**
+ * The host an http or https URL names, checked before any lookup.
+ *
+ * Throws:
+ * - DidWebHostRefused if the host is written as an IP address (any form
+ *   isIpLiteral reads as one), unless `allowPrivateHosts`
+ * - Error if the URL is not an http or https URL with a host
+ */
+export function checkUrlHost(url: string, options: { allowPrivateHosts?: boolean } = {}): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("not an http or https URL");
+  }
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.hostname === "") {
+    throw new Error("not an http or https URL");
+  }
+  // An IPv6 host keeps its brackets in URL.hostname.
+  const host = parsed.hostname.startsWith("[") ? parsed.hostname.slice(1, -1) : parsed.hostname;
+  if (!(options.allowPrivateHosts ?? false) && isIpLiteral(host)) {
+    throw new DidWebHostRefused(`host ${host} is written as an IP address; it must be a name`);
+  }
+  return host;
+}
+
 /** Every address a host resolves to. */
 export type AddressLookup = (hostname: string) => Promise<string[]>;
 
@@ -261,11 +291,11 @@ const systemLookup: AddressLookup = async (hostname) =>
 async function publicAddresses(hostname: string, lookup: AddressLookup): Promise<string[]> {
   const addresses = await lookup(hostname);
   if (addresses.length === 0) {
-    throw new DidWebHostRefused(`did:web host ${hostname} has no address`);
+    throw new DidWebHostRefused(`host ${hostname} has no address`);
   }
   for (const address of addresses) {
     if (!isPublicUnicast(address)) {
-      throw new DidWebHostRefused(`did:web host ${hostname} resolves to a non-public address, ${address}`);
+      throw new DidWebHostRefused(`host ${hostname} resolves to a non-public address, ${address}`);
     }
   }
   return addresses;
