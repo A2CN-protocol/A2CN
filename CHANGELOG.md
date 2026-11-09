@@ -70,6 +70,25 @@ This project is pre-1.0: the minor version moves for substantive additions.
   The TypeScript server's `fetchFn` is now for webhooks only; did:web fetches
   and invitation delivery use `publicFetchFn`.
 
+### Added
+
+- **Packaging for PyPI and npm.** Both packages carry their registry metadata
+  (description, Apache-2.0 licence expression and licence file, project links,
+  keywords) and a registry-facing README. The Python wheel holds only the
+  `a2cn` package.
+- **A TypeScript build with a library entry point.** `npm run build` compiles
+  `src/a2cn` to `dist/` with type declarations, and the package root (`import
+  … from "a2cn"`) exports the library's public API. The MCP server, the
+  platform adapters and the UBL export stay source-only.
+- **CI** on every pull request and push to `main`: the Python suite on 3.11 and
+  3.13 at the locked versions and on 3.11 at every dependency's floor, a
+  dependency audit of each language, and a build of both packages that
+  installs each into a fresh environment and smoke-tests it.
+- **A tag-triggered release workflow** that checks the tag against both package
+  versions, builds and smoke-tests both packages, and publishes them to PyPI
+  and npm with trusted publishing, each behind an approved environment.
+  `RELEASING.md` has the steps and the one-time setup.
+
 ### Changed
 
 - **Dependency floors are raised past known advisories**, in both reference
@@ -77,6 +96,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   exact pins; `uv.lock` holds the exact versions the tests run against.
 - **The TypeScript tests need Node.js 22.12 or later**, because of the newer
   test runner. The package itself still runs on Node.js 20.18.1 or later.
+- **The TypeScript package no longer depends on `@modelcontextprotocol/sdk`
+  or `zod` at runtime.** Only the MCP server (`src/mcp_server.ts`) uses them,
+  and it is not part of the package; both are now optional peer dependencies,
+  and development dependencies of the checkout, as the Python package's `mcp`
+  extra is.
 
 ## [0.3.2] — 2026-11-08
 
