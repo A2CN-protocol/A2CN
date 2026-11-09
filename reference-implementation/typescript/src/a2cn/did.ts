@@ -7,6 +7,11 @@
  * did:web:example.com:path:to   → https://example.com/path/to/did.json
  */
 
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
+
+import { Agent, buildConnector, fetch as undiciFetch } from "undici";
+
 import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
 
 export type FetchLike = (
@@ -41,23 +46,46 @@ export const DID_DOCUMENT_MAX_BYTES = 65536;
  * no larger than DID_DOCUMENT_MAX_BYTES, and fetched within `timeoutMs` in
  * total with no redirect followed.
  *
+ * The host must be a name, not an IP address, and every address it resolves to
+ * must be public unicast (isPublicUnicast); the default fetch connects to the
+ * address it checked, with no second lookup, and TLS still verifies the host
+ * name. `allowPrivateHosts` turns both checks off, for local development and
+ * tests only. A `fetchFn` you supply makes its own connections: the host-name
+ * check still applies, the address check only if it is a publicAddressFetch.
+ *
  * Throws:
+ * - DidWebHostRefused if the address policy refuses the host
  * - Error if the DID is not a did:web DID or cannot be parsed
  * - Error if the DID document cannot be fetched, is too large, compressed, or
  *   is not valid UTF-8 JSON, or if the fetch does not finish in time
  */
 export async function resolveDidWeb(
   did: string,
-  fetchFn: FetchLike = fetch,
+  fetchFn?: FetchLike,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
+  options: { allowPrivateHosts?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   const url = didWebToUrl(did);
+  const allowPrivateHosts = options.allowPrivateHosts ?? false;
+  if (!allowPrivateHosts && isIpLiteral(didWebHost(did))) {
+    throw new DidWebHostRefused("did:web host is written as an IP address; it must be a name");
+  }
+  const doFetch = fetchFn ?? (allowPrivateHosts ? (fetch as FetchLike) : publicAddressFetch());
   const signal = AbortSignal.timeout(timeoutMs);
-  const response = await fetchFn(url, {
-    redirect: "error",
-    signal,
-    headers: { "Accept-Encoding": "identity" },
-  });
+  let response: Awaited<ReturnType<FetchLike>>;
+  try {
+    response = await doFetch(url, {
+      redirect: "error",
+      signal,
+      headers: { "Accept-Encoding": "identity" },
+    });
+  } catch (exc) {
+    // fetch reports a refused connection as "fetch failed"; the refusal is the cause.
+    if (exc instanceof Error && exc.cause instanceof DidWebHostRefused) {
+      throw exc.cause;
+    }
+    throw exc;
+  }
   if (!response.ok) {
     throw new Error(`Failed to fetch DID document: HTTP ${response.status}`);
   }
@@ -92,6 +120,184 @@ export async function resolveDidWeb(
     chunks.push(value);
   }
   return parseDidDocument(Buffer.concat(chunks));
+}
+
+/**
+ * The did:web address policy refuses this host: an IP address, or a name with
+ * an address that is not public unicast.
+ */
+export class DidWebHostRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DidWebHostRefused";
+  }
+}
+
+// Addresses a did:web document is never fetched from. IPv6 outside 2000::/3 is
+// refused as well, and an IPv4-mapped or NAT64 address is judged by the IPv4
+// address it carries. The Python implementation holds the same table, and
+// spec/test-vectors/did-web-address-policy.json tests both.
+const REFUSED_IPV4: Array<[string, number]> = [
+  ["0.0.0.0", 8], // this network, unspecified
+  ["10.0.0.0", 8], // private
+  ["100.64.0.0", 10], // carrier-grade NAT
+  ["127.0.0.0", 8], // loopback
+  ["169.254.0.0", 16], // link-local
+  ["172.16.0.0", 12], // private
+  ["192.0.0.0", 24], // IETF protocol assignments
+  ["192.0.2.0", 24], // documentation
+  ["192.88.99.0", 24], // 6to4 relay anycast
+  ["192.168.0.0", 16], // private
+  ["198.18.0.0", 15], // benchmarking
+  ["198.51.100.0", 24], // documentation
+  ["203.0.113.0", 24], // documentation
+  ["224.0.0.0", 4], // multicast
+  ["240.0.0.0", 4], // reserved, broadcast
+];
+const GLOBAL_UNICAST_IPV6: [string, number] = ["2000::", 3];
+const REFUSED_IPV6: Array<[string, number]> = [
+  ["2001::", 23], // IETF protocol assignments (Teredo, benchmarking, ORCHID)
+  ["2001:db8::", 32], // documentation
+  ["2002::", 16], // 6to4
+  ["3fff::", 20], // documentation
+];
+const IPV4_CARRYING_IPV6: Array<[string, number]> = [
+  ["::ffff:0:0", 96], // IPv4-mapped
+  ["64:ff9b::", 96], // NAT64
+];
+
+function ipv4ToBigInt(address: string): bigint {
+  return address.split(".").reduce((value, part) => (value << 8n) | BigInt(Number(part)), 0n);
+}
+
+function ipv6ToBigInt(address: string): bigint {
+  let text = address;
+  const lastColon = text.lastIndexOf(":");
+  const tail = text.slice(lastColon + 1);
+  if (tail.includes(".")) {
+    // An embedded dotted IPv4 tail is the last two groups.
+    const v4 = ipv4ToBigInt(tail);
+    text = `${text.slice(0, lastColon + 1)}${(v4 >> 16n).toString(16)}:${(v4 & 0xffffn).toString(16)}`;
+  }
+  const groups = (part: string) => (part === "" ? [] : part.split(":").map((group) => parseInt(group, 16)));
+  let all: number[];
+  if (text.includes("::")) {
+    const [head, rest] = text.split("::");
+    const before = groups(head);
+    const after = groups(rest);
+    all = [...before, ...Array<number>(8 - before.length - after.length).fill(0), ...after];
+  } else {
+    all = groups(text);
+  }
+  return all.reduce((value, group) => (value << 16n) | BigInt(group), 0n);
+}
+
+function inNetwork(value: bigint, bits: number, [network, prefix]: [string, number]): boolean {
+  const base = bits === 32 ? ipv4ToBigInt(network) : ipv6ToBigInt(network);
+  const shift = BigInt(bits - prefix);
+  return value >> shift === base >> shift;
+}
+
+/** Whether a did:web document may be fetched from this IP address. */
+export function isPublicUnicast(address: string): boolean {
+  const bare = address.split("%")[0];
+  const version = isIP(bare);
+  if (version === 4) {
+    const value = ipv4ToBigInt(bare);
+    return !REFUSED_IPV4.some((network) => inNetwork(value, 32, network));
+  }
+  if (version === 6) {
+    const value = ipv6ToBigInt(bare);
+    if (IPV4_CARRYING_IPV6.some((network) => inNetwork(value, 128, network))) {
+      const v4 = value & 0xffffffffn;
+      return isPublicUnicast([24n, 16n, 8n, 0n].map((shift) => String((v4 >> shift) & 0xffn)).join("."));
+    }
+    return (
+      inNetwork(value, 128, GLOBAL_UNICAST_IPV6) && !REFUSED_IPV6.some((network) => inNetwork(value, 128, network))
+    );
+  }
+  return false;
+}
+
+/** The host a did:web DID names: percent-decoded, without its port. */
+export function didWebHost(did: string): string {
+  let host = did.slice("did:web:".length).split(":")[0];
+  try {
+    host = decodeURIComponent(host);
+  } catch {
+    // Not valid percent-encoding: judged as written.
+  }
+  if (host.startsWith("[") && host.includes("]")) {
+    return host.slice(1, host.indexOf("]"));
+  }
+  if (host.split(":").length === 2) {
+    return host.split(":")[0];
+  }
+  return host;
+}
+
+/**
+ * A host written as an IP address, including the shortened and numeric IPv4
+ * forms a URL parser reads as addresses (`127.1`, `2130706433`).
+ */
+function isIpLiteral(host: string): boolean {
+  if (isIP(host) !== 0) {
+    return true;
+  }
+  try {
+    return isIP(new URL(`https://${host}/`).hostname) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Every address a host resolves to. */
+export type AddressLookup = (hostname: string) => Promise<string[]>;
+
+const systemLookup: AddressLookup = async (hostname) =>
+  (await dnsLookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
+
+async function publicAddress(hostname: string, lookup: AddressLookup): Promise<string> {
+  const addresses = await lookup(hostname);
+  if (addresses.length === 0) {
+    throw new DidWebHostRefused(`did:web host ${hostname} has no address`);
+  }
+  for (const address of addresses) {
+    if (!isPublicUnicast(address)) {
+      throw new DidWebHostRefused(`did:web host ${hostname} resolves to a non-public address, ${address}`);
+    }
+  }
+  return addresses[0];
+}
+
+/**
+ * A fetch that connects only through the address policy: each connection looks
+ * the host up once, refuses it unless every address is public unicast, and
+ * connects to the first address it checked; TLS is started with the host name,
+ * so the certificate is still checked against it. `lookup` and `connect` are
+ * for tests.
+ */
+export function publicAddressFetch(
+  options: { lookup?: AddressLookup; connect?: buildConnector.connector } = {},
+): FetchLike {
+  const lookup = options.lookup ?? systemLookup;
+  const connect = options.connect ?? buildConnector({});
+  return async (url, init) => {
+    const dispatcher = new Agent({
+      connect: (opts, callback) => {
+        publicAddress(opts.hostname, lookup).then(
+          (address) => connect({ ...opts, hostname: address, servername: opts.servername ?? opts.hostname }, callback),
+          (exc: Error) => callback(exc, null),
+        );
+      },
+    });
+    try {
+      return (await undiciFetch(url, { ...init, dispatcher })) as unknown as Awaited<ReturnType<FetchLike>>;
+    } finally {
+      // Closes once the response body has been read; nothing is kept for a later fetch.
+      void dispatcher.close();
+    }
+  };
 }
 
 /** Parse a fetched DID document: strict UTF-8 JSON, no NaN or Infinity. */

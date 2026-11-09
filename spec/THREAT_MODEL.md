@@ -32,6 +32,15 @@ standard, and it has **not** undergone an external security audit.
 - **Resource exhaustion through DID resolution.** Resolving a did:web document follows no
   redirects, refuses compressed documents and documents over 64 KiB, and must finish within five
   seconds, so an attacker-hosted DID document cannot exhaust a server's memory or time (§14.1).
+- **Reaching a server's own network through DID resolution.** A server resolves a token's issuer
+  before it can check the token's signature, so a caller with no credentials chooses the host it
+  fetches from. A did:web host must therefore be a name, not an IP address, and every address it
+  resolves to must be public unicast: loopback, private, link-local, carrier-grade NAT, unspecified,
+  multicast, and reserved or documentation addresses are refused, including in IPv4-mapped and
+  NAT64 form. The resolver connects to the address it checked, with no second lookup, and TLS still
+  verifies the host name. No response carries a resolver or fetch error. The rule covers every
+  did:web fetch: a token's issuer, an approver, an inviter, and `a2cn-verify`. It can be turned off
+  for local development only (`A2CN_ALLOW_PRIVATE_DID_HOSTS`, `--allow-private-did-hosts`).
 - **Mandate-cap bypass (within implemented checks).** The commitment ceiling is enforced before an
   act binds (§13.5), and an act that crosses the mandate's human-approval threshold is held in
   `AWAITING_HUMAN_APPROVAL` rather than sent (§8.2–§8.4). The hold is released only by an

@@ -22,7 +22,9 @@ goes through the library's bounded resolver (no redirects, 5 s, 64 KiB). A DID
 document among the inputs is used only when the live fetch fails or the live
 document does not list the signing key, and the verdict then says so and cannot
 be a clean pass. ``--offline`` fetches nothing and uses only the DID documents
-among the inputs.
+among the inputs. A did:web host must be a name whose addresses are all public;
+``--allow-private-did-hosts`` lifts that, for a party on a local or private
+network during development.
 
 Exit status: 0 everything verified, 1 a record or act was refused, 3 nothing
 was refused but something could not finish (a missing DID document, a key no
@@ -224,19 +226,22 @@ def _supplied_documents(
 # ---------------------------------------------------------------------------
 
 
-def _fetch_did_web(did: str) -> dict:
+def _fetch_did_web(did: str, allow_private_hosts: bool = False) -> dict:
     """One did:web document, through the library's bounded resolver."""
     from a2cn.did import resolve_did_web
 
-    return asyncio.run(resolve_did_web(did))
+    return asyncio.run(resolve_did_web(did, allow_private_hosts=allow_private_hosts))
 
 
 class _Keys:
     """Where each DID document comes from: the party's site, or a supplied copy."""
 
-    def __init__(self, supplied: dict[str, tuple[dict, str]], offline: bool):
+    def __init__(
+        self, supplied: dict[str, tuple[dict, str]], offline: bool, allow_private_hosts: bool = False
+    ):
         self.supplied = supplied
         self.offline = offline
+        self.allow_private_hosts = allow_private_hosts
         self._live: dict[str, tuple[dict | None, str]] = {}
 
     def live(self, did: str) -> tuple[dict | None, str]:
@@ -247,7 +252,7 @@ class _Keys:
             else:
                 url = did_web_document_url(did)
                 try:
-                    self._live[did] = (_fetch_did_web(did), url)
+                    self._live[did] = (_fetch_did_web(did, self.allow_private_hosts), url)
                 except Exception as exc:  # noqa: BLE001 - reported, never a pass
                     first_line = str(exc).splitlines()[0] if str(exc) else ""
                     self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {first_line}")
@@ -805,6 +810,14 @@ def _parser() -> _ArgumentParser:
         action="store_true",
         help="fetch nothing; use only DID documents among the inputs (not checked against the parties' sites)",
     )
+    parser.add_argument(
+        "--allow-private-did-hosts",
+        action="store_true",
+        help=(
+            "also fetch DID documents from loopback, private and other non-public hosts, and from a "
+            "host written as an IP address; for local development only"
+        ),
+    )
     parser.add_argument("--type", choices=TYPES, help="what a single input file is, instead of detecting it")
     parser.add_argument(
         "--did-doc",
@@ -854,11 +867,13 @@ def run(argv: list[str] | None = None, *, out=None, err=None) -> int:
             raise UsageError("--offer-hash applies to exactly one TransactionRecord")
         if args.wire_version and not any(item.kind == TYPE_ACT for item in records):
             raise UsageError("--wire-version applies to a single act only")
+        if args.offline and args.allow_private_did_hosts:
+            raise UsageError("--allow-private-did-hosts has no effect with --offline, which fetches nothing")
     except UsageError as exc:
         print(f"a2cn-verify: {exc}", file=err)
         return EXIT_USAGE
 
-    keys = _Keys(supplied, args.offline)
+    keys = _Keys(supplied, args.offline, args.allow_private_did_hosts)
     evidence = [item for item in records if item.kind == TYPE_EVIDENCE_RECORD]
     # Evidence records first: a TransactionRecord takes its offer history from
     # one only after that record's own verdict.
@@ -894,6 +909,8 @@ def run(argv: list[str] | None = None, *, out=None, err=None) -> int:
     )
     if args.offline:
         print("DID documents: offline, from the inputs only; not checked against the parties' sites", file=out)
+    if args.allow_private_did_hosts:
+        print("DID documents: non-public hosts allowed (--allow-private-did-hosts)", file=out)
     print(f"verifier: a2cn {a2cn.__version__}", file=out)
     return status
 

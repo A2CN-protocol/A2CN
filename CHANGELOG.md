@@ -20,6 +20,28 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Security
+
+- **did:web resolution fetches only from public hosts.** Both reference servers
+  resolve a bearer token's issuer before they can check its signature, so a
+  caller with no credentials could make a server fetch from a host on its own
+  network, and the 401 repeated the fetch error. Now, in the shared resolver
+  that every did:web fetch uses (a token's issuer, an approver, an inviter,
+  `a2cn-verify`), a host written as an IP address is refused, and so is a name
+  unless every address it resolves to is public unicast: loopback, private,
+  link-local, carrier-grade NAT, unspecified, multicast and reserved or
+  documentation addresses are refused, including in IPv4-mapped and NAT64 form.
+  The resolver connects to the address it checked, with no second lookup, and
+  TLS still verifies the host name. The servers no longer put resolver or fetch
+  error text, or a fetched document's contents, in any response: a token whose
+  issuer cannot be resolved gets `INVALID_JWT` with "The bearer token could not
+  be verified", and the detail goes to the server log. Error codes are
+  unchanged. For local development only, the opt-in is the resolver's
+  `allow_private_hosts` / `allowPrivateHosts`, the servers'
+  `A2CN_ALLOW_PRIVATE_DID_HOSTS=1`, and `a2cn-verify --allow-private-did-hosts`.
+  The TypeScript server takes a separate `didFetchFn` for did:web fetches, and
+  the TypeScript package now depends on `undici`.
+
 ## [0.3.2] — 2026-11-08
 
 ### Security

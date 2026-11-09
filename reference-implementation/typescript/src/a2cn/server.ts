@@ -58,10 +58,16 @@ import {
   verifyInvitationSignature,
   createPublicKeyFromPrivate,
 } from "./crypto.js";
-import { resolveDidWeb, getVerificationMethod, getPublicKey } from "./did.js";
+import { resolveDidWeb, getVerificationMethod, getPublicKey, type FetchLike } from "./did.js";
 import { InMemorySessionStore, type SessionStore } from "./session_store.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
+
+/**
+ * The 401 for a token whose issuer's key cannot be established. The cause goes
+ * to the server log, never to the caller: it can carry a fetch error.
+ */
+export const TOKEN_NOT_VERIFIED = "The bearer token could not be verified";
 
 export interface ResponderConfig {
   agent_info?: Dict;
@@ -85,8 +91,19 @@ export interface ServerContext {
   jtiStore: Map<string, number>;
   /** Pre-registered DID documents: did → did_document dict. */
   didDocOverride: Record<string, Dict>;
-  /** Injectable fetch for DID resolution and webhook/invitation delivery. */
+  /** Injectable fetch for webhook and invitation delivery. */
   fetchFn: typeof fetch;
+  /**
+   * Injectable fetch for did:web resolution; null uses the resolver's own,
+   * which connects only to public addresses.
+   */
+  didFetchFn: FetchLike | null;
+  /**
+   * Fetch did:web documents from loopback and private hosts too, for local
+   * development and tests only: it lets a caller with no credentials make this
+   * server fetch from its own network. A2CN_ALLOW_PRIVATE_DID_HOSTS=1 sets it.
+   */
+  allowPrivateDidHosts: boolean;
   configureResponder(config: ResponderConfig, sessionStore?: SessionStore | null): void;
   registerDidDocument(did: string, didDocument: Dict): void;
   deliverWebhook(
@@ -125,6 +142,10 @@ export function createServerContext(): ServerContext {
     jtiStore: new Map(),
     didDocOverride: {},
     fetchFn: fetch,
+    didFetchFn: null,
+    allowPrivateDidHosts: ["1", "true", "yes"].includes(
+      (process.env.A2CN_ALLOW_PRIVATE_DID_HOSTS ?? "").trim().toLowerCase(),
+    ),
 
     /** Set responder identity info (DID, agent info, mandate, private key, etc.). */
     configureResponder(config: ResponderConfig, sessionStore: SessionStore | null = null): void {
@@ -405,20 +426,25 @@ async function verifyJwtAuth(ctx: ServerContext, request: FastifyRequest): Promi
       didDoc = ctx.didDocOverride[iss];
     } else {
       try {
-        didDoc = await resolveDidWeb(iss, ctx.fetchFn);
+        didDoc = await resolveDidWeb(iss, ctx.didFetchFn ?? undefined, undefined, {
+          allowPrivateHosts: ctx.allowPrivateDidHosts,
+        });
         ctx.manager.registerDidDocument(iss, didDoc);
       } catch (exc) {
-        throw new A2CNError("INVALID_JWT", `Could not resolve issuer DID: ${exc}`, 401);
+        console.warn(`Could not resolve issuer DID ${JSON.stringify(iss)}: ${exc}`);
+        throw new A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401);
       }
     }
 
-    // Find verification method and extract public key
+    // Find verification method and extract public key. The document may have
+    // been fetched, so its contents stay out of the response.
     let pubKey;
     try {
       const vm = getVerificationMethod(didDoc, kid);
       pubKey = getPublicKey(vm);
     } catch (exc) {
-      throw new A2CNError("INVALID_JWT", `Verification method not found: ${exc}`, 401);
+      console.warn(`No usable verification method ${JSON.stringify(kid)} for ${JSON.stringify(iss)}: ${exc}`);
+      throw new A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401);
     }
 
     // Verify signature, expiry, and audience
@@ -844,8 +870,11 @@ function installRoutes(ctx: ServerContext): void {
       return null;
     }
     try {
-      return (await resolveDidWeb(approverDid, ctx.fetchFn)) as Dict;
-    } catch {
+      return (await resolveDidWeb(approverDid, ctx.didFetchFn ?? undefined, undefined, {
+        allowPrivateHosts: ctx.allowPrivateDidHosts,
+      })) as Dict;
+    } catch (exc) {
+      console.warn(`Could not resolve approver DID ${JSON.stringify(approverDid)}: ${exc}`);
       return null;
     }
   }
@@ -1502,8 +1531,11 @@ function installRoutes(ctx: ServerContext): void {
       didDoc = ctx.didDocOverride[inviterDid];
     } else {
       try {
-        didDoc = await resolveDidWeb(inviterDid, ctx.fetchFn);
+        didDoc = await resolveDidWeb(inviterDid, ctx.didFetchFn ?? undefined, undefined, {
+          allowPrivateHosts: ctx.allowPrivateDidHosts,
+        });
       } catch (exc) {
+        console.warn(`Could not resolve inviter DID ${JSON.stringify(inviterDid)}: ${exc}`);
         if (exc instanceof Error && /HTTP 404/.test(exc.message)) {
           return sendError(reply, INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403);
         }
@@ -1511,17 +1543,14 @@ function installRoutes(ctx: ServerContext): void {
       }
     }
 
+    // The document may have been fetched, so its contents stay out of the response.
     let pubKey;
     try {
       const vm = getVerificationMethod(didDoc, vmId);
       pubKey = getPublicKey(vm);
     } catch (exc) {
-      return sendError(
-        reply,
-        INVITATION_SIGNATURE_INVALID,
-        `Verification method not found: ${exc instanceof Error ? exc.message : exc}`,
-        400,
-      );
+      console.warn(`No usable verification method ${JSON.stringify(vmId)} for ${JSON.stringify(inviterDid)}: ${exc}`);
+      return sendError(reply, INVITATION_SIGNATURE_INVALID, "Verification method not found", 400);
     }
 
     if (!verifyInvitationSignature(body, pubKey)) {

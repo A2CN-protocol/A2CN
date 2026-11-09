@@ -8,8 +8,12 @@ did:web:example.com:path:to   → https://example.com/path/to/did.json
 """
 
 import asyncio
+import ipaddress
 import json
+import socket
+from urllib.parse import unquote
 
+import httpcore
 import httpx
 
 from a2cn.crypto import SigningPublicKey, public_key_from_jwk
@@ -23,7 +27,11 @@ DID_DOCUMENT_MAX_BYTES = 65536
 
 
 async def resolve_did_web(
-    did: str, client: httpx.AsyncClient | None = None, timeout: float | None = None
+    did: str,
+    client: httpx.AsyncClient | None = None,
+    timeout: float | None = None,
+    *,
+    allow_private_hosts: bool = False,
 ) -> dict:
     """
     Resolve a did:web DID to its DID document.
@@ -34,19 +42,173 @@ async def resolve_did_web(
     ``timeout`` seconds in total (``DID_RESOLUTION_TIMEOUT_SECONDS`` by
     default) with no redirect followed.
 
+    The host must be a name, not an IP address, and every address it resolves
+    to must be public unicast (``is_public_unicast``); the resolver connects to
+    the address it checked, with no second lookup, and TLS still verifies the
+    host name. ``allow_private_hosts`` turns both checks off, for local
+    development and tests only. A ``client`` you supply makes its own
+    connections: the host-name check still applies, the address check does not.
+
     Raises:
+        DidWebHostRefused (a ValueError): if the address policy refuses the host
         ValueError: if the DID is not a did:web DID, or the document is too
             large, compressed, or not valid UTF-8 JSON
         httpx.HTTPError: if the DID document cannot be fetched
+        OSError: if the host name cannot be looked up
         TimeoutError: if the fetch does not finish in time
     """
     url = _did_web_to_url(did)
+    if not allow_private_hosts and _is_ip_literal(_did_web_host(did)):
+        raise DidWebHostRefused("did:web host is written as an IP address; it must be a name")
     deadline = DID_RESOLUTION_TIMEOUT_SECONDS if timeout is None else timeout
     async with asyncio.timeout(deadline):
         if client is not None:
             return await _fetch_did_document(client, url)
-        async with httpx.AsyncClient() as c:
+        if allow_private_hosts:
+            async with httpx.AsyncClient() as c:
+                return await _fetch_did_document(c, url)
+        async with _public_address_client() as c:
             return await _fetch_did_document(c, url)
+
+
+class DidWebHostRefused(ValueError):
+    """The did:web address policy refuses this host: an IP address, or a name
+    with an address that is not public unicast."""
+
+
+# Addresses a did:web document is never fetched from. IPv6 outside 2000::/3 is
+# refused as well, and an IPv4-mapped or NAT64 address is judged by the IPv4
+# address it carries. The TypeScript implementation holds the same table, and
+# spec/test-vectors/did-web-address-policy.json tests both.
+_REFUSED_IPV4 = tuple(
+    ipaddress.IPv4Network(network)
+    for network in (
+        "0.0.0.0/8",  # this network, unspecified
+        "10.0.0.0/8",  # private
+        "100.64.0.0/10",  # carrier-grade NAT
+        "127.0.0.0/8",  # loopback
+        "169.254.0.0/16",  # link-local
+        "172.16.0.0/12",  # private
+        "192.0.0.0/24",  # IETF protocol assignments
+        "192.0.2.0/24",  # documentation
+        "192.88.99.0/24",  # 6to4 relay anycast
+        "192.168.0.0/16",  # private
+        "198.18.0.0/15",  # benchmarking
+        "198.51.100.0/24",  # documentation
+        "203.0.113.0/24",  # documentation
+        "224.0.0.0/4",  # multicast
+        "240.0.0.0/4",  # reserved, broadcast
+    )
+)
+_GLOBAL_UNICAST_IPV6 = ipaddress.IPv6Network("2000::/3")
+_REFUSED_IPV6 = tuple(
+    ipaddress.IPv6Network(network)
+    for network in (
+        "2001::/23",  # IETF protocol assignments (Teredo, benchmarking, ORCHID)
+        "2001:db8::/32",  # documentation
+        "2002::/16",  # 6to4
+        "3fff::/20",  # documentation
+    )
+)
+_IPV4_CARRYING_IPV6 = (
+    ipaddress.IPv6Network("::ffff:0:0/96"),  # IPv4-mapped
+    ipaddress.IPv6Network("64:ff9b::/96"),  # NAT64
+)
+
+
+def is_public_unicast(address: str) -> bool:
+    """Whether a did:web document may be fetched from this IP address."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address):
+        if any(ip in network for network in _IPV4_CARRYING_IPV6):
+            return is_public_unicast(str(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)))
+        return ip in _GLOBAL_UNICAST_IPV6 and not any(ip in network for network in _REFUSED_IPV6)
+    return not any(ip in network for network in _REFUSED_IPV4)
+
+
+def _did_web_host(did: str) -> str:
+    """The host a did:web DID names: percent-decoded, without its port."""
+    host = unquote(did[len("did:web:"):].split(":")[0])
+    if host.startswith("[") and "]" in host:
+        return host[1 : host.index("]")]
+    if host.count(":") == 1:
+        return host.split(":")[0]
+    return host
+
+
+def _is_ip_literal(host: str) -> bool:
+    """A host written as an IP address, including the shortened and numeric
+    IPv4 forms a system resolver reads as addresses (``127.1``, ``2130706433``)."""
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    try:
+        socket.inet_aton(host)
+        return True
+    except OSError:
+        return False
+
+
+async def _lookup(host: str, port: int) -> list[str]:
+    """Every address the system resolver gives for a host."""
+    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [info[4][0] for info in infos]
+
+
+async def _public_address(host: str, port: int) -> str:
+    """One lookup; the first address, if every address is public unicast."""
+    addresses = await _lookup(host, port)
+    if not addresses:
+        raise DidWebHostRefused(f"did:web host {host} has no address")
+    for address in addresses:
+        if not is_public_unicast(address):
+            raise DidWebHostRefused(f"did:web host {host} resolves to a non-public address, {address}")
+    return addresses[0]
+
+
+def _network_backend() -> httpcore.AsyncNetworkBackend:
+    return httpcore.AnyIOBackend()
+
+
+class _PublicAddressBackend(httpcore.AsyncNetworkBackend):
+    """Connects to the address the policy checked, so the connection cannot
+    reach an address a second lookup would give. httpcore starts TLS with the
+    request's host name, so the certificate is still checked against it."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend):
+        self._inner = inner
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        address = await _public_address(host, port)
+        return await self._inner.connect_tcp(
+            address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+        )
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise DidWebHostRefused("did:web documents are not fetched over a Unix socket")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+class _PublicAddressTransport(httpx.AsyncHTTPTransport):
+    def __init__(self):
+        super().__init__()
+        # httpx 0.27 takes no network backend, so the pool it built is replaced
+        # with one that connects through the address policy.
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=httpx.create_ssl_context(), network_backend=_PublicAddressBackend(_network_backend())
+        )
+
+
+def _public_address_client() -> httpx.AsyncClient:
+    # trust_env=False: a proxy from the environment would make its own lookup.
+    return httpx.AsyncClient(transport=_PublicAddressTransport(), trust_env=False)
 
 
 async def _fetch_did_document(client: httpx.AsyncClient, url: str):

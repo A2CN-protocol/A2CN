@@ -218,6 +218,18 @@ async def content_type_middleware(request: Request, call_next) -> Response:
 # or by setting server_module.SERVER_DID directly in tests.
 SERVER_DID: str = os.environ.get("A2CN_SERVER_DID", "did:web:localhost")
 
+# did:web documents are fetched only from public hosts (a2cn.did). Set
+# A2CN_ALLOW_PRIVATE_DID_HOSTS=1 to fetch from loopback and private hosts too,
+# for local development and tests only: it lets a caller with no credentials
+# make this server fetch from its own network.
+ALLOW_PRIVATE_DID_HOSTS: bool = os.environ.get("A2CN_ALLOW_PRIVATE_DID_HOSTS", "").strip().lower() in (
+    "1", "true", "yes",
+)
+
+# The 401 for a token whose issuer's key cannot be established. The cause goes
+# to the server log, never to the caller: it can carry a fetch error.
+TOKEN_NOT_VERIFIED = "The bearer token could not be verified"
+
 # Anti-replay cache: (iss, jti) → expiry timestamp
 _jti_store: dict[tuple[str, str], float] = {}
 
@@ -274,18 +286,20 @@ async def verify_jwt_auth(request: Request) -> dict:
             did_doc = _did_doc_override[iss]
         else:
             try:
-                async with httpx.AsyncClient() as http:
-                    did_doc = await resolve_did_web(iss, http)
+                did_doc = await resolve_did_web(iss, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
                 manager.register_did_document(iss, did_doc)
             except Exception as exc:
-                raise A2CNError("INVALID_JWT", f"Could not resolve issuer DID: {exc}", 401)
+                logger.warning("Could not resolve issuer DID %r: %s: %s", iss, type(exc).__name__, exc)
+                raise A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401)
 
-        # Find verification method and extract public key
+        # Find verification method and extract public key. The document may
+        # have been fetched, so its contents stay out of the response.
         try:
             vm = get_verification_method(did_doc, kid)
             pub_key = get_public_key(vm)
         except (KeyError, ValueError) as exc:
-            raise A2CNError("INVALID_JWT", f"Verification method not found: {exc}", 401)
+            logger.warning("No usable verification method %r for %r: %s", kid, iss, exc)
+            raise A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401)
 
         # Verify signature, expiry, and audience
         try:
@@ -540,9 +554,9 @@ async def _resolve_approver_did_document(approver: str) -> dict | None:
     if not approver_did.startswith("did:web:"):
         return None
     try:
-        async with httpx.AsyncClient() as http:
-            return await resolve_did_web(approver_did, http)
-    except Exception:
+        return await resolve_did_web(approver_did, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
+    except Exception as exc:
+        logger.warning("Could not resolve approver DID %r: %s: %s", approver_did, type(exc).__name__, exc)
         return None
 
 
@@ -1079,21 +1093,23 @@ async def receive_invitation(request: Request) -> Response:
         did_doc = _did_doc_override[inviter_did]
     else:
         try:
-            async with httpx.AsyncClient() as http:
-                did_doc = await resolve_did_web(inviter_did, http)
+            did_doc = await resolve_did_web(inviter_did, allow_private_hosts=ALLOW_PRIVATE_DID_HOSTS)
         except httpx.HTTPStatusError as exc:
+            logger.warning("Could not resolve inviter DID %r: %s", inviter_did, exc)
             if exc.response.status_code == 404:
                 return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
             return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Could not resolve inviter DID %r: %s: %s", inviter_did, type(exc).__name__, exc)
             return error_response("DID_RESOLUTION_FAILED", "Temporary DID resolution failure", 503)
 
+    # The document may have been fetched, so its contents stay out of the response.
     try:
         vm = get_verification_method(did_doc, vm_id)
         pub_key = get_public_key(vm)
     except (KeyError, ValueError) as exc:
-        return error_response(INVITATION_SIGNATURE_INVALID,
-                              f"Verification method not found: {exc}", 400)
+        logger.warning("No usable verification method %r for %r: %s", vm_id, inviter_did, exc)
+        return error_response(INVITATION_SIGNATURE_INVALID, "Verification method not found", 400)
 
     if not verify_invitation_signature(body, pub_key):
         return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
