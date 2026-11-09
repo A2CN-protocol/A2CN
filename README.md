@@ -258,6 +258,9 @@ fetched or no longer lists the signing key, and the verdict then says so.
 A did:web host must be a name whose addresses are all public; for parties on a
 local or private network during development, `--allow-private-did-hosts` lifts
 that.
+The fetch uses no HTTP(S) proxy, because a proxy makes its own lookup; where
+the internet is reachable only through a proxy, run with `--offline` and the
+parties' DID documents among the inputs.
 Exit status: 0 everything verified, 1 something was refused, 3 nothing was
 refused but something could not finish, 2 bad usage.
 
@@ -445,7 +448,7 @@ A2CN/
 
 - **Report a vulnerability:** use GitHub [private vulnerability reporting](https://github.com/A2CN-protocol/A2CN/security/advisories/new) — please don't open a public issue or discussion for a vulnerability. Full policy: [SECURITY.md](SECURITY.md).
 - **Threat model** — what A2CN does and does not defend against: [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md).
-- **did:web fetches** go only to public hosts. `A2CN_ALLOW_PRIVATE_DID_HOSTS=1` lets the reference servers fetch from loopback and private hosts, for local development only; never set it on a deployed server.
+- **did:web fetches** go only to public hosts. `A2CN_ALLOW_PRIVATE_DID_HOSTS=1` lets the reference servers fetch from loopback and private hosts, for local development only; never set it on a deployed server. did:web fetches use no HTTP(S) proxy, because a proxy makes its own lookup: a server or `a2cn-verify` that reaches the internet only through a proxy can't fetch did:web documents, so a server should pre-register them, and `a2cn-verify` can run with `--offline` using DID documents among its inputs.
 
 ---
 

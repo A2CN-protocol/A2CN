@@ -43,9 +43,10 @@ async def resolve_did_web(
     default) with no redirect followed.
 
     The host must be a name, not an IP address, and every address it resolves
-    to must be public unicast (``is_public_unicast``); the resolver connects to
-    the address it checked, with no second lookup, and TLS still verifies the
-    host name. ``allow_private_hosts`` turns both checks off, for local
+    to must be public unicast (``is_public_unicast``); the resolver connects
+    only to the addresses it checked, trying them in order until one connects,
+    with no second lookup, and TLS still verifies the host name. It does not use
+    a proxy from the environment, because a proxy makes its own lookup. ``allow_private_hosts`` turns both checks off, for local
     development and tests only. A ``client`` you supply makes its own
     connections: the host-name check still applies, the address check does not.
 
@@ -160,15 +161,15 @@ async def _lookup(host: str, port: int) -> list[str]:
     return [info[4][0] for info in infos]
 
 
-async def _public_address(host: str, port: int) -> str:
-    """One lookup; the first address, if every address is public unicast."""
+async def _public_addresses(host: str, port: int) -> list[str]:
+    """One lookup; every address, in order, if every one is public unicast."""
     addresses = await _lookup(host, port)
     if not addresses:
         raise DidWebHostRefused(f"did:web host {host} has no address")
     for address in addresses:
         if not is_public_unicast(address):
             raise DidWebHostRefused(f"did:web host {host} resolves to a non-public address, {address}")
-    return addresses[0]
+    return addresses
 
 
 def _network_backend() -> httpcore.AsyncNetworkBackend:
@@ -176,18 +177,27 @@ def _network_backend() -> httpcore.AsyncNetworkBackend:
 
 
 class _PublicAddressBackend(httpcore.AsyncNetworkBackend):
-    """Connects to the address the policy checked, so the connection cannot
-    reach an address a second lookup would give. httpcore starts TLS with the
-    request's host name, so the certificate is still checked against it."""
+    """Connects only to addresses the policy checked, so the connection cannot
+    reach an address a second lookup would give. The checked addresses are
+    tried in order until one connects, as a direct connection would, so a host
+    whose first address is unreachable still resolves; the resolver's deadline
+    bounds the whole attempt. httpcore starts TLS with the request's host name,
+    so the certificate is still checked against it."""
 
     def __init__(self, inner: httpcore.AsyncNetworkBackend):
         self._inner = inner
 
     async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
-        address = await _public_address(host, port)
-        return await self._inner.connect_tcp(
-            address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
-        )
+        failure: Exception | None = None
+        for address in await _public_addresses(host, port):
+            try:
+                return await self._inner.connect_tcp(
+                    address, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
+                failure = exc
+        assert failure is not None  # _public_addresses never returns an empty list
+        raise failure
 
     async def connect_unix_socket(self, path, timeout=None, socket_options=None):
         raise DidWebHostRefused("did:web documents are not fetched over a Unix socket")

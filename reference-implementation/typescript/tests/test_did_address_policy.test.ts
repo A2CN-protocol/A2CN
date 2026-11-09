@@ -60,8 +60,8 @@ afterAll(async () => {
   await new Promise((resolve) => documentServer.close(resolve));
 });
 
-/** Mocked DNS and connection; read `lookups` and `connects`. */
-function network(dns: Record<string, string[]>) {
+/** Mocked DNS and connection; read `lookups` and `connects`. An address in `unreachable` refuses the connection. */
+function network(dns: Record<string, string[]>, unreachable: string[] = []) {
   const lookups: string[] = [];
   const connects: Array<{ hostname: string; servername?: string }> = [];
   const lookup = async (hostname: string) => {
@@ -73,9 +73,18 @@ function network(dns: Record<string, string[]>) {
   };
   const connect: buildConnector.connector = (opts, callback) => {
     connects.push({ hostname: opts.hostname, servername: opts.servername });
+    if (unreachable.includes(opts.hostname)) {
+      callback(new Error(`connect ECONNREFUSED ${opts.hostname}`), null);
+      return;
+    }
+    // Calls back once, as undici's own connector does.
     const socket = netConnect(documentPort, "127.0.0.1");
-    socket.once("connect", () => callback(null, socket));
-    socket.once("error", (exc) => callback(exc, null));
+    const failed = (exc: Error) => callback(exc, null);
+    socket.once("error", failed);
+    socket.once("connect", () => {
+      socket.off("error", failed);
+      callback(null, socket);
+    });
   };
   return { lookups, connects, fetchFn: publicAddressFetch({ lookup, connect }) };
 }
@@ -147,6 +156,34 @@ test("a public host resolves through the address it checked", async () => {
   expect(net.lookups).toEqual([HOST]);
   expect(net.connects).toEqual([{ hostname: PUBLIC, servername: HOST }]);
 });
+
+test("an unreachable first address falls back to the next checked one", async () => {
+  const net = network({ [HOST]: ["2606:4700:4700::1111", PUBLIC] }, ["2606:4700:4700::1111"]);
+  const document = await resolveDidWeb(DID, net.fetchFn);
+  expect(document.id).toBe(DID);
+  expect(net.lookups).toEqual([HOST]); // still one lookup
+  expect(net.connects).toEqual([
+    { hostname: "2606:4700:4700::1111", servername: HOST },
+    { hostname: PUBLIC, servername: HOST },
+  ]);
+});
+
+test("a host whose addresses are all unreachable fails after trying each", async () => {
+  const net = network({ [HOST]: [PUBLIC, "1.1.1.1"] }, [PUBLIC, "1.1.1.1"]);
+  await expect(resolveDidWeb(DID, net.fetchFn)).rejects.toThrow();
+  expect(net.lookups).toEqual([HOST]);
+  expect(net.connects.map((entry) => entry.hostname)).toEqual([PUBLIC, "1.1.1.1"]);
+});
+
+for (const position of [0, 1, 2]) {
+  test(`a refused address anywhere in the list refuses the host: position ${position}`, async () => {
+    const addresses = [PUBLIC, "1.1.1.1"];
+    addresses.splice(position, 0, "169.254.169.254");
+    const net = network({ [HOST]: addresses }, [PUBLIC]);
+    await expect(resolveDidWeb(DID, net.fetchFn)).rejects.toThrow(/169\.254\.169\.254/);
+    expect(net.connects).toEqual([]);
+  });
+}
 
 test("each fetch looks the host up once", async () => {
   const net = network({ [HOST]: [PUBLIC] });

@@ -55,14 +55,18 @@ class _RecordingStream(httpcore.AsyncMockStream):
 
 
 class _RecordingBackend(httpcore.AsyncMockBackend):
-    """Serves one canned response and records where it was asked to connect."""
+    """Serves one canned response and records where it was asked to connect;
+    an address in ``unreachable`` refuses the connection."""
 
     def __init__(self, buffer):
         super().__init__(buffer)
         self.log: list[tuple[str, str | None]] = []
+        self.unreachable: set[str] = set()
 
     async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
         self.log.append(("connect", host))
+        if host in self.unreachable:
+            raise httpcore.ConnectError(f"connection to {host} refused")
         return _RecordingStream(list(self._buffer), self.log)
 
 
@@ -157,6 +161,35 @@ async def test_a_public_host_resolves_through_the_address_it_checked(network):
     # still started for the host name.
     assert network.lookups == [HOST]
     assert network.backend.log == [("connect", PUBLIC), ("tls", HOST)]
+
+
+async def test_an_unreachable_first_address_falls_back_to_the_next_checked_one(network):
+    network.dns[HOST] = ["2606:4700:4700::1111", PUBLIC]
+    network.backend.unreachable = {"2606:4700:4700::1111"}
+    document = await resolve_did_web(DID)
+    assert document["id"] == DID
+    assert network.lookups == [HOST]  # still one lookup
+    assert network.backend.log == [("connect", "2606:4700:4700::1111"), ("connect", PUBLIC), ("tls", HOST)]
+
+
+async def test_a_host_whose_addresses_are_all_unreachable_fails_after_trying_each(network):
+    network.dns[HOST] = [PUBLIC, "1.1.1.1"]
+    network.backend.unreachable = {PUBLIC, "1.1.1.1"}
+    with pytest.raises(httpx.ConnectError):
+        await resolve_did_web(DID)
+    assert network.lookups == [HOST]
+    assert network.backend.log == [("connect", PUBLIC), ("connect", "1.1.1.1")]
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+async def test_a_refused_address_anywhere_in_the_list_refuses_the_host(network, position):
+    addresses = [PUBLIC, "1.1.1.1"]
+    addresses.insert(position, "169.254.169.254")
+    network.dns[HOST] = addresses
+    network.backend.unreachable = {PUBLIC}
+    with pytest.raises(DidWebHostRefused, match="169.254.169.254"):
+        await resolve_did_web(DID)
+    assert network.backend.log == []
 
 
 async def test_each_fetch_looks_the_host_up_once(network):

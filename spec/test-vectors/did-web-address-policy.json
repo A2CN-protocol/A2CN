@@ -1,5 +1,5 @@
 {
-  "description": "The did:web address policy. A resolver fetches a did:web document only from a host written as a name whose addresses are all public unicast, and connects to an address it checked. refused_addresses must each be refused; public_addresses must each be allowed; ip_literal_hosts are did:web DIDs whose host is written as an IP address (percent-decoded, port removed), refused before any lookup. Both reference implementations read this file.",
+  "description": "The did:web address policy. A resolver fetches a did:web document only from a host written as a name whose addresses are all public unicast, and connects only to addresses it checked. refused_addresses must each be refused; public_addresses must each be allowed; ip_literal_hosts are did:web DIDs whose host is written as an IP address (percent-decoded, port removed), refused before any lookup. Both reference implementations read this file.",
   "refused_addresses": [
     { "address": "0.0.0.0", "range": "unspecified" },
     { "address": "0.1.2.3", "range": "this network, 0.0.0.0/8" },

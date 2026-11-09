@@ -246,7 +246,9 @@ only from public hosts. To run parties on loopback or a private network during
 development, set `A2CN_ALLOW_PRIVATE_DID_HOSTS=1` (the TypeScript server reads the
 same variable, or set `allowPrivateDidHosts` on its context). Never set it on a
 deployed server: it lets a caller with no credentials make the server fetch from
-its own network.
+its own network. did:web fetches use no HTTP(S) proxy, because a proxy makes its
+own lookup: a server that reaches the internet only through a proxy can't fetch
+did:web documents, and should pre-register them instead.
 
 ### `a2cn/client.py` — Initiator
 
@@ -313,6 +315,9 @@ fetched or no longer lists the signing key, and the verdict then says so.
 A did:web host must be a name whose addresses are all public; for parties on a
 local or private network during development, `--allow-private-did-hosts` lifts
 that.
+The fetch uses no HTTP(S) proxy, because a proxy makes its own lookup; where
+the internet is reachable only through a proxy, run with `--offline` and the
+parties' DID documents among the inputs.
 Exit status: 0 everything verified, 1 something was refused, 3 nothing was
 refused but something could not finish, 2 bad usage.
 

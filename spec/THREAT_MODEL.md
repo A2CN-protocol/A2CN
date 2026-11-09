@@ -37,8 +37,9 @@ standard, and it has **not** undergone an external security audit.
   fetches from. A did:web host must therefore be a name, not an IP address, and every address it
   resolves to must be public unicast: loopback, private, link-local, carrier-grade NAT, unspecified,
   multicast, and reserved or documentation addresses are refused, including in IPv4-mapped and
-  NAT64 form. The resolver connects to the address it checked, with no second lookup, and TLS still
-  verifies the host name. No response carries a resolver or fetch error. The rule covers every
+  NAT64 form. The resolver connects only to the addresses it checked, trying them in order, with no
+  second lookup, and TLS still verifies the host name; it uses no proxy, which would make its own
+  lookup. No response carries a resolver or fetch error. The rule covers every
   did:web fetch: a token's issuer, an approver, an inviter, and `a2cn-verify`. It can be turned off
   for local development only (`A2CN_ALLOW_PRIVATE_DID_HOSTS`, `--allow-private-did-hosts`).
 - **Mandate-cap bypass (within implemented checks).** The commitment ceiling is enforced before an

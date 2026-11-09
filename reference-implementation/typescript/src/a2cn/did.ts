@@ -47,9 +47,10 @@ export const DID_DOCUMENT_MAX_BYTES = 65536;
  * total with no redirect followed.
  *
  * The host must be a name, not an IP address, and every address it resolves to
- * must be public unicast (isPublicUnicast); the default fetch connects to the
- * address it checked, with no second lookup, and TLS still verifies the host
- * name. `allowPrivateHosts` turns both checks off, for local development and
+ * must be public unicast (isPublicUnicast); the default fetch connects only to
+ * the addresses it checked, trying them in order until one connects, with no
+ * second lookup, and TLS still verifies the host name. Like Node's fetch, it
+ * uses no proxy. `allowPrivateHosts` turns both checks off, for local development and
  * tests only. A `fetchFn` you supply makes its own connections: the host-name
  * check still applies, the address check only if it is a publicAddressFetch.
  *
@@ -257,7 +258,7 @@ export type AddressLookup = (hostname: string) => Promise<string[]>;
 const systemLookup: AddressLookup = async (hostname) =>
   (await dnsLookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
 
-async function publicAddress(hostname: string, lookup: AddressLookup): Promise<string> {
+async function publicAddresses(hostname: string, lookup: AddressLookup): Promise<string[]> {
   const addresses = await lookup(hostname);
   if (addresses.length === 0) {
     throw new DidWebHostRefused(`did:web host ${hostname} has no address`);
@@ -267,15 +268,38 @@ async function publicAddress(hostname: string, lookup: AddressLookup): Promise<s
       throw new DidWebHostRefused(`did:web host ${hostname} resolves to a non-public address, ${address}`);
     }
   }
-  return addresses[0];
+  return addresses;
+}
+
+/**
+ * Connect to the first of `addresses` that accepts, in order, as a direct
+ * connection would; the last failure if none does.
+ */
+function connectInOrder(
+  connect: buildConnector.connector,
+  opts: buildConnector.Options,
+  addresses: string[],
+  callback: buildConnector.Callback,
+): void {
+  const [address, ...rest] = addresses;
+  connect({ ...opts, hostname: address, servername: opts.servername ?? opts.hostname }, (exc, socket) => {
+    if (exc !== null && rest.length > 0) {
+      connectInOrder(connect, opts, rest, callback);
+    } else if (exc !== null) {
+      callback(exc, null);
+    } else {
+      callback(null, socket);
+    }
+  });
 }
 
 /**
  * A fetch that connects only through the address policy: each connection looks
  * the host up once, refuses it unless every address is public unicast, and
- * connects to the first address it checked; TLS is started with the host name,
- * so the certificate is still checked against it. `lookup` and `connect` are
- * for tests.
+ * tries the checked addresses in order until one connects, so a host whose
+ * first address is unreachable still resolves; the resolver's deadline bounds
+ * the whole attempt. TLS is started with the host name, so the certificate is
+ * still checked against it. `lookup` and `connect` are for tests.
  */
 export function publicAddressFetch(
   options: { lookup?: AddressLookup; connect?: buildConnector.connector } = {},
@@ -285,18 +309,23 @@ export function publicAddressFetch(
   return async (url, init) => {
     const dispatcher = new Agent({
       connect: (opts, callback) => {
-        publicAddress(opts.hostname, lookup).then(
-          (address) => connect({ ...opts, hostname: address, servername: opts.servername ?? opts.hostname }, callback),
+        publicAddresses(opts.hostname, lookup).then(
+          (addresses) => connectInOrder(connect, opts, addresses, callback),
           (exc: Error) => callback(exc, null),
         );
       },
     });
+    let response;
     try {
-      return (await undiciFetch(url, { ...init, dispatcher })) as unknown as Awaited<ReturnType<FetchLike>>;
-    } finally {
-      // Closes once the response body has been read; nothing is kept for a later fetch.
-      void dispatcher.close();
+      response = await undiciFetch(url, { ...init, dispatcher });
+    } catch (exc) {
+      // A fetch cut off at the deadline stops any connection still being tried.
+      void dispatcher.destroy();
+      throw exc;
     }
+    // Closes once the response body has been read; nothing is kept for a later fetch.
+    void dispatcher.close();
+    return response as unknown as Awaited<ReturnType<FetchLike>>;
   };
 }
 
