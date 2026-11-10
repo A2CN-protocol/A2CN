@@ -3977,6 +3977,25 @@ at the protocol level.
 | `INVITATION_SIGNATURE_INVALID` | 400 | Signature verification failed |
 | `INVITATION_ALREADY_ANSWERED` | 409 | Invitation already accepted or declined |
 | `INVITATION_VERSION_MISMATCH` | 400 | `a2cn_version` not supported |
+| `INVITATION_ID_CONFLICT` | 409 | `invitation_id` already names a different invitation |
+
+**Re-delivery of an invitation.** A recipient that receives a SessionInvitation
+whose `invitation_id` it already holds — one it received earlier, or one it
+issued itself — MUST NOT replace the invitation it holds. After the signature is
+verified, it compares the two invitations as their RFC 8785 canonical bytes,
+`invitation_signature` included:
+
+- If they differ, whether in the inviter or in any other member, the recipient
+  MUST respond `INVITATION_ID_CONFLICT`, whatever the status of the invitation
+  it holds (pending, accepted, declined or expired).
+- If they are identical, the same inviter has re-sent the same signed
+  invitation. While the invitation it holds is still pending, the recipient
+  MUST answer as it answered the first delivery. Once that invitation has been
+  accepted or declined it MUST respond `INVITATION_ALREADY_ANSWERED`, and once
+  it has expired, `INVITATION_EXPIRED`.
+
+Re-delivery never changes an invitation the recipient holds: its inviter,
+content, status and the time it was first received stay as they were.
 
 ---
 
@@ -5514,6 +5533,18 @@ messages that validate against these schemas.
 
 Entries below are changes to this specification document. For the repository and
 package release history, see `CHANGELOG.md`.
+
+### Unreleased — invitation re-delivery
+
+- **Section 11.7 — an invitation_id is never re-used for a different
+  invitation.** A recipient that already holds an invitation under the
+  `invitation_id` it receives responds with the new code
+  `INVITATION_ID_CONFLICT` (409) to any invitation that differs from the one it
+  holds, answers an identical re-sent invitation as it answered the first
+  delivery while that invitation is pending (`INVITATION_ALREADY_ANSWERED` once
+  it is answered, `INVITATION_EXPIRED` once it has expired), and never changes
+  the invitation it holds on re-delivery. Additive: no wire version or protocol
+  version change.
 
 ### Unreleased — verified-identity completion; establishment floor
 

@@ -49,6 +49,7 @@ from a2cn.messages import (
     INVITATION_NOT_FOUND,
     INVITATION_EXPIRED,
     INVITATION_ALREADY_ANSWERED,
+    INVITATION_ID_CONFLICT,
     INVITATION_SIGNATURE_INVALID,
     INVITATION_VERSION_MISMATCH,
 )
@@ -1160,7 +1161,16 @@ async def receive_invitation(request: Request) -> Response:
     if not verify_invitation_signature(body, pub_key):
         return error_response(INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400)
 
-    invitation_store.store_inbound(body)
+    try:
+        invitation_store.store_inbound(body)
+    except ValueError as exc:
+        code = str(exc)
+        status = {
+            INVITATION_EXPIRED: 410,
+            INVITATION_ALREADY_ANSWERED: 409,
+            INVITATION_ID_CONFLICT: 409,
+        }.get(code, 400)
+        return error_response(code, code.replace("_", " ").lower(), status)
     return a2cn_response({"invitation_id": body.get("invitation_id"), "status": "pending"}, 201)
 
 

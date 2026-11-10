@@ -46,6 +46,7 @@ import {
   INVITATION_NOT_FOUND,
   INVITATION_EXPIRED,
   INVITATION_ALREADY_ANSWERED,
+  INVITATION_ID_CONFLICT,
   INVITATION_SIGNATURE_INVALID,
   INVITATION_VERSION_MISMATCH,
   type Dict,
@@ -1578,7 +1579,18 @@ function installRoutes(ctx: ServerContext): void {
       return sendError(reply, INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400);
     }
 
-    invitationStore.storeInbound(body);
+    try {
+      invitationStore.storeInbound(body);
+    } catch (exc) {
+      const code = exc instanceof Error ? exc.message : String(exc);
+      const status =
+        {
+          [INVITATION_EXPIRED]: 410,
+          [INVITATION_ALREADY_ANSWERED]: 409,
+          [INVITATION_ID_CONFLICT]: 409,
+        }[code] ?? 400;
+      return sendError(reply, code, code.replaceAll("_", " ").toLowerCase(), status);
+    }
     return sendA2cn(reply, { invitation_id: body.invitation_id, status: "pending" }, 201);
   });
 

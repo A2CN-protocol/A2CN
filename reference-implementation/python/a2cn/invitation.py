@@ -12,13 +12,16 @@ from dataclasses import asdict
 from datetime import datetime, timezone, timedelta
 
 from a2cn.messages import (
+    INVITATION_ALREADY_ANSWERED,
+    INVITATION_EXPIRED,
+    INVITATION_ID_CONFLICT,
     PROTOCOL_ACT_VERSION,
     SessionInvitation,
     InvitationAcceptance,
     InvitationDecline,
     InvitationStatus,
 )
-from a2cn.crypto import sign_invitation
+from a2cn.crypto import hash_object, sign_invitation
 
 
 class InvitationStore:
@@ -89,8 +92,19 @@ class InvitationStore:
         """
         Store an inbound invitation received from a counterparty.
         Status starts as PENDING. Used by POST /invitations endpoint.
+
+        An invitation_id already stored is never replaced (Section 11.7). A
+        different invitation under that id raises INVITATION_ID_CONFLICT,
+        whatever the stored status. The identical signed invitation re-sent is
+        answered as the first delivery was while it is pending, and raises
+        INVITATION_ALREADY_ANSWERED or INVITATION_EXPIRED once it is answered
+        or expired. Re-delivery never changes the stored entry.
         """
         invitation_id = invitation_dict["invitation_id"]
+        stored = self._invitations.get(invitation_id)
+        if stored is not None:
+            self._check_retransmission(stored, invitation_dict)
+            return
         self._invitations[invitation_id] = {
             "invitation": invitation_dict,
             "status": InvitationStatus.PENDING,
@@ -201,6 +215,22 @@ class InvitationStore:
     # Internal
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _check_retransmission(stored: dict, invitation_dict: dict) -> None:
+        """
+        Refuse an inbound invitation whose id is already stored, unless it is
+        an identical retransmission of a pending one. Never changes `stored`.
+        """
+        # Identical means the same RFC 8785 bytes, signature included, so the
+        # same inviter re-sending the same signed invitation. Anything else is
+        # a conflict whatever the stored status.
+        if hash_object(invitation_dict) != hash_object(stored["invitation"]):
+            raise ValueError(INVITATION_ID_CONFLICT)
+        if stored["status"] in (InvitationStatus.ACCEPTED, InvitationStatus.DECLINED):
+            raise ValueError(INVITATION_ALREADY_ANSWERED)
+        if stored["status"] == InvitationStatus.EXPIRED or _past_expiry(stored["invitation"]):
+            raise ValueError(INVITATION_EXPIRED)
+
     def _validate_answerable(self, invitation_id: str) -> dict:
         """
         Validates invitation exists, is PENDING, and is not expired.
@@ -228,3 +258,15 @@ class InvitationStore:
                     raise
                 pass  # unparseable expiry — skip check
         return stored
+
+
+def _past_expiry(invitation: dict) -> bool:
+    """Whether invitation_expires_at has passed. An unparseable value has not."""
+    expires_str = invitation.get("invitation_expires_at", "")
+    if not expires_str:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return datetime.now(timezone.utc) > expires_at

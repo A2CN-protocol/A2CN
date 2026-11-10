@@ -8,6 +8,9 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  INVITATION_ALREADY_ANSWERED,
+  INVITATION_EXPIRED,
+  INVITATION_ID_CONFLICT,
   PROTOCOL_ACT_VERSION,
   SessionInvitation,
   InvitationAcceptance,
@@ -16,7 +19,7 @@ import {
   type InvitationStatusValue,
   type Dict,
 } from "./messages.js";
-import { signInvitation, type SigningPrivateKey } from "./crypto.js";
+import { hashObject, signInvitation, type SigningPrivateKey } from "./crypto.js";
 import { ownGet, setOwn } from "./own.js";
 import { parseIsoMs } from "./session.js";
 
@@ -131,9 +134,21 @@ export class InvitationStore {
   /**
    * Store an inbound invitation received from a counterparty.
    * Status starts as PENDING. Used by POST /invitations endpoint.
+   *
+   * An invitation_id already stored is never replaced (Section 11.7). A
+   * different invitation under that id throws INVITATION_ID_CONFLICT, whatever
+   * the stored status. The identical signed invitation re-sent is answered as
+   * the first delivery was while it is pending, and throws
+   * INVITATION_ALREADY_ANSWERED or INVITATION_EXPIRED once it is answered or
+   * expired. Re-delivery never changes the stored entry.
    */
   storeInbound(invitationDict: Dict): void {
     const invitationId = invitationDict.invitation_id as string;
+    const stored = ownGet(this._invitations, invitationId);
+    if (stored !== undefined) {
+      checkRetransmission(stored, invitationDict);
+      return;
+    }
     setOwn(this._invitations, invitationId, {
       invitation: invitationDict,
       status: InvitationStatus.PENDING,
@@ -268,4 +283,33 @@ export class InvitationStore {
     }
     return stored;
   }
+}
+
+/**
+ * Refuse an inbound invitation whose id is already stored, unless it is an
+ * identical retransmission of a pending one. Never changes `stored`.
+ */
+function checkRetransmission(stored: StoredInvitation, invitationDict: Dict): void {
+  // Identical means the same RFC 8785 bytes, signature included, so the same
+  // inviter re-sending the same signed invitation. Anything else is a conflict
+  // whatever the stored status.
+  if (hashObject(invitationDict) !== hashObject(stored.invitation)) {
+    throw new Error(INVITATION_ID_CONFLICT);
+  }
+  if (stored.status === InvitationStatus.ACCEPTED || stored.status === InvitationStatus.DECLINED) {
+    throw new Error(INVITATION_ALREADY_ANSWERED);
+  }
+  if (stored.status === InvitationStatus.EXPIRED || pastExpiry(stored.invitation)) {
+    throw new Error(INVITATION_EXPIRED);
+  }
+}
+
+/** Whether invitation_expires_at has passed. An unparseable value has not. */
+function pastExpiry(invitation: Dict): boolean {
+  const expiresStr = (invitation.invitation_expires_at as string) ?? "";
+  if (!expiresStr) {
+    return false;
+  }
+  const expiresMs = parseIsoMs(expiresStr);
+  return !Number.isNaN(expiresMs) && Date.now() > expiresMs;
 }
