@@ -7,6 +7,7 @@
  */
 
 import { hashObject } from "./crypto.js";
+import { ownGet, setOwn } from "./own.js";
 
 export type Dict = Record<string, unknown>;
 
@@ -18,13 +19,17 @@ export function dropNone(d: Dict): Dict {
       continue;
     }
     if (Array.isArray(v)) {
-      result[k] = v.map((i) =>
-        i !== null && typeof i === "object" && !Array.isArray(i) ? dropNone(i as Dict) : i,
+      setOwn(
+        result,
+        k,
+        v.map((i) =>
+          i !== null && typeof i === "object" && !Array.isArray(i) ? dropNone(i as Dict) : i,
+        ),
       );
     } else if (typeof v === "object") {
-      result[k] = dropNone(v as Dict);
+      setOwn(result, k, dropNone(v as Dict));
     } else {
-      result[k] = v;
+      setOwn(result, k, v);
     }
   }
   return result;
@@ -343,7 +348,7 @@ export function rebuildSignedAct(
   if (typeof messageType !== "string") {
     return null;
   }
-  const payloadFields: readonly string[] | undefined = SIGNED_ACT_PAYLOAD_FIELDS[messageType];
+  const payloadFields: readonly string[] | undefined = ownGet(SIGNED_ACT_PAYLOAD_FIELDS, messageType);
   if (payloadFields === undefined) {
     return null;
   }

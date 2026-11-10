@@ -67,6 +67,7 @@ import {
   type FetchLike,
 } from "./did.js";
 import { InMemorySessionStore, type SessionStore } from "./session_store.js";
+import { hasOwn, ownGet, setOwn } from "./own.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
 
@@ -210,7 +211,7 @@ export function createServerContext(): ServerContext {
 
     /** Pre-register a DID document so JWT verification skips HTTP resolution. */
     registerDidDocument(did: string, didDocument: Dict): void {
-      ctx.didDocOverride[did] = didDocument;
+      setOwn(ctx.didDocOverride, did, didDocument);
       manager.registerDidDocument(did, didDocument);
     },
 
@@ -443,7 +444,7 @@ async function verifyJwtAuth(ctx: ServerContext, request: FastifyRequest): Promi
 
     // Resolve DID document (override dict first, then HTTP)
     let didDoc: Dict;
-    if (iss in ctx.didDocOverride) {
+    if (hasOwn(ctx.didDocOverride, iss)) {
       didDoc = ctx.didDocOverride[iss];
     } else {
       try {
@@ -773,7 +774,7 @@ function installRoutes(ctx: ServerContext): void {
         currency: sessionParams.currency,
         max_rounds: Math.min(
           (sessionParams.max_rounds as number) ?? 10,
-          maxRoundsByDealType[sessionParams.deal_type as string] ?? 10,
+          ownGet(maxRoundsByDealType, sessionParams.deal_type as string) ?? 10,
         ),
         session_timeout_seconds: sessionParams.session_timeout_seconds,
         round_timeout_seconds: sessionParams.round_timeout_seconds,
@@ -884,7 +885,7 @@ function installRoutes(ctx: ServerContext): void {
    */
   async function resolveApproverDidDocument(approver: string): Promise<Dict | null> {
     const approverDid = approver.split("#")[0];
-    if (Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid)) {
+    if (hasOwn(ctx.didDocOverride, approverDid)) {
       return ctx.didDocOverride[approverDid];
     }
     if (!approverDid.startsWith("did:web:")) {
@@ -1547,7 +1548,7 @@ function installRoutes(ctx: ServerContext): void {
 
     // Resolve DID document (didDocOverride first, then HTTP)
     let didDoc: Dict;
-    if (inviterDid in ctx.didDocOverride) {
+    if (hasOwn(ctx.didDocOverride, inviterDid)) {
       didDoc = ctx.didDocOverride[inviterDid];
     } else {
       try {
@@ -1735,7 +1736,7 @@ function sortKeysDeep(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+      setOwn(sorted, key, sortKeysDeep((value as Record<string, unknown>)[key]));
     }
     return sorted;
   }

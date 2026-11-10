@@ -19,6 +19,7 @@ import {
 } from "./crypto.js";
 import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
+import { ownGet } from "./own.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
   isActInteger,
@@ -695,7 +696,7 @@ function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
   if (typeof didResolver === "function") {
     return didResolver(did);
   }
-  return didResolver[did];
+  return ownGet(didResolver, did) as Dict;
 }
 
 function verificationMethodForDid(record: Dict, did: string): string {

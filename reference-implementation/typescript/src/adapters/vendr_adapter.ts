@@ -30,6 +30,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { toMinorUnits } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
+import { setOwn } from "../a2cn/own.js";
 
 /** This platform's decimal amounts, in the integer minor units A2CN carries. */
 function moneyToCents(value: unknown): number {
@@ -294,7 +295,7 @@ function sortKeysDeep(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+      setOwn(sorted, key, sortKeysDeep((value as Record<string, unknown>)[key]));
     }
     return sorted;
   }

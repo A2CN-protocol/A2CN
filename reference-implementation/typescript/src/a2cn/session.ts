@@ -12,6 +12,7 @@
 import { hashObject, verifyApprovalReceiptSignature, verifyJws } from "./crypto.js";
 import { getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
+import { hasOwn, ownGet, setOwn } from "./own.js";
 import {
   SUPPORTED_SESSION_CURRENCIES,
   sessionCurrencyIsSupported,
@@ -443,12 +444,12 @@ export class SessionManager {
 
   /** Register a resolved DID document for protocol-act signature checks. */
   registerDidDocument(did: string, didDocument: Dict): void {
-    this._did_documents[did] = didDocument;
+    setOwn(this._did_documents, did, didDocument);
   }
 
   /** Whether a DID document is registered for `did`. */
   hasDidDocument(did: string): boolean {
-    return Object.prototype.hasOwnProperty.call(this._did_documents, did);
+    return hasOwn(this._did_documents, did);
   }
 
   // ------------------------------------------------------------------
@@ -456,15 +457,15 @@ export class SessionManager {
   // ------------------------------------------------------------------
 
   hasInitResponse(messageId: string): boolean {
-    return messageId in this._init_responses;
+    return hasOwn(this._init_responses, messageId);
   }
 
   getInitResponse(messageId: string): Dict {
-    return this._init_responses[messageId];
+    return ownGet(this._init_responses, messageId) as Dict;
   }
 
   storeInitResponse(messageId: string, response: Dict): void {
-    this._init_responses[messageId] = response;
+    setOwn(this._init_responses, messageId, response);
   }
 
   /**
@@ -510,12 +511,12 @@ export class SessionManager {
     session._session_init = sessionInit;
     session._session_ack = sessionAck;
     session.protocol_version = protocolVersion;
-    this._sessions[sessionId] = session;
+    setOwn(this._sessions, sessionId, session);
     return session;
   }
 
   getSession(sessionId: string): Session | null {
-    return this._sessions[sessionId] ?? null;
+    return ownGet(this._sessions, sessionId) ?? null;
   }
 
   // ------------------------------------------------------------------
@@ -604,7 +605,7 @@ export class SessionManager {
     // nothing here would verify it, while the evidence record reads it as a
     // signature claim, so admitting it would leave the session with a record
     // that cannot verify.
-    const ownField = SIGNED_ACT_SIGNATURE_FIELDS[messageType];
+    const ownField = ownGet(SIGNED_ACT_SIGNATURE_FIELDS, messageType);
     for (const fieldName of [...new Set(Object.values(SIGNED_ACT_SIGNATURE_FIELDS))].sort()) {
       if (fieldName !== ownField && Object.prototype.hasOwnProperty.call(message, fieldName)) {
         throw new A2CNError(
@@ -644,7 +645,7 @@ export class SessionManager {
     const messageType = (message.message_type as string) ?? "";
 
     // Idempotency check (before validation — a retransmission should always succeed)
-    if (messageId in session._processed_messages) {
+    if (hasOwn(session._processed_messages, messageId)) {
       return session._processed_messages[messageId];
     }
 
@@ -701,7 +702,7 @@ export class SessionManager {
       });
     }
 
-    session._processed_messages[messageId] = response;
+    setOwn(session._processed_messages, messageId, response);
     return response;
   }
 
@@ -781,7 +782,7 @@ export class SessionManager {
       );
     }
 
-    const didDocument = this._did_documents[senderDid];
+    const didDocument = ownGet(this._did_documents, senderDid);
     if (didDocument === undefined) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
@@ -1466,7 +1467,7 @@ export class SessionManager {
    * shortest path into the handler.
    */
   private verifyDeclineSignature(session: Session, message: Dict): void {
-    const signatureField = SIGNED_ACT_SIGNATURE_FIELDS[message.message_type as string];
+    const signatureField = ownGet(SIGNED_ACT_SIGNATURE_FIELDS, message.message_type as string);
     if (signatureField === undefined) {
       return;
     }

@@ -17,6 +17,7 @@ import {
   type Dict,
 } from "./messages.js";
 import { signInvitation, type SigningPrivateKey } from "./crypto.js";
+import { ownGet, setOwn } from "./own.js";
 import { parseIsoMs } from "./session.js";
 
 function nowIso(): string {
@@ -118,12 +119,12 @@ export class InvitationStore {
     const sig = signInvitation(invitationDict, options.privateKey);
     invitation.invitation_signature = sig;
 
-    this._invitations[invitationId] = {
+    setOwn(this._invitations, invitationId, {
       invitation: invitationAsDict(invitation),
       status: InvitationStatus.PENDING,
       created_at: nowIso(),
       answered_at: null,
-    };
+    });
     return invitation;
   }
 
@@ -133,12 +134,12 @@ export class InvitationStore {
    */
   storeInbound(invitationDict: Dict): void {
     const invitationId = invitationDict.invitation_id as string;
-    this._invitations[invitationId] = {
+    setOwn(this._invitations, invitationId, {
       invitation: invitationDict,
       status: InvitationStatus.PENDING,
       created_at: nowIso(),
       answered_at: null,
-    };
+    });
   }
 
   // ------------------------------------------------------------------
@@ -147,7 +148,7 @@ export class InvitationStore {
 
   /** Returns stored entry dict or null. */
   getInvitation(invitationId: string): StoredInvitation | null {
-    return this._invitations[invitationId] ?? null;
+    return ownGet(this._invitations, invitationId) ?? null;
   }
 
   // ------------------------------------------------------------------
@@ -246,7 +247,7 @@ export class InvitationStore {
    * Returns stored entry. Throws Error with error code on failure.
    */
   private validateAnswerable(invitationId: string): StoredInvitation {
-    const stored = this._invitations[invitationId];
+    const stored = ownGet(this._invitations, invitationId);
     if (!stored) {
       throw new Error("INVITATION_NOT_FOUND");
     }
