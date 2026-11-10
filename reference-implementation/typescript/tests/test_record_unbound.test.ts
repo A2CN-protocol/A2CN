@@ -383,6 +383,19 @@ test("every reason code is reachable", () => {
       );
     }
   }
+  // One party signing both sides needs records re-signed by that party's key.
+  const parties = readJson("spec", "test-vectors", "transaction-record-parties.json");
+  for (const c of parties.cases as Dict[]) {
+    if (!c.verifies) {
+      observed.add(
+        verifyTransactionRecordReason(
+          c.record as Dict,
+          parties.did_documents as Record<string, Dict>,
+          c.offer_hashes as string[],
+        ),
+      );
+    }
+  }
 
   expect([...observed].sort()).toEqual([...ALL_REASON_CODES].sort());
 });

@@ -63,6 +63,7 @@ from a2cn.record import (
     REASON_KEY_NOT_FOUND,
     REASON_OFFER_CHAIN_HASH_MISMATCH,
     REASON_OFFER_SIGNATURE_INVALID,
+    REASON_SAME_SIGNING_KEY,
     verify_transaction_record_reason,
 )
 
@@ -709,7 +710,14 @@ def _unchecked_signatures(document: dict, attempt: _Attempt, not_listed) -> set[
 
 
 def _record_counts(reason, unchecked: set[str]) -> str:
-    """A TransactionRecord's two signed acts: verified, invalid, or not checked."""
+    """A TransactionRecord's two signed acts: verified, invalid, or not checked.
+
+    NOT_BILATERAL, ACCEPTED_OFFER_ID_MISMATCH and PARTY_SUMMARY_MISMATCH are
+    refused before the signatures are checked, as every other structural reason
+    is. SAME_SIGNING_KEY is refused after both signatures verified.
+    """
+    if reason == REASON_SAME_SIGNING_KEY:
+        return _counts(2, 0, 0, "(both verified under one public key)")
     if reason not in (
         None,
         REASON_OFFER_SIGNATURE_INVALID,

@@ -306,6 +306,31 @@ carries a broken signature is refused for that signature: a definite failure
 comes before `KEY_NOT_FOUND`. A case with `record_document` checks that record
 instead of the vector's own.
 
+`transaction-record-parties.json` covers Section 9.5 steps 10 to 12: a
+TransactionRecord is evidence that two parties agreed only if its two acts are
+signed by its two named parties, one each, under different public keys. Each
+record is `transaction-record-basis.json`'s session, one round or two. The two
+controls verify: `one_round_control`, which `one_round_messages` replayed after
+that vector's `session_init` and `session_ack` produce exactly, and
+`multi_round_control`, the basis vector's bound record, whose final offer is
+the responder's counteroffer accepted by the initiator. The refused cases
+re-sign an act with the test-only keys in `private_jwks` where they need to,
+and reseal `record_hash`, so every check before the one a case targets passes
+and both signatures are genuine. One party signing the acceptance as well as
+the offer, the two parties carrying one DID, and a third DID with its own valid
+key signing the acceptance are `NOT_BILATERAL`. One key signing both acts under
+two spellings of one `did:web` DID (the host's case differs), and under two
+DIDs whose documents list that key, are `SAME_SIGNING_KEY`: both signatures
+verify, under one key. A `final_offer.message_id` changed after signing, and an
+acceptance signed over an `accepted_offer_id` naming another offer, are
+`ACCEPTED_OFFER_ID_MISMATCH`. A `negotiation_summary` naming the offering party
+as the accepting one, or the responder as the initiating one, is
+`PARTY_SUMMARY_MISMATCH`. `shape_cases` put a value of the wrong type, or no
+value, in a field these steps read; each is refused, never thrown on, with the
+reason it gives, which for a field an earlier step already reads is that step's.
+Verified with the vector's `did_documents` and the case's `offer_hashes`, each
+record must reach the case's verdict and `expected_reason` in both suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its
