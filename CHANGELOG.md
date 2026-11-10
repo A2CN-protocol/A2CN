@@ -236,6 +236,17 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `normalized_total_minor` by value, as TypeScript does: a whole-number float
   such as `2.0` is that integer, where Python refused it before; a fractional
   value is still refused.
+- The TransactionRecord verifier reads a party's `verification_method` and an
+  act's signature by type in both reference implementations: a value that is
+  not a non-empty string is that act's `OFFER_SIGNATURE_INVALID` or
+  `ACCEPTANCE_SIGNATURE_INVALID`. Before, a list or object verification method
+  gave `ACCEPTANCE_SIGNATURE_INVALID` in Python and `KEY_NOT_FOUND` in
+  TypeScript, a number or boolean one gave `KEY_NOT_FOUND` in both, and a
+  number or boolean signature gave `MALFORMED_RECORD` in Python. Python's JWS
+  verification refuses a token that is not a string, or whose protected header
+  is not a JSON object, as an invalid signature, as TypeScript's does; it raised
+  an unrelated error before. `spec/test-vectors/transaction-record-key-parity.json`
+  holds the cases both suites run.
 
 ## [0.3.1] — 2026-10-15
 

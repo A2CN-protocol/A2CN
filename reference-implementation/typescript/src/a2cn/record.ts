@@ -762,7 +762,7 @@ function recordLineItemsHold(record: Dict): boolean {
 
 function recordHashMatches(record: Dict): boolean {
   const claimedHash = record.record_hash;
-  if (!claimedHash) {
+  if (!isNonemptyString(claimedHash)) {
     return false;
   }
   const candidate: Dict = { ...record };
@@ -782,8 +782,11 @@ function verifyRecordSignature(
   options: { did: string; signature: string; expectedPayload?: string | null },
 ): KeyObject | null {
   const { did, signature, expectedPayload = null } = options;
-  const verificationMethod = verificationMethodForDid(record, did);
-  if (!verificationMethod || !signature) {
+  const verificationMethod: unknown = verificationMethodForDid(record, did);
+  // By type, not truthiness: a value that is not a non-empty string names no
+  // key and is no JWS, so the signature does not verify (both languages refuse
+  // the same values the same way).
+  if (!isNonemptyString(verificationMethod) || !isNonemptyString(signature)) {
     return null;
   }
 

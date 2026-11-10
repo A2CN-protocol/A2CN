@@ -187,8 +187,12 @@ def verify_jws(token: str, public_key: SigningPublicKey) -> str:
     Raises jwt.InvalidSignatureError on failure.
     """
     try:
+        if not isinstance(token, str):
+            raise pyjwt.exceptions.InvalidSignatureError("JWS is not a string")
         protected, payload, signature = token.split(".")
         header = json.loads(_b64url_decode(protected))
+        if not isinstance(header, dict):
+            raise pyjwt.exceptions.InvalidSignatureError("JWS header is not a JSON object")
         expected_alg = _jwt_algorithm_for_public_key(public_key)
         if header.get("alg") != expected_alg:
             raise pyjwt.exceptions.InvalidSignatureError("JWS alg does not match key type")

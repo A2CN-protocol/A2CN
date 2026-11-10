@@ -341,6 +341,17 @@ its `id` names only the first, so the responder has no document and the record
 is `KEY_NOT_FOUND`, never verified, in both suites. The test-only key for
 `key-2` is in `private_jwks`.
 
+`transaction-record-key-parity.json` covers values on a TransactionRecord's key
+path that the two implementations once refused for different reasons. Each case
+is `transaction-record-parties.json`'s one-round control with one value changed
+and `record_hash` resealed, except the `record_hash` cases themselves. A
+verification method or signature that is not a non-empty string (a list, an
+object, a number, a boolean, `null`, `""`) is that act's
+`OFFER_SIGNATURE_INVALID` or `ACCEPTANCE_SIGNATURE_INVALID`, and so is a JWS
+whose protected header is not a JSON object. Verified with the vector's
+`did_documents` and the case's `offer_hashes`, each record must reach
+`expected_reason` in both suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

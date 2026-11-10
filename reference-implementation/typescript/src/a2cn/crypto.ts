@@ -164,12 +164,18 @@ export function signJws(
  */
 export function verifyJws(token: string, publicKey: SigningPublicKey): string {
   try {
+    if (typeof token !== "string") {
+      throw new InvalidSignatureError("JWS is not a string");
+    }
     const parts = token.split(".");
     if (parts.length !== 3) {
       throw new Error("JWS must have three segments");
     }
     const [protectedB64, payloadB64, signatureB64] = parts;
     const header = JSON.parse(b64urlDecode(protectedB64).toString("utf-8"));
+    if (header === null || typeof header !== "object" || Array.isArray(header)) {
+      throw new InvalidSignatureError("JWS header is not a JSON object");
+    }
     const expectedAlg = jwtAlgorithmForKey(publicKey);
     if (header.alg !== expectedAlg) {
       throw new InvalidSignatureError("JWS alg does not match key type");

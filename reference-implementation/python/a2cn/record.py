@@ -691,7 +691,7 @@ def _verified_or_unresolved(did_resolver, record: dict, **signature) -> tuple[bo
 
 def _record_hash_matches(record: dict) -> bool:
     claimed_hash = record.get("record_hash")
-    if not claimed_hash:
+    if not (isinstance(claimed_hash, str) and claimed_hash):
         return False
     candidate = dict(record)
     candidate["record_hash"] = ""
@@ -712,7 +712,12 @@ def _verify_record_signature(
     not available: the signature was checked neither way.
     """
     verification_method = _verification_method_for_did(record, did)
-    if not verification_method or not signature:
+    # By type, not truthiness: a value that is not a non-empty string names no
+    # key and is no JWS, so the signature does not verify (both languages
+    # refuse the same values the same way).
+    if not (isinstance(verification_method, str) and verification_method):
+        return None
+    if not (isinstance(signature, str) and signature):
         return None
 
     try:
