@@ -69,6 +69,30 @@ This project is pre-1.0: the minor version moves for substantive additions.
   (the TypeScript context field is `allowPrivateHosts`).
   The TypeScript server's `fetchFn` is now for webhooks only; did:web fetches
   and invitation delivery use `publicFetchFn`.
+- **A TransactionRecord must be signed by its two parties, one act each.**
+  The TransactionRecord verifier, in both reference implementations and in
+  `a2cn-verify`, verified a record that one party signed on both sides: a
+  record naming TechCorp as initiator and Acme as responder, with the final
+  offer and the acceptance both signed by TechCorp, verified, and so did one
+  whose acceptance names a different offer, or whose summary names other
+  parties. The live session already refused one party signing both sides; a
+  record presented to a verifier has no session behind it. The verifier now
+  refuses such a record (Section 9.5 steps 10 to 12) with one of four reason
+  codes: `NOT_BILATERAL` when the two parties' DIDs are empty or equal, or the
+  final offer and the acceptance are not signed one by each of them (compared
+  as exact strings; a signer who is not a party, once a signature failure, is
+  now this); `SAME_SIGNING_KEY` when both signatures verify under one public
+  key, as under two spellings of one did:web DID or two DIDs whose documents
+  list that key; `ACCEPTED_OFFER_ID_MISMATCH` when the acceptance's
+  `accepted_offer_id` is not `final_offer.message_id`; and
+  `PARTY_SUMMARY_MISMATCH` when `negotiation_summary` does not name
+  `parties.initiator.did` as the initiating party and the acceptance's signer
+  as the accepting one. `a2cn-verify` reports each as `REFUSED` (exit 1); all
+  but `SAME_SIGNING_KEY` are refused before any key is needed, so even with no
+  DID documents at all. Records the reference implementations generate
+  are unaffected and still verify, unless the session's two parties signed
+  with one key, which is now refused as `SAME_SIGNING_KEY`. No field is newly signed, and neither
+  `record_version` nor the wire protocol changes.
 
 ### Added
 

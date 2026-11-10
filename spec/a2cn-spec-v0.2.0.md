@@ -2250,6 +2250,22 @@ Any party verifying a transaction record MUST:
    items directly would otherwise obtain a record whose hashes and signatures are all
    genuine, and a reader of it could misread every agreed price by a factor of
    one hundred.
+10. Verify that the record is between two parties. `parties.initiator.did` and
+    `parties.responder.did` MUST be non-empty and different.
+    `final_offer.sender_did` MUST equal one of them and
+    `final_acceptance.sender_did` the other, compared as exact strings. The
+    signatures of steps 4 and 5 MUST verify under different public keys. A
+    record whose two acts one party signed, under one DID, two spellings of one,
+    or one key, is not evidence that two parties agreed, however its signatures
+    verify.
+11. Verify that `final_acceptance.accepted_offer_id` equals
+    `final_offer.message_id`. The acceptance's signature covers
+    `accepted_offer_id` and no signature covers `final_offer.message_id`, so
+    this comparison is what binds the offer's identifier to the acceptance.
+12. Verify that `negotiation_summary.initiating_party_did` equals
+    `parties.initiator.did`, and that `negotiation_summary.accepting_party_did`
+    equals `final_acceptance.sender_did`. No signature covers the summary, and a
+    summary naming another party would let a reader misread who agreed.
 
 Both sides of a `"0.4"` record are recomputable from the record alone, each from
 its own stored fields. The offering party's signature covers the protocol act
@@ -5514,6 +5530,28 @@ messages that validate against these schemas.
 
 Entries below are changes to this specification document. For the repository and
 package release history, see `CHANGELOG.md`.
+
+### Unreleased — a TransactionRecord is between two parties
+
+- **Section 9.5 step 10 — the two acts are signed by the two parties, one
+  each.** `parties.initiator.did` and `parties.responder.did` must be non-empty
+  and different, `final_offer.sender_did` must be one of them and
+  `final_acceptance.sender_did` the other, compared as exact strings, and the
+  two signatures must verify under different public keys. A record one party
+  signed on both sides, under one DID, two spellings of one or one key, is
+  refused however its signatures verify.
+- **Section 9.5 step 11 — the acceptance names the final offer.**
+  `final_acceptance.accepted_offer_id` must equal `final_offer.message_id`,
+  which no signature covers.
+- **Section 9.5 step 12 — the summary names the record's parties.**
+  `negotiation_summary.initiating_party_did` must equal
+  `parties.initiator.did`, and `negotiation_summary.accepting_party_did` must
+  equal `final_acceptance.sender_did`.
+- No field is newly signed, and neither the TransactionRecord `record_version`,
+  `"0.4"`, nor the wire protocol changes. A record the reference
+  implementations generate from a completed session meets all three steps
+  whenever its two parties sign with different keys, so those records are
+  unaffected.
 
 ### Unreleased — verified-identity completion; establishment floor
 
