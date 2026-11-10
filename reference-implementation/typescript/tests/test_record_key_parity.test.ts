@@ -9,11 +9,12 @@
  * reads the same `transaction-record-key-parity.json`.
  */
 
+import { sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-import { InvalidSignatureError, generateKeypair, verifyJws } from "../src/a2cn/crypto.js";
+import { InvalidSignatureError, b64urlEncode, generateKeypair, verifyJws } from "../src/a2cn/crypto.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import { verifyTransactionRecord, verifyTransactionRecordReason } from "../src/a2cn/record.js";
 import { REPO_ROOT } from "./support/paths.js";
@@ -35,5 +36,38 @@ for (const token of [7, true, null, [], {}]) {
   test(`verifyJws refuses a token that is not a string: ${JSON.stringify(token)}`, () => {
     const { publicKey } = generateKeypair();
     expect(() => verifyJws(token as unknown as string, publicKey)).toThrow(InvalidSignatureError);
+  });
+}
+
+/** A genuine ES256 compact JWS over the given raw header and payload bytes. */
+function signedSegments(privateKey: Parameters<typeof sign>[2], header: Buffer, payload: Buffer): string {
+  const signingInput = `${b64urlEncode(header)}.${b64urlEncode(payload)}`;
+  const signature = sign("sha256", Buffer.from(signingInput, "ascii"), {
+    key: privateKey as never,
+    dsaEncoding: "ieee-p1363",
+  });
+  return `${signingInput}.${b64urlEncode(signature)}`;
+}
+
+const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
+const SEGMENT_CASES: Record<string, [Buffer, Buffer]> = {
+  "payload-bom": [Buffer.from('{"alg":"ES256"}'), Buffer.concat([BOM, Buffer.from("payload")])],
+  "payload-not-utf8": [Buffer.from('{"alg":"ES256"}'), Buffer.from([0x70, 0x61, 0x79, 0xff, 0x6c])],
+  "header-bom": [Buffer.concat([BOM, Buffer.from('{"alg":"ES256"}')]), Buffer.from("payload")],
+  "header-not-utf8": [
+    Buffer.concat([Buffer.from('{"alg":"ES256","x":"'), Buffer.from([0xff]), Buffer.from('"}')]),
+    Buffer.from("payload"),
+  ],
+  "header-nan": [Buffer.from('{"alg":"ES256","x":NaN}'), Buffer.from("payload")],
+};
+
+for (const [label, [header, payload]] of Object.entries(SEGMENT_CASES)) {
+  test(`a JWS segment is strict UTF-8 JSON with no BOM: ${label}`, () => {
+    const { privateKey, publicKey } = generateKeypair();
+    const good = signedSegments(privateKey, Buffer.from('{"alg":"ES256"}'), Buffer.from("payload"));
+    expect(verifyJws(good, publicKey)).toBe("payload");
+    expect(() => verifyJws(signedSegments(privateKey, header, payload), publicKey)).toThrow(
+      InvalidSignatureError,
+    );
   });
 }
