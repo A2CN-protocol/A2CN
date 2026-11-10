@@ -360,7 +360,11 @@ object, a number, a boolean, `null`, `""`) is that act's
 whose protected header is not a JSON object. A string holding a lone surrogate
 has no UTF-8 encoding and cannot be canonicalized (RFC 8785), so the two
 `lone_*` cases, sealed by the TypeScript hasher as it was before it refused
-them, are `MALFORMED_RECORD`; a well-formed surrogate pair verifies. Verified
+them, are `MALFORMED_RECORD`; a well-formed surrogate pair verifies. The
+`jws_*` rows are genuine signatures under a protected header or payload given
+as raw bytes: a header beginning with a byte-order mark, a header that is not
+UTF-8, a header holding `NaN`, and a payload beginning with a byte-order mark
+are each `OFFER_SIGNATURE_INVALID`, beside a control that verifies. Verified
 with the vector's `did_documents` and the case's `offer_hashes`, each record
 must reach `expected_reason` in both suites.
 

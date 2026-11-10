@@ -190,7 +190,7 @@ def verify_jws(token: str, public_key: SigningPublicKey) -> str:
         if not isinstance(token, str):
             raise pyjwt.exceptions.InvalidSignatureError("JWS is not a string")
         protected, payload, signature = token.split(".")
-        header = json.loads(_b64url_decode(protected))
+        header = json.loads(_jws_segment_text(protected), parse_constant=_refuse_json_constant)
         if not isinstance(header, dict):
             raise pyjwt.exceptions.InvalidSignatureError("JWS header is not a JSON object")
         expected_alg = _jwt_algorithm_for_public_key(public_key)
@@ -207,11 +207,30 @@ def verify_jws(token: str, public_key: SigningPublicKey) -> str:
                 signing_input,
                 ec.ECDSA(hashes.SHA256()),
             )
-        return _b64url_decode(payload).decode("utf-8")
+        return _jws_segment_text(payload)
     except pyjwt.exceptions.InvalidSignatureError:
         raise
     except (InvalidSignature, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise pyjwt.exceptions.InvalidSignatureError("Invalid JWS signature") from exc
+
+
+def _jws_segment_text(segment: str) -> str:
+    """A JWS segment's bytes as text: strict UTF-8, with no byte-order mark.
+
+    Both reference implementations decode a protected header and a payload
+    this way, so one token's bytes mean one thing to each: bytes that are not
+    UTF-8, or a leading U+FEFF, make the signature invalid. (json.loads on
+    bytes would detect UTF-16 or UTF-32 and skip a UTF-8 BOM.)
+    """
+    text = _b64url_decode(segment).decode("utf-8")
+    if text.startswith("\ufeff"):
+        raise ValueError("JWS segment starts with a byte-order mark")
+    return text
+
+
+def _refuse_json_constant(literal: str):
+    """NaN, Infinity and -Infinity are not JSON; a JWS header holding one is invalid."""
+    raise ValueError(f"JWS header contains the non-JSON literal {literal}")
 
 
 # ---------------------------------------------------------------------------

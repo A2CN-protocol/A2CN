@@ -209,7 +209,7 @@ export function verifyJws(token: string, publicKey: SigningPublicKey): string {
       throw new Error("JWS must have three segments");
     }
     const [protectedB64, payloadB64, signatureB64] = parts;
-    const header = JSON.parse(b64urlDecode(protectedB64).toString("utf-8"));
+    const header = JSON.parse(jwsSegmentText(protectedB64));
     if (header === null || typeof header !== "object" || Array.isArray(header)) {
       throw new InvalidSignatureError("JWS header is not a JSON object");
     }
@@ -237,7 +237,7 @@ export function verifyJws(token: string, publicKey: SigningPublicKey): string {
     if (!valid) {
       throw new InvalidSignatureError("Invalid JWS signature");
     }
-    return b64urlDecode(payloadB64).toString("utf-8");
+    return jwsSegmentText(payloadB64);
   } catch (exc) {
     if (exc instanceof InvalidSignatureError) {
       throw exc;
@@ -627,6 +627,26 @@ function encodeEcdsaDer(r: bigint, s: bigint): Buffer {
 
 export function b64urlEncode(data: Buffer | Uint8Array): string {
   return Buffer.from(data).toString("base64url");
+}
+
+// fatal: bytes that are not UTF-8 throw; ignoreBOM: a leading BOM is kept, not
+// skipped, so that it can be refused below.
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * A JWS segment's bytes as text: strict UTF-8, with no byte-order mark.
+ *
+ * Both reference implementations decode a protected header and a payload this
+ * way, so one token's bytes mean one thing to each: bytes that are not UTF-8,
+ * or a leading U+FEFF, make the signature invalid. (Buffer's toString would
+ * replace bytes that are not UTF-8 with U+FFFD.)
+ */
+function jwsSegmentText(segment: string): string {
+  const text = STRICT_UTF8.decode(b64urlDecode(segment));
+  if (text.startsWith("\ufeff")) {
+    throw new InvalidSignatureError("JWS segment starts with a byte-order mark");
+  }
+  return text;
 }
 
 export function b64urlDecode(s: string): Buffer {

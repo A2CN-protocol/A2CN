@@ -264,6 +264,12 @@ This project is pre-1.0: the minor version moves for substantive additions.
   is not a JSON object, as an invalid signature, as TypeScript's does; it raised
   an unrelated error before. `spec/test-vectors/transaction-record-key-parity.json`
   holds the cases both suites run.
+- A JWS's protected header and payload are decoded the same way in both
+  reference implementations: strict UTF-8 with no byte-order mark, and a
+  header that is JSON (no `NaN` or `Infinity`). Anything else is an invalid
+  signature. Before, a genuine signature under a header beginning with a BOM,
+  or holding `NaN`, verified in Python and not in TypeScript, and one under a
+  header whose bytes were not UTF-8 verified in TypeScript and not in Python.
 - TypeScript's canonicalization refuses a string, member name or value, that
   holds a lone surrogate, as Python's does: such a string has no UTF-8
   encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape
