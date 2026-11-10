@@ -19,7 +19,12 @@ from typing import Any
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
@@ -2253,9 +2258,15 @@ def _verify_signature(
 
 
 def _resolve_did_document(did_resolver: DidResolver, did: str) -> dict:
+    """The DID document of ``did``, refused (DidDocumentIdMismatch) unless its ``id`` is ``did``.
+
+    The caller treats a refused document's key as unavailable (Section 4.2).
+    """
     if isinstance(did_resolver, Mapping):
-        return did_resolver[did]
-    return did_resolver(did)
+        document = did_resolver[did]
+    else:
+        document = did_resolver(did)
+    return require_did_document_for(document, did)
 
 
 def _verification_method_controlled_by(verification_method: str, did: str) -> bool:

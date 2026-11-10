@@ -47,6 +47,7 @@ import a2cn.evidence as _evidence
 from a2cn.acts import ACT_REASON_KEY_NOT_FOUND, SIGNED_ACT_TYPES, verify_signed_act_reason
 from a2cn.did import (
     VerificationMethodNotFoundError,
+    did_document_is_for,
     did_web_document_url,
     get_verification_method,
 )
@@ -218,6 +219,13 @@ def _supplied_documents(
         document = _load_json(Path(file_name))
         if not isinstance(document, dict):
             raise UsageError(f"DID document {file_name} is not a JSON object")
+        if not did_document_is_for(document, did):
+            # A document is used only for the DID its id names (Section 4.2):
+            # never under another spelling of that DID, or another DID.
+            raise UsageError(
+                f"--did-doc names {did}, but {file_name} is the DID document of "
+                f"{document.get('id')!r}; a DID document is used only for the DID its id names"
+            )
         supplied[did] = (document, file_name)
     return supplied
 
@@ -253,10 +261,21 @@ class _Keys:
             else:
                 url = did_web_document_url(did)
                 try:
-                    self._live[did] = (_fetch_did_web(did, self.allow_private_hosts), url)
+                    document = _fetch_did_web(did, self.allow_private_hosts)
                 except Exception as exc:  # noqa: BLE001 - reported, never a pass
                     first_line = str(exc).splitlines()[0] if str(exc) else ""
                     self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {first_line}")
+                else:
+                    if did_document_is_for(document, did):
+                        self._live[did] = (document, url)
+                    else:
+                        # The resolver refuses this too; said here as well, so
+                        # the reason is the document's, never a missing key.
+                        named = document.get("id") if isinstance(document, dict) else None
+                        self._live[did] = (
+                            None,
+                            f"{url} serves the DID document of {named!r}, not of this DID",
+                        )
         return self._live[did]
 
 

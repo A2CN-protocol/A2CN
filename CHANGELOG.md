@@ -82,8 +82,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
   final offer and the acceptance are not signed one by each of them (compared
   as exact strings; a signer who is not a party, once a signature failure, is
   now this); `SAME_SIGNING_KEY` when both signatures verify under one public
-  key, as under two spellings of one did:web DID or two DIDs whose documents
-  list that key; `ACCEPTED_OFFER_ID_MISMATCH` when the acceptance's
+  key, as under two DIDs whose documents list that key;
+  `ACCEPTED_OFFER_ID_MISMATCH` when the acceptance's
   `accepted_offer_id` is not `final_offer.message_id`; and
   `PARTY_SUMMARY_MISMATCH` when `negotiation_summary` does not name
   `parties.initiator.did` as the initiating party and the acceptance's signer
@@ -93,6 +93,24 @@ This project is pre-1.0: the minor version moves for substantive additions.
   are unaffected and still verify, unless the session's two parties signed
   with one key, which is now refused as `SAME_SIGNING_KEY`. No field is newly signed, and neither
   `record_version` nor the wire protocol changes.
+- **A DID document is used only for the DID its `id` names.** Two spellings
+  of one did:web DID can reach one document: the host's case, a trailing dot,
+  a percent-encoded dot or port, a `:.well-known` path, or a Unicode host and
+  its punycode. A party whose document lists two keys could sign a
+  TransactionRecord's offer under one spelling and its acceptance under the
+  other, and the record verified, in both reference implementations and in
+  `a2cn-verify`, live and offline. Now every verifier refuses a DID document
+  whose `id` is not exactly the DID it was obtained for, compared as exact
+  strings with no normalization (Section 4.2), and treats its keys as
+  unavailable, as when no document can be fetched: `KEY_NOT_FOUND` in the
+  library and COULD NOT FINISH in `a2cn-verify`. This covers the did:web
+  resolver (`resolve_did_web` / `resolveDidWeb` raise `DidDocumentIdMismatch`),
+  a mapping or resolver passed to the TransactionRecord, SessionEvidenceRecord
+  and signed-act verifiers, documents registered with a session manager, and
+  the servers' pre-registered documents (`register_did_document` /
+  `registerDidDocument` refuse to register a mismatched one). `a2cn-verify`
+  refuses as a usage error a `--did-doc DID=FILE` whose file names another
+  DID. Every committed test vector and example already met the rule.
 
 ### Added
 

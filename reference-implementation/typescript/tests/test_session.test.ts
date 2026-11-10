@@ -1061,6 +1061,14 @@ for (const [label, editDocument, code] of [
   });
 }
 
+test("an approver document naming another did is no document", () => {
+  // Section 4.2: a document is used only for the DID its id names.
+  const [mgr, sess] = pausedSession();
+  const document = makeDidDocument(APPROVER_DID, "key-1", publicKeyToJwk(APPROVER_PUBLIC_KEY));
+  mgr.registerDidDocument(APPROVER_DID, { ...document, id: "did:web:Approver.example" });
+  expect(refused(mgr, sess, approvalReceipt(sess))).toBe("APPROVAL_RECEIPT_KEY_UNRESOLVED");
+});
+
 // --- An approver is never the paused party; separation is by DID, not by key. ---
 
 test("paused agent cannot approve its own act even with a valid signature", () => {

@@ -319,9 +319,9 @@ and reseal `record_hash`, so every check before the one a case targets passes
 and both signatures are genuine. One party signing the acceptance as well as
 the offer, the two parties carrying one DID, and a third DID with its own valid
 key signing the acceptance are `NOT_BILATERAL`. One key signing both acts under
-two spellings of one `did:web` DID (the host's case differs), and under two
-DIDs whose documents list that key, are `SAME_SIGNING_KEY`: both signatures
-verify, under one key. A `final_offer.message_id` changed after signing, and an
+two spellings of one `did:web` DID (the host's case differs), each with a
+document of its own whose `id` names it, and under two DIDs whose documents
+list that key, are `SAME_SIGNING_KEY`: both signatures verify, under one key. A `final_offer.message_id` changed after signing, and an
 acceptance signed over an `accepted_offer_id` naming another offer, are
 `ACCEPTED_OFFER_ID_MISMATCH`. A `negotiation_summary` naming the offering party
 as the accepting one, or the responder as the initiating one, is
@@ -330,6 +330,16 @@ value, in a field these steps read; each is refused, never thrown on, with the
 reason it gives, which for a field an earlier step already reads is that step's.
 Verified with the vector's `did_documents` and the case's `offer_hashes`, each
 record must reach the case's verdict and `expected_reason` in both suites.
+`spelling_cases` bind a DID document to the DID it names (Section 4.2): one
+party's one document, listing `key-1` and `key-2`, reaches two spellings of its
+did:web DID (the host's case, a trailing dot, `%2E` for a dot, `%3A443` for
+the default port, a `:.well-known` path, a Unicode host against its punycode).
+The initiator is the document's `id` and signs the offer with `key-1`; the
+responder is the other spelling and signs the acceptance with `key-2`. Each
+case's own `did_documents` supplies the one document under both spellings;
+its `id` names only the first, so the responder has no document and the record
+is `KEY_NOT_FOUND`, never verified, in both suites. The test-only key for
+`key-2` is in `private_jwks`.
 
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states

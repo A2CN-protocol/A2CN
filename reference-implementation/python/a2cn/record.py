@@ -17,7 +17,12 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     _is_act_integer,
@@ -631,9 +636,10 @@ def verify_transaction_record_reason(
             return REASON_ACCEPTANCE_SIGNATURE_INVALID
 
         # Step 10's key comparison, once both signatures verified: one key
-        # behind two DIDs, two spellings of one did:web DID or two documents
-        # that list it, is one signer. With a key unavailable the two cannot be
-        # compared, and the record is KEY_NOT_FOUND below.
+        # behind two DIDs whose documents each list it is one signer. (Two
+        # spellings of one DID that reach one document never get here: the
+        # document names one of them, Section 4.2.) With a key unavailable the
+        # two cannot be compared, and the record is KEY_NOT_FOUND below.
         if (
             offer_key is not None
             and acceptance_key is not None
@@ -737,9 +743,18 @@ def _resolve_did_document(
     did_resolver: Mapping[str, dict] | Callable[[str], dict],
     did: str,
 ) -> dict:
+    """The DID document of ``did``, from a mapping or a resolver the caller supplies.
+
+    A document whose ``id`` is not exactly ``did`` is refused
+    (DidDocumentIdMismatch), and the caller treats its key as unavailable, as
+    when no document can be obtained: a document is used only for the DID it
+    names (Section 4.2).
+    """
     if isinstance(did_resolver, Mapping):
-        return did_resolver[did]
-    return did_resolver(did)
+        document = did_resolver[did]
+    else:
+        document = did_resolver(did)
+    return require_did_document_for(document, did)
 
 
 def _verification_method_for_did(record: dict, did: str) -> str:

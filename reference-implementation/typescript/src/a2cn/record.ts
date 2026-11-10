@@ -17,7 +17,12 @@ import {
   verifyJws,
   InvalidSignatureError,
 } from "./crypto.js";
-import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
+import {
+  VerificationMethodNotFoundError,
+  getPublicKey,
+  getVerificationMethod,
+  requireDidDocumentFor,
+} from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
@@ -676,9 +681,10 @@ export function verifyTransactionRecordReason(
     }
 
     // Step 10's key comparison, once both signatures verified: one key behind
-    // two DIDs, two spellings of one did:web DID or two documents that list it,
-    // is one signer. With a key unavailable the two cannot be compared, and the
-    // record is KEY_NOT_FOUND below.
+    // two DIDs whose documents each list it is one signer. (Two spellings of one
+    // DID that reach one document never get here: the document names one of
+    // them, Section 4.2.) With a key unavailable the two cannot be compared, and
+    // the record is KEY_NOT_FOUND below.
     if (offerKey !== null && acceptanceKey !== null && offerKey.equals(acceptanceKey)) {
       return REASON_SAME_SIGNING_KEY;
     }
@@ -821,11 +827,16 @@ function verifyRecordSignature(
   return publicKey;
 }
 
+/**
+ * The DID document of `did`, from a mapping or a resolver the caller supplies.
+ *
+ * A document whose `id` is not exactly `did` is refused (DidDocumentIdMismatch),
+ * and the caller treats its key as unavailable, as when no document can be
+ * obtained: a document is used only for the DID it names (Section 4.2).
+ */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
-  if (typeof didResolver === "function") {
-    return didResolver(did);
-  }
-  return didResolver[did];
+  const document = typeof didResolver === "function" ? didResolver(did) : didResolver[did];
+  return requireDidDocumentFor(document, did);
 }
 
 function verificationMethodForDid(record: Dict, did: string): string {

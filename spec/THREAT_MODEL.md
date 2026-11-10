@@ -24,8 +24,13 @@ standard, and it has **not** undergone an external security audit.
   recomputable from their own fields; agreed terms are bound to the signed final offer, so any
   change to the record breaks the hash and the signatures over it (§9.5, §9A.6). Verification
   refuses a TransactionRecord unless its two acts are signed by its two named parties, one each,
-  under different keys, so one party cannot sign both sides of a record under one DID, two
-  spellings of one, or two DIDs that list one key (§9.5).
+  under different keys, so one party cannot sign both sides of a record under one DID or under
+  two DIDs that list one key (§9.5).
+- **One party posing as two under two spellings of its DID.** A verifier uses a DID document only
+  for the DID its `id` names, compared exactly, whether the document was fetched, configured by an
+  operator or supplied for offline verification (§4.2). Two spellings of one did:web DID that
+  reach one document (a host's case, a trailing dot, an escaped character, a `:.well-known`
+  path, a Unicode host and its punycode) therefore cannot both resolve to its keys.
 - **Ambiguous money amounts.** Line-item money is stated as integer minor units under pinned keys
   (§7.2), and record verification refuses bare `unit_price` / `total` keys and fractional amounts
   at every record version (§9.5, §9A.6), so a verified record cannot be read at 100× or 1/100 of

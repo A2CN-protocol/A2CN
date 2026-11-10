@@ -187,6 +187,46 @@ async def test_receive_invitation_does_not_require_bearer_token(raw_test_client)
 
 
 @pytest.mark.asyncio
+async def test_an_inviter_document_naming_another_did_is_no_document(raw_test_client):
+    """Section 4.2: a registered document naming another DID is never used for this one."""
+    import a2cn.server as server_module
+
+    inviter_priv, inviter_pub = generate_keypair()
+    inviter_did = "did:web:buyer.example"
+    vm_id = f"{inviter_did}#key-1"
+    document = make_did_document(inviter_did, "key-1", public_key_to_jwk(inviter_pub))
+    server_module._did_doc_override[inviter_did] = {**document, "id": "did:web:Buyer.example"}
+    invitation = {
+        "message_type": "session_invitation",
+        "invitation_id": str(uuid.uuid4()),
+        "a2cn_version": "0.3",
+        "inviter_did": inviter_did,
+        "inviter_endpoint": "https://buyer.example/a2cn",
+        "inviter_discovery_url": "https://buyer.example/.well-known/a2cn-agent",
+        "proposed_deal_type": "saas_renewal",
+        "proposed_session_params": {
+            "currency": "USD",
+            "max_rounds": 4,
+            "session_timeout_seconds": 3600,
+            "round_timeout_seconds": 900,
+        },
+        "proposed_terms_summary": {"total_value": 9_500_000, "currency": "USD"},
+        "inviter_mandate_summary": {"mandate_type": "declared"},
+        "invitation_expires_at": "2030-01-01T00:00:00Z",
+        "accept_endpoint": "https://buyer.example/a2cn/invitations/test/accept",
+        "decline_endpoint": "https://buyer.example/a2cn/invitations/test/decline",
+        "inviter_verification_method": vm_id,
+        "invitation_signature": "",
+    }
+    invitation["invitation_signature"] = sign_invitation(invitation, inviter_priv)
+
+    r = await raw_test_client.post("/invitations", json=invitation)
+
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "INVITATION_SIGNATURE_INVALID"
+
+
+@pytest.mark.asyncio
 async def test_invitation_create_still_requires_bearer_token(raw_test_client):
     r = await raw_test_client.post("/invitations/create", json={})
 

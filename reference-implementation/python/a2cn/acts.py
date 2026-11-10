@@ -20,7 +20,12 @@ from typing import Any
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, SUPPORTED_WIRE_VERSIONS, rebuild_signed_act
 
 DidResolver = Mapping[str, dict] | Callable[[str], dict]
@@ -82,12 +87,14 @@ def verify_signed_act_reason(
         return ACT_REASON_METHOD_NOT_CONTROLLED
 
     try:
-        did_document = (
-            did_resolver(sender_did) if callable(did_resolver) else did_resolver[sender_did]
+        did_document = require_did_document_for(
+            did_resolver(sender_did) if callable(did_resolver) else did_resolver[sender_did],
+            sender_did,
         )
     except Exception:
         # A DID document the resolver cannot supply is a key that is not
-        # available, exactly like one the document does not list.
+        # available, exactly like one the document does not list; so is a
+        # document whose id is not sender_did (Section 4.2).
         return ACT_REASON_KEY_NOT_FOUND
     try:
         method = get_verification_method(did_document, verification_method)

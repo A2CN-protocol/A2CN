@@ -451,6 +451,19 @@ initiation. If the verification method referenced in the discovery document is
 not present in the DID document, the agent MUST NOT proceed and MUST surface
 this as a configuration error.
 
+**A DID document is the document of the DID it names.** DID Core requires a
+resolved DID document's `id` to be the DID that was resolved. A verifier MUST
+NOT use a DID document whose `id` is not exactly the DID it resolved, compared
+as exact strings with no normalization, wherever the document comes from: a
+did:web fetch, a document an operator configured, or one supplied with an
+artifact for offline verification. Such a document's keys are unavailable for
+that DID, exactly as when no document can be obtained. Two spellings of one
+did:web DID can reach one document (a host's case, a trailing dot, a
+percent-encoded character, a `:.well-known` path, a Unicode host and its
+punycode), and its `id` names only one of them; without this rule one party
+whose document lists two keys could sign as two parties under the two
+spellings.
+
 This design eliminates the dual trust-root problem: there is one canonical source
 of cryptographic key material (the DID document), and the discovery document
 merely points to it.
@@ -2255,9 +2268,11 @@ Any party verifying a transaction record MUST:
     `final_offer.sender_did` MUST equal one of them and
     `final_acceptance.sender_did` the other, compared as exact strings. The
     signatures of steps 4 and 5 MUST verify under different public keys. A
-    record whose two acts one party signed, under one DID, two spellings of one,
-    or one key, is not evidence that two parties agreed, however its signatures
-    verify.
+    record whose two acts one party signed, under one DID or one key, is not
+    evidence that two parties agreed, however its signatures verify. One party
+    signing under two spellings of its DID is refused when the keys are
+    resolved, because a DID document is used only for the DID its `id` names
+    (Section 4.2).
 11. Verify that `final_acceptance.accepted_offer_id` equals
     `final_offer.message_id`. The acceptance's signature covers
     `accepted_offer_id` and no signature covers `final_offer.message_id`, so
@@ -4806,8 +4821,10 @@ without a content encoding and refuses one sent with any encoding other than
 `identity`, and refuses a document larger than 64 KiB. The document MUST be
 UTF-8 JSON, optionally preceded by a
 UTF-8 byte-order mark, without `NaN` or `Infinity` literals. A document the
-operator has configured for an approver is used as configured. A document that cannot be resolved means the key is
-unresolved, and the receipt is refused.
+operator has configured for an approver is used as configured, provided its
+`id` is the approver's DID (Section 4.2). A document that cannot be resolved,
+or whose `id` is not the approver's DID, means the key is unresolved, and the
+receipt is refused.
 
 | Refusal | Error code |
 |---------|------------|
@@ -5538,8 +5555,14 @@ package release history, see `CHANGELOG.md`.
   and different, `final_offer.sender_did` must be one of them and
   `final_acceptance.sender_did` the other, compared as exact strings, and the
   two signatures must verify under different public keys. A record one party
-  signed on both sides, under one DID, two spellings of one or one key, is
-  refused however its signatures verify.
+  signed on both sides, under one DID or one key, is refused however its
+  signatures verify.
+- **Section 4.2 — a DID document is the document of the DID it names.** A
+  verifier must not use a DID document whose `id` is not exactly the DID it
+  resolved, wherever the document comes from; its keys are unavailable for
+  that DID. This is what refuses one party signing under two spellings of its
+  did:web DID that reach one document. Section 14.1 holds an operator-configured
+  approver document to the same rule.
 - **Section 9.5 step 11 — the acceptance names the final offer.**
   `final_acceptance.accepted_offer_id` must equal `final_offer.message_id`,
   which no signature covers.

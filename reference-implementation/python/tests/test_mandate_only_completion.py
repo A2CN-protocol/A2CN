@@ -867,10 +867,15 @@ def _dereferencing_resolver(did_documents: dict):
     does when handed a DID URL, and Section 9A.6 imposes no syntax on
     ``sender_did``. The resolver is the CALLER'S, which is why a rule comparing
     ``sender_did`` to one DID by string equality cannot carry the property.
+
+    A verifier uses a document only for the DID its ``id`` names (Section 4.2),
+    so the base document is handed back naming the DID URL it was asked for. A
+    resolver that did not would make the act's key unavailable, and these tests
+    would then measure that rule instead of the session-party one.
     """
 
     def resolve(did: str) -> dict:
-        return did_documents[did.split("#", 1)[0].split("?", 1)[0]]
+        return {**did_documents[did.split("#", 1)[0].split("?", 1)[0]], "id": did}
 
     return resolve
 

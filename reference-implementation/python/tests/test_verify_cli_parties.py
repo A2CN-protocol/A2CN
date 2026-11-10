@@ -12,9 +12,12 @@ import io
 import json
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 
-from a2cn.verify import EXIT_REFUSED, run
+from a2cn.did import did_web_document_url
+from a2cn.verify import EXIT_REFUSED, EXIT_UNFINISHED, EXIT_USAGE, run
 
 VECTOR = json.loads(
     (
@@ -95,3 +98,56 @@ def test_one_key_with_a_document_missing_cannot_finish(tmp_path, name):
     status, output = _cli(tmp_path, name, [record["final_offer"]["sender_did"]])
     assert status != EXIT_REFUSED, output
     assert "COULD NOT FINISH" in output
+
+
+# --- One party under two spellings of its did:web DID (Section 4.2) ---------
+
+SPELLINGS = VECTOR["spelling_cases"]
+
+
+def _spelled(tmp_path: Path, case: dict) -> Path:
+    record = tmp_path / f"{case['name']}.json"
+    record.write_text(json.dumps(case["record"]))
+    return record
+
+
+def _run(args: list[str]) -> tuple[int, str]:
+    out, err = io.StringIO(), io.StringIO()
+    status = run(args, out=out, err=err)
+    return status, out.getvalue() + err.getvalue()
+
+
+@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+def test_two_spellings_fetched_live_cannot_finish(tmp_path, case):
+    """Both document addresses serve the one document; the network is mocked, never touched."""
+    document = case["did_documents"][case["canonical_did"]]
+    with respx.mock(assert_all_called=False) as router:
+        for did in (case["canonical_did"], case["spelled_did"]):
+            router.get(did_web_document_url(did)).mock(return_value=httpx.Response(200, json=document))
+        status, output = _run([str(_spelled(tmp_path, case))])
+    assert status == EXIT_UNFINISHED, output
+    assert "COULD NOT FINISH" in output and "VERIFIED" not in output.splitlines()[1]
+    assert "DidDocumentIdMismatch" in output
+
+
+@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+def test_two_spellings_offline_with_the_document_cannot_finish(tmp_path, case):
+    """Supplied among the inputs, the document is keyed by its id: the other spelling has none."""
+    document = tmp_path / "did.json"
+    document.write_text(json.dumps(case["did_documents"][case["canonical_did"]]))
+    status, output = _run([str(_spelled(tmp_path, case)), str(document), "--offline"])
+    assert status == EXIT_UNFINISHED, output
+    assert f"no DID document for {case['spelled_did']}" in output
+
+
+@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+def test_a_did_doc_naming_another_spelling_is_refused_as_usage(tmp_path, case):
+    """--did-doc may not map a document to a DID its id does not name."""
+    document = tmp_path / "did.json"
+    document.write_text(json.dumps(case["did_documents"][case["canonical_did"]]))
+    args = [str(_spelled(tmp_path, case)), "--offline"]
+    args += ["--did-doc", f"{case['canonical_did']}={document}", "--did-doc", f"{case['spelled_did']}={document}"]
+    status, output = _run(args)
+    assert status == EXIT_USAGE, output
+    assert f"--did-doc names {case['spelled_did']}" in output
+    assert "VERIFIED" not in output

@@ -10,7 +10,7 @@
  */
 
 import { hashObject, verifyApprovalReceiptSignature, verifyJws } from "./crypto.js";
-import { getPublicKey, getVerificationMethod } from "./did.js";
+import { didDocumentIsFor, getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
 import {
   SUPPORTED_SESSION_CURRENCIES,
@@ -441,7 +441,13 @@ export class SessionManager {
   _init_responses: Record<string, Dict> = {};
   _did_documents: Record<string, Dict> = {};
 
-  /** Register a resolved DID document for protocol-act signature checks. */
+  /**
+   * Register a resolved DID document for protocol-act signature checks.
+   *
+   * A document whose `id` is not exactly `did` is kept but never used: each use
+   * checks it, and treats such a document as no document, because a document is
+   * the document of the DID it names and of no other spelling (Section 4.2).
+   */
   registerDidDocument(did: string, didDocument: Dict): void {
     this._did_documents[did] = didDocument;
   }
@@ -782,7 +788,7 @@ export class SessionManager {
     }
 
     const didDocument = this._did_documents[senderDid];
-    if (didDocument === undefined) {
+    if (!didDocumentIsFor(didDocument, senderDid)) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
         `No DID document registered for sender ${JSON.stringify(senderDid)}`,
@@ -1005,7 +1011,7 @@ export class SessionManager {
     } else {
       didDocument = approverDidDocument;
     }
-    if (didDocument === null || typeof didDocument !== "object" || Array.isArray(didDocument)) {
+    if (!didDocumentIsFor(didDocument, approverDid)) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_KEY_UNRESOLVED",
         `No DID document is available for approver ${JSON.stringify(approverDid)}`,

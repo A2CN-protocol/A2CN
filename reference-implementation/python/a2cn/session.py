@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from a2cn.crypto import hash_object, verify_approval_receipt_signature, verify_jws
-from a2cn.did import get_public_key, get_verification_method
+from a2cn.did import did_document_is_for, get_public_key, get_verification_method
 from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
 from a2cn.line_items import (
     SUPPORTED_SESSION_CURRENCIES,
@@ -421,7 +421,13 @@ class SessionManager:
         return did in self._did_documents
 
     def register_did_document(self, did: str, did_document: dict) -> None:
-        """Register a resolved DID document for protocol-act signature checks."""
+        """Register a resolved DID document for protocol-act signature checks.
+
+        A document whose ``id`` is not exactly ``did`` is kept but never used:
+        each use checks it, and treats such a document as no document, because a
+        document is the document of the DID it names and of no other spelling
+        (Section 4.2).
+        """
         self._did_documents[did] = did_document
 
     # ------------------------------------------------------------------
@@ -757,7 +763,7 @@ class SessionManager:
             )
 
         did_document = self._did_documents.get(sender_did)
-        if did_document is None:
+        if not did_document_is_for(did_document, sender_did):
             raise A2CNError(
                 "INVALID_SIGNATURE",
                 f"No DID document registered for sender {sender_did!r}",
@@ -978,7 +984,7 @@ class SessionManager:
             did_document = self._did_documents.get(approver_did)
         else:
             did_document = approver_did_document
-        if not isinstance(did_document, dict):
+        if not did_document_is_for(did_document, approver_did):
             raise A2CNError(
                 "APPROVAL_RECEIPT_KEY_UNRESOLVED",
                 f"No DID document is available for approver {approver_did!r}",
