@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
+import { InvalidSignatureError, generateKeypair, verifyJws } from "../src/a2cn/crypto.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import { verifyTransactionRecord, verifyTransactionRecordReason } from "../src/a2cn/record.js";
 import { REPO_ROOT } from "./support/paths.js";
@@ -27,5 +28,12 @@ for (const c of VECTOR.cases as Dict[]) {
     const hashes = c.offer_hashes as string[];
     expect(verifyTransactionRecordReason(c.record as Dict, DIDS, hashes)).toBe(c.expected_reason);
     expect(verifyTransactionRecord(c.record as Dict, DIDS, hashes)).toBe(c.verifies);
+  });
+}
+
+for (const token of [7, true, null, [], {}]) {
+  test(`verifyJws refuses a token that is not a string: ${JSON.stringify(token)}`, () => {
+    const { publicKey } = generateKeypair();
+    expect(() => verifyJws(token as unknown as string, publicKey)).toThrow(InvalidSignatureError);
   });
 }

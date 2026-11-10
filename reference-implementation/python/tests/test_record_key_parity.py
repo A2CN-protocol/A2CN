@@ -29,3 +29,14 @@ def test_the_record_reaches_the_stated_reason(case):
         case["expected_reason"]
     )
     assert verify_transaction_record(case["record"], documents, case["offer_hashes"]) is case["verifies"]
+
+
+@pytest.mark.parametrize("token", [7, True, None, [], {}], ids=repr)
+def test_verify_jws_refuses_a_token_that_is_not_a_string(token):
+    from jwt.exceptions import InvalidSignatureError
+
+    from a2cn.crypto import generate_keypair, verify_jws
+
+    _private, public = generate_keypair()
+    with pytest.raises(InvalidSignatureError):
+        verify_jws(token, public)

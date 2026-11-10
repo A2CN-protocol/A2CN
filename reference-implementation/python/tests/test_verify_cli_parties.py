@@ -151,3 +151,15 @@ def test_a_did_doc_naming_another_spelling_is_refused_as_usage(tmp_path, case):
     assert status == EXIT_USAGE, output
     assert f"--did-doc names {case['spelled_did']}" in output
     assert "VERIFIED" not in output
+
+
+@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+def test_a_fetched_document_naming_another_did_is_reported_as_such(tmp_path, case, monkeypatch):
+    """Even from a fetch that skipped the resolver's own check, the document is not used."""
+    import a2cn.verify as verify_module
+
+    document = case["did_documents"][case["canonical_did"]]
+    monkeypatch.setattr(verify_module, "_fetch_did_web", lambda did, allow_private_hosts=False: document)
+    status, output = _run([str(_spelled(tmp_path, case))])
+    assert status == EXIT_UNFINISHED, output
+    assert f"serves the DID document of {case['canonical_did']!r}, not of this DID" in output
