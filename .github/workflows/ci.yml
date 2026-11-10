@@ -111,7 +111,7 @@ jobs:
       - run: uv run --no-project python scripts/smoke_wheel.py "$RUNNER_TEMP"/python-dist/*.whl --workdir "$RUNNER_TEMP/smoke"
 
   typescript:
-    name: TypeScript (Node 22)
+    name: TypeScript
     runs-on: ubuntu-24.04
     defaults:
       run:

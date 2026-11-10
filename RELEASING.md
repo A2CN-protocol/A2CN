@@ -131,4 +131,4 @@ npm. The packages are owned by the maintainer's PyPI and npm accounts.
    - `Python 3.13 (highest dependencies)`
    - `Python dependency audit`
    - `Python package (build, twine check, wheel smoke test)`
-   - `TypeScript (Node 22)`
+   - `TypeScript`
