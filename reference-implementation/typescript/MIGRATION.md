@@ -1,6 +1,6 @@
 # A2CN TypeScript Migration Report
 
-TypeScript port of the A2CN (Agent-to-Agent Contract Negotiation) Python
+TypeScript port of the A2CN (Agent-to-Agent Commercial Negotiation) Python
 reference implementation, produced from `reference-implementation/python`
 at protocol version **0.2**. It lives beside it at
 `reference-implementation/typescript` (it was first published at the repository

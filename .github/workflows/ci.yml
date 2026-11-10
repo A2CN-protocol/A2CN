@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.11.23"
+  NODE_VERSION: "22"
+
+jobs:
+  python-tests:
+    name: Python ${{ matrix.python }} (locked)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: reference-implementation/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --all-extras
+      - run: uv run --frozen --all-extras python -m pytest -q
+
+  python-floors:
+    name: Python 3.11 (lowest direct dependencies)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: reference-implementation/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.11"
+      - run: uv venv
+      - run: uv pip install --resolution lowest-direct -e ".[dev]"
+      - run: .venv/bin/python -m pytest -q
+
+  python-highest:
+    # The newest versions the ranges allow: what a fresh pip install gets.
+    name: Python 3.13 (highest dependencies)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: reference-implementation/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.13"
+      - run: uv venv
+      - run: uv pip install --resolution highest -e ".[dev]"
+      - run: .venv/bin/python -m pytest -q
+
+  python-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: reference-implementation/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.13"
+      - run: uv export --frozen --all-extras --no-emit-project --quiet -o "$RUNNER_TEMP/requirements-audit.txt"
+      - run: uvx pip-audit@2.10.1 --strict --disable-pip -r "$RUNNER_TEMP/requirements-audit.txt"
+
+  python-package:
+    name: Python package (build, twine check, wheel smoke test)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: reference-implementation/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.11"
+      - run: uv build --out-dir "$RUNNER_TEMP/python-dist"
+      - run: uvx twine@7.0.0 check --strict "$RUNNER_TEMP"/python-dist/*
+      - run: uv run --no-project python scripts/smoke_wheel.py "$RUNNER_TEMP"/python-dist/*.whl --workdir "$RUNNER_TEMP/smoke"
+
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: reference-implementation/typescript
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
+          cache: npm
+          cache-dependency-path: reference-implementation/typescript/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: npm pack --dry-run
+      - run: npm pack --pack-destination "$RUNNER_TEMP"
+      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke"
+      - run: npm audit --omit=dev
+      - run: npm audit
+      # The package's engines floor: the same tarball, installed and run on Node 20.18.1.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "20.18.1"
+      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke-node20"
