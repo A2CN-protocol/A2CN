@@ -1,7 +1,7 @@
 {
   "name": "a2cn",
   "version": "0.3.2",
-  "description": "A2CN (Agent-to-Agent Contract Negotiation) TypeScript reference implementation",
+  "description": "TypeScript reference implementation of A2CN, the open protocol for agent-to-agent B2B commercial negotiation",
   "keywords": [
     "a2cn",
     "agents",

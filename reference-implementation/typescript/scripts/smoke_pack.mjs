@@ -2,7 +2,9 @@
 //
 //     node scripts/smoke_pack.mjs a2cn-X.Y.Z.tgz [--workdir DIR]
 //
-// The tarball is installed into an empty npm project, with TypeScript and
+// The tarball must hold only package.json, README.md, LICENSE and the built
+// dist/index and dist/a2cn/* (.js and .d.ts), as the wheel smoke test checks
+// what the wheel installs. It is then installed into an empty npm project, with TypeScript and
 // @types/node beside it. The usage example in README.md is copied out
 // verbatim, type-checked against the package's declarations, compiled and run,
 // and must print the wire version and then `true`. The package must resolve
@@ -60,6 +62,26 @@ if (inside(project, REPO_ROOT)) {
   console.error(`smoke: the work directory ${project} is inside the repository`);
   process.exit(2);
 }
+
+// The tarball holds the manifest, the README, the licence and the build of
+// src/index.ts and src/a2cn, and nothing else.
+const ALLOWED = [
+  /^package\.json$/,
+  /^README\.md$/,
+  /^LICENSE$/,
+  /^dist\/index\.(js|d\.ts)$/,
+  /^dist\/a2cn\/[A-Za-z0-9_]+\.(js|d\.ts)$/,
+];
+const entries = run("tar", ["-tzf", tarball], base)
+  .split("\n")
+  .map((line) => line.trim())
+  .filter((line) => line && !line.endsWith("/"));
+check(entries.length > 0, `${tarball} lists no files`);
+const unexpected = entries
+  .map((entry) => entry.replace(/^package\//, ""))
+  .filter((path) => !ALLOWED.some((pattern) => pattern.test(path)));
+check(unexpected.length === 0, `the tarball holds unexpected files: ${unexpected.join(", ")}`);
+check(entries.includes("package/dist/index.js"), "the tarball has no dist/index.js");
 
 const expectedVersion = JSON.parse(readFileSync(join(TS_ROOT, "package.json"), "utf-8")).version;
 const readme = readFileSync(join(TS_ROOT, "README.md"), "utf-8");

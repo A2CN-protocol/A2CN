@@ -24,12 +24,28 @@ env:
 
 jobs:
   check:
-    name: Tag matches both package versions
+    name: Tag is on main and matches both package versions
     runs-on: ubuntu-24.04
     steps:
+      # The full history, so origin/main is there to compare the tag with
+      # (a full-depth checkout fetches every branch into refs/remotes/origin).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Check the tagged commit is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::origin/main is not in the checkout, so the tag $TAG cannot be checked against it"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::The tag $TAG points at $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
@@ -66,6 +82,9 @@ jobs:
           enable-cache: false
       - run: uv sync --frozen --all-extras
       - run: uv run --frozen --all-extras python -m pytest -q
+      # The runtime set (the package and its mcp extra), as build-npm audits with --omit=dev.
+      - run: uv export --frozen --extra mcp --no-emit-project --quiet -o "$RUNNER_TEMP/requirements-audit.txt"
+      - run: uvx pip-audit@2.10.1 --strict --disable-pip -r "$RUNNER_TEMP/requirements-audit.txt"
       - run: uv build --out-dir dist
       - run: uvx twine@7.0.0 check --strict dist/*
       - run: uv run --no-project python scripts/smoke_wheel.py dist/*.whl --workdir "$RUNNER_TEMP/smoke"

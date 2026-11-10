@@ -70,7 +70,8 @@ both packages together, a release moves both versions to the tag's number.
    and `npm` deployments.
 6. Check the published packages: <https://pypi.org/project/a2cn/> and
    <https://www.npmjs.com/package/a2cn> show the new version, the npm page shows
-   its provenance, and a clean install (`pip install a2cn==X.Y.Z`,
+   its provenance (from the second npm version on; the first is published by
+   hand), and a clean install (`pip install a2cn==X.Y.Z`,
    `npm install a2cn@X.Y.Z`) imports.
 7. Publish the GitHub release for the tag, with the `CHANGELOG.md` section as its notes.
 
@@ -78,10 +79,16 @@ If the workflow fails before the publish jobs, nothing is published: fix the
 cause in a new pull request and release it under the next patch number. A
 version number that reached either registry is never reused.
 
+If one publish job fails for a reason outside the code (an environment or
+registry setting, a transient error), fix that and re-run the failed job from
+the run's page; it publishes the same artifact. A fix that needs a code change
+goes out under the next patch number, to both registries.
+
 ## One-time setup
 
-The maintainer does this once, before the first tag. The packages are owned by
-the maintainer's PyPI and npm accounts.
+The maintainer does this once: steps 1 to 3 and 8 before the first tag, steps
+4 to 6 with the first release, and step 7 after the first workflow publish to
+npm. The packages are owned by the maintainer's PyPI and npm accounts.
 
 1. **Two-factor authentication** on both the PyPI and the npm account.
 2. **GitHub environments.** In the repository's settings, create the
@@ -94,18 +101,18 @@ the maintainer's PyPI and npm accounts.
 4. **npm, first version by hand.** npm adds a trusted publisher only to a
    package that already exists, so the first version is published from the
    maintainer's machine. Leave `NPM_TRUSTED_PUBLISHING` unset for that release;
-   its workflow then publishes to PyPI only. From the tagged commit:
+   its workflow then publishes to PyPI only. Publish the tarball that the tag's
+   `Release` run built and smoke-tested (its `npm-dist` artifact), not a
+   rebuild:
 
    ```bash
-   git checkout vX.Y.Z
-   cd reference-implementation/typescript
-   npm ci
-   npm run build
-   npm publish --access public
+   gh run download <run-id> --repo A2CN-protocol/A2CN --name npm-dist --dir npm-dist
+   npm publish ./npm-dist/a2cn-X.Y.Z.tgz --access public
    ```
 
-   `prepublishOnly` type-checks, runs the tests and rebuilds before npm packs
-   the package.
+   The artifact can also be downloaded from the run's page on GitHub. This
+   first version has no provenance, because it is not published from the
+   workflow.
 5. **npm trusted publisher.** On npmjs.com, in the `a2cn` package's settings,
    add a trusted publisher: GitHub Actions, organization or user
    `A2CN-protocol`, repository `A2CN`, workflow `release.yml`, environment
@@ -113,3 +120,15 @@ the maintainer's PyPI and npm accounts.
 6. **Turn on npm publishing from the workflow.** Set the repository variable
    `NPM_TRUSTED_PUBLISHING` to `true` (Settings, Secrets and variables,
    Actions, Variables). Every later release publishes to npm from the workflow.
+7. **Lock npm publishing down.** Once a release has published to npm through
+   the trusted publisher, set the `a2cn` package's publishing access on
+   npmjs.com to require two-factor authentication and disallow tokens.
+8. **Required status checks.** In a branch protection rule or ruleset for
+   `main`, require these CI checks to pass before merging:
+   - `Python 3.11 (locked)`
+   - `Python 3.13 (locked)`
+   - `Python 3.11 (lowest direct dependencies)`
+   - `Python 3.13 (highest dependencies)`
+   - `Python dependency audit`
+   - `Python package (build, twine check, wheel smoke test)`
+   - `TypeScript (Node 22)`

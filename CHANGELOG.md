@@ -81,11 +81,14 @@ This project is pre-1.0: the minor version moves for substantive additions.
   … from "a2cn"`) exports the library's public API. The MCP server, the
   platform adapters and the UBL export stay source-only.
 - **CI** on every pull request and push to `main`: the Python suite on 3.11 and
-  3.13 at the locked versions and on 3.11 at every dependency's floor, a
-  dependency audit of each language, and a build of both packages that
-  installs each into a fresh environment and smoke-tests it.
+  3.13 at the locked versions, on 3.11 at every direct dependency's floor, and
+  on 3.13 at the newest versions the ranges allow (what a fresh `pip install`
+  gets); a dependency audit of each language; and a build of both packages
+  that installs each into a fresh environment and smoke-tests it, the npm
+  package on Node.js 22 and again on its engines floor, 20.18.1.
 - **A tag-triggered release workflow** that checks the tag against both package
-  versions, builds and smoke-tests both packages, and publishes them to PyPI
+  versions and refuses a tag whose commit is not on `main`, audits the runtime
+  dependencies, builds and smoke-tests both packages, and publishes them to PyPI
   and npm with trusted publishing, each behind an approved environment.
   `RELEASING.md` has the steps and the one-time setup.
 
