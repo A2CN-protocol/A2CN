@@ -22,6 +22,14 @@
     "directory": "reference-implementation/typescript"
   },
   "license": "Apache-2.0",
+  "contributors": [
+    {
+      "name": "Avinash Saraff"
+    },
+    {
+      "name": "Christian Magorrian"
+    }
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -12,6 +12,7 @@ readme = "README.pypi.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+authors = [{ name = "Avinash Saraff" }, { name = "Christian Magorrian" }]
 keywords = ["a2cn", "agents", "negotiation", "b2b", "procurement", "protocol", "did", "signatures"]
 classifiers = [
     "Development Status :: 3 - Alpha",
