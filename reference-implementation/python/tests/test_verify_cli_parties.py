@@ -103,6 +103,10 @@ def test_one_key_with_a_document_missing_cannot_finish(tmp_path, name):
 # --- One party under two spellings of its did:web DID (Section 4.2) ---------
 
 SPELLINGS = VECTOR["spelling_cases"]
+# The spellings that are DIDs: the rest are refused as NOT_BILATERAL before any
+# document is fetched, which the did_syntax_cases tests below cover.
+RESOLVED_SPELLINGS = [case for case in SPELLINGS if case["expected_reason"] == "KEY_NOT_FOUND"]
+SYNTAX = VECTOR["did_syntax_cases"]
 
 
 def _spelled(tmp_path: Path, case: dict) -> Path:
@@ -117,7 +121,7 @@ def _run(args: list[str]) -> tuple[int, str]:
     return status, out.getvalue() + err.getvalue()
 
 
-@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+@pytest.mark.parametrize("case", RESOLVED_SPELLINGS, ids=lambda case: case["name"])
 def test_two_spellings_fetched_live_cannot_finish(tmp_path, case):
     """Both document addresses serve the one document; the network is mocked, never touched."""
     document = case["did_documents"][case["canonical_did"]]
@@ -130,7 +134,7 @@ def test_two_spellings_fetched_live_cannot_finish(tmp_path, case):
     assert "DidDocumentIdMismatch" in output
 
 
-@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+@pytest.mark.parametrize("case", RESOLVED_SPELLINGS, ids=lambda case: case["name"])
 def test_two_spellings_offline_with_the_document_cannot_finish(tmp_path, case):
     """Supplied among the inputs, the document is keyed by its id: the other spelling has none."""
     document = tmp_path / "did.json"
@@ -153,7 +157,7 @@ def test_a_did_doc_naming_another_spelling_is_refused_as_usage(tmp_path, case):
     assert "VERIFIED" not in output
 
 
-@pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
+@pytest.mark.parametrize("case", RESOLVED_SPELLINGS, ids=lambda case: case["name"])
 def test_a_fetched_document_naming_another_did_is_reported_as_such(tmp_path, case, monkeypatch):
     """Even from a fetch that skipped the resolver's own check, the document is not used."""
     import a2cn.verify as verify_module
@@ -163,3 +167,31 @@ def test_a_fetched_document_naming_another_did_is_reported_as_such(tmp_path, cas
     status, output = _run([str(_spelled(tmp_path, case))])
     assert status == EXIT_UNFINISHED, output
     assert f"serves the DID document of {case['canonical_did']!r}, not of this DID" in output
+
+
+# --- A party DID is a DID (Section 9.5 step 10, DID Core Section 3.1) --------
+
+LIVE = {case["name"]: case for case in SYNTAX if case["name"] in ("trailing_dot", "query", "fragment")}
+
+
+@pytest.mark.parametrize("name, status, headline", [
+    ("trailing_dot", 0, "VERIFIED"),
+    ("query", EXIT_REFUSED, "REFUSED: NOT_BILATERAL"),
+    ("fragment", EXIT_REFUSED, "REFUSED: NOT_BILATERAL"),
+])
+def test_a_server_that_tells_spellings_apart(tmp_path, monkeypatch, name, status, headline):
+    """Each spelling is served its own document naming it; the network is mocked.
+
+    A trailing dot is DID syntax, so the record verifies: which DIDs signed, not
+    who controls them. A ?query or #fragment DID URL is not a DID, and is refused.
+    """
+    import a2cn.verify as verify_module
+
+    case = LIVE[name]
+    documents = case["did_documents"]
+    monkeypatch.setattr(verify_module, "_fetch_did_web", lambda did, allow_private_hosts=False: documents[did])
+    record = tmp_path / "record.json"
+    record.write_text(json.dumps(case["record"]))
+    code, output = _run([str(record)])
+    assert code == status, output
+    assert output.splitlines()[1].strip() == headline

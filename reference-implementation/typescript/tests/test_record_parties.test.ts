@@ -29,6 +29,7 @@ import {
   REASON_PARTY_SUMMARY_MISMATCH,
   REASON_SAME_SIGNING_KEY,
   generateTransactionRecord,
+  isDid,
   verifyTransactionRecord,
   verifyTransactionRecordReason,
   type DidResolver,
@@ -285,5 +286,33 @@ for (const [label, respelled] of Object.entries(RESPELLINGS)) {
     const responder = (record.parties as Dict).responder as Dict;
     responder.did = respelled(responder.did as string);
     expect(reason(withRecord("one_round_control", record))).toBe(REASON_NOT_BILATERAL);
+  });
+}
+
+const SYNTAX_CASES = VECTOR.did_syntax_cases as Dict[];
+
+for (const c of SYNTAX_CASES) {
+  test(`a party DID must be DID syntax: ${c.name}`, () => {
+    // Section 9.5 step 10: a party DID is a DID by DID Core Section 3.1, not a DID URL.
+    expect(isDid(c.party_did)).toBe(c.verifies);
+    expect(
+      verifyTransactionRecordReason(
+        c.record as Dict,
+        c.did_documents as Record<string, Dict>,
+        c.offer_hashes as string[],
+      ),
+    ).toBe(c.expected_reason);
+  });
+}
+
+for (const did of ["did:web:a", "did:example:123", "did:web:a:b", "did:web:a%3Ab", "did:web::a"]) {
+  test(`DID syntax admits ${did}`, () => {
+    expect(isDid(did)).toBe(true);
+  });
+}
+
+for (const did of ["did:web:a\n", "did:web:a:", "did::a", "did:web", "did:web:a%2", "did:w-b:a", ""]) {
+  test(`DID syntax refuses ${JSON.stringify(did)}`, () => {
+    expect(isDid(did)).toBe(false);
   });
 }

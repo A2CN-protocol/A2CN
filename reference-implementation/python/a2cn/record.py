@@ -9,6 +9,7 @@ generated_at.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Mapping
@@ -93,6 +94,24 @@ REASON_NOT_BILATERAL = "NOT_BILATERAL"
 REASON_ACCEPTED_OFFER_ID_MISMATCH = "ACCEPTED_OFFER_ID_MISMATCH"
 REASON_PARTY_SUMMARY_MISMATCH = "PARTY_SUMMARY_MISMATCH"
 REASON_SAME_SIGNING_KEY = "SAME_SIGNING_KEY"
+
+# Section 9.5 step 10: a party DID is a DID, per DID Core Section 3.1, and not a
+# DID URL. The ABNF, as one anchored expression:
+#   did                = "did:" method-name ":" method-specific-id
+#   method-name        = 1*method-char          ; method-char = %x61-7A / DIGIT
+#   method-specific-id = *( *idchar ":" ) 1*idchar
+#   idchar             = ALPHA / DIGIT / "." / "-" / "_" / pct-encoded
+#   pct-encoded        = "%" HEXDIG HEXDIG
+# So no "?", "#", "/", whitespace or non-ASCII character, and no trailing ":".
+# The "did:" prefix is matched as written, lowercase only. This is a syntax
+# check, not a normalization: a DID that passes is compared exactly as before.
+_DID_IDCHAR = r"(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})"
+DID_SYNTAX = re.compile(rf"did:[a-z0-9]+:(?:{_DID_IDCHAR}*:)*{_DID_IDCHAR}+")
+
+
+def is_did(value) -> bool:
+    """Whether ``value`` is a DID by DID Core Section 3.1's syntax (not a DID URL)."""
+    return isinstance(value, str) and DID_SYNTAX.fullmatch(value) is not None
 
 # The Section 7.3.1 act fields final_offer carries beside the act's hash, so a
 # verifier can rebuild the signed act from the record alone (Section 9.3). The
@@ -478,9 +497,7 @@ def _record_is_bilateral(record: dict) -> bool:
         return False
     initiator_did = initiator.get("did")
     responder_did = responder.get("did")
-    if not (isinstance(initiator_did, str) and initiator_did):
-        return False
-    if not (isinstance(responder_did, str) and responder_did):
+    if not (is_did(initiator_did) and is_did(responder_did)):
         return False
     if initiator_did == responder_did:
         return False

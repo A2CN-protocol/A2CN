@@ -119,6 +119,24 @@ export const REASON_ACCEPTED_OFFER_ID_MISMATCH = "ACCEPTED_OFFER_ID_MISMATCH";
 export const REASON_PARTY_SUMMARY_MISMATCH = "PARTY_SUMMARY_MISMATCH";
 export const REASON_SAME_SIGNING_KEY = "SAME_SIGNING_KEY";
 
+// Section 9.5 step 10: a party DID is a DID, per DID Core Section 3.1, and not a
+// DID URL. The ABNF, as one anchored expression:
+//   did                = "did:" method-name ":" method-specific-id
+//   method-name        = 1*method-char          ; method-char = %x61-7A / DIGIT
+//   method-specific-id = *( *idchar ":" ) 1*idchar
+//   idchar             = ALPHA / DIGIT / "." / "-" / "_" / pct-encoded
+//   pct-encoded        = "%" HEXDIG HEXDIG
+// So no "?", "#", "/", whitespace or non-ASCII character, and no trailing ":".
+// The "did:" prefix is matched as written, lowercase only. This is a syntax
+// check, not a normalization: a DID that passes is compared exactly as before.
+const DID_IDCHAR = "(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})";
+export const DID_SYNTAX = new RegExp(`^did:[a-z0-9]+:(?:${DID_IDCHAR}*:)*${DID_IDCHAR}+$`);
+
+/** Whether `value` is a DID by DID Core Section 3.1's syntax (not a DID URL). */
+export function isDid(value: unknown): value is string {
+  return typeof value === "string" && DID_SYNTAX.test(value);
+}
+
 // The Section 7.3.1 act fields final_offer carries beside the act's hash, so a
 // verifier can rebuild the signed act from the record alone (Section 9.3). The
 // act's other fields are already in the record: session_id at the top level,
@@ -518,7 +536,7 @@ function recordIsBilateral(record: Dict): boolean {
   }
   const initiatorDid = initiator.did;
   const responderDid = responder.did;
-  if (!isNonemptyString(initiatorDid) || !isNonemptyString(responderDid)) {
+  if (!isDid(initiatorDid) || !isDid(responderDid)) {
     return false;
   }
   if (initiatorDid === responderDid) {

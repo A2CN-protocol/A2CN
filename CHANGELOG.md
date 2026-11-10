@@ -94,8 +94,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
   with one key, which is now refused as `SAME_SIGNING_KEY`. No field is newly signed, and neither
   `record_version` nor the wire protocol changes.
 - **A DID document is used only for the DID its `id` names.** Two spellings
-  of one did:web DID can reach one document: the host's case, a trailing dot,
-  a percent-encoded dot or port, a `:.well-known` path, or a Unicode host and
+  of one did:web DID can reach one document: the host's case, a
+  percent-encoded dot or port, a `:.well-known` path, or a Unicode host and
   its punycode. A party whose document lists two keys could sign a
   TransactionRecord's offer under one spelling and its acceptance under the
   other, and the record verified, in both reference implementations and in
@@ -111,6 +111,23 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `registerDidDocument` refuse to register a mismatched one). `a2cn-verify`
   refuses as a usage error a `--did-doc DID=FILE` whose file names another
   DID. Every committed test vector and example already met the rule.
+  Spellings a party's own server can tell apart and answer with a document
+  of their own, such as a trailing dot or a second path, are distinct DIDs: a
+  record shows which DIDs signed, not who controls them.
+- **A TransactionRecord's party DIDs must be DIDs.** `parties.initiator.did`
+  and `parties.responder.did` must each match DID Core Section 3.1's DID
+  syntax, in both reference implementations, or the record is refused as
+  `NOT_BILATERAL` (Section 9.5 step 10). A DID URL with a `?query` or
+  `#fragment` let one party's server answer a second spelling of its DID with
+  a document of its own, so one party signed as two; such a DID URL is now
+  refused, as are a `/path`, a trailing `:`, an empty method-specific id, an
+  uppercase method name or scheme, whitespace, a non-ASCII character and a bad
+  percent-encoding. This is a syntax check, not a normalization: a trailing
+  dot, `:path` segments, a percent-encoded port, punycode, `_` and `-` are
+  DID syntax and are accepted as before. A party DID written as a raw Unicode
+  host is now refused; its punycode form is accepted. A record the reference
+  implementations generate verifies as before whenever its parties' DIDs are
+  DIDs.
 
 ### Added
 

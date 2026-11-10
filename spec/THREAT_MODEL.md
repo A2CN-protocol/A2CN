@@ -29,8 +29,11 @@ standard, and it has **not** undergone an external security audit.
 - **One party posing as two under two spellings of its DID.** A verifier uses a DID document only
   for the DID its `id` names, compared exactly, whether the document was fetched, configured by an
   operator or supplied for offline verification (§4.2). Two spellings of one did:web DID that
-  reach one document (a host's case, a trailing dot, an escaped character, a `:.well-known`
-  path, a Unicode host and its punycode) therefore cannot both resolve to its keys.
+  reach one document (a host's case, an escaped character, a `:.well-known` path, a Unicode host
+  and its punycode) therefore cannot both resolve to its keys, and a party DID must be a DID by
+  DID Core's syntax, not a DID URL (§9.5). Spellings a party's own server can tell apart and
+  answer with a document of their own (a trailing dot, a second path or domain) are distinct
+  DIDs, and fall under what A2CN does not establish: which organization controls a DID.
 - **Ambiguous money amounts.** Line-item money is stated as integer minor units under pinned keys
   (§7.2), and record verification refuses bare `unit_price` / `total` keys and fractional amounts
   at every record version (§9.5, §9A.6), so a verified record cannot be read at 100× or 1/100 of

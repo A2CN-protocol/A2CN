@@ -31,6 +31,7 @@ from a2cn.record import (
     REASON_PARTY_SUMMARY_MISMATCH,
     REASON_SAME_SIGNING_KEY,
     generate_transaction_record,
+    is_did,
     verify_transaction_record,
     verify_transaction_record_reason,
 )
@@ -42,6 +43,7 @@ BASIS = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 DIDS = VECTOR["did_documents"]
 CASES = {case["name"]: case for case in VECTOR["cases"]}
 SHAPE_CASES = VECTOR["shape_cases"]
+SYNTAX_CASES = VECTOR["did_syntax_cases"]
 ATTACKS = [case for case in VECTOR["cases"] if not case["verifies"]]
 NEW_REASONS = {
     REASON_NOT_BILATERAL,
@@ -270,3 +272,46 @@ def test_party_dids_are_compared_as_exact_strings(respelled):
     record["parties"]["responder"]["did"] = respelled(record["parties"]["responder"]["did"])
     case = {**CASES["one_round_control"], "record": _resealed(record)}
     assert _reason(case) == REASON_NOT_BILATERAL
+
+
+@pytest.mark.parametrize("case", SYNTAX_CASES, ids=lambda case: case["name"])
+def test_a_party_did_must_be_did_syntax(case):
+    """Section 9.5 step 10: a party DID is a DID by DID Core Section 3.1, not a DID URL."""
+    assert is_did(case["party_did"]) is case["verifies"]
+    assert verify_transaction_record_reason(case["record"], case["did_documents"], case["offer_hashes"]) == (
+        case["expected_reason"]
+    )
+
+
+@pytest.mark.parametrize("case", [c for c in SYNTAX_CASES if not c["verifies"]], ids=lambda case: case["name"])
+def test_a_refused_did_syntax_case_is_otherwise_genuine(case):
+    """Its own document names the DID and its signatures verify, so only the syntax refuses it."""
+    did = case["party_did"]
+    document = case["did_documents"][did]
+    assert document["id"] == did
+    record = case["record"]
+    assert record["parties"]["responder"]["did"] == record["final_acceptance"]["sender_did"] == did
+    key = get_public_key(get_verification_method(document, document["verificationMethod"][0]["id"]))
+    acceptance = record["final_acceptance"]
+    rebuilt = rebuild_signed_act({
+        "protocol_version": acceptance["protocol_version"],
+        "session_id": record["session_id"],
+        "round_number": acceptance["round_number"],
+        "sequence_number": acceptance["sequence_number"],
+        "message_type": acceptance["message_type"],
+        "sender_did": acceptance["sender_did"],
+        "timestamp": acceptance["timestamp"],
+        "accepted_offer_id": acceptance["accepted_offer_id"],
+        "accepted_protocol_act_hash": acceptance["accepted_protocol_act_hash"],
+    })
+    assert verify_jws(acceptance["acceptance_signature"], key) == hash_object(rebuilt)
+
+
+@pytest.mark.parametrize("did", ["did:web:a", "did:example:123", "did:web:a:b", "did:web:a%3Ab", "did:web::a"])
+def test_did_syntax_admits(did):
+    assert is_did(did)
+
+
+@pytest.mark.parametrize("did", ["did:web:a\n", "did:web:a:", "did::a", "did:web", "did:web:a%2", "did:w-b:a", ""])
+def test_did_syntax_refuses(did):
+    assert not is_did(did)

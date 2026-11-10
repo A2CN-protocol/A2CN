@@ -338,8 +338,17 @@ The initiator is the document's `id` and signs the offer with `key-1`; the
 responder is the other spelling and signs the acceptance with `key-2`. Each
 case's own `did_documents` supplies the one document under both spellings;
 its `id` names only the first, so the responder has no document and the record
-is `KEY_NOT_FOUND`, never verified, in both suites. The test-only key for
-`key-2` is in `private_jwks`.
+is `KEY_NOT_FOUND`, never verified, in both suites, except the Unicode host,
+which is not DID syntax and is `NOT_BILATERAL`. The test-only key for `key-2`
+is in `private_jwks`.
+`did_syntax_cases` hold a party DID to DID Core Section 3.1's syntax (Section
+9.5 step 10). In each, TechCorp offers with `key-1` and the responder is the
+case's `party_did`, whose own document names it exactly and lists `key-2`,
+which signs the acceptance; the hashes and both signatures are genuine. A
+`?query`, a `#fragment`, a `/path`, a trailing `:`, an empty method-specific
+id, an uppercase method name or scheme, a space, a non-ASCII character and a
+bad percent-encoding are `NOT_BILATERAL`; a trailing dot, `:path` segments, a
+`%3A` port, punycode, `_` and `-` are DIDs, and those records verify.
 
 `transaction-record-key-parity.json` covers values on a TransactionRecord's key
 path that the two implementations once refused for different reasons. Each case

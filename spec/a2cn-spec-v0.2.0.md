@@ -458,11 +458,15 @@ as exact strings with no normalization, wherever the document comes from: a
 did:web fetch, a document an operator configured, or one supplied with an
 artifact for offline verification. Such a document's keys are unavailable for
 that DID, exactly as when no document can be obtained. Two spellings of one
-did:web DID can reach one document (a host's case, a trailing dot, a
-percent-encoded character, a `:.well-known` path, a Unicode host and its
-punycode), and its `id` names only one of them; without this rule one party
-whose document lists two keys could sign as two parties under the two
-spellings.
+did:web DID can reach one document (a host's case, a percent-encoded
+character, a `:.well-known` path, a Unicode host and its punycode), and its
+`id` names only one of them; this rule refuses the other, so one party whose
+document lists two keys cannot sign as two parties under spellings that reach
+one document. It does not cover spellings a party's own server can tell apart
+and answer with a document of their own, such as a trailing dot, a second path
+or a second domain: each is a distinct DID with its own document, and falls
+under the residual Section 9.5 step 10 states, that a record shows which DIDs
+signed, not who controls them.
 
 This design eliminates the dual trust-root problem: there is one canonical source
 of cryptographic key material (the DID document), and the discovery document
@@ -2264,15 +2268,18 @@ Any party verifying a transaction record MUST:
    genuine, and a reader of it could misread every agreed price by a factor of
    one hundred.
 10. Verify that the record is between two parties. `parties.initiator.did` and
-    `parties.responder.did` MUST be non-empty and different.
+    `parties.responder.did` MUST each be a DID by the syntax of DID Core
+    Section 3.1, not a DID URL, and MUST be different.
     `final_offer.sender_did` MUST equal one of them and
     `final_acceptance.sender_did` the other, compared as exact strings. The
     signatures of steps 4 and 5 MUST verify under different public keys. A
     record whose two acts one party signed, under one DID or one key, is not
     evidence that two parties agreed, however its signatures verify. One party
     signing under two spellings of its DID is refused when the keys are
-    resolved, because a DID document is used only for the DID its `id` names
-    (Section 4.2).
+    resolved, when the spellings reach one document, because a DID document is
+    used only for the DID its `id` names (Section 4.2). Two DIDs that are
+    distinct DIDs with documents of their own are two signers to a verifier: a
+    record shows which DIDs signed, not who controls them.
 11. Verify that `final_acceptance.accepted_offer_id` equals
     `final_offer.message_id`. The acceptance's signature covers
     `accepted_offer_id` and no signature covers `final_offer.message_id`, so
@@ -5563,6 +5570,11 @@ package release history, see `CHANGELOG.md`.
   that DID. This is what refuses one party signing under two spellings of its
   did:web DID that reach one document. Section 14.1 holds an operator-configured
   approver document to the same rule.
+- **Section 9.5 step 10 — a party DID is a DID.** `parties.initiator.did` and
+  `parties.responder.did` must each match DID Core Section 3.1's DID syntax,
+  so a DID URL (a `?query`, `#fragment` or `/path`), a trailing `:`, an
+  uppercase method name, whitespace, a non-ASCII character or a bad
+  percent-encoding is refused. This is a syntax check, not a normalization.
 - **Section 9.5 step 11 — the acceptance names the final offer.**
   `final_acceptance.accepted_offer_id` must equal `final_offer.message_id`,
   which no signature covers.

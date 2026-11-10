@@ -32,7 +32,12 @@ from a2cn.did import (
 )
 from a2cn.errors import A2CNError
 from a2cn.evidence import EVIDENCE_REASON_KEY_NOT_FOUND, assess_session_evidence_record
-from a2cn.record import REASON_KEY_NOT_FOUND, verify_transaction_record_reason
+from a2cn.record import (
+    REASON_KEY_NOT_FOUND,
+    REASON_NOT_BILATERAL,
+    is_did,
+    verify_transaction_record_reason,
+)
 from a2cn.session import SessionManager
 from tests.conftest import INITIATOR_DID, SERVER_DID, make_session_init
 
@@ -65,10 +70,15 @@ def test_a_document_is_for_the_did_its_id_names_and_no_other():
 
 @pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
 def test_one_party_under_two_spellings_is_never_verified(case):
-    """Both spellings reach one document; only the one its id names has it."""
+    """Both spellings reach one document; only the one its id names has it.
+
+    A spelling that is not DID syntax at all (a raw Unicode host) is refused
+    before any key is resolved, as NOT_BILATERAL (Section 9.5 step 10).
+    """
+    expected = REASON_KEY_NOT_FOUND if is_did(case["spelled_did"]) else REASON_NOT_BILATERAL
     assert verify_transaction_record_reason(
         case["record"], case["did_documents"], case["offer_hashes"]
-    ) == case["expected_reason"] == REASON_KEY_NOT_FOUND
+    ) == case["expected_reason"] == expected
 
 
 @pytest.mark.parametrize("case", SPELLINGS, ids=lambda case: case["name"])
@@ -82,9 +92,11 @@ def test_the_spelling_cases_are_real(case):
     assert record["parties"]["initiator"]["did"] == canonical
     assert record["parties"]["responder"]["did"] == spelled
     # Relabelled to name the spelling, the document verifies the acceptance,
-    # so the id binding is the only thing that refuses the record.
+    # so the id binding is the only thing that refuses the record; a spelling
+    # that is not DID syntax is refused by that check instead.
     relabelled = {canonical: documents[canonical], spelled: _relabelled(documents[canonical], spelled)}
-    assert verify_transaction_record_reason(record, relabelled, case["offer_hashes"]) is None
+    expected = None if is_did(spelled) else REASON_NOT_BILATERAL
+    assert verify_transaction_record_reason(record, relabelled, case["offer_hashes"]) == expected
 
 
 @pytest.mark.asyncio

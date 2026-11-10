@@ -29,7 +29,12 @@ import {
 } from "../src/a2cn/did.js";
 import { EVIDENCE_REASON_KEY_NOT_FOUND, assessSessionEvidenceRecord } from "../src/a2cn/evidence.js";
 import type { Dict } from "../src/a2cn/messages.js";
-import { REASON_KEY_NOT_FOUND, verifyTransactionRecordReason } from "../src/a2cn/record.js";
+import {
+  REASON_KEY_NOT_FOUND,
+  REASON_NOT_BILATERAL,
+  isDid,
+  verifyTransactionRecordReason,
+} from "../src/a2cn/record.js";
 import { SessionManager } from "../src/a2cn/session.js";
 import { A2CNError } from "../src/a2cn/errors.js";
 import {
@@ -92,8 +97,10 @@ for (const c of SPELLINGS) {
       documents,
       c.offer_hashes as string[],
     );
+    // A spelling that is not DID syntax at all (a raw Unicode host) is refused
+    // before any key is resolved, as NOT_BILATERAL (Section 9.5 step 10).
     expect(reason).toBe(c.expected_reason);
-    expect(reason).toBe(REASON_KEY_NOT_FOUND);
+    expect(reason).toBe(isDid(spelled) ? REASON_KEY_NOT_FOUND : REASON_NOT_BILATERAL);
   });
 
   test(`the spelling case is real: ${c.name}`, () => {
@@ -104,7 +111,7 @@ for (const c of SPELLINGS) {
     expect(canonical).not.toBe(spelled);
     const fixed = { [canonical]: documents[canonical], [spelled]: relabelled(documents[canonical], spelled) };
     expect(verifyTransactionRecordReason(c.record as Dict, fixed, c.offer_hashes as string[])).toBe(
-      null,
+      isDid(spelled) ? null : REASON_NOT_BILATERAL,
     );
   });
 
