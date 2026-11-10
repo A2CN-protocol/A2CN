@@ -348,9 +348,12 @@ and `record_hash` resealed, except the `record_hash` cases themselves. A
 verification method or signature that is not a non-empty string (a list, an
 object, a number, a boolean, `null`, `""`) is that act's
 `OFFER_SIGNATURE_INVALID` or `ACCEPTANCE_SIGNATURE_INVALID`, and so is a JWS
-whose protected header is not a JSON object. Verified with the vector's
-`did_documents` and the case's `offer_hashes`, each record must reach
-`expected_reason` in both suites.
+whose protected header is not a JSON object. A string holding a lone surrogate
+has no UTF-8 encoding and cannot be canonicalized (RFC 8785), so the two
+`lone_*` cases, sealed by the TypeScript hasher as it was before it refused
+them, are `MALFORMED_RECORD`; a well-formed surrogate pair verifies. Verified
+with the vector's `did_documents` and the case's `offer_hashes`, each record
+must reach `expected_reason` in both suites.
 
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states

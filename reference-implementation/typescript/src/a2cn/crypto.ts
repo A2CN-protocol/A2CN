@@ -96,8 +96,45 @@ export function privateKeyFromJwk(jwk: Record<string, unknown>): SigningPrivateK
 // JCS + hashing
 // ---------------------------------------------------------------------------
 
-/** RFC 8785 JSON Canonicalization Scheme. */
+// A lone surrogate: a UTF-16 surrogate code unit that is not half of a pair. In
+// a regular expression with the u flag a well-formed pair is one code point, so
+// \p{Surrogate} matches only an unpaired half.
+const LONE_SURROGATE = /\p{Surrogate}/u;
+
+/** Throw if any string in `value`, a member name or a value, holds a lone surrogate. */
+function refuseLoneSurrogates(value: unknown): void {
+  if (typeof value === "string") {
+    if (LONE_SURROGATE.test(value)) {
+      throw new Error("Cannot canonicalize a string holding a lone surrogate: it has no UTF-8 encoding");
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      refuseLoneSurrogates(item);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [name, member] of Object.entries(value)) {
+      refuseLoneSurrogates(name);
+      refuseLoneSurrogates(member);
+    }
+  }
+}
+
+/**
+ * RFC 8785 JSON Canonicalization Scheme.
+ *
+ * Throws on a string, member name or value, holding a lone surrogate. Such a
+ * string has no UTF-8 encoding, and RFC 8785 requires one; JSON.stringify would
+ * write it as a \u escape instead, so this implementation would hash bytes
+ * Python's canonicalizer refuses to produce. The input is checked, not the
+ * canonical text, because the escape hides the surrogate there. A well-formed
+ * string, astral characters included, canonicalizes as before.
+ */
 export function canonicalize(obj: unknown): Buffer {
+  refuseLoneSurrogates(obj);
   const canonical = jcsCanonicalize(obj);
   if (canonical === undefined) {
     throw new Error("Cannot canonicalize undefined");

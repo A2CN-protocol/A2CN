@@ -247,6 +247,13 @@ This project is pre-1.0: the minor version moves for substantive additions.
   is not a JSON object, as an invalid signature, as TypeScript's does; it raised
   an unrelated error before. `spec/test-vectors/transaction-record-key-parity.json`
   holds the cases both suites run.
+- TypeScript's canonicalization refuses a string, member name or value, that
+  holds a lone surrogate, as Python's does: such a string has no UTF-8
+  encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape
+  instead, so a record a TypeScript producer sealed over a lone surrogate
+  verified in TypeScript and was `MALFORMED_RECORD` in Python; it is now
+  `MALFORMED_RECORD` in both. Every well-formed string, astral characters
+  included, hashes exactly as before.
 
 ## [0.3.1] — 2026-10-15
 
