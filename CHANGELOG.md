@@ -274,6 +274,16 @@ This project is pre-1.0: the minor version moves for substantive additions.
   signature. Before, a genuine signature under a header beginning with a BOM,
   or holding `NaN`, verified in Python and not in TypeScript, and one under a
   header whose bytes were not UTF-8 verified in TypeScript and not in Python.
+- A JWS's three segments, a public JWK's coordinates and an invitation's
+  signature are decoded as canonical unpadded base64url in both reference
+  implementations: only `A-Z`, `a-z`, `0-9`, `-` and `_`, no `=` padding, a
+  length that is not one more than a multiple of four, and zero unused
+  trailing bits. Anything else is an invalid signature, or an unusable key.
+  Before, the two decoders disagreed: a genuine signature under a header with
+  one stray trailing character verified in TypeScript only, one with an `=`
+  inside it verified in Python only, and both accepted padding, the standard
+  alphabet and non-canonical trailing bits; a JWK coordinate holding `*` or a
+  space was usable in TypeScript only.
 - TypeScript's canonicalization refuses a string, member name or value, that
   holds a lone surrogate, as Python's does: such a string has no UTF-8
   encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape

@@ -364,7 +364,12 @@ them, are `MALFORMED_RECORD`; a well-formed surrogate pair verifies. The
 `jws_*` rows are genuine signatures under a protected header or payload given
 as raw bytes: a header beginning with a byte-order mark, a header that is not
 UTF-8, a header holding `NaN`, and a payload beginning with a byte-order mark
-are each `OFFER_SIGNATURE_INVALID`, beside a control that verifies. Verified
+are each `OFFER_SIGNATURE_INVALID`, beside a control that verifies. The
+`b64_*` rows are genuine signatures over segment text that is not canonical
+unpadded base64url: a stray trailing character, `=` padding at the end or
+inside, a `*`, a space or a newline, the standard alphabet, and unused
+trailing bits that are not zero, in the header, payload or signature segment.
+Each is `OFFER_SIGNATURE_INVALID`, beside a control that verifies. Verified
 with the vector's `did_documents` and the case's `offer_hashes`, each record
 must reach `expected_reason` in both suites.
 

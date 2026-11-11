@@ -1,5 +1,5 @@
 {
-  "description": "Values on a TransactionRecord's key path that are not what their step reads, on which the Python and TypeScript verifiers must refuse alike. Each case is transaction-record-parties.json's one-round control with one value changed and record_hash resealed (the record_hash cases excepted). A verification method or signature is read by type, never by truthiness: a value that is not a non-empty string names no key, or is no JWS, so that act's signature does not verify; a JWS whose protected header is not a JSON object does not verify either. Verify each record with did_documents (the two parties' documents, as in transaction-record-parties.json) and the case's offer_hashes; both implementations must reach expected_reason (null when it verifies). A string holding a lone surrogate has no UTF-8 encoding and cannot be canonicalized (RFC 8785), so a record carrying one is MALFORMED_RECORD in both; a well-formed surrogate pair canonicalizes as before. A JWS protected header and payload are decoded as strict UTF-8 with no byte-order mark, and a header must be JSON (no NaN or Infinity): the jws_* rows are genuine signatures under such bytes, and each is an invalid signature in both, beside a control that verifies.",
+  "description": "Values on a TransactionRecord's key path that are not what their step reads, on which the Python and TypeScript verifiers must refuse alike. Each case is transaction-record-parties.json's one-round control with one value changed and record_hash resealed (the record_hash cases excepted). A verification method or signature is read by type, never by truthiness: a value that is not a non-empty string names no key, or is no JWS, so that act's signature does not verify; a JWS whose protected header is not a JSON object does not verify either. Verify each record with did_documents (the two parties' documents, as in transaction-record-parties.json) and the case's offer_hashes; both implementations must reach expected_reason (null when it verifies). A string holding a lone surrogate has no UTF-8 encoding and cannot be canonicalized (RFC 8785), so a record carrying one is MALFORMED_RECORD in both; a well-formed surrogate pair canonicalizes as before. A JWS protected header and payload are decoded as strict UTF-8 with no byte-order mark, and a header must be JSON (no NaN or Infinity): the jws_* rows are genuine signatures under such bytes, and each is an invalid signature in both, beside a control that verifies. Each JWS segment is canonical unpadded base64url: only A-Z, a-z, 0-9, '-' and '_', no '=', a length that is not one more than a multiple of four, and zero unused trailing bits. The b64_* rows are genuine signatures over segment text that breaks one of those rules, each an invalid signature in both, beside a control that verifies.",
   "did_documents": {
     "did:web:techcorp.example": {
       "@context": [
@@ -2315,6 +2315,1176 @@
         },
         "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
         "record_hash": "D6BX0khE4wkFuS5hN385KP83hKq6oXaE0ovLfHOhGCc"
+      }
+    },
+    {
+      "name": "b64_control",
+      "description": "The offer re-signed under a canonical header with '-' and '_' in its text: it verifies.",
+      "verifies": true,
+      "expected_reason": null,
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.WkhqpGFR0Y82eZDXi-k5sJPMI1llrm5mOfSxxXUld00WNZLjKPWeYAOYiOSSuYoD6d87b39kQR8a_69DR7XNmg"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "9FjXphK8l9Rm6sj-_FC0OSrm1Fvaoa1IuKf9FNSFmok"
+      }
+    },
+    {
+      "name": "b64_header_one_extra_character",
+      "description": "One stray character after the header text, so its length is one more than a multiple of four. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0A.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.0LH3THxc1HkBvgXTnzZ53oWD4JPs7wP5Av-lvZFATCtt894YhyUmy5Qd5V9srNaClAQQ_NJplHwAS_JEc9iwlQ"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "4c_s2pxJBpW31Fn_uP4aGlnFdVfzC_NGdifqlTWHUHM"
+      }
+    },
+    {
+      "name": "b64_header_padding",
+      "description": "The header text ends in '=' padding. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0=.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.7RFZMtMQxh42vnS47wVFaf5eT-WJZwa4OdxUou7se8ydajWPfc0GwLuh3g8MmDb8VotRZo7KdYaXZ3sVN6iMOQ"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "bbZixp2Av2Y0SiMOdf3GYqUiDOYICNJKDIyNuIVpQ0U"
+      }
+    },
+    {
+      "name": "b64_header_padding_inside",
+      "description": "An '=' inside the header text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJh=bGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.6D3SKKrzRVqyois9yFpL55ivR-sikQls9MP6ZO1USw8JYmTg_I943zINL1dJn6kDAJje7HGnSlINDa_1zzbc8g"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "BfcBG88xIdMBjJ-L6M-3mGwC15WlUrRX5FZZpKw-cCw"
+      }
+    },
+    {
+      "name": "b64_header_star",
+      "description": "A '*' inside the header text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJh*bGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.JDRMHelJj3ymD5vt-LCKUlnTF3QEn_0E1sOABIrE4JXcxVx_gnKB4pm9DmewfO9zLGbc7NBVpVx-dQw14mfmdg"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "kruXVzcdF7PMP3gMAZvfWynl--eHP_VYplM4MQIDurw"
+      }
+    },
+    {
+      "name": "b64_header_space",
+      "description": "A space inside the header text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJh bGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.nZfa6lRsqTFm6v2KpSYFcIZNXlUDAi9HfCqoSIl6PpOVVQVT8htJFT44AQdoMDrfAKZPevuLCHUBYtQY4fPQAA"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "8_ulP8l5qUrbwJ-jQNQoshQ3IytcOKUYVpnc2Fk-fJI"
+      }
+    },
+    {
+      "name": "b64_header_newline",
+      "description": "A newline inside the header text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJh\nbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.z7jnAdGzkF9svgpnlo9StFfg9TUswz0-1rVndYQt9n6smMgiBV8HT5LWjzuR8TqJ6z-MgndH-AZgzfQLqbGUcw"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "jFB6PqahQfOqtoch3Xxb16TVFNWPMqfLVt4kpokDhHI"
+      }
+    },
+    {
+      "name": "b64_header_standard_alphabet",
+      "description": "The header text in the standard alphabet, '+' and '/' for '-' and '_'. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI/Pj8+Pz5+In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.WjW3yS5e0Ua83ciHdKWXOcEzR6s9fzUMfnjkQfFhynRpPHIgj7mPLGNCi-mD9lnPvEeTItPEvvaXCVGVVO3Dow"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "ZDrH0hA-0gO2UsOmGtAqhMKrfkppRg7g0aKLoS4EQcM"
+      }
+    },
+    {
+      "name": "b64_header_noncanonical_tail",
+      "description": "The header text's unused trailing bits are not zero: the same bytes, a different text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In1.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.I6byZVnXm8LG2IHm-rAoEAlEykFgHPqgy1y0dqSK9lncLXwQy42ZHXkgAVZgPomSrjsvo-hW10kKp_0Eq8cUpA"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "Ptn5HapqtR4ulsOrwIkam4F9GQYuGOxLIO1SG2N2S2E"
+      }
+    },
+    {
+      "name": "b64_payload_one_extra_character",
+      "description": "One stray character after the payload text. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQA.Q9J2GpngspV_EWGlB1H1YikB69uXxcHJ_R7kRzWR5HSYaLgTZNtG71ZHEAReeqjNzzoYCacyHjmqi1pPrEyNlQ"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "SWMpf6lUnhGBaB5OLyDjD6k7tMT1Ugh99nBi1clTOQI"
+      }
+    },
+    {
+      "name": "b64_payload_noncanonical_tail",
+      "description": "The payload text's unused trailing bits are not zero. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUR.sJpeJrxO6tjgCCLmddwdnvy3nc6T2IUcxKNb5uQNeU9BZhgYyZrGLkh4EJrXLVVZPQyT0cLBnBAh5JjonTCz9A"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "rGab_KXWJouO7hbhkghNIYwk68BGRof6-VbTug49ezs"
+      }
+    },
+    {
+      "name": "b64_signature_padding",
+      "description": "The signature text ends in '=' padding. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.WkhqpGFR0Y82eZDXi-k5sJPMI1llrm5mOfSxxXUld00WNZLjKPWeYAOYiOSSuYoD6d87b39kQR8a_69DR7XNmg=="
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "FzkmNk3j8WYuf9mvqgyDT_bJz_R8ixQBafEvCdRm7q8"
+      }
+    },
+    {
+      "name": "b64_signature_noncanonical_tail",
+      "description": "The signature text's unused trailing bits are not zero. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiIsIngiOiI_Pj8-Pz5-In0.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.WkhqpGFR0Y82eZDXi-k5sJPMI1llrm5mOfSxxXUld00WNZLjKPWeYAOYiOSSuYoD6d87b39kQR8a_69DR7XNmh"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "TDIydPVewds9bnjAn0sBAriksEzIGwGDHF6XPMsJBZ8"
+      }
+    },
+    {
+      "name": "b64_aligned_header_one_extra_character",
+      "description": "One stray character after a header text whose length is a multiple of four, so the length is one more than a multiple of four. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJhbGciOiJFUzI1NiJ9A.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.zjkqgMQR9jt8Q4CxA-1q1Sq7wc_vZkikCMwVlzI6AmWvxwGtZcssRky4TY6kIG9WVXIgeVIqpH9DyaGHlZCapg"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "jcxLlq_8crya5g9YD8Jw2M-JqcQxZK45KAV4PrsAgFk"
+      }
+    },
+    {
+      "name": "b64_aligned_header_padding_inside",
+      "description": "An '=' inside a header text whose length is a multiple of four. The signature is genuine over that text.",
+      "verifies": false,
+      "expected_reason": "OFFER_SIGNATURE_INVALID",
+      "offer_hashes": [
+        "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ"
+      ],
+      "record": {
+        "record_type": "a2cn_transaction_record",
+        "record_version": "0.4",
+        "record_id": "b7e05ac9-cc53-5839-93fc-380d8ce8405e",
+        "session_id": "5a1e0b2c-3d4e-4f60-8a7b-9c0d1e2f3a4b",
+        "generated_at": "2026-03-24T10:02:00Z",
+        "parties": {
+          "initiator": {
+            "organization_name": "TechCorp Inc",
+            "did": "did:web:techcorp.example",
+            "agent_id": "basis-buyer-agent",
+            "verification_method": "did:web:techcorp.example#key-1",
+            "mandate_type": "declared"
+          },
+          "responder": {
+            "organization_name": "Acme Corp",
+            "did": "did:web:acme-corp.com",
+            "agent_id": "basis-seller-agent",
+            "verification_method": "did:web:acme-corp.com#key-2026-01",
+            "mandate_type": "declared"
+          }
+        },
+        "deal_type": "saas_renewal",
+        "currency": "USD",
+        "basis": "gross",
+        "subject": "Basis record vector",
+        "subject_reference": "BASIS-REF-001",
+        "agreed_terms": {
+          "total_value": 9500000,
+          "currency": "USD",
+          "basis": "gross",
+          "seat_count": 100
+        },
+        "negotiation_summary": {
+          "total_rounds": 1,
+          "total_messages": 2,
+          "session_created_at": "2026-03-24T10:00:00Z",
+          "first_offer_at": "2026-03-24T10:01:00Z",
+          "accepted_at": "2026-03-24T10:02:00Z",
+          "initiating_party_did": "did:web:techcorp.example",
+          "accepting_party_did": "did:web:acme-corp.com"
+        },
+        "final_offer": {
+          "message_id": "basis-offer-1",
+          "protocol_version": "0.2",
+          "round_number": 1,
+          "sequence_number": 1,
+          "message_type": "offer",
+          "sender_did": "did:web:techcorp.example",
+          "timestamp": "2026-03-24T10:01:00Z",
+          "expires_at": "2030-01-01T00:00:00Z",
+          "protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "protocol_act_signature": "eyJh=bGciOiJFUzI1NiJ9.a0RQNVI4U091R1BRZVhkVjVHOXgyZzVaUlJJellxWnB5VUNla09RdHNPUQ.oLF1adNSYemYRuzcnJyB1CnHuDbAGXgGub6PKqKBKNcPo2v3dJeupYqS-T3F5BaEkKKL5YEjAbd7Fwel7gbWVQ"
+        },
+        "final_acceptance": {
+          "message_id": "parties-acc-1",
+          "protocol_version": "0.2",
+          "message_type": "acceptance",
+          "sender_did": "did:web:acme-corp.com",
+          "round_number": 1,
+          "sequence_number": 2,
+          "timestamp": "2026-03-24T10:02:00Z",
+          "accepted_offer_id": "basis-offer-1",
+          "accepted_protocol_act_hash": "kDP5R8SOuGPQeXdV5G9x2g5ZRRIzYqZpyUCekOQtsOQ",
+          "acceptance_signature": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImRpZDp3ZWI6YWNtZS1jb3JwLmNvbSNrZXktMjAyNi0wMSJ9.cEt6YU1YMlZ4bmtkUm1EbEZkMVpFV2FvRHVXdXh6MTYzWktnbW5Ic0dYZw.x0zVtno3mlC0Zxj3DPk72JPZD4d8gbgvSagh3bxkEFcbcarJYn2mX0BNCdFYRIN0WviLBqmsAQffqX9Yx7x0zg"
+        },
+        "offer_chain_hash": "6la4tQ0loK83l2W_XzAT2CZV-TKIg0RWlZt6xfsZmgo",
+        "record_hash": "h9yWduJ70tZITyGOzQEAU9_TPtpAZ5xZ_0lI9RimUm8"
       }
     }
   ]

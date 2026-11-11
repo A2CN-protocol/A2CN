@@ -14,7 +14,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-import { InvalidSignatureError, b64urlEncode, generateKeypair, verifyJws } from "../src/a2cn/crypto.js";
+import {
+  InvalidSignatureError,
+  b64urlEncode,
+  generateEd25519Keypair,
+  generateKeypair,
+  publicKeyFromJwk,
+  publicKeyToJwk,
+  signInvitation,
+  verifyInvitationSignature,
+  verifyJws,
+} from "../src/a2cn/crypto.js";
 import type { Dict } from "../src/a2cn/messages.js";
 import { verifyTransactionRecord, verifyTransactionRecordReason } from "../src/a2cn/record.js";
 import { REPO_ROOT } from "./support/paths.js";
@@ -69,5 +79,101 @@ for (const [label, [header, payload]] of Object.entries(SEGMENT_CASES)) {
     expect(() => verifyJws(signedSegments(privateKey, header, payload), publicKey)).toThrow(
       InvalidSignatureError,
     );
+  });
+}
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/** The same bytes under a non-canonical text: an unused trailing bit set. */
+function flipUnusedBit(text: string): string {
+  expect([2, 3]).toContain(text.length % 4);
+  return text.slice(0, -1) + ALPHABET[ALPHABET.indexOf(text[text.length - 1]) | 1];
+}
+
+/** A genuine ES256 compact JWS over the segment texts exactly as given. */
+function signedTexts(privateKey: Parameters<typeof sign>[2], headerText: string, payloadText: string): string {
+  const signingInput = `${headerText}.${payloadText}`;
+  const signature = sign("sha256", Buffer.from(signingInput, "ascii"), {
+    key: privateKey as never,
+    dsaEncoding: "ieee-p1363",
+  });
+  return `${signingInput}.${b64urlEncode(signature)}`;
+}
+
+// The header {"alg":"ES256","x":"??>~"} encodes with "-" and "_" and unused trailing bits.
+const HEADER = b64urlEncode(Buffer.from('{"alg":"ES256","x":"??>~"}'));
+const PAYLOAD = b64urlEncode(Buffer.from("payload1"));
+const SHAPES: [string, "header" | "payload" | "signature", string | null][] = [
+  ["star", "header", `${HEADER.slice(0, 4)}*${HEADER.slice(4)}`],
+  ["space", "header", `${HEADER.slice(0, 4)} ${HEADER.slice(4)}`],
+  ["newline", "header", `${HEADER.slice(0, 4)}\n${HEADER.slice(4)}`],
+  ["plus-slash", "header", HEADER.replace(/-/g, "+").replace(/_/g, "/")],
+  ["padding", "header", HEADER + "=".repeat((4 - (HEADER.length % 4)) % 4)],
+  ["padding-inside", "header", `${HEADER.slice(0, 4)}=${HEADER.slice(4)}`],
+  ["length-1-mod-4", "header", `${b64urlEncode(Buffer.from('{"alg":"ES256"}'))}A`],
+  ["noncanonical-tail", "header", null],
+  ["length-1-mod-4", "payload", `${b64urlEncode(Buffer.from("payloa"))}A`],
+  ["noncanonical-tail", "payload", null],
+  ["padding", "signature", null],
+  ["noncanonical-tail", "signature", null],
+];
+
+for (const [label, segment, given] of SHAPES) {
+  test(`a JWS segment is canonical unpadded base64url: ${segment} ${label}`, () => {
+    expect(HEADER).toMatch(/-/);
+    expect(HEADER).toMatch(/_/);
+    const { privateKey, publicKey } = generateKeypair();
+    const good = signedTexts(privateKey, HEADER, PAYLOAD);
+    expect(verifyJws(good, publicKey)).toBe("payload1");
+    let token: string;
+    if (segment === "header") {
+      token = signedTexts(privateKey, given ?? flipUnusedBit(HEADER), PAYLOAD);
+    } else if (segment === "payload") {
+      token = signedTexts(privateKey, HEADER, given ?? flipUnusedBit(PAYLOAD));
+    } else {
+      const cut = good.lastIndexOf(".");
+      const signature = good.slice(cut + 1);
+      const bad =
+        label === "padding"
+          ? signature + "=".repeat((4 - (signature.length % 4)) % 4)
+          : flipUnusedBit(signature);
+      token = `${good.slice(0, cut)}.${bad}`;
+    }
+    expect(() => verifyJws(token, publicKey)).toThrow(InvalidSignatureError);
+  });
+}
+
+const JWK_SPOILS: Record<string, (v: string) => string> = {
+  padding: (v) => `${v}=`,
+  star: (v) => `${v.slice(0, 4)}*${v.slice(4)}`,
+  space: (v) => `${v.slice(0, 4)} ${v.slice(4)}`,
+  "plus-slash": (v) => (/[-_]/.test(v) ? v.replace(/-/g, "+").replace(/_/g, "/") : `${v}=`),
+};
+
+for (const [label, spoil] of Object.entries(JWK_SPOILS)) {
+  test(`a public JWK coordinate is canonical base64url: ${label}`, () => {
+    const { publicKey } = generateKeypair();
+    const jwk = publicKeyToJwk(publicKey);
+    publicKeyFromJwk(jwk);
+    for (const name of ["x", "y"]) {
+      expect(() => publicKeyFromJwk({ ...jwk, [name]: spoil(jwk[name]) })).toThrow();
+    }
+  });
+}
+
+for (const label of ["padding", "noncanonical-tail", "star"]) {
+  test(`an invitation signature is canonical base64url: ${label}`, () => {
+    const { privateKey, publicKey } = generateEd25519Keypair();
+    const invitation: Dict = { invitation_id: "inv-1", inviter_did: "did:web:buyer.example" };
+    invitation.invitation_signature = signInvitation(invitation, privateKey);
+    expect(verifyInvitationSignature(invitation, publicKey)).toBe(true);
+    const signature = invitation.invitation_signature as string;
+    const spoiled = {
+      padding: signature + "=".repeat((4 - (signature.length % 4)) % 4),
+      "noncanonical-tail": flipUnusedBit(signature),
+      star: `${signature.slice(0, 4)}*${signature.slice(4)}`,
+    }[label] as string;
+    expect(spoiled).not.toBe(signature);
+    expect(verifyInvitationSignature({ ...invitation, invitation_signature: spoiled }, publicKey)).toBe(false);
   });
 }

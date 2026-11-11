@@ -12,6 +12,7 @@ Implements:
 import base64
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -107,10 +108,10 @@ def public_key_to_jwk(public_key: SigningPublicKey) -> dict:
 def public_key_from_jwk(jwk: dict) -> SigningPublicKey:
     """Reconstruct a supported public key from a JWK dict."""
     if jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519":
-        return Ed25519PublicKey.from_public_bytes(_b64url_decode(jwk["x"]))
+        return Ed25519PublicKey.from_public_bytes(_b64url_decode_canonical(jwk["x"]))
 
-    x = int.from_bytes(_b64url_decode(jwk["x"]), "big")
-    y = int.from_bytes(_b64url_decode(jwk["y"]), "big")
+    x = int.from_bytes(_b64url_decode_canonical(jwk["x"]), "big")
+    y = int.from_bytes(_b64url_decode_canonical(jwk["y"]), "big")
     pub_numbers = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1())
     return pub_numbers.public_key()
 
@@ -198,7 +199,7 @@ def verify_jws(token: str, public_key: SigningPublicKey) -> str:
             raise pyjwt.exceptions.InvalidSignatureError("JWS alg does not match key type")
 
         signing_input = f"{protected}.{payload}".encode("ascii")
-        signature_bytes = _b64url_decode(signature)
+        signature_bytes = _b64url_decode_canonical(signature)
         if isinstance(public_key, Ed25519PublicKey):
             public_key.verify(signature_bytes, signing_input)
         else:
@@ -222,7 +223,7 @@ def _jws_segment_text(segment: str) -> str:
     UTF-8, or a leading U+FEFF, make the signature invalid. (json.loads on
     bytes would detect UTF-16 or UTF-32 and skip a UTF-8 BOM.)
     """
-    text = _b64url_decode(segment).decode("utf-8")
+    text = _b64url_decode_canonical(segment).decode("utf-8")
     if text.startswith("\ufeff"):
         raise ValueError("JWS segment starts with a byte-order mark")
     return text
@@ -354,7 +355,7 @@ def verify_invitation_signature(invitation_dict: dict, public_key: SigningPublic
     canonical_bytes = canonicalize(canonical_obj)
 
     try:
-        signature = _b64url_decode(sig_b64)
+        signature = _b64url_decode_canonical(sig_b64)
         if isinstance(public_key, Ed25519PublicKey):
             public_key.verify(signature, canonical_bytes)
         else:
@@ -489,6 +490,29 @@ def verify_approval_receipt_signature(receipt: dict, public_key: SigningPublicKe
 
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+_B64URL_TEXT = re.compile(r"[A-Za-z0-9_-]*")
+
+
+def _b64url_decode_canonical(text: str) -> bytes:
+    """Decode unpadded base64url only if ``text`` is the canonical encoding of its bytes.
+
+    Both reference implementations decode a JWS segment, a public JWK's
+    coordinates and an invitation signature this way, so one string means one
+    thing to each: only ``A-Z``, ``a-z``, ``0-9``, ``-`` and ``_``, no ``=``
+    padding, a length that is not one more than a multiple of four, and unused
+    trailing bits that are zero, so the bytes re-encode to exactly ``text``.
+    Anything else raises ValueError.
+    """
+    if not isinstance(text, str) or _B64URL_TEXT.fullmatch(text) is None:
+        raise ValueError("base64url text holds a character outside A-Z, a-z, 0-9, '-' and '_'")
+    if len(text) % 4 == 1:
+        raise ValueError("base64url text is one character more than a multiple of four")
+    data = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+    if _b64url_encode(data) != text:
+        raise ValueError("base64url text is not canonical: its unused trailing bits are not zero")
+    return data
 
 
 def _b64url_decode(s: str) -> bytes:

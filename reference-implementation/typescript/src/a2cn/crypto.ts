@@ -84,6 +84,11 @@ export function createPublicKeyFromPrivate(privateKey: SigningPrivateKey): Signi
 
 /** Reconstruct a supported public key from a JWK dict. */
 export function publicKeyFromJwk(jwk: Record<string, unknown>): SigningPublicKey {
+  // The coordinates are decoded as Python decodes them: canonical base64url only.
+  b64urlDecodeCanonical(jwk.x as string);
+  if (!(jwk.kty === "OKP" && jwk.crv === "Ed25519")) {
+    b64urlDecodeCanonical(jwk.y as string);
+  }
   return createPublicKey({ key: jwk as import("node:crypto").JsonWebKey, format: "jwk" });
 }
 
@@ -219,7 +224,7 @@ export function verifyJws(token: string, publicKey: SigningPublicKey): string {
     }
 
     const signingInput = Buffer.from(`${protectedB64}.${payloadB64}`, "ascii");
-    const signatureBytes = b64urlDecode(signatureB64);
+    const signatureBytes = b64urlDecodeCanonical(signatureB64);
     let valid: boolean;
     if (isEd25519(publicKey)) {
       valid = cryptoVerify(null, signingInput, publicKey, signatureBytes);
@@ -374,7 +379,7 @@ export function verifyInvitationSignature(
 
   try {
     const canonicalBytes = canonicalize(canonicalObj);
-    const signature = b64urlDecode(sigB64);
+    const signature = b64urlDecodeCanonical(sigB64);
     if (isEd25519(publicKey)) {
       return cryptoVerify(null, canonicalBytes, publicKey, signature);
     }
@@ -642,11 +647,34 @@ const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
  * replace bytes that are not UTF-8 with U+FFFD.)
  */
 function jwsSegmentText(segment: string): string {
-  const text = STRICT_UTF8.decode(b64urlDecode(segment));
+  const text = STRICT_UTF8.decode(b64urlDecodeCanonical(segment));
   if (text.startsWith("\ufeff")) {
     throw new InvalidSignatureError("JWS segment starts with a byte-order mark");
   }
   return text;
+}
+
+/**
+ * Decode unpadded base64url only if `text` is the canonical encoding of its bytes.
+ *
+ * Both reference implementations decode a JWS segment, a public JWK's
+ * coordinates and an invitation signature this way, so one string means one
+ * thing to each: only A-Z, a-z, 0-9, "-" and "_", no "=" padding, a length that
+ * is not one more than a multiple of four, and unused trailing bits that are
+ * zero, so the bytes re-encode to exactly `text`. Anything else throws.
+ */
+export function b64urlDecodeCanonical(text: string): Buffer {
+  if (typeof text !== "string" || !B64URL_ALPHABET.test(text)) {
+    throw new Error("base64url text holds a character outside A-Z, a-z, 0-9, '-' and '_'");
+  }
+  if (text.length % 4 === 1) {
+    throw new Error("base64url text is one character more than a multiple of four");
+  }
+  const data = Buffer.from(text, "base64url");
+  if (data.toString("base64url") !== text) {
+    throw new Error("base64url text is not canonical: its unused trailing bits are not zero");
+  }
+  return data;
 }
 
 export function b64urlDecode(s: string): Buffer {
