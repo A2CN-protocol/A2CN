@@ -11,6 +11,7 @@
 import { randomUUID, type KeyObject } from "node:crypto";
 
 import { hashObject, signJws } from "./crypto.js";
+import { ownGet, setOwn } from "./own.js";
 import { generateTransactionRecord, type RecordSession } from "./record.js";
 import {
   A2CNError,
@@ -161,7 +162,8 @@ export class A2CNClient {
 
     // Cache session state
     const sessionId = ack.session_id as string;
-    this._sessions[sessionId] = {
+    // The responder chose this id, so it is stored as an own entry whatever it is.
+    setOwn(this._sessions, sessionId, {
       session_init: sessionInit,
       session_ack: ack,
       sequence_number: 0,
@@ -170,7 +172,7 @@ export class A2CNClient {
       offer_chain: [],
       message_log: [],
       latest_offer: null,
-    };
+    });
 
     return ack;
   }
@@ -186,7 +188,7 @@ export class A2CNClient {
     terms: Dict,
     inReplyTo: string | null = null,
   ): Promise<Dict> {
-    const state = this._sessions[sessionId];
+    const state = ownGet(this._sessions, sessionId) as ClientSessionState;
     // Check the terms before the counters move, so a refused offer leaves
     // nothing to undo and the corrected one goes out in the same round (Section 7.2)
     checkOfferMoneyParams(state.session_ack.session_params_accepted as Dict, terms, { sessionId });
@@ -270,7 +272,7 @@ export class A2CNClient {
     sessionId: string,
     offer: Dict,
   ): Promise<Dict> {
-    const state = this._sessions[sessionId];
+    const state = ownGet(this._sessions, sessionId) as ClientSessionState;
     // The offer may never have passed the receive check: a caller can hand over
     // any object, and a message whose message_type is not exactly offer or
     // counteroffer is recorded unchecked. Hold its terms to the session before
@@ -347,7 +349,7 @@ export class A2CNClient {
    * Used to assert identical record_hash with the server's record.
    */
   buildClientSideRecord(sessionId: string): Dict {
-    const state = this._sessions[sessionId];
+    const state = ownGet(this._sessions, sessionId) as ClientSessionState;
 
     // Build a minimal Session-like object for generateTransactionRecord
     const mockSession = new MockSession(
@@ -373,7 +375,7 @@ export class A2CNClient {
           `got ${JSON.stringify(message.session_id)}`,
       );
     }
-    const state = this._sessions[sessionId];
+    const state = ownGet(this._sessions, sessionId) as ClientSessionState;
     const msgType = (message.message_type as string) ?? "";
 
     if (msgType === "offer" || msgType === "counteroffer") {

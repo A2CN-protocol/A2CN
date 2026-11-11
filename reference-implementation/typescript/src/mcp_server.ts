@@ -34,8 +34,9 @@
 import { randomUUID, type KeyObject } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { A2CNClient, HttpStatusError } from "./a2cn/client.js";
+import { A2CNClient, HttpStatusError, type ClientSessionState } from "./a2cn/client.js";
 import { generateKeypair, publicKeyToJwk, createJwt, signJws } from "./a2cn/crypto.js";
+import { ownGet, setOwn } from "./a2cn/own.js";
 import { now } from "./a2cn/session.js";
 import {
   SIGNED_ACT_SIGNATURE_FIELDS,
@@ -231,7 +232,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
      * In the MCP demo: call this directly after simulating the seller's response.
      */
     injectCounterpartyOffer(sessionId: string, offerMessage: Dict): void {
-      const entry = sessions[sessionId];
+      const entry = ownGet(sessions, sessionId);
       if (entry === undefined) {
         throw new Error(`Session ${JSON.stringify(sessionId)} not found in MCP session store`);
       }
@@ -409,14 +410,16 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
         payment_terms: { net_days: paymentTermsNetDays },
       };
       if (customTerms) {
-        Object.assign(terms, customTerms);
+        for (const [key, value] of Object.entries(customTerms)) {
+          setOwn(terms, key, value);
+        }
       }
 
       try {
         await client.sendOffer(baseUrl, counterpartyDid, sessionId, terms);
       } catch (exc) {
         // Session created but opening offer failed — store partial state
-        sessions[sessionId] = {
+        setOwn(sessions, sessionId, {
           client,
           endpoint: baseUrl,
           counterparty_did: counterpartyDid,
@@ -432,7 +435,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
           status: "ACTIVE",
           transaction_record: null,
           tokenFactory,
-        };
+        });
         return {
           error: "opening_offer_failed",
           message: `Session created (id=${JSON.stringify(sessionId)}) but opening offer failed: ${exc}`,
@@ -440,7 +443,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
         };
       }
 
-      sessions[sessionId] = {
+      setOwn(sessions, sessionId, {
         client,
         endpoint: baseUrl,
         counterparty_did: counterpartyDid,
@@ -456,7 +459,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
         status: "NEGOTIATING",
         transaction_record: null,
         tokenFactory,
-      };
+      });
 
       const accepted = (ack.session_params_accepted as Dict) ?? {};
       return {
@@ -483,7 +486,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
         custom_terms: customTerms = null,
       } = args;
 
-      const entry = sessions[sessionId];
+      const entry = ownGet(sessions, sessionId);
       if (entry === undefined) {
         return sessionNotFound(sessionId);
       }
@@ -498,7 +501,9 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
         payment_terms: { net_days: paymentTermsNetDays },
       };
       if (customTerms) {
-        Object.assign(terms, customTerms);
+        for (const [key, value] of Object.entries(customTerms)) {
+          setOwn(terms, key, value);
+        }
       }
 
       let inReplyTo: string | null = null;
@@ -552,7 +557,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
      * Accept the counterparty's most recent offer, completing the negotiation.
      */
     async a2cnAccept(sessionId: string): Promise<Dict> {
-      const entry = sessions[sessionId];
+      const entry = ownGet(sessions, sessionId);
       if (entry === undefined) {
         return sessionNotFound(sessionId);
       }
@@ -620,7 +625,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
      * Reject the counterparty's most recent offer and end the session.
      */
     async a2cnReject(sessionId: string, reasonDescription: string | null = null): Promise<Dict> {
-      const entry = sessions[sessionId];
+      const entry = ownGet(sessions, sessionId);
       if (entry === undefined) {
         return sessionNotFound(sessionId);
       }
@@ -629,7 +634,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
       }
 
       const client = entry.client;
-      const clientState = client._sessions[sessionId] ?? {
+      const clientState = (ownGet(client._sessions, sessionId) as ClientSessionState) ?? {
         sequence_number: 0,
         round_number: 1,
       };
@@ -713,7 +718,7 @@ export function createMcpContext(options: { fetchFn?: typeof fetch } = {}): McpC
      * Get the current status of an A2CN negotiation session.
      */
     async a2cnGetSessionStatus(sessionId: string): Promise<Dict> {
-      const entry = sessions[sessionId];
+      const entry = ownGet(sessions, sessionId);
       if (entry === undefined) {
         return sessionNotFound(sessionId);
       }

@@ -24,6 +24,7 @@ import {
   requireDidDocumentFor,
 } from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
+import { ownGet } from "./own.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
   isActInteger,
@@ -164,6 +165,7 @@ export const FINAL_ACCEPTANCE_ACT_FIELDS: readonly string[] = [
   "timestamp",
 ];
 
+/** DID to DID document, by own entries only (see resolveDidDocument), or a function. */
 export type DidResolver = Record<string, Dict> | ((did: string) => Dict);
 
 /**
@@ -862,9 +864,18 @@ function verifyRecordSignature(
  * A document whose `id` is not exactly `did` is refused (DidDocumentIdMismatch),
  * and the caller treats its key as unavailable, as when no document can be
  * obtained: a document is used only for the DID it names (Section 4.2).
+ *
+ * An object resolver is read by its own entries only: a document it inherits
+ * (through its prototype, as `Object.create(docs)` makes) is not found, and the
+ * key is unavailable. This differs from Python on purpose. Python reads any
+ * Mapping, so a ChainMap finds chained entries; in JavaScript an inherited
+ * lookup also finds names such as `constructor` that are no DID document at
+ * all. A TypeScript resolver holds its documents as own entries, or is a
+ * function.
  */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
-  const document = typeof didResolver === "function" ? didResolver(did) : didResolver[did];
+  const document =
+    typeof didResolver === "function" ? didResolver(did) : (ownGet(didResolver, did) as Dict);
   return requireDidDocumentFor(document, did);
 }
 

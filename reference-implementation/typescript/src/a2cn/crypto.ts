@@ -404,13 +404,11 @@ export function verifyInvitationSignature(
 }
 
 function withoutSignatureFields(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (k !== "invitation_signature" && k !== "acceptance_signature") {
-      result[k] = v;
-    }
-  }
-  return result;
+  // Object.fromEntries defines each member as an own property, so a member named
+  // "__proto__" stays in the signed bytes instead of setting the prototype.
+  return Object.fromEntries(
+    Object.entries(obj).filter(([k]) => k !== "invitation_signature" && k !== "acceptance_signature"),
+  );
 }
 
 // ---------------------------------------------------------------------------

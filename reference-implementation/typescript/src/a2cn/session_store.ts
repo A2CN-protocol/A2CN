@@ -11,6 +11,7 @@
  */
 
 import type { Dict } from "./messages.js";
+import { setOwn } from "./own.js";
 
 /**
  * Abstract interface for A2CN session persistence.
@@ -45,22 +46,24 @@ export interface SessionStore {
  * Use a persistent backend (Redis, PostgreSQL) for production.
  */
 export class InMemorySessionStore implements SessionStore {
-  private _store: Record<string, Dict> = {};
+  // A Map, so a session_id is only ever a key: an id such as "__proto__" or
+  // "constructor" names no entry until one is saved under it.
+  private _store: Map<string, Dict> = new Map();
 
   get(sessionId: string): Dict | null {
-    return this._store[sessionId] ?? null;
+    return this._store.get(sessionId) ?? null;
   }
 
   save(sessionId: string, sessionData: Dict): void {
-    this._store[sessionId] = sessionData;
+    this._store.set(sessionId, sessionData);
   }
 
   listActive(): string[] {
-    return Object.keys(this._store);
+    return [...this._store.keys()];
   }
 
   delete(sessionId: string): void {
-    delete this._store[sessionId];
+    this._store.delete(sessionId);
   }
 }
 
@@ -250,7 +253,7 @@ function sortKeysDeep(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+      setOwn(sorted, key, sortKeysDeep((value as Record<string, unknown>)[key]));
     }
     return sorted;
   }
