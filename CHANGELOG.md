@@ -284,6 +284,10 @@ This project is pre-1.0: the minor version moves for substantive additions.
   inside it verified in Python only, and both accepted padding, the standard
   alphabet and non-canonical trailing bits; a JWK coordinate holding `*` or a
   space was usable in TypeScript only.
+- An invitation containing a lone surrogate made the Python implementation
+  fail with a server error instead of refusing it. It now refuses it, as
+  TypeScript does: `POST /invitations` answers `400`
+  `INVITATION_SIGNATURE_INVALID`.
 - TypeScript's canonicalization refuses a string, member name or value, that
   holds a lone surrogate, as Python's does: such a string has no UTF-8
   encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape

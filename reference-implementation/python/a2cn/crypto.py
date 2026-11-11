@@ -352,9 +352,11 @@ def verify_invitation_signature(invitation_dict: dict, public_key: SigningPublic
 
     canonical_obj = {k: v for k, v in invitation_dict.items()
                      if k not in ("invitation_signature", "acceptance_signature")}
-    canonical_bytes = canonicalize(canonical_obj)
 
     try:
+        # Inside the handling: an invitation that cannot be canonicalized (a
+        # lone surrogate has no UTF-8 encoding) is not validly signed.
+        canonical_bytes = canonicalize(canonical_obj)
         signature = _b64url_decode_canonical(sig_b64)
         if isinstance(public_key, Ed25519PublicKey):
             public_key.verify(signature, canonical_bytes)
