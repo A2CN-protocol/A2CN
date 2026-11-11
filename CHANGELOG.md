@@ -127,7 +127,11 @@ This project is pre-1.0: the minor version moves for substantive additions.
   DID syntax and are accepted as before. A party DID written as a raw Unicode
   host is now refused; its punycode form is accepted. A record the reference
   implementations generate verifies as before whenever its parties' DIDs are
-  DIDs.
+  DIDs. The published `"0.4"` schema and live sessions do not yet refuse a
+  party DID that is not a DID, since they check only that it begins with
+  `did:`: a session between such parties completes, and its TransactionRecord
+  is refused. The schema of the next TransactionRecord version carries the
+  DID syntax.
 
 ### Added
 

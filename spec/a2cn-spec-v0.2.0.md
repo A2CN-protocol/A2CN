@@ -2280,6 +2280,12 @@ Any party verifying a transaction record MUST:
     used only for the DID its `id` names (Section 4.2). Two DIDs that are
     distinct DIDs with documents of their own are two signers to a verifier: a
     record shows which DIDs signed, not who controls them.
+
+    The `"0.4"` schema (`transaction-record-0.4.schema.json`) and live
+    sessions do not yet refuse a party DID that is not a DID: they check only
+    that it begins with `did:`. A session between such parties completes, and
+    its TransactionRecord is refused under this step. The schema of the next
+    TransactionRecord version carries the DID syntax.
 11. Verify that `final_acceptance.accepted_offer_id` equals
     `final_offer.message_id`. The acceptance's signature covers
     `accepted_offer_id` and no signature covers `final_offer.message_id`, so
