@@ -3851,7 +3851,9 @@ Recipients MUST NOT act on invitations that fail signature verification.
 
 Invitations MUST expire at `invitation_expires_at`. Expired invitations MUST
 NOT be processed. Implementations SHOULD delete invitation state 30 days after
-expiry.
+expiry. `invitation_expires_at` is an RFC 3339 date-time with an explicit UTC
+offset or `Z`; a recipient MUST treat an invitation whose
+`invitation_expires_at` is missing or is not such a value as expired.
 
 ### 11.3 Invitation Acceptance
 
@@ -3992,7 +3994,8 @@ verified, it compares the two invitations as their RFC 8785 canonical bytes,
   invitation. While the invitation it holds is still pending, the recipient
   MUST answer as it answered the first delivery. Once that invitation has been
   accepted or declined it MUST respond `INVITATION_ALREADY_ANSWERED`, and once
-  it has expired, `INVITATION_EXPIRED`.
+  it has expired, `INVITATION_EXPIRED`. An invitation that has been answered and
+  is also past `invitation_expires_at` gets `INVITATION_ALREADY_ANSWERED`.
 
 Re-delivery never changes an invitation the recipient holds: its inviter,
 content, status and the time it was first received stay as they were.
@@ -5545,6 +5548,10 @@ package release history, see `CHANGELOG.md`.
   it is answered, `INVITATION_EXPIRED` once it has expired), and never changes
   the invitation it holds on re-delivery. Additive: no wire version or protocol
   version change.
+- **Section 11.2.3 — `invitation_expires_at` is an RFC 3339 date-time with an
+  explicit UTC offset.** A recipient treats an invitation whose
+  `invitation_expires_at` is missing or not such a value as expired. Additive:
+  no wire version or protocol version change.
 
 ### Unreleased — verified-identity completion; establishment floor
 

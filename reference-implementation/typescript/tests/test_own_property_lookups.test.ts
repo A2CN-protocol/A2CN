@@ -26,7 +26,7 @@ import {
   verifyInvitationSignature,
 } from "../src/a2cn/crypto.js";
 import { VerificationMethodNotFoundError, getVerificationMethod } from "../src/a2cn/did.js";
-import { generateSessionEvidenceRecord } from "../src/a2cn/evidence.js";
+import { assessSessionEvidenceRecord, generateSessionEvidenceRecord } from "../src/a2cn/evidence.js";
 import { InvitationStore } from "../src/a2cn/invitation.js";
 import { dropNone, rebuildSignedAct, signedActHash, type Dict } from "../src/a2cn/messages.js";
 import { verifyTransactionRecordReason } from "../src/a2cn/record.js";
@@ -448,6 +448,85 @@ test.each(INHERITED_IDS)("an observed act claiming signature_type %j is refused"
       ],
     }),
   ).toThrow(/^Unsupported signature_type/);
+});
+
+test.each([...INHERITED_IDS, "valueOf", "hasOwnProperty"])(
+  "an observed act claiming signature_type %j is refused even when the act carries the field it would name",
+  (id) => {
+    const [, session] = managerWithSession();
+    session.state = SessionState.WITHDRAWN;
+    session.current_turn = "none";
+    session.terminal_reason = "withdrawn";
+    session.state_updated_at = "2026-03-24T10:10:00Z";
+    // The key an inherited-name lookup into the signature-field table would
+    // stringify to, so the unfixed path finds a "signature" there.
+    const inheritedKey = String((({}) as Dict)[id] ?? "");
+    expect(() =>
+      generateSessionEvidenceRecord(session, {
+        producerPrivateKey: INITIATOR_KEY,
+        producerDid: INITIATOR_DID,
+        producerAgentId: "buyer",
+        producerVerificationMethod: INITIATOR_VM,
+        observedActs: [
+          {
+            act: {
+              message_type: "observed_note",
+              sender_did: INITIATOR_DID,
+              timestamp: "2026-03-24T10:01:00Z",
+              session_id: session.session_id,
+              sender_verification_method: INITIATOR_VM,
+              [inheritedKey]: "sig",
+            },
+            signature_type: id,
+            signature: "sig",
+            sender_verification_method: INITIATOR_VM,
+            source_protocol: "x",
+          },
+        ],
+      }),
+    ).toThrow(`Unsupported signature_type: ${JSON.stringify(id)}`);
+  },
+);
+
+// A DidResolver object is read by own entries only. A resolver whose documents
+// it inherits (here through Object.create) supplies none of them, so every key
+// is unavailable: KEY_NOT_FOUND. Python's verifiers read any Mapping, a
+// ChainMap included, so they would find chained entries; the difference is
+// deliberate, and a TypeScript resolver holds its documents as own entries.
+test("the record verifier reads a resolver's own entries only", () => {
+  const vector = JSON.parse(
+    readFileSync(join(REPO_ROOT, "spec", "test-vectors", "transaction-record-basis.json"), "utf-8"),
+  ) as Dict;
+  const record = ((vector.expected as Dict).record_version_0_4 as Dict).full_record as Dict;
+  const offers = (vector.messages as Dict[])
+    .filter((m) => m.message_type === "offer" || m.message_type === "counteroffer")
+    .map((m) => m.protocol_act_hash as string);
+  const docs = vector.did_documents as Record<string, Dict>;
+  expect(verifyTransactionRecordReason(record, docs, offers)).toBeNull();
+  expect(verifyTransactionRecordReason(record, { ...docs }, offers)).toBeNull();
+  expect(verifyTransactionRecordReason(record, Object.create(docs) as Record<string, Dict>, offers)).toBe(
+    "KEY_NOT_FOUND",
+  );
+});
+
+test("the evidence verifier reads a resolver's own entries only", () => {
+  const [manager, session] = managerWithSession();
+  manager.processMessage(session, signedWithdrawal(session.session_id, "w-1"));
+  const docs = {
+    [INITIATOR_DID]: makeDidDocument(INITIATOR_DID, "key-1", publicKeyToJwk(INITIATOR_PUB)),
+  };
+  const evidence = generateSessionEvidenceRecord(session, {
+    producerPrivateKey: INITIATOR_KEY,
+    producerDid: INITIATOR_DID,
+    producerAgentId: "buyer",
+    producerVerificationMethod: INITIATOR_VM,
+  });
+  expect(assessSessionEvidenceRecord(evidence, docs).reason).toBeNull();
+  const inherited = assessSessionEvidenceRecord(evidence, Object.create(docs) as Record<string, Dict>);
+  expect(inherited.reason).toBe("KEY_NOT_FOUND");
+  expect(inherited.unresolved_keys).toEqual(
+    expect.arrayContaining([{ did: INITIATOR_DID, verification_method: INITIATOR_VM }]),
+  );
 });
 
 // ---------------------------------------------------------------------------

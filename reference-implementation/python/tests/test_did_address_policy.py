@@ -287,6 +287,7 @@ async def test_an_invitation_from_a_private_host_is_never_fetched(raw_test_clien
         "/invitations",
         json={
             "a2cn_version": PROTOCOL_ACT_VERSION,
+            "invitation_id": "11111111-2222-4333-8444-555555555555",
             "inviter_did": PRIVATE_DID,
             "inviter_verification_method": f"{PRIVATE_DID}#key-1",
             "invitation_signature": "x",

@@ -2663,6 +2663,15 @@ function verifySignature(
   }
 }
 
+/**
+ * The DID document a resolver supplies for `did`. An object resolver is read by
+ * its own entries only: a document it inherits (through its prototype, as
+ * `Object.create(docs)` makes) is not found, and the key is unavailable. This
+ * differs from Python on purpose. Python reads any Mapping, so a ChainMap finds
+ * chained entries; in JavaScript an inherited lookup also finds names such as
+ * `constructor` that are no DID document at all. A TypeScript resolver holds its
+ * documents as own entries, or is a function.
+ */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
   if (typeof didResolver === "function") {
     return didResolver(did);

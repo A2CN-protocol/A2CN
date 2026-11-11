@@ -21,7 +21,6 @@ import {
 } from "./messages.js";
 import { hashObject, signInvitation, type SigningPrivateKey } from "./crypto.js";
 import { ownGet, setOwn } from "./own.js";
-import { parseIsoMs } from "./session.js";
 
 function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -236,18 +235,11 @@ export class InvitationStore {
 
   /** Expire all PENDING invitations past their expiry time. Returns count expired. */
   expirePending(): number {
-    const nowMs = Date.now();
     let count = 0;
     for (const entry of Object.values(this._invitations)) {
-      if (entry.status === InvitationStatus.PENDING) {
-        const expiresStr = (entry.invitation.invitation_expires_at as string) ?? "";
-        if (expiresStr) {
-          const expiresMs = parseIsoMs(expiresStr);
-          if (!Number.isNaN(expiresMs) && nowMs > expiresMs) {
-            entry.status = InvitationStatus.EXPIRED;
-            count += 1;
-          }
-        }
+      if (entry.status === InvitationStatus.PENDING && pastExpiry(entry.invitation)) {
+        entry.status = InvitationStatus.EXPIRED;
+        count += 1;
       }
     }
     return count;
@@ -273,13 +265,9 @@ export class InvitationStore {
       throw new Error("INVITATION_EXPIRED");
     }
     // Check actual expiry even if not yet swept
-    const expiresStr = (stored.invitation.invitation_expires_at as string) ?? "";
-    if (expiresStr) {
-      const expiresMs = parseIsoMs(expiresStr);
-      if (!Number.isNaN(expiresMs) && Date.now() > expiresMs) {
-        stored.status = InvitationStatus.EXPIRED;
-        throw new Error("INVITATION_EXPIRED");
-      }
+    if (pastExpiry(stored.invitation)) {
+      stored.status = InvitationStatus.EXPIRED;
+      throw new Error("INVITATION_EXPIRED");
     }
     return stored;
   }
@@ -304,12 +292,59 @@ function checkRetransmission(stored: StoredInvitation, invitationDict: Dict): vo
   }
 }
 
-/** Whether invitation_expires_at has passed. An unparseable value has not. */
-function pastExpiry(invitation: Dict): boolean {
-  const expiresStr = (invitation.invitation_expires_at as string) ?? "";
-  if (!expiresStr) {
-    return false;
+// RFC 3339 date-time with an explicit offset (Section 5.6): the schema's
+// `date-time`. ASCII digits only, a `T` separator, and `Z` or `+hh:mm`/`-hh:mm`.
+const RFC3339_DATE_TIME =
+  /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?(?:([Zz])|([+-])([0-9]{2}):([0-9]{2}))$/;
+
+/**
+ * invitation_expires_at as milliseconds since the epoch, or null when it is not
+ * an RFC 3339 date-time with an explicit offset. Fractions beyond the
+ * millisecond are dropped, as the Python implementation drops them. Date.parse
+ * is not used: it accepts shapes RFC 3339 does not, and refuses some it does.
+ */
+function expiryMs(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
   }
-  const expiresMs = parseIsoMs(expiresStr);
-  return !Number.isNaN(expiresMs) && Date.now() > expiresMs;
+  const match = RFC3339_DATE_TIME.exec(value);
+  if (match === null) {
+    return null;
+  }
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  if (year < 1 || hour > 23 || minute > 59 || second > 59) {
+    return null;
+  }
+  let offsetMinutes = 0;
+  if (!match[8]) {
+    const offsetHours = Number(match[10]);
+    const offsetMins = Number(match[11]);
+    if (offsetHours > 23 || offsetMins > 59) {
+      return null;
+    }
+    offsetMinutes = (offsetHours * 60 + offsetMins) * (match[9] === "+" ? 1 : -1);
+  }
+  // setUTCFullYear, not Date.UTC, which reads years 0-99 as 1900-1999.
+  const moment = new Date(0);
+  moment.setUTCFullYear(year, month - 1, day);
+  if (
+    moment.getUTCFullYear() !== year ||
+    moment.getUTCMonth() !== month - 1 ||
+    moment.getUTCDate() !== day
+  ) {
+    return null; // a day the month does not have
+  }
+  moment.setUTCHours(hour, minute, second, 0);
+  const millis = Number((match[7] ?? "").padEnd(3, "0").slice(0, 3));
+  return moment.getTime() + millis - offsetMinutes * 60_000;
+}
+
+/**
+ * Whether invitation_expires_at has passed. A value that is missing, empty or
+ * not an RFC 3339 date-time with an explicit offset counts as passed: an
+ * expiry that cannot be read fails closed, the same in both implementations.
+ */
+function pastExpiry(invitation: Dict): boolean {
+  const expiresMs = expiryMs(invitation.invitation_expires_at);
+  return expiresMs === null || Date.now() > expiresMs;
 }

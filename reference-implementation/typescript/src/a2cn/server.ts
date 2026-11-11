@@ -1524,6 +1524,14 @@ function installRoutes(ctx: ServerContext): void {
       );
     }
 
+    // The id keys the stored invitation, so it must be a non-empty string:
+    // neither a number that a JSON-object store would read as its string form,
+    // nor absent.
+    const invitationId = body.invitation_id;
+    if (typeof invitationId !== "string" || !invitationId) {
+      return sendError(reply, "INVALID_REQUEST", "invitation_id must be a non-empty string", 400);
+    }
+
     // Signature verification is REQUIRED (Section 9.3)
     const inviterDid = (body.inviter_did as string) ?? "";
     if (!inviterDid) {

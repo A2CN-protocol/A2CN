@@ -1125,6 +1125,13 @@ async def receive_invitation(request: Request) -> Response:
             400,
         )
 
+    # The id keys the stored invitation, so it must be a non-empty string:
+    # neither a number that a JSON-object store would read as its string form,
+    # nor absent.
+    invitation_id = body.get("invitation_id")
+    if not isinstance(invitation_id, str) or not invitation_id:
+        return error_response("INVALID_REQUEST", "invitation_id must be a non-empty string", 400)
+
     # Signature verification is REQUIRED (Section 9.3)
     inviter_did = body.get("inviter_did", "")
     if not inviter_did:
