@@ -1029,6 +1029,14 @@ def test_malformed_approver_did_document_is_refused_cleanly(label, edit_document
     assert _refused(mgr, sess, _approval_receipt(sess)) == code
 
 
+def test_an_approver_document_naming_another_did_is_no_document():
+    """Section 4.2: a document is used only for the DID its id names."""
+    mgr, sess = _paused_session()
+    document = make_did_document(APPROVER_DID, "key-1", public_key_to_jwk(APPROVER_PUBLIC_KEY))
+    mgr.register_did_document(APPROVER_DID, {**document, "id": "did:web:Approver.example"})
+    assert _refused(mgr, sess, _approval_receipt(sess)) == "APPROVAL_RECEIPT_KEY_UNRESOLVED"
+
+
 # --- An approver is never the paused party; separation is by DID, not by key. ---
 
 def test_paused_agent_cannot_approve_its_own_act_even_with_a_valid_signature():

@@ -13,6 +13,7 @@ import {
   signApprovalReceipt,
   signInvitation,
   signJws,
+  verifyInvitationSignature,
   verifyJws,
   b64urlDecode,
 } from "../src/a2cn/crypto.js";
@@ -146,6 +147,57 @@ test("session init wrong deal type", async () => {
 // ---------------------------------------------------------------------------
 // POST /invitations — signature-authenticated cold-start delivery
 // ---------------------------------------------------------------------------
+
+function signedInboundInvitation(inviterDid: string, inviterPriv: KeyObject): Dict {
+  const invitation: Dict = {
+    message_type: "session_invitation",
+    invitation_id: randomUUID(),
+    a2cn_version: "0.3",
+    inviter_did: inviterDid,
+    inviter_endpoint: "https://buyer.example/a2cn",
+    inviter_discovery_url: "https://buyer.example/.well-known/a2cn-agent",
+    proposed_deal_type: "saas_renewal",
+    proposed_session_params: {
+      currency: "USD",
+      max_rounds: 4,
+      session_timeout_seconds: 3600,
+      round_timeout_seconds: 900,
+    },
+    proposed_terms_summary: { total_value: 9_500_000, currency: "USD" },
+    inviter_mandate_summary: { mandate_type: "declared" },
+    invitation_expires_at: "2030-01-01T00:00:00Z",
+    accept_endpoint: "https://buyer.example/a2cn/invitations/test/accept",
+    decline_endpoint: "https://buyer.example/a2cn/invitations/test/decline",
+    inviter_verification_method: `${inviterDid}#key-1`,
+    invitation_signature: "",
+  };
+  invitation.invitation_signature = signInvitation(invitation, inviterPriv);
+  return invitation;
+}
+
+test("an invitation holding a lone surrogate does not verify", () => {
+  // It cannot be canonicalized, so it is not validly signed: false, not an exception.
+  const { privateKey, publicKey } = generateKeypair();
+  const invitation = signedInboundInvitation("did:web:buyer.example", privateKey);
+  expect(verifyInvitationSignature(invitation, publicKey)).toBe(true);
+  (invitation.proposed_terms_summary as Dict).note = "\ud800";
+  expect(verifyInvitationSignature(invitation, publicKey)).toBe(false);
+});
+
+test("an inbound invitation holding a lone surrogate is refused", async () => {
+  // POST /invitations refuses it as a bad signature, as Python now does.
+  const { ctx, rawClient } = freshServer();
+  const { privateKey, publicKey } = generateKeypair();
+  const inviterDid = "did:web:buyer.example";
+  ctx.registerDidDocument(inviterDid, makeDidDocument(inviterDid, "key-1", publicKeyToJwk(publicKey)));
+  const invitation = signedInboundInvitation(inviterDid, privateKey);
+  (invitation.proposed_terms_summary as Dict).note = "\ud800";
+
+  const r = await rawClient.post("/invitations", { json: invitation });
+
+  expect(r.statusCode).toBe(400);
+  expect((r.json().error as Dict).code).toBe("INVITATION_SIGNATURE_INVALID");
+});
 
 test("receive invitation does not require bearer token", async () => {
   const { ctx, rawClient } = freshServer();

@@ -50,8 +50,14 @@ async def resolve_did_web(
     development and tests only. A ``client`` you supply makes its own
     connections: the host-name check still applies, the address check does not.
 
+    The document's ``id`` must be exactly ``did`` (``did_document_is_for``):
+    a document that names another DID is refused, however close the spelling,
+    because it is that other DID's document, not this one's. No DID is
+    normalized for the comparison.
+
     Raises:
         DidWebHostRefused (a ValueError): if the address policy refuses the host
+        DidDocumentIdMismatch (a ValueError): if the document's id is not ``did``
         ValueError: if the DID is not a did:web DID, or the document is too
             large, compressed, or not valid UTF-8 JSON
         httpx.HTTPError: if the DID document cannot be fetched
@@ -64,12 +70,52 @@ async def resolve_did_web(
     deadline = DID_RESOLUTION_TIMEOUT_SECONDS if timeout is None else timeout
     async with asyncio.timeout(deadline):
         if client is not None:
-            return await _fetch_did_document(client, url)
-        if allow_private_hosts:
+            document = await _fetch_did_document(client, url)
+        elif allow_private_hosts:
             async with httpx.AsyncClient() as c:
-                return await _fetch_did_document(c, url)
-        async with public_address_client() as c:
-            return await _fetch_did_document(c, url)
+                document = await _fetch_did_document(c, url)
+        else:
+            async with public_address_client() as c:
+                document = await _fetch_did_document(c, url)
+    return require_did_document_for(document, did)
+
+
+class DidDocumentIdMismatch(ValueError):
+    """A DID document whose ``id`` is not exactly the DID it was obtained for.
+
+    DID Core requires a resolved document's ``id`` to be the DID that was
+    resolved. Two spellings of one did:web DID can reach one document (a
+    host's case, a trailing dot, an escaped character, a ``:.well-known``
+    path, a Unicode host and its punycode), and only one of them is the
+    document's ``id``. A verifier that used the document for the other would
+    let one party sign as two. The key it lists is unavailable for that DID,
+    exactly as when no document can be obtained.
+    """
+
+
+def did_document_is_for(did_document, did) -> bool:
+    """Whether ``did_document`` is the DID document of ``did``: its ``id`` is exactly ``did``.
+
+    The comparison is exact string equality, with no normalization, so a
+    document is the document of one spelling only. A document that is not a
+    JSON object, or has no string ``id``, is no DID's document.
+    """
+    return (
+        isinstance(did_document, dict)
+        and isinstance(did, str)
+        and isinstance(did_document.get("id"), str)
+        and did_document["id"] == did
+    )
+
+
+def require_did_document_for(did_document, did):
+    """Return ``did_document`` if it is the document of ``did``; raise DidDocumentIdMismatch if not."""
+    if not did_document_is_for(did_document, did):
+        named = did_document.get("id") if isinstance(did_document, dict) else None
+        raise DidDocumentIdMismatch(
+            f"the DID document obtained for {did!r} is the document of {named!r}, not of that DID"
+        )
+    return did_document
 
 
 class DidWebHostRefused(ValueError):

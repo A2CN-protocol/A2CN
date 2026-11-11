@@ -56,13 +56,77 @@ export const DID_DOCUMENT_MAX_BYTES = 65536;
  * tests only. A `fetchFn` you supply makes its own connections: the host-name
  * check still applies, the address check only if it is a publicAddressFetch.
  *
+ * The document's `id` must be exactly `did` (didDocumentIsFor): a document that
+ * names another DID is refused, however close the spelling, because it is that
+ * other DID's document, not this one's. No DID is normalized for the comparison.
+ *
  * Throws:
  * - DidWebHostRefused if the address policy refuses the host
+ * - DidDocumentIdMismatch if the document's id is not `did`
  * - Error if the DID is not a did:web DID or cannot be parsed
  * - Error if the DID document cannot be fetched, is too large, compressed, or
  *   is not valid UTF-8 JSON, or if the fetch does not finish in time
  */
 export async function resolveDidWeb(
+  did: string,
+  fetchFn?: FetchLike,
+  timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,
+  options: { allowPrivateHosts?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  return requireDidDocumentFor(await fetchDidWebDocument(did, fetchFn, timeoutMs, options), did);
+}
+
+/**
+ * A DID document whose `id` is not exactly the DID it was obtained for.
+ *
+ * DID Core requires a resolved document's `id` to be the DID that was resolved.
+ * Two spellings of one did:web DID can reach one document (a host's case, a
+ * trailing dot, an escaped character, a `:.well-known` path, a Unicode host and
+ * its punycode), and only one of them is the document's `id`. A verifier that
+ * used the document for the other would let one party sign as two. The key it
+ * lists is unavailable for that DID, exactly as when no document can be
+ * obtained.
+ */
+export class DidDocumentIdMismatch extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DidDocumentIdMismatch";
+  }
+}
+
+/**
+ * Whether `didDocument` is the DID document of `did`: its `id` is exactly `did`.
+ *
+ * The comparison is exact string equality, with no normalization, so a document
+ * is the document of one spelling only. A document that is not a JSON object,
+ * or has no string `id`, is no DID's document.
+ */
+export function didDocumentIsFor(didDocument: unknown, did: unknown): boolean {
+  return (
+    typeof didDocument === "object" &&
+    didDocument !== null &&
+    !Array.isArray(didDocument) &&
+    typeof (didDocument as Record<string, unknown>).id === "string" &&
+    (didDocument as Record<string, unknown>).id === did
+  );
+}
+
+/** Return `didDocument` if it is the document of `did`; throw DidDocumentIdMismatch if not. */
+export function requireDidDocumentFor<T>(didDocument: T, did: string): T {
+  if (!didDocumentIsFor(didDocument, did)) {
+    const named =
+      didDocument !== null && typeof didDocument === "object" && !Array.isArray(didDocument)
+        ? ((didDocument as Record<string, unknown>).id ?? null)
+        : null;
+    throw new DidDocumentIdMismatch(
+      `the DID document obtained for ${JSON.stringify(did)} is the document of ` +
+        `${JSON.stringify(named)}, not of that DID`,
+    );
+  }
+  return didDocument;
+}
+
+async function fetchDidWebDocument(
   did: string,
   fetchFn?: FetchLike,
   timeoutMs: number = DID_RESOLUTION_TIMEOUT_MS,

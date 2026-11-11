@@ -451,6 +451,23 @@ initiation. If the verification method referenced in the discovery document is
 not present in the DID document, the agent MUST NOT proceed and MUST surface
 this as a configuration error.
 
+**A DID document is the document of the DID it names.** DID Core requires a
+resolved DID document's `id` to be the DID that was resolved. A verifier MUST
+NOT use a DID document whose `id` is not exactly the DID it resolved, compared
+as exact strings with no normalization, wherever the document comes from: a
+did:web fetch, a document an operator configured, or one supplied with an
+artifact for offline verification. Such a document's keys are unavailable for
+that DID, exactly as when no document can be obtained. Two spellings of one
+did:web DID can reach one document (a host's case, a percent-encoded
+character, a `:.well-known` path, a Unicode host and its punycode), and its
+`id` names only one of them; this rule refuses the other, so one party whose
+document lists two keys cannot sign as two parties under spellings that reach
+one document. It does not cover spellings a party's own server can tell apart
+and answer with a document of their own, such as a trailing dot, a second path
+or a second domain: each is a distinct DID with its own document, and falls
+under the residual Section 9.5 step 10 states, that a record shows which DIDs
+signed, not who controls them.
+
 This design eliminates the dual trust-root problem: there is one canonical source
 of cryptographic key material (the DID document), and the discovery document
 merely points to it.
@@ -2250,6 +2267,33 @@ Any party verifying a transaction record MUST:
    items directly would otherwise obtain a record whose hashes and signatures are all
    genuine, and a reader of it could misread every agreed price by a factor of
    one hundred.
+10. Verify that the record is between two parties. `parties.initiator.did` and
+    `parties.responder.did` MUST each be a DID by the syntax of DID Core
+    Section 3.1, not a DID URL, and MUST be different.
+    `final_offer.sender_did` MUST equal one of them and
+    `final_acceptance.sender_did` the other, compared as exact strings. The
+    signatures of steps 4 and 5 MUST verify under different public keys. A
+    record whose two acts one party signed, under one DID or one key, is not
+    evidence that two parties agreed, however its signatures verify. One party
+    signing under two spellings of its DID is refused when the keys are
+    resolved, when the spellings reach one document, because a DID document is
+    used only for the DID its `id` names (Section 4.2). Two DIDs that are
+    distinct DIDs with documents of their own are two signers to a verifier: a
+    record shows which DIDs signed, not who controls them.
+
+    The `"0.4"` schema (`transaction-record-0.4.schema.json`) and live
+    sessions do not yet refuse a party DID that is not a DID: they check only
+    that it begins with `did:`. A session between such parties completes, and
+    its TransactionRecord is refused under this step. The schema of the next
+    TransactionRecord version carries the DID syntax.
+11. Verify that `final_acceptance.accepted_offer_id` equals
+    `final_offer.message_id`. The acceptance's signature covers
+    `accepted_offer_id` and no signature covers `final_offer.message_id`, so
+    this comparison is what binds the offer's identifier to the acceptance.
+12. Verify that `negotiation_summary.initiating_party_did` equals
+    `parties.initiator.did`, and that `negotiation_summary.accepting_party_did`
+    equals `final_acceptance.sender_did`. No signature covers the summary, and a
+    summary naming another party would let a reader misread who agreed.
 
 Both sides of a `"0.4"` record are recomputable from the record alone, each from
 its own stored fields. The offering party's signature covers the protocol act
@@ -4790,8 +4834,10 @@ without a content encoding and refuses one sent with any encoding other than
 `identity`, and refuses a document larger than 64 KiB. The document MUST be
 UTF-8 JSON, optionally preceded by a
 UTF-8 byte-order mark, without `NaN` or `Infinity` literals. A document the
-operator has configured for an approver is used as configured. A document that cannot be resolved means the key is
-unresolved, and the receipt is refused.
+operator has configured for an approver is used as configured, provided its
+`id` is the approver's DID (Section 4.2). A document that cannot be resolved,
+or whose `id` is not the approver's DID, means the key is unresolved, and the
+receipt is refused.
 
 | Refusal | Error code |
 |---------|------------|
@@ -5514,6 +5560,39 @@ messages that validate against these schemas.
 
 Entries below are changes to this specification document. For the repository and
 package release history, see `CHANGELOG.md`.
+
+### Unreleased — a TransactionRecord is between two parties
+
+- **Section 9.5 step 10 — the two acts are signed by the two parties, one
+  each.** `parties.initiator.did` and `parties.responder.did` must be non-empty
+  and different, `final_offer.sender_did` must be one of them and
+  `final_acceptance.sender_did` the other, compared as exact strings, and the
+  two signatures must verify under different public keys. A record one party
+  signed on both sides, under one DID or one key, is refused however its
+  signatures verify.
+- **Section 4.2 — a DID document is the document of the DID it names.** A
+  verifier must not use a DID document whose `id` is not exactly the DID it
+  resolved, wherever the document comes from; its keys are unavailable for
+  that DID. This is what refuses one party signing under two spellings of its
+  did:web DID that reach one document. Section 14.1 holds an operator-configured
+  approver document to the same rule.
+- **Section 9.5 step 10 — a party DID is a DID.** `parties.initiator.did` and
+  `parties.responder.did` must each match DID Core Section 3.1's DID syntax,
+  so a DID URL (a `?query`, `#fragment` or `/path`), a trailing `:`, an
+  uppercase method name, whitespace, a non-ASCII character or a bad
+  percent-encoding is refused. This is a syntax check, not a normalization.
+- **Section 9.5 step 11 — the acceptance names the final offer.**
+  `final_acceptance.accepted_offer_id` must equal `final_offer.message_id`,
+  which no signature covers.
+- **Section 9.5 step 12 — the summary names the record's parties.**
+  `negotiation_summary.initiating_party_did` must equal
+  `parties.initiator.did`, and `negotiation_summary.accepting_party_did` must
+  equal `final_acceptance.sender_did`.
+- No field is newly signed, and neither the TransactionRecord `record_version`,
+  `"0.4"`, nor the wire protocol changes. A record the reference
+  implementations generate from a completed session meets all three steps
+  whenever its two parties sign with different keys, so those records are
+  unaffected.
 
 ### Unreleased — verified-identity completion; establishment floor
 

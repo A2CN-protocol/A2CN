@@ -40,6 +40,7 @@ VECTOR = json.loads((VECTORS / "transaction-record-basis.json").read_text())
 RECORD_VERSIONS = json.loads((VECTORS / "record-versions.json").read_text())
 LINE_ITEMS = json.loads((VECTORS / "transaction-record-line-items.json").read_text())
 HISTORY = json.loads((VECTORS / "transaction-record-offer-history.json").read_text())
+PARTIES = json.loads((VECTORS / "transaction-record-parties.json").read_text())
 # Each artifact versions its own shape, so the TransactionRecord's set is its own.
 TR_VERSIONS = RECORD_VERSIONS["transaction_record"]
 WITHOUT_BASIS = VECTOR["without_basis"]
@@ -367,6 +368,14 @@ def test_every_reason_code_is_reachable():
         )
         for case in HISTORY["record_cases"]
         if case["record"] == "transaction_record" and case["expected_reason"] is not None
+    }
+    # One party signing both sides needs records re-signed by that party's key.
+    observed |= {
+        verify_transaction_record_reason(
+            case["record"], PARTIES["did_documents"], case["offer_hashes"]
+        )
+        for case in PARTIES["cases"]
+        if not case["verifies"]
     }
 
     assert observed == ALL_REASON_CODES

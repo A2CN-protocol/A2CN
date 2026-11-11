@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from a2cn.crypto import hash_object, verify_approval_receipt_signature, verify_jws
-from a2cn.did import get_public_key, get_verification_method
+from a2cn.did import did_document_is_for, get_public_key, get_verification_method
 from a2cn.errors import A2CNError, _now  # re-exported; see the note further down
 from a2cn.line_items import (
     SUPPORTED_SESSION_CURRENCIES,
@@ -407,6 +407,26 @@ def _wire_version(session: Session) -> str:
 _FROM_REGISTRY = object()
 
 
+def _act_hash_or_refuse(compute, session, message_id):
+    """The hash an act's signature must be over, or INVALID_SIGNATURE if it has none.
+
+    An act holding a string that has no UTF-8 encoding (a lone surrogate) cannot
+    be canonicalized (RFC 8785), so no signature can be checked against it: it
+    is refused as an invalid signature, in both reference implementations,
+    rather than escaping as an internal error.
+    """
+    try:
+        return compute()
+    except ValueError:
+        raise A2CNError(
+            "INVALID_SIGNATURE",
+            "The act cannot be canonicalized (RFC 8785), so its signature cannot be checked",
+            400,
+            session_id=session.session_id,
+            message_id=message_id,
+        ) from None
+
+
 class SessionManager:
     """In-memory store + state machine for all sessions."""
 
@@ -421,7 +441,13 @@ class SessionManager:
         return did in self._did_documents
 
     def register_did_document(self, did: str, did_document: dict) -> None:
-        """Register a resolved DID document for protocol-act signature checks."""
+        """Register a resolved DID document for protocol-act signature checks.
+
+        A document whose ``id`` is not exactly ``did`` is kept but never used:
+        each use checks it, and treats such a document as no document, because a
+        document is the document of the DID it names and of no other spelling
+        (Section 4.2).
+        """
         self._did_documents[did] = did_document
 
     # ------------------------------------------------------------------
@@ -757,7 +783,7 @@ class SessionManager:
             )
 
         did_document = self._did_documents.get(sender_did)
-        if did_document is None:
+        if not did_document_is_for(did_document, sender_did):
             raise A2CNError(
                 "INVALID_SIGNATURE",
                 f"No DID document registered for sender {sender_did!r}",
@@ -828,7 +854,9 @@ class SessionManager:
             expires_at=expires_at,
             terms=terms,
         )
-        expected_hash = hash_object(protocol_act)
+        expected_hash = _act_hash_or_refuse(
+            lambda: hash_object(protocol_act), session, message_id
+        )
         if claimed_hash != expected_hash:
             raise A2CNError(
                 "INVALID_SIGNATURE",
@@ -978,7 +1006,7 @@ class SessionManager:
             did_document = self._did_documents.get(approver_did)
         else:
             did_document = approver_did_document
-        if not isinstance(did_document, dict):
+        if not did_document_is_for(did_document, approver_did):
             raise A2CNError(
                 "APPROVAL_RECEIPT_KEY_UNRESOLVED",
                 f"No DID document is available for approver {approver_did!r}",
@@ -1341,8 +1369,10 @@ class SessionManager:
         # so all three agree on what a signature covers. An acceptance that does
         # not carry those fields cannot be rebound, and is refused rather than
         # checked against a payload assembled out of defaults.
-        acceptance_payload_hash = signed_act_hash(
-            message, version_when_absent=_wire_version(session)
+        acceptance_payload_hash = _act_hash_or_refuse(
+            lambda: signed_act_hash(message, version_when_absent=_wire_version(session)),
+            session,
+            message_id,
         )
         if acceptance_payload_hash is None:
             raise A2CNError(
@@ -1467,7 +1497,11 @@ class SessionManager:
                 message_id=message.get("message_id"),
             )
 
-        payload_hash = signed_act_hash(message, version_when_absent=_wire_version(session))
+        payload_hash = _act_hash_or_refuse(
+            lambda: signed_act_hash(message, version_when_absent=_wire_version(session)),
+            session,
+            message.get("message_id"),
+        )
         if payload_hash is None:
             raise A2CNError(
                 "INVALID_SIGNATURE",

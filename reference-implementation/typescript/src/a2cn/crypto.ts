@@ -84,7 +84,21 @@ export function createPublicKeyFromPrivate(privateKey: SigningPrivateKey): Signi
 
 /** Reconstruct a supported public key from a JWK dict. */
 export function publicKeyFromJwk(jwk: Record<string, unknown>): SigningPublicKey {
+  // The coordinates are decoded as Python decodes them: canonical base64url only.
+  jwkCoordinate(jwk, "x");
+  if (!(jwk.kty === "OKP" && jwk.crv === "Ed25519")) {
+    jwkCoordinate(jwk, "y");
+  }
   return createPublicKey({ key: jwk as import("node:crypto").JsonWebKey, format: "jwk" });
+}
+
+/** A public JWK coordinate's bytes; it must be unpadded base64url (RFC 7518). */
+function jwkCoordinate(jwk: Record<string, unknown>, name: string): Buffer {
+  try {
+    return b64urlDecodeCanonical(jwk[name] as string);
+  } catch {
+    throw new Error(`its ${name} coordinate isn't unpadded base64url (RFC 7518)`);
+  }
 }
 
 /** Reconstruct a supported private key from a JWK dict. */
@@ -96,8 +110,45 @@ export function privateKeyFromJwk(jwk: Record<string, unknown>): SigningPrivateK
 // JCS + hashing
 // ---------------------------------------------------------------------------
 
-/** RFC 8785 JSON Canonicalization Scheme. */
+// A lone surrogate: a UTF-16 surrogate code unit that is not half of a pair. In
+// a regular expression with the u flag a well-formed pair is one code point, so
+// \p{Surrogate} matches only an unpaired half.
+const LONE_SURROGATE = /\p{Surrogate}/u;
+
+/** Throw if any string in `value`, a member name or a value, holds a lone surrogate. */
+function refuseLoneSurrogates(value: unknown): void {
+  if (typeof value === "string") {
+    if (LONE_SURROGATE.test(value)) {
+      throw new Error("Cannot canonicalize a string holding a lone surrogate: it has no UTF-8 encoding");
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      refuseLoneSurrogates(item);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [name, member] of Object.entries(value)) {
+      refuseLoneSurrogates(name);
+      refuseLoneSurrogates(member);
+    }
+  }
+}
+
+/**
+ * RFC 8785 JSON Canonicalization Scheme.
+ *
+ * Throws on a string, member name or value, holding a lone surrogate. Such a
+ * string has no UTF-8 encoding, and RFC 8785 requires one; JSON.stringify would
+ * write it as a \u escape instead, so this implementation would hash bytes
+ * Python's canonicalizer refuses to produce. The input is checked, not the
+ * canonical text, because the escape hides the surrogate there. A well-formed
+ * string, astral characters included, canonicalizes as before.
+ */
 export function canonicalize(obj: unknown): Buffer {
+  refuseLoneSurrogates(obj);
   const canonical = jcsCanonicalize(obj);
   if (canonical === undefined) {
     throw new Error("Cannot canonicalize undefined");
@@ -164,19 +215,25 @@ export function signJws(
  */
 export function verifyJws(token: string, publicKey: SigningPublicKey): string {
   try {
+    if (typeof token !== "string") {
+      throw new InvalidSignatureError("JWS is not a string");
+    }
     const parts = token.split(".");
     if (parts.length !== 3) {
       throw new Error("JWS must have three segments");
     }
     const [protectedB64, payloadB64, signatureB64] = parts;
-    const header = JSON.parse(b64urlDecode(protectedB64).toString("utf-8"));
+    const header = JSON.parse(jwsSegmentText(protectedB64));
+    if (header === null || typeof header !== "object" || Array.isArray(header)) {
+      throw new InvalidSignatureError("JWS header is not a JSON object");
+    }
     const expectedAlg = jwtAlgorithmForKey(publicKey);
     if (header.alg !== expectedAlg) {
       throw new InvalidSignatureError("JWS alg does not match key type");
     }
 
     const signingInput = Buffer.from(`${protectedB64}.${payloadB64}`, "ascii");
-    const signatureBytes = b64urlDecode(signatureB64);
+    const signatureBytes = b64urlDecodeCanonical(signatureB64);
     let valid: boolean;
     if (isEd25519(publicKey)) {
       valid = cryptoVerify(null, signingInput, publicKey, signatureBytes);
@@ -194,7 +251,7 @@ export function verifyJws(token: string, publicKey: SigningPublicKey): string {
     if (!valid) {
       throw new InvalidSignatureError("Invalid JWS signature");
     }
-    return b64urlDecode(payloadB64).toString("utf-8");
+    return jwsSegmentText(payloadB64);
   } catch (exc) {
     if (exc instanceof InvalidSignatureError) {
       throw exc;
@@ -331,7 +388,7 @@ export function verifyInvitationSignature(
 
   try {
     const canonicalBytes = canonicalize(canonicalObj);
-    const signature = b64urlDecode(sigB64);
+    const signature = b64urlDecodeCanonical(sigB64);
     if (isEd25519(publicKey)) {
       return cryptoVerify(null, canonicalBytes, publicKey, signature);
     }
@@ -584,6 +641,49 @@ function encodeEcdsaDer(r: bigint, s: bigint): Buffer {
 
 export function b64urlEncode(data: Buffer | Uint8Array): string {
   return Buffer.from(data).toString("base64url");
+}
+
+// fatal: bytes that are not UTF-8 throw; ignoreBOM: a leading BOM is kept, not
+// skipped, so that it can be refused below.
+const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * A JWS segment's bytes as text: strict UTF-8, with no byte-order mark.
+ *
+ * Both reference implementations decode a protected header and a payload this
+ * way, so one token's bytes mean one thing to each: bytes that are not UTF-8,
+ * or a leading U+FEFF, make the signature invalid. (Buffer's toString would
+ * replace bytes that are not UTF-8 with U+FFFD.)
+ */
+function jwsSegmentText(segment: string): string {
+  const text = STRICT_UTF8.decode(b64urlDecodeCanonical(segment));
+  if (text.startsWith("\ufeff")) {
+    throw new InvalidSignatureError("JWS segment starts with a byte-order mark");
+  }
+  return text;
+}
+
+/**
+ * Decode unpadded base64url only if `text` is the canonical encoding of its bytes.
+ *
+ * Both reference implementations decode a JWS segment, a public JWK's
+ * coordinates and an invitation signature this way, so one string means one
+ * thing to each: only A-Z, a-z, 0-9, "-" and "_", no "=" padding, a length that
+ * is not one more than a multiple of four, and unused trailing bits that are
+ * zero, so the bytes re-encode to exactly `text`. Anything else throws.
+ */
+export function b64urlDecodeCanonical(text: string): Buffer {
+  if (typeof text !== "string" || !B64URL_ALPHABET.test(text)) {
+    throw new Error("base64url text holds a character outside A-Z, a-z, 0-9, '-' and '_'");
+  }
+  if (text.length % 4 === 1) {
+    throw new Error("base64url text is one character more than a multiple of four");
+  }
+  const data = Buffer.from(text, "base64url");
+  if (data.toString("base64url") !== text) {
+    throw new Error("base64url text is not canonical: its unused trailing bits are not zero");
+  }
+  return data;
 }
 
 export function b64urlDecode(s: string): Buffer {

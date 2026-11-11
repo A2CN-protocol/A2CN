@@ -47,7 +47,9 @@ import a2cn.evidence as _evidence
 from a2cn.acts import ACT_REASON_KEY_NOT_FOUND, SIGNED_ACT_TYPES, verify_signed_act_reason
 from a2cn.did import (
     VerificationMethodNotFoundError,
+    did_document_is_for,
     did_web_document_url,
+    get_public_key,
     get_verification_method,
 )
 from a2cn.evidence import (
@@ -63,6 +65,7 @@ from a2cn.record import (
     REASON_KEY_NOT_FOUND,
     REASON_OFFER_CHAIN_HASH_MISMATCH,
     REASON_OFFER_SIGNATURE_INVALID,
+    REASON_SAME_SIGNING_KEY,
     verify_transaction_record_reason,
 )
 
@@ -217,6 +220,13 @@ def _supplied_documents(
         document = _load_json(Path(file_name))
         if not isinstance(document, dict):
             raise UsageError(f"DID document {file_name} is not a JSON object")
+        if not did_document_is_for(document, did):
+            # A document is used only for the DID its id names (Section 4.2):
+            # never under another spelling of that DID, or another DID.
+            raise UsageError(
+                f"--did-doc names {did}, but {file_name} is the DID document of "
+                f"{document.get('id')!r}; a DID document is used only for the DID its id names"
+            )
         supplied[did] = (document, file_name)
     return supplied
 
@@ -252,10 +262,21 @@ class _Keys:
             else:
                 url = did_web_document_url(did)
                 try:
-                    self._live[did] = (_fetch_did_web(did, self.allow_private_hosts), url)
+                    document = _fetch_did_web(did, self.allow_private_hosts)
                 except Exception as exc:  # noqa: BLE001 - reported, never a pass
                     first_line = str(exc).splitlines()[0] if str(exc) else ""
                     self._live[did] = (None, f"fetching {url} failed: {type(exc).__name__}: {first_line}")
+                else:
+                    if did_document_is_for(document, did):
+                        self._live[did] = (document, url)
+                    else:
+                        # The resolver refuses this too; said here as well, so
+                        # the reason is the document's, never a missing key.
+                        named = document.get("id") if isinstance(document, dict) else None
+                        self._live[did] = (
+                            None,
+                            f"{url} serves the DID document of {named!r}, not of this DID",
+                        )
         return self._live[did]
 
 
@@ -275,6 +296,8 @@ class _Attempt:
         # with different material from the party's site (the site's key wins).
         self.copied: dict[str, set[str]] = {}
         self.conflicts: dict[str, list[str]] = {}
+        # Keys a DID document lists but that cannot be read: (did, method, why).
+        self.unreadable: list[tuple[str, str, str]] = []
 
     def __call__(self, did: str) -> dict:
         if did in self.used:
@@ -436,6 +459,7 @@ def _keys_not_listed(kind, document, attempt: _Attempt, assessment) -> list[tupl
             (key["did"], key["verification_method"])
             for key in assessment["unresolved_keys"]
             if key["did"] not in attempt.missing
+            and not (key["did"] in attempt.used and _lists(attempt.used[key["did"]], key["verification_method"]))
         ]
     else:
         pairs = []
@@ -446,6 +470,27 @@ def _keys_not_listed(kind, document, attempt: _Attempt, assessment) -> list[tupl
                 except VerificationMethodNotFoundError:
                     pairs.append((did, vm))
     return list(dict.fromkeys(pairs))
+
+
+def _keys_unreadable(kind, document, attempt: _Attempt, assessment) -> list[tuple[str, str, str]]:
+    """Keys a signature names that its DID document lists but that cannot be read, and why."""
+    if assessment is not None:
+        pairs = [(key["did"], key["verification_method"]) for key in assessment["unresolved_keys"]]
+    else:
+        pairs = _signers(kind, document)
+    found = []
+    for did, vm in dict.fromkeys(pairs):
+        if did not in attempt.used:
+            continue
+        try:
+            method = get_verification_method(attempt.used[did], vm)
+        except Exception:  # noqa: BLE001 - not listed: reported elsewhere
+            continue
+        try:
+            get_public_key(method)
+        except Exception as exc:  # noqa: BLE001 - reported, never a pass
+            found.append((did, vm, str(exc).splitlines()[0] if str(exc) else type(exc).__name__))
+    return found
 
 
 def _run_library(kind, document, attempt: _Attempt, history, wire_version):
@@ -477,6 +522,7 @@ def _verify_with_keys(kind, document, keys: _Keys, history=None, wire_version=No
             attempt = _Attempt(keys, use_supplied=retry)
             reason, assessment = _run_library(kind, document, attempt, history, wire_version)
             not_listed = _keys_not_listed(kind, document, attempt, assessment)
+        attempt.unreadable = _keys_unreadable(kind, document, attempt, assessment)
     return reason, assessment, attempt, not_listed
 
 
@@ -496,14 +542,23 @@ def _finish(outcome: _Outcome, reason, counts: str | None, attempt: _Attempt, no
             outcome.lines.append(f"note: no DID document for {did} ({why}); its signatures were not checked")
         for did, vm in not_listed:
             outcome.lines.append(f"note: {did} doesn't list key {vm}; that signature was not checked")
+        for did, vm, why in attempt.unreadable:
+            outcome.lines.append(
+                f"note: {did}: key {vm} in its DID document can't be read: {why}; "
+                "that signature was not checked"
+            )
     elif reason in KEY_NOT_FOUND_REASONS or attempt.missing:
         outcome.status = EXIT_UNFINISHED
-        if attempt.missing and not not_listed:
+        if attempt.unreadable and not attempt.missing and not not_listed:
+            outcome.headline = "COULD NOT FINISH: a key in a signer's DID document can't be read"
+        elif attempt.missing and not not_listed and not attempt.unreadable:
             outcome.headline = "COULD NOT FINISH: a DID document the check needed is not available"
-        elif not_listed and not attempt.missing:
+        elif not_listed and not attempt.missing and not attempt.unreadable:
             outcome.headline = "COULD NOT FINISH: a signature names a key no available DID document lists"
         else:
             outcome.headline = "COULD NOT FINISH: keys the check needed are not available"
+        for did, vm, why in attempt.unreadable:
+            outcome.lines.append(f"{did}: key {vm} in its DID document can't be read: {why}")
         for did, why in attempt.missing.items():
             outcome.lines.append(f"no DID document for {did}: {why}")
         for did, vm in not_listed:
@@ -696,7 +751,11 @@ def _unfinished(outcome: _Outcome, headline: str, attempt: _Attempt, not_listed)
 
 def _unchecked_signatures(document: dict, attempt: _Attempt, not_listed) -> set[str]:
     """Which of a TransactionRecord's two signatures could not be checked."""
-    unavailable = set(attempt.missing) | {did for did, _vm in not_listed}
+    unavailable = (
+        set(attempt.missing)
+        | {did for did, _vm in not_listed}
+        | {did for did, _vm, _why in attempt.unreadable}
+    )
     names = {"final_offer": "the final offer", "final_acceptance": "the acceptance"}
     unchecked = set()
     for act, name in names.items():
@@ -709,7 +768,14 @@ def _unchecked_signatures(document: dict, attempt: _Attempt, not_listed) -> set[
 
 
 def _record_counts(reason, unchecked: set[str]) -> str:
-    """A TransactionRecord's two signed acts: verified, invalid, or not checked."""
+    """A TransactionRecord's two signed acts: verified, invalid, or not checked.
+
+    NOT_BILATERAL, ACCEPTED_OFFER_ID_MISMATCH and PARTY_SUMMARY_MISMATCH are
+    refused before the signatures are checked, as every other structural reason
+    is. SAME_SIGNING_KEY is refused after both signatures verified.
+    """
+    if reason == REASON_SAME_SIGNING_KEY:
+        return _counts(2, 0, 0, "(both verified under one public key)")
     if reason not in (
         None,
         REASON_OFFER_SIGNATURE_INVALID,

@@ -9,14 +9,21 @@ generated_at.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Mapping
 
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, canonicalize, hash_bytes, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     _is_act_integer,
@@ -77,6 +84,34 @@ REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH"
 REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID"
 REASON_ACCEPTANCE_SIGNATURE_INVALID = "ACCEPTANCE_SIGNATURE_INVALID"
 REASON_MALFORMED_RECORD = "MALFORMED_RECORD"
+# Section 9.5 steps 10 to 12: a record is evidence that two parties agreed only
+# if its two acts were signed by its two named parties, one each, under two
+# different public keys; if the acceptance's signed accepted_offer_id names the
+# final offer; and if negotiation_summary names the record's own parties. The
+# first three need no keys and are refused before either signature is checked;
+# SAME_SIGNING_KEY is reached only once both signatures verified.
+REASON_NOT_BILATERAL = "NOT_BILATERAL"
+REASON_ACCEPTED_OFFER_ID_MISMATCH = "ACCEPTED_OFFER_ID_MISMATCH"
+REASON_PARTY_SUMMARY_MISMATCH = "PARTY_SUMMARY_MISMATCH"
+REASON_SAME_SIGNING_KEY = "SAME_SIGNING_KEY"
+
+# Section 9.5 step 10: a party DID is a DID, per DID Core Section 3.1, and not a
+# DID URL. The ABNF, as one anchored expression:
+#   did                = "did:" method-name ":" method-specific-id
+#   method-name        = 1*method-char          ; method-char = %x61-7A / DIGIT
+#   method-specific-id = *( *idchar ":" ) 1*idchar
+#   idchar             = ALPHA / DIGIT / "." / "-" / "_" / pct-encoded
+#   pct-encoded        = "%" HEXDIG HEXDIG
+# So no "?", "#", "/", whitespace or non-ASCII character, and no trailing ":".
+# The "did:" prefix is matched as written, lowercase only. This is a syntax
+# check, not a normalization: a DID that passes is compared exactly as before.
+_DID_IDCHAR = r"(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})"
+DID_SYNTAX = re.compile(rf"did:[a-z0-9]+:(?:{_DID_IDCHAR}*:)*{_DID_IDCHAR}+")
+
+
+def is_did(value) -> bool:
+    """Whether ``value`` is a DID by DID Core Section 3.1's syntax (not a DID URL)."""
+    return isinstance(value, str) and DID_SYNTAX.fullmatch(value) is not None
 
 # The Section 7.3.1 act fields final_offer carries beside the act's hash, so a
 # verifier can rebuild the signed act from the record alone (Section 9.3). The
@@ -440,6 +475,82 @@ def _record_line_items_hold(record: dict) -> bool:
     )
 
 
+def _record_is_bilateral(record: dict) -> bool:
+    """Section 9.5 step 10: the two acts are signed by the two named parties, one each.
+
+    parties.initiator.did and parties.responder.did are non-empty strings that
+    differ, final_offer.sender_did is one of them and final_acceptance.sender_did
+    the other. The comparison is exact string equality, with no DID
+    normalization, as the evidence verifier compares a session party: a DID URL
+    naming a party's key, or a did:web DID whose host is spelled in another
+    case, is a different string and so neither party. A value that is not a
+    string is no party's DID. That two DIDs differ does not show that two
+    organizations control them; step 10's key comparison closes one key behind
+    two DIDs, and nothing here can close two keys held by one organization.
+    """
+    parties = record.get("parties")
+    if not isinstance(parties, dict):
+        return False
+    initiator = parties.get("initiator")
+    responder = parties.get("responder")
+    if not isinstance(initiator, dict) or not isinstance(responder, dict):
+        return False
+    initiator_did = initiator.get("did")
+    responder_did = responder.get("did")
+    if not (is_did(initiator_did) and is_did(responder_did)):
+        return False
+    if initiator_did == responder_did:
+        return False
+    offer_did = record["final_offer"].get("sender_did")
+    acceptance_did = record["final_acceptance"].get("sender_did")
+    if not isinstance(offer_did, str) or not isinstance(acceptance_did, str):
+        return False
+    return (offer_did == initiator_did and acceptance_did == responder_did) or (
+        offer_did == responder_did and acceptance_did == initiator_did
+    )
+
+
+def _record_accepts_its_offer(record: dict) -> bool:
+    """Section 9.5 step 11: the acceptance names the final offer by its identifier.
+
+    The acceptance's signature covers accepted_offer_id, and no signature covers
+    final_offer.message_id, so this comparison is what binds the offer's
+    identifier to the acceptance. Both must be strings.
+    """
+    offer_id = record["final_offer"].get("message_id")
+    accepted_offer_id = record["final_acceptance"].get("accepted_offer_id")
+    return (
+        isinstance(offer_id, str)
+        and isinstance(accepted_offer_id, str)
+        and accepted_offer_id == offer_id
+    )
+
+
+def _record_summary_names_its_parties(record: dict) -> bool:
+    """Section 9.5 step 12: negotiation_summary names the record's parties.
+
+    initiating_party_did is parties.initiator.did and accepting_party_did is
+    final_acceptance.sender_did. No signature covers the summary; step 10 has
+    already held both DIDs it is compared with to be strings, so a summary value
+    of any other type differs from them. A "0.4" record always carries the
+    summary (Section 9.3), so an absent one, or an absent key, is refused.
+    """
+    summary = record.get("negotiation_summary")
+    if not isinstance(summary, dict):
+        return False
+    return (
+        "initiating_party_did" in summary
+        and "accepting_party_did" in summary
+        and summary["initiating_party_did"] == record["parties"]["initiator"]["did"]
+        and summary["accepting_party_did"] == record["final_acceptance"]["sender_did"]
+    )
+
+
+def _public_key_bytes(public_key) -> bytes:
+    """A verifying key as its SubjectPublicKeyInfo DER bytes, to compare two keys."""
+    return public_key.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+
+
 def verify_transaction_record(
     record: dict,
     did_resolver: Mapping[str, dict] | Callable[[str], dict],
@@ -503,19 +614,33 @@ def verify_transaction_record_reason(
         if accepted_hash != offer_hash:
             return REASON_ACCEPTED_HASH_MISMATCH
 
+        # An acceptance that cannot be rebuilt is unbound (step 5). It is
+        # refused here, before the party checks read its sender_did and
+        # accepted_offer_id, so a value of the wrong type in either keeps the
+        # reason it has always had.
+        acceptance_act = _final_acceptance_act(record)
+        if acceptance_act is None:
+            return REASON_UNBOUND_RECORD_VERSION
+
+        # Steps 10 to 12, which need no keys: a definite failure whatever DID
+        # documents are available.
+        if not _record_is_bilateral(record):
+            return REASON_NOT_BILATERAL
+        if not _record_accepts_its_offer(record):
+            return REASON_ACCEPTED_OFFER_ID_MISMATCH
+        if not _record_summary_names_its_parties(record):
+            return REASON_PARTY_SUMMARY_MISMATCH
+
         # Both signatures are checked even when one key is unavailable: a
         # definite failure is reported ahead of a key that could not be found.
-        offer_verified = _verified_or_unresolved(
+        offer_verified, offer_key = _verified_or_unresolved(
             did_resolver,
             record,
             did=final_offer["sender_did"],
             signature=final_offer["protocol_act_signature"],
             expected_payload=offer_hash,
         )
-        acceptance_act = _final_acceptance_act(record)
-        if acceptance_act is None:
-            return REASON_UNBOUND_RECORD_VERSION
-        acceptance_verified = _verified_or_unresolved(
+        acceptance_verified, acceptance_key = _verified_or_unresolved(
             did_resolver,
             record,
             did=final_acceptance["sender_did"],
@@ -526,6 +651,18 @@ def verify_transaction_record_reason(
             return REASON_OFFER_SIGNATURE_INVALID
         if acceptance_verified is False:
             return REASON_ACCEPTANCE_SIGNATURE_INVALID
+
+        # Step 10's key comparison, once both signatures verified: one key
+        # behind two DIDs whose documents each list it is one signer. (Two
+        # spellings of one DID that reach one document never get here: the
+        # document names one of them, Section 4.2.) With a key unavailable the
+        # two cannot be compared, and the record is KEY_NOT_FOUND below.
+        if (
+            offer_key is not None
+            and acceptance_key is not None
+            and _public_key_bytes(offer_key) == _public_key_bytes(acceptance_key)
+        ):
+            return REASON_SAME_SIGNING_KEY
 
         # offer_chain_hash is covered by neither signature: the earlier offers
         # must come from somewhere trustworthy (offer_history_from_evidence).
@@ -555,17 +692,23 @@ class _KeyNotFound(Exception):
         self.verification_method = verification_method
 
 
-def _verified_or_unresolved(did_resolver, record: dict, **signature) -> bool | None:
-    """True or False for a signature that was checked; None when its key is unavailable."""
+def _verified_or_unresolved(did_resolver, record: dict, **signature) -> tuple[bool | None, object]:
+    """Whether a signature verified, and the public key it verified under.
+
+    True or False for a signature that was checked, None when its key is
+    unavailable. The key is returned only for a signature that verified, and is
+    None otherwise.
+    """
     try:
-        return _verify_record_signature(did_resolver, record, **signature)
+        key = _verify_record_signature(did_resolver, record, **signature)
     except _KeyNotFound:
-        return None
+        return None, None
+    return key is not None, key
 
 
 def _record_hash_matches(record: dict) -> bool:
     claimed_hash = record.get("record_hash")
-    if not claimed_hash:
+    if not (isinstance(claimed_hash, str) and claimed_hash):
         return False
     candidate = dict(record)
     candidate["record_hash"] = ""
@@ -579,10 +722,20 @@ def _verify_record_signature(
     did: str,
     signature: str,
     expected_payload: str | None = None,
-) -> bool:
+):
+    """The public key the signature verified under, or None when it does not verify.
+
+    Raises _KeyNotFound when the signer's DID document, or the key it names, is
+    not available: the signature was checked neither way.
+    """
     verification_method = _verification_method_for_did(record, did)
-    if not verification_method or not signature:
-        return False
+    # By type, not truthiness: a value that is not a non-empty string names no
+    # key and is no JWS, so the signature does not verify (both languages
+    # refuse the same values the same way).
+    if not (isinstance(verification_method, str) and verification_method):
+        return None
+    if not (isinstance(signature, str) and signature):
+        return None
 
     try:
         did_document = _resolve_did_document(did_resolver, did)
@@ -594,7 +747,13 @@ def _verify_record_signature(
         vm = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:
         raise _KeyNotFound(did, verification_method) from None
-    public_key = get_public_key(vm)
+    try:
+        public_key = get_public_key(vm)
+    except Exception:
+        # A key its DID document lists but that cannot be read (a coordinate
+        # that is not unpadded base64url, an unsupported type) is a key that is
+        # not available, exactly like one the document does not list.
+        raise _KeyNotFound(did, verification_method) from None
     # verify_jws raises on bad signature bytes. That is this check failing, not
     # the record being unreadable, so it is caught here and the caller reports
     # the signature reason. An unavailable DID document or key is raised as
@@ -602,17 +761,28 @@ def _verify_record_signature(
     try:
         signed_payload = verify_jws(signature, public_key)
     except InvalidSignatureError:
-        return False
-    return expected_payload is None or signed_payload == expected_payload
+        return None
+    if expected_payload is not None and signed_payload != expected_payload:
+        return None
+    return public_key
 
 
 def _resolve_did_document(
     did_resolver: Mapping[str, dict] | Callable[[str], dict],
     did: str,
 ) -> dict:
+    """The DID document of ``did``, from a mapping or a resolver the caller supplies.
+
+    A document whose ``id`` is not exactly ``did`` is refused
+    (DidDocumentIdMismatch), and the caller treats its key as unavailable, as
+    when no document can be obtained: a document is used only for the DID it
+    names (Section 4.2).
+    """
     if isinstance(did_resolver, Mapping):
-        return did_resolver[did]
-    return did_resolver(did)
+        document = did_resolver[did]
+    else:
+        document = did_resolver(did)
+    return require_did_document_for(document, did)
 
 
 def _verification_method_for_did(record: dict, did: str) -> str:

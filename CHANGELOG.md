@@ -69,6 +69,69 @@ This project is pre-1.0: the minor version moves for substantive additions.
   (the TypeScript context field is `allowPrivateHosts`).
   The TypeScript server's `fetchFn` is now for webhooks only; did:web fetches
   and invitation delivery use `publicFetchFn`.
+- **A TransactionRecord must be signed by its two parties, one act each.**
+  The TransactionRecord verifier, in both reference implementations and in
+  `a2cn-verify`, verified a record that one party signed on both sides: a
+  record naming TechCorp as initiator and Acme as responder, with the final
+  offer and the acceptance both signed by TechCorp, verified, and so did one
+  whose acceptance names a different offer, or whose summary names other
+  parties. The live session already refused one party signing both sides; a
+  record presented to a verifier has no session behind it. The verifier now
+  refuses such a record (Section 9.5 steps 10 to 12) with one of four reason
+  codes: `NOT_BILATERAL` when the two parties' DIDs are empty or equal, or the
+  final offer and the acceptance are not signed one by each of them (compared
+  as exact strings; a signer who is not a party, once a signature failure, is
+  now this); `SAME_SIGNING_KEY` when both signatures verify under one public
+  key, as under two DIDs whose documents list that key;
+  `ACCEPTED_OFFER_ID_MISMATCH` when the acceptance's
+  `accepted_offer_id` is not `final_offer.message_id`; and
+  `PARTY_SUMMARY_MISMATCH` when `negotiation_summary` does not name
+  `parties.initiator.did` as the initiating party and the acceptance's signer
+  as the accepting one. `a2cn-verify` reports each as `REFUSED` (exit 1); all
+  but `SAME_SIGNING_KEY` are refused before any key is needed, so even with no
+  DID documents at all. Records the reference implementations generate
+  are unaffected and still verify, unless the session's two parties signed
+  with one key, which is now refused as `SAME_SIGNING_KEY`. No field is newly signed, and neither
+  `record_version` nor the wire protocol changes.
+- **A DID document is used only for the DID its `id` names.** Two spellings
+  of one did:web DID can reach one document: the host's case, a
+  percent-encoded dot or port, a `:.well-known` path, or a Unicode host and
+  its punycode. A party whose document lists two keys could sign a
+  TransactionRecord's offer under one spelling and its acceptance under the
+  other, and the record verified, in both reference implementations and in
+  `a2cn-verify`, live and offline. Now every verifier refuses a DID document
+  whose `id` is not exactly the DID it was obtained for, compared as exact
+  strings with no normalization (Section 4.2), and treats its keys as
+  unavailable, as when no document can be fetched: `KEY_NOT_FOUND` in the
+  library and COULD NOT FINISH in `a2cn-verify`. This covers the did:web
+  resolver (`resolve_did_web` / `resolveDidWeb` raise `DidDocumentIdMismatch`),
+  a mapping or resolver passed to the TransactionRecord, SessionEvidenceRecord
+  and signed-act verifiers, documents registered with a session manager, and
+  the servers' pre-registered documents (`register_did_document` /
+  `registerDidDocument` refuse to register a mismatched one). `a2cn-verify`
+  refuses as a usage error a `--did-doc DID=FILE` whose file names another
+  DID. Every committed test vector and example already met the rule.
+  Spellings a party's own server can tell apart and answer with a document
+  of their own, such as a trailing dot or a second path, are distinct DIDs: a
+  record shows which DIDs signed, not who controls them.
+- **A TransactionRecord's party DIDs must be DIDs.** `parties.initiator.did`
+  and `parties.responder.did` must each match DID Core Section 3.1's DID
+  syntax, in both reference implementations, or the record is refused as
+  `NOT_BILATERAL` (Section 9.5 step 10). A DID URL with a `?query` or
+  `#fragment` let one party's server answer a second spelling of its DID with
+  a document of its own, so one party signed as two; such a DID URL is now
+  refused, as are a `/path`, a trailing `:`, an empty method-specific id, an
+  uppercase method name or scheme, whitespace, a non-ASCII character and a bad
+  percent-encoding. This is a syntax check, not a normalization: a trailing
+  dot, `:path` segments, a percent-encoded port, punycode, `_` and `-` are
+  DID syntax and are accepted as before. A party DID written as a raw Unicode
+  host is now refused; its punycode form is accepted. A record the reference
+  implementations generate verifies as before whenever its parties' DIDs are
+  DIDs. The published `"0.4"` schema and live sessions do not yet refuse a
+  party DID that is not a DID, since they check only that it begins with
+  `did:`: a session between such parties completes, and its TransactionRecord
+  is refused. The schema of the next TransactionRecord version carries the
+  DID syntax.
 
 ### Added
 
@@ -194,6 +257,57 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `normalized_total_minor` by value, as TypeScript does: a whole-number float
   such as `2.0` is that integer, where Python refused it before; a fractional
   value is still refused.
+- The TransactionRecord verifier reads a party's `verification_method` and an
+  act's signature by type in both reference implementations: a value that is
+  not a non-empty string is that act's `OFFER_SIGNATURE_INVALID` or
+  `ACCEPTANCE_SIGNATURE_INVALID`. Before, a list or object verification method
+  gave `ACCEPTANCE_SIGNATURE_INVALID` in Python and `KEY_NOT_FOUND` in
+  TypeScript, a number or boolean one gave `KEY_NOT_FOUND` in both, and a
+  number or boolean signature gave `MALFORMED_RECORD` in Python. Python's JWS
+  verification refuses a token that is not a string, or whose protected header
+  is not a JSON object, as an invalid signature, as TypeScript's does; it raised
+  an unrelated error before. `spec/test-vectors/transaction-record-key-parity.json`
+  holds the cases both suites run.
+- A JWS's protected header and payload are decoded the same way in both
+  reference implementations: strict UTF-8 with no byte-order mark, and a
+  header that is JSON (no `NaN` or `Infinity`). Anything else is an invalid
+  signature. Before, a genuine signature under a header beginning with a BOM,
+  or holding `NaN`, verified in Python and not in TypeScript, and one under a
+  header whose bytes were not UTF-8 verified in TypeScript and not in Python.
+- A JWS's three segments, a public JWK's coordinates and an invitation's
+  signature are decoded as canonical unpadded base64url in both reference
+  implementations: only `A-Z`, `a-z`, `0-9`, `-` and `_`, no `=` padding, a
+  length that is not one more than a multiple of four, and zero unused
+  trailing bits. Anything else is an invalid signature, or an unusable key.
+  Before, the two decoders disagreed: a genuine signature under a header with
+  one stray trailing character verified in TypeScript only, one with an `=`
+  inside it verified in Python only, and both accepted padding, the standard
+  alphabet and non-canonical trailing bits; a JWK coordinate holding `*` or a
+  space was usable in TypeScript only.
+- A JWK coordinate must be unpadded base64url (RFC 7515, RFC 7518). A party
+  key that isn't is reported as unavailable, not as a malformed record:
+  `KEY_NOT_FOUND` from the TransactionRecord, SessionEvidenceRecord and
+  signed-act verifiers, and COULD NOT FINISH from `a2cn-verify`, which names
+  the key and says why it can't be read. The same holds for any party key its
+  DID document lists that can't be read as a public key.
+- An invitation containing a lone surrogate made the Python implementation
+  fail with a server error instead of refusing it. It now refuses it, as
+  TypeScript does: `POST /invitations` answers `400`
+  `INVITATION_SIGNATURE_INVALID`.
+- An offer, counteroffer, acceptance or decline holding a lone surrogate is
+  refused as `INVALID_SIGNATURE` (`400`) by both servers' message path, since
+  it cannot be canonicalized and so no signature can be checked against it.
+  It made the Python server fail with a server error, and the TypeScript
+  server too once its canonicalization began refusing such strings.
+  `a2cn-verify` refuses such a standalone act as `ACT_NOT_RECOMPUTABLE`
+  instead of stopping with a traceback.
+- TypeScript's canonicalization refuses a string, member name or value, that
+  holds a lone surrogate, as Python's does: such a string has no UTF-8
+  encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape
+  instead, so a record a TypeScript producer sealed over a lone surrogate
+  verified in TypeScript and was `MALFORMED_RECORD` in Python; it is now
+  `MALFORMED_RECORD` in both. Every well-formed string, astral characters
+  included, hashes exactly as before.
 
 ## [0.3.1] — 2026-10-15
 

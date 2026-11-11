@@ -10,7 +10,7 @@
  */
 
 import { hashObject, verifyApprovalReceiptSignature, verifyJws } from "./crypto.js";
-import { getPublicKey, getVerificationMethod } from "./did.js";
+import { didDocumentIsFor, getPublicKey, getVerificationMethod } from "./did.js";
 import { A2CNError, now } from "./errors.js";
 import {
   SUPPORTED_SESSION_CURRENCIES,
@@ -435,13 +435,38 @@ function wireVersion(session: Session): string {
 // manager, rather than one the caller resolved for this receipt.
 const FROM_REGISTRY: unique symbol = Symbol("FROM_REGISTRY");
 
+/**
+ * The hash an act's signature must be over, or INVALID_SIGNATURE if it has none.
+ *
+ * An act holding a string that has no UTF-8 encoding (a lone surrogate) cannot
+ * be canonicalized (RFC 8785), so no signature can be checked against it: it is
+ * refused as an invalid signature, in both reference implementations, rather
+ * than escaping as an internal error.
+ */
+function actHashOrRefuse<T>(compute: () => T, session: Session, messageId: string | undefined): T {
+  try {
+    return compute();
+  } catch {
+    throw new A2CNError("INVALID_SIGNATURE", "The act cannot be canonicalized (RFC 8785), so its signature cannot be checked", 400, {
+      sessionId: session.session_id,
+      messageId,
+    });
+  }
+}
+
 export class SessionManager {
   _sessions: Record<string, Session> = {};
   // Pre-session idempotency: message_id → response dict
   _init_responses: Record<string, Dict> = {};
   _did_documents: Record<string, Dict> = {};
 
-  /** Register a resolved DID document for protocol-act signature checks. */
+  /**
+   * Register a resolved DID document for protocol-act signature checks.
+   *
+   * A document whose `id` is not exactly `did` is kept but never used: each use
+   * checks it, and treats such a document as no document, because a document is
+   * the document of the DID it names and of no other spelling (Section 4.2).
+   */
   registerDidDocument(did: string, didDocument: Dict): void {
     this._did_documents[did] = didDocument;
   }
@@ -782,7 +807,7 @@ export class SessionManager {
     }
 
     const didDocument = this._did_documents[senderDid];
-    if (didDocument === undefined) {
+    if (!didDocumentIsFor(didDocument, senderDid)) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
         `No DID document registered for sender ${JSON.stringify(senderDid)}`,
@@ -851,7 +876,7 @@ export class SessionManager {
       expires_at: expiresAt,
       terms,
     });
-    const expectedHash = hashObject(protocolAct);
+    const expectedHash = actHashOrRefuse(() => hashObject(protocolAct), session, messageId);
     if (claimedHash !== expectedHash) {
       throw new A2CNError("INVALID_SIGNATURE", "Protocol act hash does not match message fields", 400, {
         sessionId: session.session_id,
@@ -1005,7 +1030,7 @@ export class SessionManager {
     } else {
       didDocument = approverDidDocument;
     }
-    if (didDocument === null || typeof didDocument !== "object" || Array.isArray(didDocument)) {
+    if (!didDocumentIsFor(didDocument, approverDid)) {
       throw new A2CNError(
         "APPROVAL_RECEIPT_KEY_UNRESOLVED",
         `No DID document is available for approver ${JSON.stringify(approverDid)}`,
@@ -1367,9 +1392,11 @@ export class SessionManager {
     // all three agree on what a signature covers. An acceptance that does not
     // carry those fields cannot be rebound, and is refused rather than checked
     // against a payload assembled out of defaults.
-    const acceptancePayloadHash = signedActHash(message, {
-      versionWhenAbsent: wireVersion(session),
-    });
+    const acceptancePayloadHash = actHashOrRefuse(
+      () => signedActHash(message, { versionWhenAbsent: wireVersion(session) }),
+      session,
+      messageId,
+    );
     if (acceptancePayloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
@@ -1484,7 +1511,11 @@ export class SessionManager {
       });
     }
 
-    const payloadHash = signedActHash(message, { versionWhenAbsent: wireVersion(session) });
+    const payloadHash = actHashOrRefuse(
+      () => signedActHash(message, { versionWhenAbsent: wireVersion(session) }),
+      session,
+      message.message_id as string | undefined,
+    );
     if (payloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",

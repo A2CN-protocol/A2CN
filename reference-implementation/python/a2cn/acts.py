@@ -20,7 +20,12 @@ from typing import Any
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import hash_object, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.messages import SIGNED_ACT_SIGNATURE_FIELDS, SUPPORTED_WIRE_VERSIONS, rebuild_signed_act
 
 DidResolver = Mapping[str, dict] | Callable[[str], dict]
@@ -63,7 +68,12 @@ def verify_signed_act_reason(
     rebuilt = rebuild_signed_act(act, version_when_absent=wire_version or "")
     if rebuilt is None:
         return ACT_REASON_NOT_RECOMPUTABLE
-    expected_hash = hash_object(rebuilt)
+    try:
+        expected_hash = hash_object(rebuilt)
+    except ValueError:
+        # A string with no UTF-8 encoding (a lone surrogate) cannot be
+        # canonicalized (RFC 8785): the act cannot be recomputed.
+        return ACT_REASON_NOT_RECOMPUTABLE
     if act["message_type"] in ("offer", "counteroffer") and act.get("protocol_act_hash") != expected_hash:
         return ACT_REASON_HASH_MISMATCH
 
@@ -82,12 +92,14 @@ def verify_signed_act_reason(
         return ACT_REASON_METHOD_NOT_CONTROLLED
 
     try:
-        did_document = (
-            did_resolver(sender_did) if callable(did_resolver) else did_resolver[sender_did]
+        did_document = require_did_document_for(
+            did_resolver(sender_did) if callable(did_resolver) else did_resolver[sender_did],
+            sender_did,
         )
     except Exception:
         # A DID document the resolver cannot supply is a key that is not
-        # available, exactly like one the document does not list.
+        # available, exactly like one the document does not list; so is a
+        # document whose id is not sender_did (Section 4.2).
         return ACT_REASON_KEY_NOT_FOUND
     try:
         method = get_verification_method(did_document, verification_method)
@@ -100,7 +112,9 @@ def verify_signed_act_reason(
     try:
         public_key = get_public_key(method)
     except Exception:
-        return ACT_REASON_KEY_UNUSABLE
+        # Listed but unreadable (a coordinate that is not unpadded base64url,
+        # an unsupported type): the key is not available, as when unlisted.
+        return ACT_REASON_KEY_NOT_FOUND
     try:
         signed_payload = verify_jws(signature, public_key)
     except (InvalidSignatureError, ValueError):

@@ -22,7 +22,18 @@ standard, and it has **not** undergone an external security audit.
   implementations do not yet check.
 - **Record tampering.** TransactionRecords and SessionEvidenceRecords are canonical and
   recomputable from their own fields; agreed terms are bound to the signed final offer, so any
-  change to the record breaks the hash and the signatures over it (§9.5, §9A.6).
+  change to the record breaks the hash and the signatures over it (§9.5, §9A.6). Verification
+  refuses a TransactionRecord unless its two acts are signed by its two named parties, one each,
+  under different keys, so one party cannot sign both sides of a record under one DID or under
+  two DIDs that list one key (§9.5).
+- **One party posing as two under two spellings of its DID.** A verifier uses a DID document only
+  for the DID its `id` names, compared exactly, whether the document was fetched, configured by an
+  operator or supplied for offline verification (§4.2). Two spellings of one did:web DID that
+  reach one document (a host's case, an escaped character, a `:.well-known` path, a Unicode host
+  and its punycode) therefore cannot both resolve to its keys, and a party DID must be a DID by
+  DID Core's syntax, not a DID URL (§9.5). Spellings a party's own server can tell apart and
+  answer with a document of their own (a trailing dot, a second path or domain) are distinct
+  DIDs, and fall under what A2CN does not establish: which organization controls a DID.
 - **Ambiguous money amounts.** Line-item money is stated as integer minor units under pinned keys
   (§7.2), and record verification refuses bare `unit_price` / `total` keys and fractional amounts
   at every record version (§9.5, §9A.6), so a verified record cannot be read at 100× or 1/100 of
@@ -74,6 +85,8 @@ standard, and it has **not** undergone an external security audit.
 - endpoint, host, or network security outside the protocol;
 - the integrity of DID or external identity infrastructure it depends on;
 - the security of a counterparty that does not participate in A2CN signing;
+- that two DIDs are controlled by two different organizations: a record shows which DIDs signed,
+  not who controls them;
 - regulatory compliance merely because an A2CN artifact exists.
 
 ## Current limitations

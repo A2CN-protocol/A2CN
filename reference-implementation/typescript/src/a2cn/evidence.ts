@@ -18,7 +18,12 @@ import {
   verifyJws,
   type SigningPrivateKey,
 } from "./crypto.js";
-import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
+import {
+  VerificationMethodNotFoundError,
+  getPublicKey,
+  getVerificationMethod,
+  requireDidDocumentFor,
+} from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import {
   A2CN_NAMESPACE,
@@ -2645,7 +2650,15 @@ function verifySignature(
     }
     throw exc;
   }
-  const publicKey = getPublicKey(vm);
+  let publicKey;
+  try {
+    publicKey = getPublicKey(vm);
+  } catch {
+    // A key its DID document lists but that cannot be read (a coordinate that is
+    // not unpadded base64url, an unsupported type) is a key that is not
+    // available, exactly like one the document does not list.
+    throw new KeyNotFound(options.did, options.verificationMethod);
+  }
   // verifyJws throws on bad signature bytes. That is this check failing, not
   // the record being unreadable, so the caller reports a signature reason.
   try {
@@ -2658,11 +2671,16 @@ function verifySignature(
   }
 }
 
+/**
+ * The DID document of `did`, from a mapping or a resolver the caller supplies.
+ *
+ * A document whose `id` is not exactly `did` is refused (DidDocumentIdMismatch),
+ * and the caller treats its key as unavailable, as when no document can be
+ * obtained: a document is used only for the DID it names (Section 4.2).
+ */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
-  if (typeof didResolver === "function") {
-    return didResolver(did);
-  }
-  return didResolver[did];
+  const document = typeof didResolver === "function" ? didResolver(did) : didResolver[did];
+  return requireDidDocumentFor(document, did);
 }
 
 function verificationMethodControlledBy(verificationMethod: string, did: string): boolean {

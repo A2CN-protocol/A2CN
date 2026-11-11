@@ -19,7 +19,12 @@ from typing import Any
 from jwt.exceptions import InvalidSignatureError
 
 from a2cn.crypto import SigningPrivateKey, canonicalize, hash_bytes, hash_object, sign_jws, verify_jws
-from a2cn.did import VerificationMethodNotFoundError, get_public_key, get_verification_method
+from a2cn.did import (
+    VerificationMethodNotFoundError,
+    get_public_key,
+    get_verification_method,
+    require_did_document_for,
+)
 from a2cn.line_items import session_currency_is_supported, terms_line_item_violation
 from a2cn.messages import (
     RECORD_ENTRY_WIRE_FIELDS,
@@ -2243,7 +2248,13 @@ def _verify_signature(
         vm = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:
         raise _KeyNotFound(did, verification_method) from None
-    public_key = get_public_key(vm)
+    try:
+        public_key = get_public_key(vm)
+    except Exception:
+        # A key its DID document lists but that cannot be read (a coordinate
+        # that is not unpadded base64url, an unsupported type) is a key that is
+        # not available, exactly like one the document does not list.
+        raise _KeyNotFound(did, verification_method) from None
     # verify_jws raises on bad signature bytes. That is this check failing, not
     # the record being unreadable, so the caller reports a signature reason.
     try:
@@ -2253,9 +2264,15 @@ def _verify_signature(
 
 
 def _resolve_did_document(did_resolver: DidResolver, did: str) -> dict:
+    """The DID document of ``did``, refused (DidDocumentIdMismatch) unless its ``id`` is ``did``.
+
+    The caller treats a refused document's key as unavailable (Section 4.2).
+    """
     if isinstance(did_resolver, Mapping):
-        return did_resolver[did]
-    return did_resolver(did)
+        document = did_resolver[did]
+    else:
+        document = did_resolver(did)
+    return require_did_document_for(document, did)
 
 
 def _verification_method_controlled_by(verification_method: str, did: str) -> bool:

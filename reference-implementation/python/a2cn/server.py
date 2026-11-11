@@ -60,7 +60,10 @@ from a2cn.crypto import (
     verify_invitation_signature,
 )
 from a2cn.did import (
+    DidDocumentIdMismatch,
     check_url_host,
+    did_document_is_for,
+    require_did_document_for,
     get_public_key,
     get_verification_method,
     public_address_client,
@@ -249,9 +252,21 @@ _did_doc_override: dict[str, dict] = {}
 
 
 def register_did_document(did: str, did_document: dict) -> None:
-    """Pre-register a DID document so JWT verification skips HTTP resolution."""
+    """Pre-register a DID document so JWT verification skips HTTP resolution.
+
+    Raises DidDocumentIdMismatch (a ValueError) unless the document's ``id`` is
+    exactly ``did``. A document registered under another DID is never used for
+    it, here or when it is read back (Section 4.2).
+    """
+    require_did_document_for(did_document, did)
     _did_doc_override[did] = did_document
     manager.register_did_document(did, did_document)
+
+
+def _registered_did_document(did: str) -> dict | None:
+    """The operator's document for ``did``, if one is registered under it and names it."""
+    document = _did_doc_override.get(did)
+    return document if did_document_is_for(document, did) else None
 
 
 def _clean_expired_jtis() -> None:
@@ -293,7 +308,10 @@ async def verify_jwt_auth(request: Request) -> dict:
 
         # Resolve DID document (override dict first, then HTTP)
         if iss in _did_doc_override:
-            did_doc = _did_doc_override[iss]
+            did_doc = _registered_did_document(iss)
+            if did_doc is None:
+                logger.warning("The DID document registered for %r does not name it", iss)
+                raise A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401)
         else:
             try:
                 did_doc = await resolve_did_web(iss, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
@@ -560,7 +578,7 @@ async def _resolve_approver_did_document(approver: str) -> dict | None:
     """
     approver_did = approver.partition("#")[0]
     if approver_did in _did_doc_override:
-        return _did_doc_override[approver_did]
+        return _registered_did_document(approver_did)
     if not approver_did.startswith("did:web:"):
         return None
     try:
@@ -1136,10 +1154,17 @@ async def receive_invitation(request: Request) -> Response:
 
     # Resolve DID document (_did_doc_override first, then HTTP)
     if inviter_did in _did_doc_override:
-        did_doc = _did_doc_override[inviter_did]
+        did_doc = _registered_did_document(inviter_did)
+        if did_doc is None:
+            logger.warning("The DID document registered for %r does not name it", inviter_did)
+            return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
     else:
         try:
             did_doc = await resolve_did_web(inviter_did, allow_private_hosts=ALLOW_PRIVATE_HOSTS)
+        except DidDocumentIdMismatch as exc:
+            # The address serves another DID's document: this DID has none.
+            logger.warning("Could not resolve inviter DID %r: %s", inviter_did, exc)
+            return error_response(INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403)
         except httpx.HTTPStatusError as exc:
             logger.warning("Could not resolve inviter DID %r: %s", inviter_did, exc)
             if exc.response.status_code == 404:

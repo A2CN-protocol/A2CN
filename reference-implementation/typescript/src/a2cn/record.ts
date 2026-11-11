@@ -7,7 +7,7 @@
  * generated_at.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, type KeyObject } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 
 import {
@@ -17,7 +17,12 @@ import {
   verifyJws,
   InvalidSignatureError,
 } from "./crypto.js";
-import { VerificationMethodNotFoundError, getPublicKey, getVerificationMethod } from "./did.js";
+import {
+  VerificationMethodNotFoundError,
+  getPublicKey,
+  getVerificationMethod,
+  requireDidDocumentFor,
+} from "./did.js";
 import { sessionCurrencyIsSupported, termsLineItemViolation } from "./line_items.js";
 import { SESSION_BASES, SessionState, now, parseIsoMs } from "./session.js";
 import {
@@ -103,6 +108,34 @@ export const REASON_OFFER_CHAIN_HASH_MISMATCH = "OFFER_CHAIN_HASH_MISMATCH";
 export const REASON_OFFER_SIGNATURE_INVALID = "OFFER_SIGNATURE_INVALID";
 export const REASON_ACCEPTANCE_SIGNATURE_INVALID = "ACCEPTANCE_SIGNATURE_INVALID";
 export const REASON_MALFORMED_RECORD = "MALFORMED_RECORD";
+// Section 9.5 steps 10 to 12: a record is evidence that two parties agreed only
+// if its two acts were signed by its two named parties, one each, under two
+// different public keys; if the acceptance's signed accepted_offer_id names the
+// final offer; and if negotiation_summary names the record's own parties. The
+// first three need no keys and are refused before either signature is checked;
+// SAME_SIGNING_KEY is reached only once both signatures verified.
+export const REASON_NOT_BILATERAL = "NOT_BILATERAL";
+export const REASON_ACCEPTED_OFFER_ID_MISMATCH = "ACCEPTED_OFFER_ID_MISMATCH";
+export const REASON_PARTY_SUMMARY_MISMATCH = "PARTY_SUMMARY_MISMATCH";
+export const REASON_SAME_SIGNING_KEY = "SAME_SIGNING_KEY";
+
+// Section 9.5 step 10: a party DID is a DID, per DID Core Section 3.1, and not a
+// DID URL. The ABNF, as one anchored expression:
+//   did                = "did:" method-name ":" method-specific-id
+//   method-name        = 1*method-char          ; method-char = %x61-7A / DIGIT
+//   method-specific-id = *( *idchar ":" ) 1*idchar
+//   idchar             = ALPHA / DIGIT / "." / "-" / "_" / pct-encoded
+//   pct-encoded        = "%" HEXDIG HEXDIG
+// So no "?", "#", "/", whitespace or non-ASCII character, and no trailing ":".
+// The "did:" prefix is matched as written, lowercase only. This is a syntax
+// check, not a normalization: a DID that passes is compared exactly as before.
+const DID_IDCHAR = "(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})";
+export const DID_SYNTAX = new RegExp(`^did:[a-z0-9]+:(?:${DID_IDCHAR}*:)*${DID_IDCHAR}+$`);
+
+/** Whether `value` is a DID by DID Core Section 3.1's syntax (not a DID URL). */
+export function isDid(value: unknown): value is string {
+  return typeof value === "string" && DID_SYNTAX.test(value);
+}
 
 // The Section 7.3.1 act fields final_offer carries beside the act's hash, so a
 // verifier can rebuild the signed act from the record alone (Section 9.3). The
@@ -479,6 +512,85 @@ function recordCurrencyMatches(record: Dict): boolean {
 }
 
 /**
+ * Section 9.5 step 10: the two acts are signed by the two named parties, one each.
+ *
+ * parties.initiator.did and parties.responder.did are non-empty strings that
+ * differ, final_offer.sender_did is one of them and final_acceptance.sender_did
+ * the other. The comparison is exact string equality, with no DID
+ * normalization, as the evidence verifier compares a session party: a DID URL
+ * naming a party's key, or a did:web DID whose host is spelled in another case,
+ * is a different string and so neither party. A value that is not a string is
+ * no party's DID. That two DIDs differ does not show that two organizations
+ * control them; step 10's key comparison closes one key behind two DIDs, and
+ * nothing here can close two keys held by one organization.
+ */
+function recordIsBilateral(record: Dict): boolean {
+  const parties = record.parties;
+  if (!isJsonObject(parties)) {
+    return false;
+  }
+  const initiator = parties.initiator;
+  const responder = parties.responder;
+  if (!isJsonObject(initiator) || !isJsonObject(responder)) {
+    return false;
+  }
+  const initiatorDid = initiator.did;
+  const responderDid = responder.did;
+  if (!isDid(initiatorDid) || !isDid(responderDid)) {
+    return false;
+  }
+  if (initiatorDid === responderDid) {
+    return false;
+  }
+  const offerDid = (record.final_offer as Dict).sender_did;
+  const acceptanceDid = (record.final_acceptance as Dict).sender_did;
+  if (!isString(offerDid) || !isString(acceptanceDid)) {
+    return false;
+  }
+  return (
+    (offerDid === initiatorDid && acceptanceDid === responderDid) ||
+    (offerDid === responderDid && acceptanceDid === initiatorDid)
+  );
+}
+
+/**
+ * Section 9.5 step 11: the acceptance names the final offer by its identifier.
+ *
+ * The acceptance's signature covers accepted_offer_id, and no signature covers
+ * final_offer.message_id, so this comparison is what binds the offer's
+ * identifier to the acceptance. Both must be strings.
+ */
+function recordAcceptsItsOffer(record: Dict): boolean {
+  const offerId = (record.final_offer as Dict).message_id;
+  const acceptedOfferId = (record.final_acceptance as Dict).accepted_offer_id;
+  return isString(offerId) && isString(acceptedOfferId) && acceptedOfferId === offerId;
+}
+
+/**
+ * Section 9.5 step 12: negotiation_summary names the record's parties.
+ *
+ * initiating_party_did is parties.initiator.did and accepting_party_did is
+ * final_acceptance.sender_did. No signature covers the summary; step 10 has
+ * already held both DIDs it is compared with to be strings, so a summary value
+ * of any other type differs from them. A "0.4" record always carries the
+ * summary (Section 9.3), so an absent one, or an absent key, is refused.
+ */
+function recordSummaryNamesItsParties(record: Dict): boolean {
+  const summary = record.negotiation_summary;
+  if (!isJsonObject(summary)) {
+    return false;
+  }
+  const initiatorDid = ((record.parties as Dict).initiator as Dict).did;
+  const acceptanceDid = (record.final_acceptance as Dict).sender_did;
+  return (
+    summary.initiating_party_did !== undefined &&
+    summary.accepting_party_did !== undefined &&
+    summary.initiating_party_did === initiatorDid &&
+    summary.accepting_party_did === acceptanceDid
+  );
+}
+
+/**
  * Verify a transaction record per Section 9.5.
  *
  * `didResolver` may be a mapping of DID → DID document or a callable returning
@@ -547,18 +659,34 @@ export function verifyTransactionRecordReason(
       return REASON_ACCEPTED_HASH_MISMATCH;
     }
 
-    // Both signatures are checked even when one key is unavailable: a definite
-    // failure is reported ahead of a key that could not be found.
-    const offerVerified = verifiedOrUnresolved(didResolver, record, {
-      did: finalOffer.sender_did as string,
-      signature: finalOffer.protocol_act_signature as string,
-      expectedPayload: offerHash,
-    });
+    // An acceptance that cannot be rebuilt is unbound (step 5). It is refused
+    // here, before the party checks read its sender_did and accepted_offer_id,
+    // so a value of the wrong type in either keeps the reason it has always had.
     const acceptanceAct = finalAcceptanceAct(record);
     if (acceptanceAct === null) {
       return REASON_UNBOUND_RECORD_VERSION;
     }
-    const acceptanceVerified = verifiedOrUnresolved(didResolver, record, {
+
+    // Steps 10 to 12, which need no keys: a definite failure whatever DID
+    // documents are available.
+    if (!recordIsBilateral(record)) {
+      return REASON_NOT_BILATERAL;
+    }
+    if (!recordAcceptsItsOffer(record)) {
+      return REASON_ACCEPTED_OFFER_ID_MISMATCH;
+    }
+    if (!recordSummaryNamesItsParties(record)) {
+      return REASON_PARTY_SUMMARY_MISMATCH;
+    }
+
+    // Both signatures are checked even when one key is unavailable: a definite
+    // failure is reported ahead of a key that could not be found.
+    const [offerVerified, offerKey] = verifiedOrUnresolved(didResolver, record, {
+      did: finalOffer.sender_did as string,
+      signature: finalOffer.protocol_act_signature as string,
+      expectedPayload: offerHash,
+    });
+    const [acceptanceVerified, acceptanceKey] = verifiedOrUnresolved(didResolver, record, {
       did: finalAcceptance.sender_did as string,
       signature: finalAcceptance.acceptance_signature as string,
       expectedPayload: hashObject(acceptanceAct),
@@ -568,6 +696,15 @@ export function verifyTransactionRecordReason(
     }
     if (acceptanceVerified === false) {
       return REASON_ACCEPTANCE_SIGNATURE_INVALID;
+    }
+
+    // Step 10's key comparison, once both signatures verified: one key behind
+    // two DIDs whose documents each list it is one signer. (Two spellings of one
+    // DID that reach one document never get here: the document names one of
+    // them, Section 4.2.) With a key unavailable the two cannot be compared, and
+    // the record is KEY_NOT_FOUND below.
+    if (offerKey !== null && acceptanceKey !== null && offerKey.equals(acceptanceKey)) {
+      return REASON_SAME_SIGNING_KEY;
     }
 
     // offer_chain_hash is covered by neither signature: the earlier offers must
@@ -589,20 +726,28 @@ export function verifyTransactionRecordReason(
   }
 }
 
-/** True or false for a signature that was checked; null when its key is unavailable. */
+/**
+ * Whether a signature verified, and the public key it verified under.
+ *
+ * True or false for a signature that was checked, null when its key is
+ * unavailable. The key is returned only for a signature that verified, and is
+ * null otherwise.
+ */
 function verifiedOrUnresolved(
   didResolver: DidResolver,
   record: Dict,
   options: { did: string; signature: string; expectedPayload?: string | null },
-): boolean | null {
+): [boolean | null, KeyObject | null] {
+  let key: KeyObject | null;
   try {
-    return verifyRecordSignature(didResolver, record, options);
+    key = verifyRecordSignature(didResolver, record, options);
   } catch (exc) {
     if (exc instanceof KeyNotFound) {
-      return null;
+      return [null, null];
     }
     throw exc;
   }
+  return [key !== null, key];
 }
 
 /** The signer's DID document does not list the key the signature names. */
@@ -635,7 +780,7 @@ function recordLineItemsHold(record: Dict): boolean {
 
 function recordHashMatches(record: Dict): boolean {
   const claimedHash = record.record_hash;
-  if (!claimedHash) {
+  if (!isNonemptyString(claimedHash)) {
     return false;
   }
   const candidate: Dict = { ...record };
@@ -643,15 +788,24 @@ function recordHashMatches(record: Dict): boolean {
   return hashObject(candidate) === claimedHash;
 }
 
+/**
+ * The public key the signature verified under, or null when it does not verify.
+ *
+ * Throws KeyNotFound when the signer's DID document, or the key it names, is
+ * not available: the signature was checked neither way.
+ */
 function verifyRecordSignature(
   didResolver: DidResolver,
   record: Dict,
   options: { did: string; signature: string; expectedPayload?: string | null },
-): boolean {
+): KeyObject | null {
   const { did, signature, expectedPayload = null } = options;
-  const verificationMethod = verificationMethodForDid(record, did);
-  if (!verificationMethod || !signature) {
-    return false;
+  const verificationMethod: unknown = verificationMethodForDid(record, did);
+  // By type, not truthiness: a value that is not a non-empty string names no
+  // key and is no JWS, so the signature does not verify (both languages refuse
+  // the same values the same way).
+  if (!isNonemptyString(verificationMethod) || !isNonemptyString(signature)) {
+    return null;
   }
 
   let didDocument: Dict;
@@ -674,7 +828,15 @@ function verifyRecordSignature(
     }
     throw exc;
   }
-  const publicKey = getPublicKey(vm);
+  let publicKey;
+  try {
+    publicKey = getPublicKey(vm);
+  } catch {
+    // A key its DID document lists but that cannot be read (a coordinate that is
+    // not unpadded base64url, an unsupported type) is a key that is not
+    // available, exactly like one the document does not list.
+    throw new KeyNotFound(did, verificationMethod);
+  }
   // verifyJws throws on bad signature bytes. That is this check failing, not
   // the record being unreadable, so it is caught here and the caller reports
   // the signature reason. An unavailable DID document or key is thrown as
@@ -684,18 +846,26 @@ function verifyRecordSignature(
     signedPayload = verifyJws(signature, publicKey);
   } catch (exc) {
     if (exc instanceof InvalidSignatureError) {
-      return false;
+      return null;
     }
     throw exc;
   }
-  return expectedPayload === null || signedPayload === expectedPayload;
+  if (expectedPayload !== null && signedPayload !== expectedPayload) {
+    return null;
+  }
+  return publicKey;
 }
 
+/**
+ * The DID document of `did`, from a mapping or a resolver the caller supplies.
+ *
+ * A document whose `id` is not exactly `did` is refused (DidDocumentIdMismatch),
+ * and the caller treats its key as unavailable, as when no document can be
+ * obtained: a document is used only for the DID it names (Section 4.2).
+ */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
-  if (typeof didResolver === "function") {
-    return didResolver(did);
-  }
-  return didResolver[did];
+  const document = typeof didResolver === "function" ? didResolver(did) : didResolver[did];
+  return requireDidDocumentFor(document, did);
 }
 
 function verificationMethodForDid(record: Dict, did: string): string {

@@ -306,6 +306,79 @@ carries a broken signature is refused for that signature: a definite failure
 comes before `KEY_NOT_FOUND`. A case with `record_document` checks that record
 instead of the vector's own.
 
+`transaction-record-parties.json` covers Section 9.5 steps 10 to 12: a
+TransactionRecord is evidence that two parties agreed only if its two acts are
+signed by its two named parties, one each, under different public keys. Each
+record is `transaction-record-basis.json`'s session, one round or two. The two
+controls verify: `one_round_control`, which `one_round_messages` replayed after
+that vector's `session_init` and `session_ack` produce exactly, and
+`multi_round_control`, the basis vector's bound record, whose final offer is
+the responder's counteroffer accepted by the initiator. The refused cases
+re-sign an act with the test-only keys in `private_jwks` where they need to,
+and reseal `record_hash`, so every check before the one a case targets passes
+and both signatures are genuine. One party signing the acceptance as well as
+the offer, the two parties carrying one DID, and a third DID with its own valid
+key signing the acceptance are `NOT_BILATERAL`. One key signing both acts under
+two spellings of one `did:web` DID (the host's case differs), each with a
+document of its own whose `id` names it, and under two DIDs whose documents
+list that key, are `SAME_SIGNING_KEY`: both signatures verify, under one key. A `final_offer.message_id` changed after signing, and an
+acceptance signed over an `accepted_offer_id` naming another offer, are
+`ACCEPTED_OFFER_ID_MISMATCH`. A `negotiation_summary` naming the offering party
+as the accepting one, or the responder as the initiating one, is
+`PARTY_SUMMARY_MISMATCH`. `shape_cases` put a value of the wrong type, or no
+value, in a field these steps read; each is refused, never thrown on, with the
+reason it gives, which for a field an earlier step already reads is that step's.
+Verified with the vector's `did_documents` and the case's `offer_hashes`, each
+record must reach the case's verdict and `expected_reason` in both suites.
+`spelling_cases` bind a DID document to the DID it names (Section 4.2): one
+party's one document, listing `key-1` and `key-2`, reaches two spellings of its
+did:web DID (the host's case, a trailing dot, `%2E` for a dot, `%3A443` for
+the default port, a `:.well-known` path, a Unicode host against its punycode).
+The initiator is the document's `id` and signs the offer with `key-1`; the
+responder is the other spelling and signs the acceptance with `key-2`. Each
+case's own `did_documents` supplies the one document under both spellings;
+its `id` names only the first, so the responder has no document and the record
+is `KEY_NOT_FOUND`, never verified, in both suites, except the Unicode host,
+which is not DID syntax and is `NOT_BILATERAL`. The test-only key for `key-2`
+is in `private_jwks`.
+`did_syntax_cases` hold a party DID to DID Core Section 3.1's syntax (Section
+9.5 step 10). In each, TechCorp offers with `key-1` and the responder is the
+case's `party_did`, whose own document names it exactly and lists `key-2`,
+which signs the acceptance; the hashes and both signatures are genuine. A
+`?query`, a `#fragment`, a `/path`, a trailing `:`, an empty method-specific
+id, an uppercase method name or scheme, a space, a non-ASCII character and a
+bad percent-encoding are `NOT_BILATERAL`; a trailing dot, `:path` segments, a
+`%3A` port, punycode, `_` and `-` are DIDs, and those records verify.
+
+`transaction-record-key-parity.json` covers values on a TransactionRecord's key
+path that the two implementations once refused for different reasons. Each case
+is `transaction-record-parties.json`'s one-round control with one value changed
+and `record_hash` resealed, except the `record_hash` cases themselves. A
+verification method or signature that is not a non-empty string (a list, an
+object, a number, a boolean, `null`, `""`) is that act's
+`OFFER_SIGNATURE_INVALID` or `ACCEPTANCE_SIGNATURE_INVALID`, and so is a JWS
+whose protected header is not a JSON object. A string holding a lone surrogate
+has no UTF-8 encoding and cannot be canonicalized (RFC 8785), so the two
+`lone_*` cases, sealed by the TypeScript hasher as it was before it refused
+them, are `MALFORMED_RECORD`; a well-formed surrogate pair verifies. The
+`jws_*` rows are genuine signatures under a protected header or payload given
+as raw bytes: a header beginning with a byte-order mark, a header that is not
+UTF-8, a header holding `NaN`, and a payload beginning with a byte-order mark
+are each `OFFER_SIGNATURE_INVALID`, beside a control that verifies. The
+`b64_*` rows are genuine signatures over segment text that is not canonical
+unpadded base64url: a stray trailing character, `=` padding at the end or
+inside, a `*`, a space or a newline, the standard alphabet, and unused
+trailing bits that are not zero, in the header, payload or signature segment.
+Each is `OFFER_SIGNATURE_INVALID`, beside a control that verifies. The
+`unreadable_*` rows keep the control record and carry their own
+`did_documents`, in which the offerer's or the acceptor's public JWK has a
+coordinate that is padded, in the standard alphabet, has non-zero unused
+trailing bits, or has one character more (which no longer names a P-256
+point). Such a key cannot be read, so it is unavailable: `KEY_NOT_FOUND` in
+both suites, never `MALFORMED_RECORD`. Verified
+with the vector's `did_documents` and the case's `offer_hashes`, each record
+must reach `expected_reason` in both suites.
+
 `signed-decline-acts.json` covers the signed decline acts (Sections 7.5 and
 7.6), which had no in-band signature slot before this version. Each case states
 the act, whether it rebuilds, and — when it does — the `signed_object` its

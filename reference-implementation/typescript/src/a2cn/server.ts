@@ -59,10 +59,13 @@ import {
   createPublicKeyFromPrivate,
 } from "./crypto.js";
 import {
+  DidDocumentIdMismatch,
   checkUrlHost,
+  didDocumentIsFor,
   getPublicKey,
   getVerificationMethod,
   publicAddressFetch,
+  requireDidDocumentFor,
   resolveDidWeb,
   type FetchLike,
 } from "./did.js";
@@ -208,8 +211,15 @@ export function createServerContext(): ServerContext {
       }
     },
 
-    /** Pre-register a DID document so JWT verification skips HTTP resolution. */
+    /**
+     * Pre-register a DID document so JWT verification skips HTTP resolution.
+     *
+     * Throws DidDocumentIdMismatch unless the document's `id` is exactly `did`.
+     * A document registered under another DID is never used for it, here or
+     * when it is read back (Section 4.2).
+     */
     registerDidDocument(did: string, didDocument: Dict): void {
+      requireDidDocumentFor(didDocument, did);
       ctx.didDocOverride[did] = didDocument;
       manager.registerDidDocument(did, didDocument);
     },
@@ -444,7 +454,12 @@ async function verifyJwtAuth(ctx: ServerContext, request: FastifyRequest): Promi
     // Resolve DID document (override dict first, then HTTP)
     let didDoc: Dict;
     if (iss in ctx.didDocOverride) {
-      didDoc = ctx.didDocOverride[iss];
+      const registered = ctx.didDocOverride[iss];
+      if (!didDocumentIsFor(registered, iss)) {
+        console.warn(`The DID document registered for ${JSON.stringify(iss)} does not name it`);
+        throw new A2CNError("INVALID_JWT", TOKEN_NOT_VERIFIED, 401);
+      }
+      didDoc = registered;
     } else {
       try {
         didDoc = await resolveDidWeb(iss, ctx.publicFetchFn ?? undefined, undefined, {
@@ -885,7 +900,8 @@ function installRoutes(ctx: ServerContext): void {
   async function resolveApproverDidDocument(approver: string): Promise<Dict | null> {
     const approverDid = approver.split("#")[0];
     if (Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid)) {
-      return ctx.didDocOverride[approverDid];
+      const registered = ctx.didDocOverride[approverDid];
+      return didDocumentIsFor(registered, approverDid) ? registered : null;
     }
     if (!approverDid.startsWith("did:web:")) {
       return null;
@@ -1548,7 +1564,12 @@ function installRoutes(ctx: ServerContext): void {
     // Resolve DID document (didDocOverride first, then HTTP)
     let didDoc: Dict;
     if (inviterDid in ctx.didDocOverride) {
-      didDoc = ctx.didDocOverride[inviterDid];
+      const registered = ctx.didDocOverride[inviterDid];
+      if (!didDocumentIsFor(registered, inviterDid)) {
+        console.warn(`The DID document registered for ${JSON.stringify(inviterDid)} does not name it`);
+        return sendError(reply, INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403);
+      }
+      didDoc = registered;
     } else {
       try {
         didDoc = await resolveDidWeb(inviterDid, ctx.publicFetchFn ?? undefined, undefined, {
@@ -1556,6 +1577,10 @@ function installRoutes(ctx: ServerContext): void {
         });
       } catch (exc) {
         console.warn(`Could not resolve inviter DID ${JSON.stringify(inviterDid)}: ${exc}`);
+        // An address that serves another DID's document: this DID has none.
+        if (exc instanceof DidDocumentIdMismatch) {
+          return sendError(reply, INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403);
+        }
         if (exc instanceof Error && /HTTP 404/.test(exc.message)) {
           return sendError(reply, INVITATION_SIGNATURE_INVALID, "Inviter DID not found", 403);
         }
