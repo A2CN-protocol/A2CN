@@ -85,11 +85,20 @@ export function createPublicKeyFromPrivate(privateKey: SigningPrivateKey): Signi
 /** Reconstruct a supported public key from a JWK dict. */
 export function publicKeyFromJwk(jwk: Record<string, unknown>): SigningPublicKey {
   // The coordinates are decoded as Python decodes them: canonical base64url only.
-  b64urlDecodeCanonical(jwk.x as string);
+  jwkCoordinate(jwk, "x");
   if (!(jwk.kty === "OKP" && jwk.crv === "Ed25519")) {
-    b64urlDecodeCanonical(jwk.y as string);
+    jwkCoordinate(jwk, "y");
   }
   return createPublicKey({ key: jwk as import("node:crypto").JsonWebKey, format: "jwk" });
+}
+
+/** A public JWK coordinate's bytes; it must be unpadded base64url (RFC 7518). */
+function jwkCoordinate(jwk: Record<string, unknown>, name: string): Buffer {
+  try {
+    return b64urlDecodeCanonical(jwk[name] as string);
+  } catch {
+    throw new Error(`its ${name} coordinate isn't unpadded base64url (RFC 7518)`);
+  }
 }
 
 /** Reconstruct a supported private key from a JWK dict. */

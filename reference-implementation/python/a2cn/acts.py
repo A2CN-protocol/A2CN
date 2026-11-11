@@ -112,7 +112,9 @@ def verify_signed_act_reason(
     try:
         public_key = get_public_key(method)
     except Exception:
-        return ACT_REASON_KEY_UNUSABLE
+        # Listed but unreadable (a coordinate that is not unpadded base64url,
+        # an unsupported type): the key is not available, as when unlisted.
+        return ACT_REASON_KEY_NOT_FOUND
     try:
         signed_payload = verify_jws(signature, public_key)
     except (InvalidSignatureError, ValueError):

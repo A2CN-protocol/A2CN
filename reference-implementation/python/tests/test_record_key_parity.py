@@ -24,7 +24,7 @@ VECTOR = json.loads(
 
 @pytest.mark.parametrize("case", VECTOR["cases"], ids=lambda case: case["name"])
 def test_the_record_reaches_the_stated_reason(case):
-    documents = VECTOR["did_documents"]
+    documents = case.get("did_documents", VECTOR["did_documents"])
     assert verify_transaction_record_reason(case["record"], documents, case["offer_hashes"]) == (
         case["expected_reason"]
     )

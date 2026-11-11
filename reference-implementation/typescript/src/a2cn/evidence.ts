@@ -2650,7 +2650,15 @@ function verifySignature(
     }
     throw exc;
   }
-  const publicKey = getPublicKey(vm);
+  let publicKey;
+  try {
+    publicKey = getPublicKey(vm);
+  } catch {
+    // A key its DID document lists but that cannot be read (a coordinate that is
+    // not unpadded base64url, an unsupported type) is a key that is not
+    // available, exactly like one the document does not list.
+    throw new KeyNotFound(options.did, options.verificationMethod);
+  }
   // verifyJws throws on bad signature bytes. That is this check failing, not
   // the record being unreadable, so the caller reports a signature reason.
   try {

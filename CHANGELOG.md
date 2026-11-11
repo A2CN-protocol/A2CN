@@ -284,6 +284,12 @@ This project is pre-1.0: the minor version moves for substantive additions.
   inside it verified in Python only, and both accepted padding, the standard
   alphabet and non-canonical trailing bits; a JWK coordinate holding `*` or a
   space was usable in TypeScript only.
+- A JWK coordinate must be unpadded base64url (RFC 7515, RFC 7518). A party
+  key that isn't is reported as unavailable, not as a malformed record:
+  `KEY_NOT_FOUND` from the TransactionRecord, SessionEvidenceRecord and
+  signed-act verifiers, and COULD NOT FINISH from `a2cn-verify`, which names
+  the key and says why it can't be read. The same holds for any party key its
+  DID document lists that can't be read as a public key.
 - An invitation containing a lone surrogate made the Python implementation
   fail with a server error instead of refusing it. It now refuses it, as
   TypeScript does: `POST /invitations` answers `400`

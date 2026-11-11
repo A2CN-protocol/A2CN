@@ -747,7 +747,13 @@ def _verify_record_signature(
         vm = get_verification_method(did_document, verification_method)
     except VerificationMethodNotFoundError:
         raise _KeyNotFound(did, verification_method) from None
-    public_key = get_public_key(vm)
+    try:
+        public_key = get_public_key(vm)
+    except Exception:
+        # A key its DID document lists but that cannot be read (a coordinate
+        # that is not unpadded base64url, an unsupported type) is a key that is
+        # not available, exactly like one the document does not list.
+        raise _KeyNotFound(did, verification_method) from None
     # verify_jws raises on bad signature bytes. That is this check failing, not
     # the record being unreadable, so it is caught here and the caller reports
     # the signature reason. An unavailable DID document or key is raised as

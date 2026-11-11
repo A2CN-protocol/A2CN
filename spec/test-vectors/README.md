@@ -369,7 +369,13 @@ are each `OFFER_SIGNATURE_INVALID`, beside a control that verifies. The
 unpadded base64url: a stray trailing character, `=` padding at the end or
 inside, a `*`, a space or a newline, the standard alphabet, and unused
 trailing bits that are not zero, in the header, payload or signature segment.
-Each is `OFFER_SIGNATURE_INVALID`, beside a control that verifies. Verified
+Each is `OFFER_SIGNATURE_INVALID`, beside a control that verifies. The
+`unreadable_*` rows keep the control record and carry their own
+`did_documents`, in which the offerer's or the acceptor's public JWK has a
+coordinate that is padded, in the standard alphabet, has non-zero unused
+trailing bits, or has one character more (which no longer names a P-256
+point). Such a key cannot be read, so it is unavailable: `KEY_NOT_FOUND` in
+both suites, never `MALFORMED_RECORD`. Verified
 with the vector's `did_documents` and the case's `offer_hashes`, each record
 must reach `expected_reason` in both suites.
 

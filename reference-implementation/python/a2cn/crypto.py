@@ -108,12 +108,20 @@ def public_key_to_jwk(public_key: SigningPublicKey) -> dict:
 def public_key_from_jwk(jwk: dict) -> SigningPublicKey:
     """Reconstruct a supported public key from a JWK dict."""
     if jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519":
-        return Ed25519PublicKey.from_public_bytes(_b64url_decode_canonical(jwk["x"]))
+        return Ed25519PublicKey.from_public_bytes(_jwk_coordinate(jwk, "x"))
 
-    x = int.from_bytes(_b64url_decode_canonical(jwk["x"]), "big")
-    y = int.from_bytes(_b64url_decode_canonical(jwk["y"]), "big")
+    x = int.from_bytes(_jwk_coordinate(jwk, "x"), "big")
+    y = int.from_bytes(_jwk_coordinate(jwk, "y"), "big")
     pub_numbers = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1())
     return pub_numbers.public_key()
+
+
+def _jwk_coordinate(jwk: dict, name: str) -> bytes:
+    """A public JWK coordinate's bytes; it must be unpadded base64url (RFC 7518)."""
+    try:
+        return _b64url_decode_canonical(jwk.get(name))
+    except ValueError:
+        raise ValueError(f"its {name} coordinate isn't unpadded base64url (RFC 7518)") from None
 
 
 def private_key_from_jwk(jwk: dict) -> SigningPrivateKey:

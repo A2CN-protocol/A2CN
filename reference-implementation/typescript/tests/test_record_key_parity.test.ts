@@ -38,8 +38,9 @@ const DIDS = VECTOR.did_documents as Record<string, Dict>;
 for (const c of VECTOR.cases as Dict[]) {
   test(`the record reaches the stated reason: ${c.name}`, () => {
     const hashes = c.offer_hashes as string[];
-    expect(verifyTransactionRecordReason(c.record as Dict, DIDS, hashes)).toBe(c.expected_reason);
-    expect(verifyTransactionRecord(c.record as Dict, DIDS, hashes)).toBe(c.verifies);
+    const documents = (c.did_documents as Record<string, Dict> | undefined) ?? DIDS;
+    expect(verifyTransactionRecordReason(c.record as Dict, documents, hashes)).toBe(c.expected_reason);
+    expect(verifyTransactionRecord(c.record as Dict, documents, hashes)).toBe(c.verifies);
   });
 }
 
