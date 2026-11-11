@@ -190,3 +190,22 @@ def test_an_invitation_signature_is_canonical_base64url(label):
     }[label]
     assert spoiled != signature
     assert not verify_invitation_signature({**invitation, "invitation_signature": spoiled}, public)
+
+
+@pytest.mark.parametrize(
+    "text, rule",
+    [
+        ("ab*c", "character outside"),
+        ("ab c", "character outside"),
+        ("ab+c", "character outside"),
+        ("abc=", "character outside"),
+        ("abcde", "one character more than a multiple of four"),
+        ("abd", "not canonical"),
+    ],
+)
+def test_the_base64url_decoder_names_the_rule_a_text_breaks(text, rule):
+    from a2cn.crypto import _b64url_decode_canonical
+
+    assert _b64url_decode_canonical("abc") == b"i\xb7"
+    with pytest.raises(ValueError, match=rule):
+        _b64url_decode_canonical(text)

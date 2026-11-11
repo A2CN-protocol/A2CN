@@ -16,6 +16,7 @@ import { expect, test } from "vitest";
 
 import {
   InvalidSignatureError,
+  b64urlDecodeCanonical,
   b64urlEncode,
   generateEd25519Keypair,
   generateKeypair,
@@ -175,5 +176,21 @@ for (const label of ["padding", "noncanonical-tail", "star"]) {
     }[label] as string;
     expect(spoiled).not.toBe(signature);
     expect(verifyInvitationSignature({ ...invitation, invitation_signature: spoiled }, publicKey)).toBe(false);
+  });
+}
+
+const DECODER_RULES: [string, RegExp][] = [
+  ["ab*c", /character outside/],
+  ["ab c", /character outside/],
+  ["ab+c", /character outside/],
+  ["abc=", /character outside/],
+  ["abcde", /one character more than a multiple of four/],
+  ["abd", /not canonical/],
+];
+
+for (const [text, rule] of DECODER_RULES) {
+  test(`the base64url decoder names the rule a text breaks: ${JSON.stringify(text)}`, () => {
+    expect([...b64urlDecodeCanonical("abc")]).toEqual([0x69, 0xb7]);
+    expect(() => b64urlDecodeCanonical(text)).toThrow(rule);
   });
 }
