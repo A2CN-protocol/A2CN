@@ -407,6 +407,26 @@ def _wire_version(session: Session) -> str:
 _FROM_REGISTRY = object()
 
 
+def _act_hash_or_refuse(compute, session, message_id):
+    """The hash an act's signature must be over, or INVALID_SIGNATURE if it has none.
+
+    An act holding a string that has no UTF-8 encoding (a lone surrogate) cannot
+    be canonicalized (RFC 8785), so no signature can be checked against it: it
+    is refused as an invalid signature, in both reference implementations,
+    rather than escaping as an internal error.
+    """
+    try:
+        return compute()
+    except ValueError:
+        raise A2CNError(
+            "INVALID_SIGNATURE",
+            "The act cannot be canonicalized (RFC 8785), so its signature cannot be checked",
+            400,
+            session_id=session.session_id,
+            message_id=message_id,
+        ) from None
+
+
 class SessionManager:
     """In-memory store + state machine for all sessions."""
 
@@ -834,7 +854,9 @@ class SessionManager:
             expires_at=expires_at,
             terms=terms,
         )
-        expected_hash = hash_object(protocol_act)
+        expected_hash = _act_hash_or_refuse(
+            lambda: hash_object(protocol_act), session, message_id
+        )
         if claimed_hash != expected_hash:
             raise A2CNError(
                 "INVALID_SIGNATURE",
@@ -1347,8 +1369,10 @@ class SessionManager:
         # so all three agree on what a signature covers. An acceptance that does
         # not carry those fields cannot be rebound, and is refused rather than
         # checked against a payload assembled out of defaults.
-        acceptance_payload_hash = signed_act_hash(
-            message, version_when_absent=_wire_version(session)
+        acceptance_payload_hash = _act_hash_or_refuse(
+            lambda: signed_act_hash(message, version_when_absent=_wire_version(session)),
+            session,
+            message_id,
         )
         if acceptance_payload_hash is None:
             raise A2CNError(
@@ -1473,7 +1497,11 @@ class SessionManager:
                 message_id=message.get("message_id"),
             )
 
-        payload_hash = signed_act_hash(message, version_when_absent=_wire_version(session))
+        payload_hash = _act_hash_or_refuse(
+            lambda: signed_act_hash(message, version_when_absent=_wire_version(session)),
+            session,
+            message.get("message_id"),
+        )
         if payload_hash is None:
             raise A2CNError(
                 "INVALID_SIGNATURE",

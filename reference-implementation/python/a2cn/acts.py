@@ -68,7 +68,12 @@ def verify_signed_act_reason(
     rebuilt = rebuild_signed_act(act, version_when_absent=wire_version or "")
     if rebuilt is None:
         return ACT_REASON_NOT_RECOMPUTABLE
-    expected_hash = hash_object(rebuilt)
+    try:
+        expected_hash = hash_object(rebuilt)
+    except ValueError:
+        # A string with no UTF-8 encoding (a lone surrogate) cannot be
+        # canonicalized (RFC 8785): the act cannot be recomputed.
+        return ACT_REASON_NOT_RECOMPUTABLE
     if act["message_type"] in ("offer", "counteroffer") and act.get("protocol_act_hash") != expected_hash:
         return ACT_REASON_HASH_MISMATCH
 

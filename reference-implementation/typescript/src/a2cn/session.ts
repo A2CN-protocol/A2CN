@@ -435,6 +435,25 @@ function wireVersion(session: Session): string {
 // manager, rather than one the caller resolved for this receipt.
 const FROM_REGISTRY: unique symbol = Symbol("FROM_REGISTRY");
 
+/**
+ * The hash an act's signature must be over, or INVALID_SIGNATURE if it has none.
+ *
+ * An act holding a string that has no UTF-8 encoding (a lone surrogate) cannot
+ * be canonicalized (RFC 8785), so no signature can be checked against it: it is
+ * refused as an invalid signature, in both reference implementations, rather
+ * than escaping as an internal error.
+ */
+function actHashOrRefuse<T>(compute: () => T, session: Session, messageId: string | undefined): T {
+  try {
+    return compute();
+  } catch {
+    throw new A2CNError("INVALID_SIGNATURE", "The act cannot be canonicalized (RFC 8785), so its signature cannot be checked", 400, {
+      sessionId: session.session_id,
+      messageId,
+    });
+  }
+}
+
 export class SessionManager {
   _sessions: Record<string, Session> = {};
   // Pre-session idempotency: message_id → response dict
@@ -857,7 +876,7 @@ export class SessionManager {
       expires_at: expiresAt,
       terms,
     });
-    const expectedHash = hashObject(protocolAct);
+    const expectedHash = actHashOrRefuse(() => hashObject(protocolAct), session, messageId);
     if (claimedHash !== expectedHash) {
       throw new A2CNError("INVALID_SIGNATURE", "Protocol act hash does not match message fields", 400, {
         sessionId: session.session_id,
@@ -1373,9 +1392,11 @@ export class SessionManager {
     // all three agree on what a signature covers. An acceptance that does not
     // carry those fields cannot be rebound, and is refused rather than checked
     // against a payload assembled out of defaults.
-    const acceptancePayloadHash = signedActHash(message, {
-      versionWhenAbsent: wireVersion(session),
-    });
+    const acceptancePayloadHash = actHashOrRefuse(
+      () => signedActHash(message, { versionWhenAbsent: wireVersion(session) }),
+      session,
+      messageId,
+    );
     if (acceptancePayloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",
@@ -1490,7 +1511,11 @@ export class SessionManager {
       });
     }
 
-    const payloadHash = signedActHash(message, { versionWhenAbsent: wireVersion(session) });
+    const payloadHash = actHashOrRefuse(
+      () => signedActHash(message, { versionWhenAbsent: wireVersion(session) }),
+      session,
+      message.message_id as string | undefined,
+    );
     if (payloadHash === null) {
       throw new A2CNError(
         "INVALID_SIGNATURE",

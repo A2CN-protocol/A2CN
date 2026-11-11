@@ -288,6 +288,13 @@ This project is pre-1.0: the minor version moves for substantive additions.
   fail with a server error instead of refusing it. It now refuses it, as
   TypeScript does: `POST /invitations` answers `400`
   `INVITATION_SIGNATURE_INVALID`.
+- An offer, counteroffer, acceptance or decline holding a lone surrogate is
+  refused as `INVALID_SIGNATURE` (`400`) by both servers' message path, since
+  it cannot be canonicalized and so no signature can be checked against it.
+  It made the Python server fail with a server error, and the TypeScript
+  server too once its canonicalization began refusing such strings.
+  `a2cn-verify` refuses such a standalone act as `ACT_NOT_RECOMPUTABLE`
+  instead of stopping with a traceback.
 - TypeScript's canonicalization refuses a string, member name or value, that
   holds a lone surrogate, as Python's does: such a string has no UTF-8
   encoding, and RFC 8785 needs one. It hashed the string as a `\u` escape
