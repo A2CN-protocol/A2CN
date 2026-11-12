@@ -31,6 +31,7 @@ import {
   type DidResolver,
   type RecordSession,
 } from "./record.js";
+import { ownGet } from "./own.js";
 import { SESSION_BASES, SessionState, now } from "./session.js";
 import {
   RECORD_ENTRY_WIRE_FIELDS,
@@ -2226,7 +2227,7 @@ function normalizeEvidenceAct(item: Dict, defaultSourceProtocol: string | null):
   const explicitSignatureType = isWrapper ? ownMetadata("signature_type") : null;
   let signatureType: string | null;
   if (explicitSignatureType !== null && explicitSignatureType !== undefined) {
-    if (!(explicitSignatureType as string in SIGNED_MESSAGE_FIELDS)) {
+    if (!hasOwn(SIGNED_MESSAGE_FIELDS, explicitSignatureType as string)) {
       throw new Error(`Unsupported signature_type: ${JSON.stringify(explicitSignatureType)}`);
     }
     if (signatureTypes.length > 0 && !signatureTypes.includes(explicitSignatureType as string)) {
@@ -2488,7 +2489,7 @@ function verifyEvidenceAct(
     if (attribution !== EvidenceAttribution.VERIFIED) {
       return { valid: false, attribution };
     }
-    if (typeof signatureType !== "string" || !(signatureType in SIGNED_MESSAGE_FIELDS)) {
+    if (typeof signatureType !== "string" || !hasOwn(SIGNED_MESSAGE_FIELDS, signatureType)) {
       return { valid: false, attribution };
     }
     if (act.session_id !== sessionId) {
@@ -2551,8 +2552,12 @@ function verifyEvidenceAct(
  * as another type is refused before its signature is ever checked.
  */
 function signedActPayloadHash(act: Dict, signatureType: string): string | null {
-  const allowedMessageTypes: readonly string[] | undefined =
-    SIGNATURE_TYPE_MESSAGE_TYPES[signatureType];
+  const allowedMessageTypes: readonly string[] | undefined = hasOwn(
+    SIGNATURE_TYPE_MESSAGE_TYPES,
+    signatureType,
+  )
+    ? SIGNATURE_TYPE_MESSAGE_TYPES[signatureType]
+    : undefined;
   if (allowedMessageTypes === undefined) {
     return null;
   }
@@ -2677,9 +2682,18 @@ function verifySignature(
  * A document whose `id` is not exactly `did` is refused (DidDocumentIdMismatch),
  * and the caller treats its key as unavailable, as when no document can be
  * obtained: a document is used only for the DID it names (Section 4.2).
+ *
+ * An object resolver is read by its own entries only: a document it inherits
+ * (through its prototype, as `Object.create(docs)` makes) is not found, and the
+ * key is unavailable. This differs from Python on purpose. Python reads any
+ * Mapping, so a ChainMap finds chained entries; in JavaScript an inherited
+ * lookup also finds names such as `constructor` that are no DID document at
+ * all. A TypeScript resolver holds its documents as own entries, or is a
+ * function.
  */
 function resolveDidDocument(didResolver: DidResolver, did: string): Dict {
-  const document = typeof didResolver === "function" ? didResolver(did) : didResolver[did];
+  const document =
+    typeof didResolver === "function" ? didResolver(did) : (ownGet(didResolver, did) as Dict);
   return requireDidDocumentFor(document, did);
 }
 

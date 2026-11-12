@@ -315,6 +315,7 @@ test("an invitation from a private host is never fetched", async () => {
     const r = await fixture.rawClient.post("/invitations", {
       json: {
         a2cn_version: PROTOCOL_ACT_VERSION,
+        invitation_id: "11111111-2222-4333-8444-555555555555",
         inviter_did: PRIVATE_DID,
         inviter_verification_method: `${PRIVATE_DID}#key-1`,
         invitation_signature: "x",

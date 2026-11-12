@@ -12,9 +12,14 @@ held to it by shared test vectors.
 - Changelog: [CHANGELOG.md](https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md)
 - Security policy: [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
 
-## Install
+**Status:** pre-1.0, and the specification is a draft. A minor (0.x) release
+may change the API, the wire protocol or a record format; the
+[CHANGELOG](https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md) says
+what changed. Security fixes go to the latest 0.3.x release, as the
+[security policy](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
+describes.
 
-Once the first release is published to npm:
+## Install
 
 ```bash
 npm install a2cn
@@ -60,6 +65,17 @@ npm ci
 npm test
 npx tsx src/mcp_server.ts
 ```
+
+## Questions, bugs and security
+
+- **Questions and ideas** go in
+  [GitHub Discussions](https://github.com/A2CN-protocol/A2CN/discussions).
+- **Bugs** go in [GitHub Issues](https://github.com/A2CN-protocol/A2CN/issues).
+  Include the package version (from `npm ls a2cn`), your Node.js version, and how
+  you installed the package (from npm or from a source checkout).
+- **Security vulnerabilities** never go in a public issue. Report them
+  privately, as [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
+  describes.
 
 ## License
 

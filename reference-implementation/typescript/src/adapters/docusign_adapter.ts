@@ -23,6 +23,7 @@ import { SignJWT } from "jose";
 
 import { requireMinor } from "../a2cn/line_items.js";
 import type { Dict } from "../a2cn/messages.js";
+import { ownGet } from "../a2cn/own.js";
 
 export const DOCUSIGN_JWT_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 export const DOCUSIGN_DEMO_AUTH_BASE_URI = "https://account-d.docusign.com";
@@ -47,7 +48,7 @@ function partyLabel(role: string, party: Dict): string {
 
 function getContact(party: Dict, signerContacts: Record<string, Dict> | null): Dict {
   const did = (party.did as string) ?? "";
-  const contact = (signerContacts ?? {})[did] ?? {};
+  const contact = ownGet(signerContacts ?? {}, did) ?? {};
   const name = (contact.name as string) || (party.organization_name as string) || did;
   const email = (contact.email as string) || (party.email as string);
   if (!email) {

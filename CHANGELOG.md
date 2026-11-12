@@ -9,7 +9,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 
 | Axis | Current |
 |------|---------|
-| Release | `0.3.2` |
+| Release | `0.3.3` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
 | `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.5` for every record, with `0.1`, `0.2`, `0.3` and `0.4` still accepted |
 
@@ -19,6 +19,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+## [0.3.3] — 2026-11-12
 
 ### Security
 
@@ -132,6 +134,38 @@ This project is pre-1.0: the minor version moves for substantive additions.
   `did:`: a session between such parties completes, and its TransactionRecord
   is refused. The schema of the next TransactionRecord version carries the
   DID syntax.
+- **TypeScript lookups keyed by caller input use own properties, as Python's
+  do.** The TypeScript reference implementation kept several stores and
+  lookup tables keyed by ids from requests or records in plain objects, so an
+  id such as `__proto__`, `constructor` or `toString` matched a member that
+  every JavaScript object inherits. Before, a session route answered such an
+  id with an error instead of `404`, a message under such an id was answered
+  but never applied, an invitation delivered with the id `__proto__` changed
+  how the invitation store answered for other ids, and a signed invitation
+  with an extra, unsigned `__proto__` member was accepted. These lookups now
+  read and write own entries only, so each case behaves as in Python. No
+  input reached the global `Object.prototype`. An object passed as a DID
+  resolver to the TypeScript verifiers is now read by its own entries only: a
+  resolver that inherits its documents must hold them as its own.
+- **An invitation id is never reused for a different invitation.** Both
+  reference servers now refuse an inbound invitation whose `invitation_id`
+  they already hold with the new code `INVITATION_ID_CONFLICT` (409), unless
+  it is the same invitation, signature included, compared as RFC 8785
+  canonical bytes. An identical re-send is answered as the first delivery was
+  while the invitation is pending, and with `INVITATION_ALREADY_ANSWERED`
+  (409) or `INVITATION_EXPIRED` (410) once it is answered or expired.
+  Re-delivery never changes a stored invitation (Section 11.7). Before,
+  `POST /invitations` overwrote whatever it held under the id, so anyone able
+  to sign an invitation who knew an id could replace another party's
+  invitation, or reset an answered one to pending.
+- **`invitation_expires_at` is read strictly, and `invitation_id` must be a
+  string.** Both reference servers read an invitation's expiry as an RFC 3339
+  date-time with an explicit offset at every check, and treat a missing or
+  unreadable value as expired, so an expiry stated in another form now counts
+  as expired (Section 11.2.3). Before, a value without an offset was a server
+  error in Python, the two implementations read some formats differently, and
+  an empty value never expired. `POST /invitations` now refuses an
+  `invitation_id` that is not a non-empty string with `INVALID_REQUEST` (400).
 
 ### Added
 
@@ -1317,7 +1351,9 @@ strict turn-taking.
 
 Initial draft.
 
-[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.3
+[0.3.2]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.2
 [0.3.1]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.1
 [0.3.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.0
 [0.2.0]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.2.0

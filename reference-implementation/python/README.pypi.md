@@ -10,6 +10,13 @@ record that both sides can verify on their own.
 - Changelog: [CHANGELOG.md](https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md)
 - Security policy: [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
 
+**Status:** pre-1.0, and the specification is a draft. A minor (0.x) release
+may change the API, the wire protocol or a record format; the
+[CHANGELOG](https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md) says
+what changed. Security fixes go to the latest 0.3.x release, as the
+[security policy](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
+describes.
+
 ## Install
 
 ```bash
@@ -59,6 +66,17 @@ cd A2CN/reference-implementation/python
 pip install -e '.[mcp]'
 python mcp_server.py
 ```
+
+## Questions, bugs and security
+
+- **Questions and ideas** go in
+  [GitHub Discussions](https://github.com/A2CN-protocol/A2CN/discussions).
+- **Bugs** go in [GitHub Issues](https://github.com/A2CN-protocol/A2CN/issues).
+  Include the package version (`a2cn.__version__`), your Python version, and how
+  you installed the package (from PyPI or from a source checkout).
+- **Security vulnerabilities** never go in a public issue. Report them
+  privately, as [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)
+  describes.
 
 ## License
 

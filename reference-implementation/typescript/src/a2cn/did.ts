@@ -13,6 +13,7 @@ import { isIP } from "node:net";
 import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 
 import { publicKeyFromJwk, type SigningPublicKey } from "./crypto.js";
+import { hasOwn, setOwn } from "./own.js";
 
 export type FetchLike = (
   url: string,
@@ -483,7 +484,7 @@ export function getVerificationMethod(
   const verificationMethods: Record<string, VerificationMethod> = {};
   for (const method of didDocument.verificationMethod ?? []) {
     if (method && typeof method === "object" && method.id) {
-      verificationMethods[method.id] = method;
+      setOwn(verificationMethods, method.id, method);
     }
   }
 
@@ -495,7 +496,7 @@ export function getVerificationMethod(
         return method;
       }
       if (typeof method === "string" && method === methodId) {
-        if (methodId in verificationMethods) {
+        if (hasOwn(verificationMethods, methodId)) {
           return verificationMethods[methodId];
         }
         break;

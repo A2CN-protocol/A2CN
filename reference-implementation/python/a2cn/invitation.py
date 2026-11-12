@@ -7,18 +7,23 @@ creation, storage, acceptance, and decline.
 
 from __future__ import annotations
 
+import re
+import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone, timedelta
 
 from a2cn.messages import (
+    INVITATION_ALREADY_ANSWERED,
+    INVITATION_EXPIRED,
+    INVITATION_ID_CONFLICT,
     PROTOCOL_ACT_VERSION,
     SessionInvitation,
     InvitationAcceptance,
     InvitationDecline,
     InvitationStatus,
 )
-from a2cn.crypto import sign_invitation
+from a2cn.crypto import hash_object, sign_invitation
 
 
 class InvitationStore:
@@ -89,8 +94,19 @@ class InvitationStore:
         """
         Store an inbound invitation received from a counterparty.
         Status starts as PENDING. Used by POST /invitations endpoint.
+
+        An invitation_id already stored is never replaced (Section 11.7). A
+        different invitation under that id raises INVITATION_ID_CONFLICT,
+        whatever the stored status. The identical signed invitation re-sent is
+        answered as the first delivery was while it is pending, and raises
+        INVITATION_ALREADY_ANSWERED or INVITATION_EXPIRED once it is answered
+        or expired. Re-delivery never changes the stored entry.
         """
         invitation_id = invitation_dict["invitation_id"]
+        stored = self._invitations.get(invitation_id)
+        if stored is not None:
+            self._check_retransmission(stored, invitation_dict)
+            return
         self._invitations[invitation_id] = {
             "invitation": invitation_dict,
             "status": InvitationStatus.PENDING,
@@ -180,26 +196,32 @@ class InvitationStore:
 
     def expire_pending(self) -> int:
         """Expire all PENDING invitations past their expiry time. Returns count expired."""
-        now = datetime.now(timezone.utc)
         count = 0
         for entry in self._invitations.values():
-            if entry["status"] == InvitationStatus.PENDING:
-                expires_str = entry["invitation"].get("invitation_expires_at", "")
-                if expires_str:
-                    try:
-                        expires_at = datetime.fromisoformat(
-                            expires_str.replace("Z", "+00:00")
-                        )
-                        if now > expires_at:
-                            entry["status"] = InvitationStatus.EXPIRED
-                            count += 1
-                    except ValueError:
-                        pass
+            if entry["status"] == InvitationStatus.PENDING and _past_expiry(entry["invitation"]):
+                entry["status"] = InvitationStatus.EXPIRED
+                count += 1
         return count
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_retransmission(stored: dict, invitation_dict: dict) -> None:
+        """
+        Refuse an inbound invitation whose id is already stored, unless it is
+        an identical retransmission of a pending one. Never changes `stored`.
+        """
+        # Identical means the same RFC 8785 bytes, signature included, so the
+        # same inviter re-sending the same signed invitation. Anything else is
+        # a conflict whatever the stored status.
+        if hash_object(invitation_dict) != hash_object(stored["invitation"]):
+            raise ValueError(INVITATION_ID_CONFLICT)
+        if stored["status"] in (InvitationStatus.ACCEPTED, InvitationStatus.DECLINED):
+            raise ValueError(INVITATION_ALREADY_ANSWERED)
+        if stored["status"] == InvitationStatus.EXPIRED or _past_expiry(stored["invitation"]):
+            raise ValueError(INVITATION_EXPIRED)
 
     def _validate_answerable(self, invitation_id: str) -> dict:
         """
@@ -214,17 +236,59 @@ class InvitationStore:
         if stored["status"] == InvitationStatus.EXPIRED:
             raise ValueError("INVITATION_EXPIRED")
         # Check actual expiry even if not yet swept
-        expires_str = stored["invitation"].get("invitation_expires_at", "")
-        if expires_str:
-            try:
-                expires_at = datetime.fromisoformat(
-                    expires_str.replace("Z", "+00:00")
-                )
-                if datetime.now(timezone.utc) > expires_at:
-                    stored["status"] = InvitationStatus.EXPIRED
-                    raise ValueError("INVITATION_EXPIRED")
-            except ValueError as exc:
-                if str(exc) == "INVITATION_EXPIRED":
-                    raise
-                pass  # unparseable expiry — skip check
+        if _past_expiry(stored["invitation"]):
+            stored["status"] = InvitationStatus.EXPIRED
+            raise ValueError("INVITATION_EXPIRED")
         return stored
+
+
+# RFC 3339 date-time with an explicit offset (Section 5.6): the schema's
+# `date-time`. ASCII digits only, a `T` separator, and `Z` or `+hh:mm`/`-hh:mm`.
+_RFC3339_DATE_TIME = re.compile(
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})"
+    r"(?:\.([0-9]+))?(?:([Zz])|([+-])([0-9]{2}):([0-9]{2}))"
+)
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _now_ms() -> int:
+    return time.time_ns() // 1_000_000
+
+
+def _expiry_ms(value: object) -> int | None:
+    """
+    invitation_expires_at as milliseconds since the epoch, or None when it is
+    not an RFC 3339 date-time with an explicit offset. Fractions beyond the
+    millisecond are dropped, as the TypeScript implementation drops them.
+    """
+    if not isinstance(value, str):
+        return None
+    match = _RFC3339_DATE_TIME.fullmatch(value)
+    if match is None:
+        return None
+    year, month, day, hour, minute, second = (int(g) for g in match.group(1, 2, 3, 4, 5, 6))
+    if year < 1 or hour > 23 or minute > 59 or second > 59:
+        return None
+    if match.group(8):
+        offset_minutes = 0
+    else:
+        offset_hours, offset_mins = int(match.group(10)), int(match.group(11))
+        if offset_hours > 23 or offset_mins > 59:
+            return None
+        offset_minutes = (offset_hours * 60 + offset_mins) * (1 if match.group(9) == "+" else -1)
+    try:
+        moment = datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
+    except ValueError:
+        return None  # a day the month does not have
+    millis = int((match.group(7) or "").ljust(3, "0")[:3])
+    return (moment - _EPOCH) // timedelta(milliseconds=1) + millis - offset_minutes * 60_000
+
+
+def _past_expiry(invitation: dict) -> bool:
+    """
+    Whether invitation_expires_at has passed. A value that is missing, empty or
+    not an RFC 3339 date-time with an explicit offset counts as passed: an
+    expiry that cannot be read fails closed, the same in both implementations.
+    """
+    expires_ms = _expiry_ms(invitation.get("invitation_expires_at"))
+    return expires_ms is None or _now_ms() > expires_ms

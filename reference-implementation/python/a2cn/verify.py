@@ -864,6 +864,10 @@ def _parser() -> _ArgumentParser:
             "sites unless --offline is given. Exit status: 0 verified, 1 refused, 2 bad usage, "
             "3 could not finish."
         ),
+        epilog=(
+            "Bugs: https://github.com/A2CN-protocol/A2CN/issues "
+            "Vulnerabilities: see SECURITY.md (https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)"
+        ),
     )
     parser.add_argument(
         "inputs",

@@ -46,6 +46,7 @@ import {
   INVITATION_NOT_FOUND,
   INVITATION_EXPIRED,
   INVITATION_ALREADY_ANSWERED,
+  INVITATION_ID_CONFLICT,
   INVITATION_SIGNATURE_INVALID,
   INVITATION_VERSION_MISMATCH,
   type Dict,
@@ -70,6 +71,7 @@ import {
   type FetchLike,
 } from "./did.js";
 import { InMemorySessionStore, type SessionStore } from "./session_store.js";
+import { hasOwn, ownGet, setOwn } from "./own.js";
 
 export const A2CN_CONTENT_TYPE = "application/a2cn+json";
 
@@ -220,7 +222,7 @@ export function createServerContext(): ServerContext {
      */
     registerDidDocument(did: string, didDocument: Dict): void {
       requireDidDocumentFor(didDocument, did);
-      ctx.didDocOverride[did] = didDocument;
+      setOwn(ctx.didDocOverride, did, didDocument);
       manager.registerDidDocument(did, didDocument);
     },
 
@@ -453,7 +455,7 @@ async function verifyJwtAuth(ctx: ServerContext, request: FastifyRequest): Promi
 
     // Resolve DID document (override dict first, then HTTP)
     let didDoc: Dict;
-    if (iss in ctx.didDocOverride) {
+    if (hasOwn(ctx.didDocOverride, iss)) {
       const registered = ctx.didDocOverride[iss];
       if (!didDocumentIsFor(registered, iss)) {
         console.warn(`The DID document registered for ${JSON.stringify(iss)} does not name it`);
@@ -788,7 +790,7 @@ function installRoutes(ctx: ServerContext): void {
         currency: sessionParams.currency,
         max_rounds: Math.min(
           (sessionParams.max_rounds as number) ?? 10,
-          maxRoundsByDealType[sessionParams.deal_type as string] ?? 10,
+          ownGet(maxRoundsByDealType, sessionParams.deal_type as string) ?? 10,
         ),
         session_timeout_seconds: sessionParams.session_timeout_seconds,
         round_timeout_seconds: sessionParams.round_timeout_seconds,
@@ -899,7 +901,7 @@ function installRoutes(ctx: ServerContext): void {
    */
   async function resolveApproverDidDocument(approver: string): Promise<Dict | null> {
     const approverDid = approver.split("#")[0];
-    if (Object.prototype.hasOwnProperty.call(ctx.didDocOverride, approverDid)) {
+    if (hasOwn(ctx.didDocOverride, approverDid)) {
       const registered = ctx.didDocOverride[approverDid];
       return didDocumentIsFor(registered, approverDid) ? registered : null;
     }
@@ -1538,6 +1540,14 @@ function installRoutes(ctx: ServerContext): void {
       );
     }
 
+    // The id keys the stored invitation, so it must be a non-empty string:
+    // neither a number that a JSON-object store would read as its string form,
+    // nor absent.
+    const invitationId = body.invitation_id;
+    if (typeof invitationId !== "string" || !invitationId) {
+      return sendError(reply, "INVALID_REQUEST", "invitation_id must be a non-empty string", 400);
+    }
+
     // Signature verification is REQUIRED (Section 9.3)
     const inviterDid = (body.inviter_did as string) ?? "";
     if (!inviterDid) {
@@ -1563,7 +1573,7 @@ function installRoutes(ctx: ServerContext): void {
 
     // Resolve DID document (didDocOverride first, then HTTP)
     let didDoc: Dict;
-    if (inviterDid in ctx.didDocOverride) {
+    if (hasOwn(ctx.didDocOverride, inviterDid)) {
       const registered = ctx.didDocOverride[inviterDid];
       if (!didDocumentIsFor(registered, inviterDid)) {
         console.warn(`The DID document registered for ${JSON.stringify(inviterDid)} does not name it`);
@@ -1602,7 +1612,18 @@ function installRoutes(ctx: ServerContext): void {
       return sendError(reply, INVITATION_SIGNATURE_INVALID, "Invitation signature is invalid", 400);
     }
 
-    invitationStore.storeInbound(body);
+    try {
+      invitationStore.storeInbound(body);
+    } catch (exc) {
+      const code = exc instanceof Error ? exc.message : String(exc);
+      const status =
+        {
+          [INVITATION_EXPIRED]: 410,
+          [INVITATION_ALREADY_ANSWERED]: 409,
+          [INVITATION_ID_CONFLICT]: 409,
+        }[code] ?? 400;
+      return sendError(reply, code, code.replaceAll("_", " ").toLowerCase(), status);
+    }
     return sendA2cn(reply, { invitation_id: body.invitation_id, status: "pending" }, 201);
   });
 
@@ -1760,7 +1781,7 @@ function sortKeysDeep(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+      setOwn(sorted, key, sortKeysDeep((value as Record<string, unknown>)[key]));
     }
     return sorted;
   }

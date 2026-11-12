@@ -842,6 +842,9 @@ INVITATION_NOT_FOUND = "INVITATION_NOT_FOUND"
 INVITATION_SIGNATURE_INVALID = "INVITATION_SIGNATURE_INVALID"
 INVITATION_ALREADY_ANSWERED = "INVITATION_ALREADY_ANSWERED"
 INVITATION_VERSION_MISMATCH = "INVITATION_VERSION_MISMATCH"
+# An inbound invitation names an invitation_id already stored for a different
+# invitation (another inviter, or other content).
+INVITATION_ID_CONFLICT = "INVITATION_ID_CONFLICT"
 
 
 # ---------------------------------------------------------------------------
