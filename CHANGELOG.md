@@ -9,7 +9,7 @@ see [Three version axes](spec/README.md#three-version-axes) for the full table.
 
 | Axis | Current |
 |------|---------|
-| Release | `0.3.3` |
+| Release | `0.3.4` |
 | Spec / wire protocol (`protocol_version`, `a2cn_version`) | `0.3` |
 | `record_version` — TransactionRecord / AuditLog / SessionEvidenceRecord | `0.4` for a record whose `final_offer` **and** `final_acceptance` each carry their signed act's fields, with `0.3` (offer only), `0.2` (a basis and no act fields) and `0.1` (neither) known but no longer accepted / `0.1` / `0.5` for every record, with `0.1`, `0.2`, `0.3` and `0.4` still accepted |
 
@@ -19,6 +19,8 @@ This project is pre-1.0: the minor version moves for substantive additions.
 ---
 
 ## [Unreleased]
+
+## [0.3.4] — 2026-11-12
 
 ### Changed
 
@@ -1360,7 +1362,8 @@ strict turn-taking.
 
 Initial draft.
 
-[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/A2CN-protocol/A2CN/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.4
 [0.3.3]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.3
 [0.3.2]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.2
 [0.3.1]: https://github.com/A2CN-protocol/A2CN/releases/tag/v0.3.1

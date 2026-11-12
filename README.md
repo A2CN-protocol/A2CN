@@ -363,8 +363,8 @@ The library's own version is its semver and moves independently of the protocol 
 | SessionEvidenceRecord — emits | `0.5` |
 | SessionEvidenceRecord — verifies | `0.1` `0.2` `0.3` `0.4` `0.5` |
 | Specification document | `0.2.0` |
-| Python package `a2cn` | `0.3.3` |
-| TypeScript package `@a2cn/a2cn` | `0.3.3` |
+| Python package `a2cn` | `0.3.4` |
+| TypeScript package `@a2cn/a2cn` | `0.3.4` |
 <!-- versions-table:end -->
 
 A TransactionRecord verifier accepts only `0.4`: the earlier shapes are described by their published schemas but cannot be rebound to their signatures from the record alone, so they are refused.
