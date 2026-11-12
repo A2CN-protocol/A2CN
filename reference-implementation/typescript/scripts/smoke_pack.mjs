@@ -1,6 +1,6 @@
-// Smoke-test a packed a2cn tarball in a fresh project outside the repository.
+// Smoke-test a packed @a2cn/a2cn tarball in a fresh project outside the repository.
 //
-//     node scripts/smoke_pack.mjs a2cn-X.Y.Z.tgz [--workdir DIR]
+//     node scripts/smoke_pack.mjs a2cn-a2cn-X.Y.Z.tgz [--workdir DIR]
 //
 // The tarball must hold only package.json, README.md, LICENSE and the built
 // dist/index and dist/a2cn/* (.js and .d.ts), as the wheel smoke test checks
@@ -53,7 +53,7 @@ if (workdirFlag !== -1) {
   mkdirSync(base, { recursive: true });
 }
 if (argv.length !== 1) {
-  console.error("usage: node scripts/smoke_pack.mjs a2cn-X.Y.Z.tgz [--workdir DIR]");
+  console.error("usage: node scripts/smoke_pack.mjs a2cn-a2cn-X.Y.Z.tgz [--workdir DIR]");
   process.exit(2);
 }
 const tarball = resolve(argv[0]);
@@ -83,7 +83,10 @@ const unexpected = entries
 check(unexpected.length === 0, `the tarball holds unexpected files: ${unexpected.join(", ")}`);
 check(entries.includes("package/dist/index.js"), "the tarball has no dist/index.js");
 
-const expectedVersion = JSON.parse(readFileSync(join(TS_ROOT, "package.json"), "utf-8")).version;
+// The package is installed and imported under package.json's own name.
+const manifest = JSON.parse(readFileSync(join(TS_ROOT, "package.json"), "utf-8"));
+const expectedVersion = manifest.version;
+const PACKAGE = manifest.name;
 const readme = readFileSync(join(TS_ROOT, "README.md"), "utf-8");
 const example = readme.split("\n## Use\n")[1]?.match(/```ts\n([\s\S]*?)```/)?.[1];
 check(example !== undefined, "README.md has no ```ts example under \"## Use\"");
@@ -92,14 +95,15 @@ writeFileSync(join(project, "package.json"), JSON.stringify({ name: "a2cn-smoke"
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 run(npm, ["install", "--no-audit", "--no-fund", "--loglevel=error", tarball, "typescript@5", "@types/node@22"], project);
 
-// Where "a2cn" resolves, its version, the exports boundary and the optional peers.
+// Where the package resolves, its version, the exports boundary and the optional peers.
 const probe = `
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
-const url = import.meta.resolve("a2cn");
-const pkgUrl = import.meta.resolve("a2cn/package.json");
+const PACKAGE = ${JSON.stringify(PACKAGE)};
+const url = import.meta.resolve(PACKAGE);
+const pkgUrl = import.meta.resolve(PACKAGE + "/package.json");
 let deep = "not importable";
-try { await import("a2cn/dist/a2cn/client.js"); deep = "importable"; } catch {}
+try { await import(PACKAGE + "/dist/a2cn/client.js"); deep = "importable"; } catch {}
 const peers = {};
 for (const name of ["@modelcontextprotocol/sdk", "zod"]) {
   try { createRequire(import.meta.url).resolve(name + "/package.json"); peers[name] = true; } catch { peers[name] = false; }
@@ -109,9 +113,12 @@ console.log(JSON.stringify({ url, version: JSON.parse(readFileSync(new URL(pkgUr
 writeFileSync(join(project, "probe.mjs"), probe);
 const facts = JSON.parse(run(process.execPath, ["probe.mjs"], project));
 const resolved = realpathSync(fileURLToPath(facts.url));
-check(inside(resolved, join(project, "node_modules", "a2cn")), `"a2cn" resolved to ${resolved}, outside the project`);
+check(
+  inside(resolved, join(project, "node_modules", ...PACKAGE.split("/"))),
+  `"${PACKAGE}" resolved to ${resolved}, outside the project`,
+);
 check(facts.version === expectedVersion, `the installed version is ${facts.version}, package.json says ${expectedVersion}`);
-check(facts.deep === "not importable", "a2cn/dist/a2cn/client.js is importable past the exports map");
+check(facts.deep === "not importable", `${PACKAGE}/dist/a2cn/client.js is importable past the exports map`);
 for (const [name, present] of Object.entries(facts.peers)) {
   check(!present, `the optional peer dependency ${name} was installed`);
 }

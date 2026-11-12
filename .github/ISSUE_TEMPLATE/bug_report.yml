@@ -37,7 +37,7 @@ body:
     id: package-version
     attributes:
       label: Package version
-      description: "`python -c \"import a2cn; print(a2cn.__version__)\"`, `npm ls a2cn`, or the commit of a source checkout."
+      description: "`python -c \"import a2cn; print(a2cn.__version__)\"`, `npm ls @a2cn/a2cn`, or the commit of a source checkout."
       placeholder: "0.3.3"
     validations:
       required: true

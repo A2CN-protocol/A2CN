@@ -20,6 +20,15 @@ This project is pre-1.0: the minor version moves for substantive additions.
 
 ## [Unreleased]
 
+### Changed
+
+- **The TypeScript package is published to npm as `@a2cn/a2cn`.** npm refuses
+  the unscoped name `a2cn` as too similar to an existing package, so the
+  TypeScript reference implementation is published under the npm organization
+  `a2cn`. 0.3.4 is its first npm release: install it with
+  `npm install @a2cn/a2cn` and import from `"@a2cn/a2cn"`. The Python package
+  keeps its name, `a2cn`, on PyPI.
+
 ## [0.3.3] — 2026-11-12
 
 ### Security

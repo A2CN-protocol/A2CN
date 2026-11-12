@@ -149,15 +149,17 @@ def test_the_readme_table_states_the_package_and_spec_versions():
     rows = _readme_table()
     package_json = json.loads((REPO_ROOT / "reference-implementation" / "typescript" / "package.json").read_text())
     assert rows.get("Python package `a2cn`") == [_pyproject_version()]
-    assert rows.get("TypeScript package `a2cn`") == [package_json["version"]]
+    # The row names the npm package as package.json does.
+    assert rows.get(f"TypeScript package `{package_json['name']}`") == [package_json["version"]]
     (spec_version,) = rows["Specification document"]
     assert (REPO_ROOT / "spec" / f"a2cn-spec-v{spec_version}.md").is_file()
 
 
 def test_the_readme_table_has_no_unchecked_row():
+    package_json = json.loads((REPO_ROOT / "reference-implementation" / "typescript" / "package.json").read_text())
     checked = set(README_ROWS) | {
         "Python package `a2cn`",
-        "TypeScript package `a2cn`",
+        f"TypeScript package `{package_json['name']}`",
         "Specification document",
     }
     assert set(_readme_table()) == checked
