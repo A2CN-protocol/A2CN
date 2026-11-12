@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "a2cn"
-version = "0.3.2"
+version = "0.3.3"
 description = "Reference implementation of A2CN, the open protocol for agent-to-agent B2B commercial negotiation"
 readme = "README.pypi.md"
 requires-python = ">=3.11"
@@ -49,6 +49,7 @@ dependencies = [
 Homepage = "https://a2cn.io"
 Source = "https://github.com/A2CN-protocol/A2CN"
 Issues = "https://github.com/A2CN-protocol/A2CN/issues"
+Discussions = "https://github.com/A2CN-protocol/A2CN/discussions"
 Changelog = "https://github.com/A2CN-protocol/A2CN/blob/main/CHANGELOG.md"
 "Security policy" = "https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md"
 

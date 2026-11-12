@@ -245,3 +245,13 @@ def test_offer_hash_is_documented_as_unsigned_in_help():
     assert "Not covered by any signature" in parser_help
     assert "--offline" in parser_help
     assert "--resolve" not in parser_help
+
+
+def test_help_ends_with_where_to_report():
+    from a2cn.verify import _parser
+
+    parser_help = " ".join(_parser().format_help().split())
+    assert parser_help.endswith(
+        "Bugs: https://github.com/A2CN-protocol/A2CN/issues "
+        "Vulnerabilities: see SECURITY.md (https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)"
+    )

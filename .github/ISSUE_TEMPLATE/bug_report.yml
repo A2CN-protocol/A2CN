@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in the specification, the reference implementations or a package does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A security vulnerability never goes in a public issue: report it
+        privately, as [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md) describes.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What you expected to happen instead, and the spec section or documentation that says so, if you know it.
+    validations:
+      required: true
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Install source
+      description: How the package was installed.
+      options:
+        - PyPI
+        - npm
+        - Source checkout
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: "`python -c \"import a2cn; print(a2cn.__version__)\"`, `npm ls a2cn`, or the commit of a source checkout."
+      placeholder: "0.3.3"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Language and runtime version
+      description: For example `Python 3.12.7` or `Node.js 22.12.0`.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code, command or record that shows the problem. Remove secrets, private keys and private records first.
+      render: text
+  - type: checkboxes
+    id: not-security
+    attributes:
+      label: Security
+      options:
+        - label: This is not a security vulnerability. I'll report those privately, as SECURITY.md describes.
+          required: true
