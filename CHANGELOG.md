@@ -133,48 +133,37 @@ This project is pre-1.0: the minor version moves for substantive additions.
   is refused. The schema of the next TransactionRecord version carries the
   DID syntax.
 - **TypeScript lookups keyed by caller input use own properties, as Python's
-  do.** The TypeScript reference implementation kept its sessions, processed
-  messages, invitations, registered DID documents and several lookup tables as
-  plain objects, so an id or key such as `constructor`, `toString` or
-  `__proto__` found a member every JavaScript object inherits instead of no
-  entry. With such an id, which any caller that can reach the route can send,
-  a session route answered with the wrong status instead of not found, a
-  message was answered as a retransmission without being validated or applied,
-  an inbound invitation whose id was `__proto__` became hidden from the
-  invitation store's keys and expiry sweep and lent its fields to other ids,
-  and a member named `__proto__` added to a signed invitation was dropped from
-  the signed bytes, so the invitation was accepted and stored with that
-  member unsigned. Every store or lookup keyed by request or record data now
-  reads and writes own properties only (`InMemorySessionStore` keeps its
-  entries in a `Map`), and objects rebuilt from input keep a `__proto__`
-  member, so each of these behaves as in Python. Nothing reached the global
-  `Object.prototype`, and no signature check was bypassed. An object passed as
-  a DID resolver to the TypeScript verifiers is now read by its own entries
-  only: a resolver that inherits its documents must hold them as its own.
-- **An invitation id is never reused for a different invitation.** `POST
-  /invitations` stored an inbound invitation under its `invitation_id` without
-  looking at what was already there, so anyone able to sign an invitation who
-  knew an id could replace another party's invitation, or reset an accepted or
-  declined one to pending. Now, in both reference implementations, an inbound
-  invitation whose id is already held is refused with the new code
-  `INVITATION_ID_CONFLICT` (409) unless it is byte-identical to the one held;
-  an identical re-send is answered as the first delivery was while the
-  invitation is pending, and with `INVITATION_ALREADY_ANSWERED` (409) or
-  `INVITATION_EXPIRED` (410) once it is answered or expired. Re-delivery never
-  changes a stored invitation's inviter, content, status or received time
-  (Section 11.7).
+  do.** The TypeScript reference implementation kept several stores and
+  lookup tables keyed by ids from requests or records in plain objects, so an
+  id such as `__proto__`, `constructor` or `toString` matched a member that
+  every JavaScript object inherits. Before, a session route answered such an
+  id with an error instead of `404`, a message under such an id was answered
+  but never applied, an invitation delivered with the id `__proto__` changed
+  how the invitation store answered for other ids, and a signed invitation
+  with an extra, unsigned `__proto__` member was accepted. These lookups now
+  read and write own entries only, so each case behaves as in Python. No
+  input reached the global `Object.prototype`. An object passed as a DID
+  resolver to the TypeScript verifiers is now read by its own entries only: a
+  resolver that inherits its documents must hold them as its own.
+- **An invitation id is never reused for a different invitation.** Both
+  reference servers now refuse an inbound invitation whose `invitation_id`
+  they already hold with the new code `INVITATION_ID_CONFLICT` (409), unless
+  it is the same invitation, signature included, compared as RFC 8785
+  canonical bytes. An identical re-send is answered as the first delivery was
+  while the invitation is pending, and with `INVITATION_ALREADY_ANSWERED`
+  (409) or `INVITATION_EXPIRED` (410) once it is answered or expired.
+  Re-delivery never changes a stored invitation (Section 11.7). Before,
+  `POST /invitations` overwrote whatever it held under the id, so anyone able
+  to sign an invitation who knew an id could replace another party's
+  invitation, or reset an answered one to pending.
 - **`invitation_expires_at` is read strictly, and `invitation_id` must be a
-  string.** An invitation's expiry is read as an RFC 3339 date-time with an
-  explicit UTC offset or `Z`, the same in both reference implementations, at
-  every check: re-send, accept, decline and the expiry sweep. A value that is
-  missing, empty, without an offset, in another format or out of range counts
-  as expired (Section 11.2.3). Before, a value without an offset caused a
-  server error in Python, the two implementations read some formats
-  differently, and an empty value was never treated as expired. `POST
-  /invitations` refuses an `invitation_id` that is not a non-empty string with
-  `INVALID_REQUEST` (400) before any DID is resolved, where before a numeric
-  id and its string form named one invitation in TypeScript and a missing id
-  was a server error in Python.
+  string.** Both reference servers read an invitation's expiry as an RFC 3339
+  date-time with an explicit offset at every check, and treat a missing or
+  unreadable value as expired, so an expiry stated in another form now counts
+  as expired (Section 11.2.3). Before, a value without an offset was a server
+  error in Python, the two implementations read some formats differently, and
+  an empty value never expired. `POST /invitations` now refuses an
+  `invitation_id` that is not a non-empty string with `INVALID_REQUEST` (400).
 
 ### Added
 
