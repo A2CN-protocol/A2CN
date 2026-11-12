@@ -1,4 +1,4 @@
-# a2cn (TypeScript)
+# @a2cn/a2cn (TypeScript)
 
 The TypeScript reference implementation of [A2CN](https://a2cn.io), the open
 protocol for agent-to-agent B2B commercial negotiation: signed offers,
@@ -22,7 +22,7 @@ describes.
 ## Install
 
 ```bash
-npm install a2cn
+npm install @a2cn/a2cn
 ```
 
 The package is ESM only and needs Node.js 20.18.1 or later. Running this
@@ -33,7 +33,7 @@ repository's test suite needs Node.js 22.12 or later.
 Everything is exported from the package root, with its types:
 
 ```ts
-import { PROTOCOL_VERSIONS, generateKeypair, hashObject, signJws, verifyJws } from "a2cn";
+import { PROTOCOL_VERSIONS, generateKeypair, hashObject, signJws, verifyJws } from "@a2cn/a2cn";
 
 console.log(PROTOCOL_VERSIONS.wire);
 
@@ -71,7 +71,7 @@ npx tsx src/mcp_server.ts
 - **Questions and ideas** go in
   [GitHub Discussions](https://github.com/A2CN-protocol/A2CN/discussions).
 - **Bugs** go in [GitHub Issues](https://github.com/A2CN-protocol/A2CN/issues).
-  Include the package version (from `npm ls a2cn`), your Node.js version, and how
+  Include the package version (from `npm ls @a2cn/a2cn`), your Node.js version, and how
   you installed the package (from npm or from a source checkout).
 - **Security vulnerabilities** never go in a public issue. Report them
   privately, as [SECURITY.md](https://github.com/A2CN-protocol/A2CN/blob/main/SECURITY.md)

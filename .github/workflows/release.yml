@@ -116,7 +116,7 @@ jobs:
       - run: npm run build
       - run: npm pack --dry-run
       - run: mkdir -p "$RUNNER_TEMP/npm-dist" && npm pack --pack-destination "$RUNNER_TEMP/npm-dist"
-      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/npm-dist/a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke"
+      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/npm-dist/a2cn-a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke"
       - run: npm audit --omit=dev
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -152,7 +152,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: npm
-      url: https://www.npmjs.com/package/a2cn
+      url: https://www.npmjs.com/package/@a2cn/a2cn
     permissions:
       id-token: write
     steps:
@@ -171,5 +171,5 @@ jobs:
           path: npm-dist/
       # The tarball is the one built and smoke-tested above; nothing is rebuilt.
       - run: |
-          tarball="$(ls npm-dist/a2cn-*.tgz)"
+          tarball="$(ls npm-dist/a2cn-a2cn-*.tgz)"
           npm publish "./$tarball" --provenance --access public --ignore-scripts

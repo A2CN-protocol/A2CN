@@ -132,11 +132,11 @@ jobs:
       - run: npm run build
       - run: npm pack --dry-run
       - run: npm pack --pack-destination "$RUNNER_TEMP"
-      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke"
+      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke"
       - run: npm audit --omit=dev
       - run: npm audit
       # The package's engines floor: the same tarball, installed and run on Node 20.18.1.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "20.18.1"
-      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke-node20"
+      - run: node scripts/smoke_pack.mjs "$RUNNER_TEMP"/a2cn-a2cn-*.tgz --workdir "$RUNNER_TEMP/smoke-node20"

@@ -83,7 +83,8 @@ describe("versions matrix", () => {
   it("README table states the package and spec versions", () => {
     const rows = readmeTable();
     const pkg = JSON.parse(readFileSync(join(TS_ROOT, "package.json"), "utf-8"));
-    expect(rows.get("TypeScript package `a2cn`")).toEqual([pkg.version]);
+    // The row names the npm package as package.json does.
+    expect(rows.get(`TypeScript package \`${pkg.name}\``)).toEqual([pkg.version]);
     expect(rows.get("Python package `a2cn`")).toEqual([pyprojectVersion()]);
     const spec = rows.get("Specification document");
     expect(spec).toHaveLength(1);
@@ -91,10 +92,11 @@ describe("versions matrix", () => {
   });
 
   it("README table has no unchecked row", () => {
+    const pkg = JSON.parse(readFileSync(join(TS_ROOT, "package.json"), "utf-8"));
     const checked = new Set([
       ...Object.keys(README_ROWS),
       "Python package `a2cn`",
-      "TypeScript package `a2cn`",
+      `TypeScript package \`${pkg.name}\``,
       "Specification document",
     ]);
     expect(new Set(readmeTable().keys())).toEqual(checked);
